@@ -18,6 +18,10 @@ test_select_best_catalog_view_returns_none_when_no_match (test_curated_helpers.T
 test_select_views_by_terms_excludes_terms (test_curated_helpers.TestCuratedHelpers.test_select_views_by_terms_excludes_terms) ... ok
 test_split_sql_statements_handles_semicolon_inside_string (test_curated_helpers.TestCuratedHelpers.test_split_sql_statements_handles_semicolon_inside_string) ... ok
 test_strip_sql_comments_removes_whole_line_comments (test_curated_helpers.TestCuratedHelpers.test_strip_sql_comments_removes_whole_line_comments) ... ok
+test_normalise_records_for_parquet_turns_mixed_types_into_strings (test_curated_helpers.TestParquetNormalisation.test_normalise_records_for_parquet_turns_mixed_types_into_strings)
+Mixed success/failure regression rows should be Arrow-friendly. ... ok
+test_raw_source_projection_renames_source_sequence_column (test_curated_helpers.TestParquetNormalisation.test_raw_source_projection_renames_source_sequence_column)
+Source columns must not collide with curated aliases like sequence. ... ok
 test_extract_select_queries_only_keeps_select_and_with (test_curated_helpers.TestSqliteRegressionHelpers.test_extract_select_queries_only_keeps_select_and_with) ... ok
 test_run_sqlite_regression_queries_records_success_and_failure (test_curated_helpers.TestSqliteRegressionHelpers.test_run_sqlite_regression_queries_records_success_and_failure) ... ok
 test_coalesce_columns_sql_returns_coalesce_for_multiple_columns (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_coalesce_for_multiple_columns) ... ok
@@ -26,16 +30,20 @@ test_coalesce_columns_sql_returns_single_expression_without_coalesce (test_curat
 test_safe_view_suffix_removes_common_prefixes (test_curated_sql_generation.TestCuratedSqlGeneration.test_safe_view_suffix_removes_common_prefixes) ... ok
 test_try_cast_numeric_sql_wraps_expression (test_curated_sql_generation.TestCuratedSqlGeneration.test_try_cast_numeric_sql_wraps_expression) ... ok
 test_parquet_paths_can_skip_magic_validation (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_can_skip_magic_validation)
-Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmphnhyebt2/._invalid.parquet
+Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmpskz0f_hq/._invalid.parquet
 ok
 test_parquet_paths_skip_invalid_and_sidecar_files (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_skip_invalid_and_sidecar_files)
-Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpeilcwnzs/nested/._good.parquet
-Skipping invalid Parquet-like file: /tmp/tmpeilcwnzs/nested/invalid.parquet
+Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpdam3nd3o/nested/._good.parquet
+Skipping invalid Parquet-like file: /tmp/tmpdam3nd3o/nested/invalid.parquet
 ok
 test_view_name_for_parquet_is_stable (test_duckdb_views.TestDuckdbViewHelpers.test_view_name_for_parquet_is_stable)
 A nested parquet path should become a stable view name. ... ok
 test_copy_existing_parquets_skips_sidecars_and_invalid_files (test_existing_parquet_copy.TestCopyExistingParquets.test_copy_existing_parquets_skips_sidecars_and_invalid_files)
-AppleDouble files and invalid Parquet-like files should not be copied. ... Skipping macOS sidecar Parquet: Other_things/Denbi/._realigned_clusters.parquet
+AppleDouble files and invalid Parquet-like files should not be copied. ... <frozen _collections_abc>:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7edd1d69a3e0>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+<frozen _collections_abc>:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7edd1d69a890>
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+Skipping macOS sidecar Parquet: Other_things/Denbi/._realigned_clusters.parquet
 Skipping invalid Parquet-like file: Other_things/Denbi/bad.parquet
 ok
 test_infer_accession_from_uniprot_header (test_fasta.TestFastaParsing.test_infer_accession_from_uniprot_header)
@@ -80,13 +88,7 @@ test_markdown_table_limits_rows (test_reports.TestReportHelpers.test_markdown_ta
 test_read_tsv_returns_empty_for_missing_file (test_reports.TestReportHelpers.test_read_tsv_returns_empty_for_missing_file) ... ok
 test_write_files_used_report_creates_markdown (test_reports.TestReportHelpers.test_write_files_used_report_creates_markdown) ... ok
 test_add_source_columns (test_tabular.TestTabularUtilities.test_add_source_columns)
-Source metadata should be added to every tabular record. ... /usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ead2311a2f0>
-  def append(self, code):
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ead2311a7a0>
-  def append(self, code):
-ResourceWarning: Enable tracemalloc to get the object allocation traceback
-ok
+Source metadata should be added to every tabular record. ... ok
 test_detect_delimiter_prefers_tabs (test_tabular.TestTabularUtilities.test_detect_delimiter_prefers_tabs)
 Delimiter detection should handle TSV files. ... ok
 test_output_table_name_includes_sheet (test_tabular.TestTabularUtilities.test_output_table_name_includes_sheet)
@@ -97,6 +99,6 @@ test_text_line_ingestion (test_tabular.TestTabularUtilities.test_text_line_inges
 Text files should be preserved line by line. ... ok
 
 ----------------------------------------------------------------------
-Ran 57 tests in 0.035s
+Ran 59 tests in 0.033s
 
 OK

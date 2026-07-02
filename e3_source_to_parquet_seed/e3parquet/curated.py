@@ -314,6 +314,45 @@ def create_empty_view(connection: Any, view_name: str, columns: Mapping[str, str
     create_or_replace_view(connection, view_name, "SELECT " + ", ".join(expressions) + " WHERE FALSE")
 
 
+def raw_source_column_projection(
+    table_alias: str,
+    columns: Sequence[str],
+    reserved_aliases: Iterable[str] | None = None,
+    raw_prefix: str = "_raw_",
+) -> str:
+    """Return source-column projections with unique raw aliases.
+
+    Curated views expose standardised columns such as ``protein_accession`` or
+    ``sequence`` while also preserving all original inherited columns.  Using
+    ``t.*`` is unsafe because source tables may already contain columns with the
+    same names as the curated aliases.  DuckDB is especially strict when those
+    SELECT statements are later combined with ``UNION ALL BY NAME``.
+
+    This helper keeps all source metadata, but renames every inherited column to
+    a deterministic ``_raw_*`` alias.
+    """
+    reserved = {str(alias).lower() for alias in (reserved_aliases or [])}
+    used = set(reserved)
+    expressions: list[str] = []
+    for column in columns:
+        base_alias = f"{raw_prefix}{safe_name(str(column))}"
+        if not base_alias or base_alias == raw_prefix:
+            base_alias = f"{raw_prefix}column"
+        alias = base_alias
+        counter = 2
+        while alias.lower() in used:
+            alias = f"{base_alias}_{counter}"
+            counter += 1
+        used.add(alias.lower())
+        expressions.append(
+            f"{duckdb_quote_identifier(table_alias)}.{duckdb_quote_identifier(str(column))} "
+            f"AS {duckdb_quote_identifier(alias)}"
+        )
+    if not expressions:
+        return "CAST(NULL AS VARCHAR) AS _raw_no_source_columns"
+    return ",\n                ".join(expressions)
+
+
 def create_protein_records_view(
     connection: Any,
     catalog: Sequence[Mapping[str, str]],
@@ -364,7 +403,23 @@ def create_protein_records_view(
             {sequence_sql} AS embedded_sequence,
             {sequence_md5_sql} AS embedded_sequence_md5,
             {duckdb_quote_literal(source_view)} AS _curated_source_view,
-            t.*
+            {raw_source_column_projection(
+                "t",
+                columns,
+                reserved_aliases=(
+                    "protein_accession",
+                    "gene_names_standardised",
+                    "organism_standardised",
+                    "organism_id_standardised",
+                    "e3_category_standardised",
+                    "reviewed_standardised",
+                    "protein_names_standardised",
+                    "protein_length_standardised",
+                    "embedded_sequence",
+                    "embedded_sequence_md5",
+                    "_curated_source_view",
+                ),
+            )}
         FROM {duckdb_quote_identifier(source_view)} AS t
     """
     create_or_replace_view(connection, "protein_records", sql)
@@ -436,7 +491,18 @@ def create_protein_sequences_view(
                 TRY_CAST({length_sql} AS BIGINT) AS sequence_length,
                 {sequence_md5_sql} AS sequence_md5,
                 {duckdb_quote_literal(source_view)} AS _curated_source_view,
-                t.*
+                {raw_source_column_projection(
+                    "t",
+                    columns,
+                    reserved_aliases=(
+                        "protein_accession",
+                        "sequence_header",
+                        "sequence",
+                        "sequence_length",
+                        "sequence_md5",
+                        "_curated_source_view",
+                    ),
+                )}
             FROM {duckdb_quote_identifier(source_view)} AS t
         """
 
@@ -937,20 +1003,48 @@ def locate_sqlite_db(raw_root: Path) -> Optional[Path]:
     return None
 
 
+def normalise_records_for_parquet(
+    records: Sequence[Mapping[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Return records with stable, Arrow-friendly column types.
+
+    The inherited SQL regression records deliberately capture both successful
+    and failed queries.  That means fields such as ``sqlite_row_count`` may be
+    numeric for successful queries and blank for failed queries.  PyArrow will
+    reject those mixed object columns when pandas tries to infer an integer
+    schema.  For audit/regression outputs we prefer robustness and readability,
+    so optional mixed fields are serialised as strings before writing Parquet.
+    """
+    normalised: List[Dict[str, Any]] = []
+    for record in records:
+        clean: Dict[str, Any] = {}
+        for key, value in record.items():
+            if value is None:
+                clean[str(key)] = ""
+            elif isinstance(value, (list, tuple, dict)):
+                clean[str(key)] = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            else:
+                clean[str(key)] = str(value)
+        normalised.append(clean)
+    return normalised
+
+
 def write_regression_results(
     records: Sequence[Mapping[str, Any]],
     out_tsv: Path,
     out_parquet: Path,
 ) -> None:
     """Write SQLite regression results to TSV and, when available, Parquet."""
-    write_tsv(records, out_tsv)
-    if not records:
+    normalised_records = normalise_records_for_parquet(records)
+    write_tsv(normalised_records, out_tsv)
+    if not normalised_records:
         return
     try:
         import pandas as pd  # type: ignore
 
         out_parquet.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame.from_records(records).to_parquet(out_parquet, index=False)
+        frame = pd.DataFrame.from_records(normalised_records)
+        frame.to_parquet(out_parquet, index=False)
     except Exception:  # pragma: no cover - optional dependency path
         LOGGER.exception("Failed writing sqlite regression parquet; TSV was still written")
 

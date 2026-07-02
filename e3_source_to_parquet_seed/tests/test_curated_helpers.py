@@ -14,6 +14,8 @@ from e3parquet.curated import (
     extract_select_queries_from_files,
     find_column,
     normalise_column_name,
+    normalise_records_for_parquet,
+    raw_source_column_projection,
     run_sqlite_regression_queries,
     score_catalog_record,
     select_best_catalog_view,
@@ -130,3 +132,29 @@ class TestSqliteRegressionHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestParquetNormalisation(unittest.TestCase):
+    """Regression tests for robust audit Parquet writing."""
+
+    def test_normalise_records_for_parquet_turns_mixed_types_into_strings(self):
+        """Mixed success/failure regression rows should be Arrow-friendly."""
+        records = [
+            {"query_id": "ok", "sqlite_row_count": 12, "sqlite_error": ""},
+            {"query_id": "failed", "sqlite_row_count": "", "sqlite_error": "no table"},
+            {"query_id": "none", "sqlite_row_count": None, "sqlite_error": None},
+        ]
+        clean = normalise_records_for_parquet(records)
+        self.assertEqual(clean[0]["sqlite_row_count"], "12")
+        self.assertEqual(clean[1]["sqlite_row_count"], "")
+        self.assertEqual(clean[2]["sqlite_row_count"], "")
+        self.assertTrue(all(isinstance(row["sqlite_row_count"], str) for row in clean))
+
+    def test_raw_source_projection_renames_source_sequence_column(self):
+        """Source columns must not collide with curated aliases like sequence."""
+        projection = raw_source_column_projection(
+            "t",
+            ["protein_accession", "sequence", "sequence_md5", "_source_file"],
+            reserved_aliases=("protein_accession", "sequence", "sequence_md5"),
+        )
+        self.assertIn('AS "_raw_sequence"', projection)
+        self.assertNotIn('AS "sequence"', projection)

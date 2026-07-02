@@ -2,6 +2,23 @@
 
 Version: **0.3.0**
 
+## Version 0.3.2 bug-fix notes
+
+This release fixes three issues found during the first real curated-resource build:
+
+1. macOS/Arrow regression output issue: SQLite regression records now serialise mixed optional fields, such as `sqlite_row_count`, as strings before optional Parquet export. This avoids PyArrow failures when some SQL queries succeed and others fail.
+2. DuckDB sequence view issue: curated sequence views now preserve source columns under `_raw_*` names rather than using `t.*`, avoiding duplicate curated/source column names such as `sequence`.
+3. Debug report robustness: TSV debug reports now write the ordered union of all diagnostic keys, so failed builds still leave useful reports behind.
+
+For the small local Expression Atlas test copy, use for example:
+
+```bash
+EXPRESSION_DUCKDB="/Users/PThorpe001/Downloads/expression_atlas_app_test/e3_expression.duckdb"
+```
+
+The expression/RNAseq resource is diagnosed and linked as a separate DuckDB resource. It is not copied into the E3 resource by default.
+
+
 This package builds a clean, auditable data layer from the selected inherited E3/PROTAC files.
 It deliberately starts from the copied source files rather than blindly converting the inherited SQLite database.
 The SQLite database is treated as a useful reference and regression target, not as the authoritative source of truth.

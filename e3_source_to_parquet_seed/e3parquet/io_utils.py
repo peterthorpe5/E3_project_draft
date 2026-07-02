@@ -201,14 +201,34 @@ def guess_logical_role(relative_path: str) -> str:
 
 
 def write_tsv(records: Sequence[Mapping[str, object]], output_path: Path) -> None:
-    """Write records to a tab-separated file."""
+    """Write records to a tab-separated file.
+
+    Records produced during auditing often accumulate optional diagnostic
+    fields as a run progresses.  The writer therefore uses the ordered union of
+    all keys, rather than only the keys present in the first record.  This keeps
+    partially failed debug reports writable, which is important for diagnosing
+    inherited-data edge cases.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not records:
         output_path.write_text("", encoding="utf-8")
         return
-    fieldnames = list(records[0].keys())
+
+    fieldnames: list[str] = []
+    seen: set[str] = set()
+    for record in records:
+        for key in record.keys():
+            if key not in seen:
+                fieldnames.append(str(key))
+                seen.add(str(key))
+
     with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+            delimiter="\t",
+            extrasaction="ignore",
+        )
         writer.writeheader()
         for record in records:
             writer.writerow(record)
