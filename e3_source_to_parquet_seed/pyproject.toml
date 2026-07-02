@@ -1,6 +1,6 @@
 [project]
 name = "e3-source-to-parquet-seed"
-version = "0.2.0"
+version = "0.3.0"
 description = "Source-first E3 PROTAC inherited data audit and Parquet conversion utilities"
 requires-python = ">=3.9"
 dependencies = [

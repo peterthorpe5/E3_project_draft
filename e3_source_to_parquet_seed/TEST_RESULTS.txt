@@ -1,48 +1,36 @@
-E3 source-to-Parquet seed package v0.2.0 test results
-
-Command:
-    python -m unittest discover -s tests -v
-
-Result:
-    OK
-
-Tests run:
-    26
-
-Additional syntax check:
-    python -m compileall -q e3parquet scripts tests
-    Exit code: 0
-
-Notes:
-    The package preparation sandbox does not have pyarrow or duckdb installed,
-    so tests cover pure Python parsing, metadata preservation, folder
-    canonicalisation, macOS sidecar filtering, Parquet magic-byte validation,
-    and inherited-Parquet copy helper logic.
-
-    The sandbox prints an unrelated spreadsheet runtime warmup warning at
-    Python startup. The unittest and compileall exit codes were both 0.
-
-Raw unittest output:
-Spreadsheet runtime warmup failed during python startup
-Traceback (most recent call last):
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/generated/interface/models.py", line 30820, in hydrate_crdt_from_proto
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/remote.py", line 749, in __call__
-  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/client.py", line 150, in call
-artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
 test_clean_macos_sidecar_files_dry_run_and_delete (test_cleanup.TestCleanupHelpers.test_clean_macos_sidecar_files_dry_run_and_delete)
 Dry-run should not delete; delete mode should remove the sidecar. ... ok
 test_find_macos_sidecar_files (test_cleanup.TestCleanupHelpers.test_find_macos_sidecar_files)
 Only sidecar files should be returned. ... ok
+test_debug_recorder_writes_tsv_and_markdown (test_curated_debug.TestDebugRecorder.test_debug_recorder_writes_tsv_and_markdown) ... ok
+test_inspect_expression_duckdb_missing_file (test_curated_debug.TestDebugRecorder.test_inspect_expression_duckdb_missing_file) ... ok
+test_inspect_expression_duckdb_not_provided (test_curated_debug.TestDebugRecorder.test_inspect_expression_duckdb_not_provided) ... ok
+test_locate_sqlite_db_prefers_main_database (test_curated_debug.TestDebugRecorder.test_locate_sqlite_db_prefers_main_database) ... ok
+test_source_sql_files_finds_only_sql_query_files (test_curated_debug.TestDebugRecorder.test_source_sql_files_finds_only_sql_query_files) ... ok
+test_coalesce_columns_sql_uses_available_columns_once (test_curated_helpers.TestCuratedHelpers.test_coalesce_columns_sql_uses_available_columns_once) ... ok
+test_find_column_is_case_and_punctuation_insensitive (test_curated_helpers.TestCuratedHelpers.test_find_column_is_case_and_punctuation_insensitive) ... ok
+test_normalise_column_name_removes_case_and_punctuation (test_curated_helpers.TestCuratedHelpers.test_normalise_column_name_removes_case_and_punctuation) ... ok
+test_quote_identifier_escapes_double_quotes (test_curated_helpers.TestCuratedHelpers.test_quote_identifier_escapes_double_quotes) ... ok
+test_quote_literal_escapes_single_quotes (test_curated_helpers.TestCuratedHelpers.test_quote_literal_escapes_single_quotes) ... ok
+test_score_catalog_record_prefers_curated_e3_database (test_curated_helpers.TestCuratedHelpers.test_score_catalog_record_prefers_curated_e3_database) ... ok
+test_select_best_catalog_view_ignores_failed_status (test_curated_helpers.TestCuratedHelpers.test_select_best_catalog_view_ignores_failed_status) ... ok
+test_select_best_catalog_view_returns_none_when_no_match (test_curated_helpers.TestCuratedHelpers.test_select_best_catalog_view_returns_none_when_no_match) ... ok
+test_select_views_by_terms_excludes_terms (test_curated_helpers.TestCuratedHelpers.test_select_views_by_terms_excludes_terms) ... ok
+test_split_sql_statements_handles_semicolon_inside_string (test_curated_helpers.TestCuratedHelpers.test_split_sql_statements_handles_semicolon_inside_string) ... ok
+test_strip_sql_comments_removes_whole_line_comments (test_curated_helpers.TestCuratedHelpers.test_strip_sql_comments_removes_whole_line_comments) ... ok
+test_extract_select_queries_only_keeps_select_and_with (test_curated_helpers.TestSqliteRegressionHelpers.test_extract_select_queries_only_keeps_select_and_with) ... ok
+test_run_sqlite_regression_queries_records_success_and_failure (test_curated_helpers.TestSqliteRegressionHelpers.test_run_sqlite_regression_queries_records_success_and_failure) ... ok
+test_coalesce_columns_sql_returns_coalesce_for_multiple_columns (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_coalesce_for_multiple_columns) ... ok
+test_coalesce_columns_sql_returns_null_when_no_candidates (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_null_when_no_candidates) ... ok
+test_coalesce_columns_sql_returns_single_expression_without_coalesce (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_single_expression_without_coalesce) ... ok
+test_safe_view_suffix_removes_common_prefixes (test_curated_sql_generation.TestCuratedSqlGeneration.test_safe_view_suffix_removes_common_prefixes) ... ok
+test_try_cast_numeric_sql_wraps_expression (test_curated_sql_generation.TestCuratedSqlGeneration.test_try_cast_numeric_sql_wraps_expression) ... ok
 test_parquet_paths_can_skip_magic_validation (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_can_skip_magic_validation)
-Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmphs2b1va_/._invalid.parquet
+Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmpg3el0c5d/._invalid.parquet
 ok
 test_parquet_paths_skip_invalid_and_sidecar_files (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_skip_invalid_and_sidecar_files)
-Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpbaq4zc65/nested/._good.parquet
-Skipping invalid Parquet-like file: /tmp/tmpbaq4zc65/nested/invalid.parquet
+Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmp213hum8q/nested/._good.parquet
+Skipping invalid Parquet-like file: /tmp/tmp213hum8q/nested/invalid.parquet
 ok
 test_view_name_for_parquet_is_stable (test_duckdb_views.TestDuckdbViewHelpers.test_view_name_for_parquet_is_stable)
 A nested parquet path should become a stable view name. ... ok
@@ -80,8 +68,19 @@ test_logical_role_guess (test_manifest.TestManifestUtilities.test_logical_role_g
 Path keywords should provide useful role guesses. ... ok
 test_safe_name_removes_problem_characters (test_manifest.TestManifestUtilities.test_safe_name_removes_problem_characters)
 Safe names should be stable and filesystem friendly. ... ok
+test_count_by_counts_blank_values (test_reports.TestReportHelpers.test_count_by_counts_blank_values) ... ok
+test_markdown_table_handles_empty_records (test_reports.TestReportHelpers.test_markdown_table_handles_empty_records) ... ok
+test_markdown_table_limits_rows (test_reports.TestReportHelpers.test_markdown_table_limits_rows) ... ok
+test_read_tsv_returns_empty_for_missing_file (test_reports.TestReportHelpers.test_read_tsv_returns_empty_for_missing_file) ... ok
+test_write_files_used_report_creates_markdown (test_reports.TestReportHelpers.test_write_files_used_report_creates_markdown) ... ok
 test_add_source_columns (test_tabular.TestTabularUtilities.test_add_source_columns)
-Source metadata should be added to every tabular record. ... ok
+Source metadata should be added to every tabular record. ... /usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecdcdb022f0>
+  def append(self, code):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+/usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecdcdb027a0>
+  def append(self, code):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+ok
 test_detect_delimiter_prefers_tabs (test_tabular.TestTabularUtilities.test_detect_delimiter_prefers_tabs)
 Delimiter detection should handle TSV files. ... ok
 test_output_table_name_includes_sheet (test_tabular.TestTabularUtilities.test_output_table_name_includes_sheet)
@@ -92,7 +91,6 @@ test_text_line_ingestion (test_tabular.TestTabularUtilities.test_text_line_inges
 Text files should be preserved line by line. ... ok
 
 ----------------------------------------------------------------------
-Ran 26 tests in 0.032s
+Ran 54 tests in 0.036s
 
 OK
-
