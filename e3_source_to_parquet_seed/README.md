@@ -156,14 +156,14 @@ conda install -c conda-forge pandas pyarrow openpyxl duckdb python-duckdb
 Then run tests:
 
 ```bash
-cd /path/to/e3_source_to_parquet_seed_v0_3
+cd /path/to/e3_source_to_parquet_seed_v0_3_1
 python -m unittest discover -s tests -v
 ```
 
 Expected result for this release:
 
 ```text
-Ran 54 tests
+Ran 57 tests
 
 OK
 ```
@@ -177,7 +177,7 @@ Basic run:
 ```bash
 PROJECT_ROOT="/Volumes/ExtremeSSD/E3_PROTAC_curated_working_copy_20260702_105742"
 
-cd /path/to/e3_source_to_parquet_seed_v0_3
+cd /path/to/e3_source_to_parquet_seed_v0_3_1
 ./run_e3_seed_pipeline.sh "${PROJECT_ROOT}"
 ```
 
@@ -187,9 +187,24 @@ Run with the separate Expression Atlas/RNAseq DuckDB path:
 PROJECT_ROOT="/Volumes/ExtremeSSD/E3_PROTAC_curated_working_copy_20260702_105742"
 EXPRESSION_DUCKDB="/home/pthorpe001/data/2026_E3_protac/analysis/expression_atlas_ftp_full/e3_expression.duckdb"
 
-cd /path/to/e3_source_to_parquet_seed_v0_3
+cd /path/to/e3_source_to_parquet_seed_v0_3_1
 ./run_e3_seed_pipeline.sh "${PROJECT_ROOT}" "${EXPRESSION_DUCKDB}"
 ```
+
+
+
+Run with a custom derived/output directory:
+
+```bash
+PROJECT_ROOT="/Volumes/ExtremeSSD/E3_PROTAC_curated_working_copy_20260702_105742"
+EXPRESSION_DUCKDB="/home/pthorpe001/data/2026_E3_protac/analysis/expression_atlas_ftp_full/e3_expression.duckdb"
+DERIVED_DIR="${PROJECT_ROOT}/derived_v0_3_1"
+
+cd /path/to/e3_source_to_parquet_seed_v0_3_1
+./run_e3_seed_pipeline.sh "${PROJECT_ROOT}" "${EXPRESSION_DUCKDB}" "${DERIVED_DIR}"
+```
+
+If the third argument is omitted, output goes to `${PROJECT_ROOT}/derived`.
 
 The expression/RNAseq data are **not automatically merged into the E3 source-first resource**. They are still a separate resource. This script records whether the expression DuckDB exists and what objects it contains in:
 
@@ -210,8 +225,10 @@ This is intentional. The expression table is very large and should not be copied
 ```bash
 python scripts/e3_build_manifest.py \
   --raw-root "${PROJECT_ROOT}/raw_inherited_selected" \
-  --out-tsv "${PROJECT_ROOT}/derived/qc/source_file_manifest_preconversion.tsv"
+  --out-dir "${PROJECT_ROOT}/derived/qc"
 ```
+
+This writes `source_file_manifest.tsv`, `source_file_manifest.parquet` when pyarrow is available, and `e3_build_manifest.log` into the output directory.
 
 ### 2. Convert selected source files to source-preserving Parquet
 

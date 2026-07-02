@@ -2,15 +2,15 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 PROJECT_ROOT [EXPRESSION_DUCKDB]" >&2
-  echo "Example: $0 /Volumes/ExtremeSSD/E3_PROTAC_curated_working_copy_20260702_105742 /path/to/e3_expression.duckdb" >&2
+  echo "Usage: $0 PROJECT_ROOT [EXPRESSION_DUCKDB] [DERIVED_DIR]" >&2
+  echo "Example: $0 /Volumes/ExtremeSSD/E3_PROTAC_curated_working_copy_20260702_105742 /path/to/e3_expression.duckdb /path/to/output_derived" >&2
   exit 1
 fi
 
 PROJECT_ROOT="$1"
 EXPRESSION_DUCKDB="${2:-}"
 RAW_ROOT="${PROJECT_ROOT}/raw_inherited_selected"
-DERIVED_DIR="${PROJECT_ROOT}/derived"
+DERIVED_DIR="${3:-${PROJECT_ROOT}/derived}"
 DUCKDB_PATH="${DERIVED_DIR}/duckdb/e3_protac_resource.duckdb"
 
 mkdir -p "${DERIVED_DIR}/logs" "${DERIVED_DIR}/qc" "${DERIVED_DIR}/duckdb"
@@ -18,7 +18,7 @@ mkdir -p "${DERIVED_DIR}/logs" "${DERIVED_DIR}/qc" "${DERIVED_DIR}/duckdb"
 echo "[1/6] Building source manifest"
 python scripts/e3_build_manifest.py \
   --raw-root "${RAW_ROOT}" \
-  --out-tsv "${DERIVED_DIR}/qc/source_file_manifest_preconversion.tsv"
+  --out-dir "${DERIVED_DIR}/qc"
 
 echo "[2/6] Converting selected source files to source-preserving Parquet"
 python scripts/e3_convert_seed_sources.py \
@@ -57,6 +57,7 @@ python scripts/e3_write_files_used_report.py \
   --derived-dir "${DERIVED_DIR}" \
   --output "${DERIVED_DIR}/docs/FILES_USED_AND_CURATED_VIEWS.md"
 
+echo "Done. Derived output directory: ${DERIVED_DIR}"
 echo "Done. Main DuckDB: ${DUCKDB_PATH}"
 echo "Key debug report: ${DERIVED_DIR}/qc/curated_resource_debug.md"
 echo "Expression/RNAseq status: ${DERIVED_DIR}/qc/expression_resource_status.tsv"

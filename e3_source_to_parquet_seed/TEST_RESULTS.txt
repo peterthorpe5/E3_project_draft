@@ -26,11 +26,11 @@ test_coalesce_columns_sql_returns_single_expression_without_coalesce (test_curat
 test_safe_view_suffix_removes_common_prefixes (test_curated_sql_generation.TestCuratedSqlGeneration.test_safe_view_suffix_removes_common_prefixes) ... ok
 test_try_cast_numeric_sql_wraps_expression (test_curated_sql_generation.TestCuratedSqlGeneration.test_try_cast_numeric_sql_wraps_expression) ... ok
 test_parquet_paths_can_skip_magic_validation (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_can_skip_magic_validation)
-Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmpg3el0c5d/._invalid.parquet
+Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmphnhyebt2/._invalid.parquet
 ok
 test_parquet_paths_skip_invalid_and_sidecar_files (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_skip_invalid_and_sidecar_files)
-Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmp213hum8q/nested/._good.parquet
-Skipping invalid Parquet-like file: /tmp/tmp213hum8q/nested/invalid.parquet
+Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpeilcwnzs/nested/._good.parquet
+Skipping invalid Parquet-like file: /tmp/tmpeilcwnzs/nested/invalid.parquet
 ok
 test_view_name_for_parquet_is_stable (test_duckdb_views.TestDuckdbViewHelpers.test_view_name_for_parquet_is_stable)
 A nested parquet path should become a stable view name. ... ok
@@ -68,16 +68,22 @@ test_logical_role_guess (test_manifest.TestManifestUtilities.test_logical_role_g
 Path keywords should provide useful role guesses. ... ok
 test_safe_name_removes_problem_characters (test_manifest.TestManifestUtilities.test_safe_name_removes_problem_characters)
 Safe names should be stable and filesystem friendly. ... ok
+test_manifest_step_uses_out_dir_argument (test_pipeline_wrapper.TestPipelineWrapper.test_manifest_step_uses_out_dir_argument)
+The manifest script requires --out-dir, not --out-tsv. ... ok
+test_optional_derived_dir_argument_is_supported (test_pipeline_wrapper.TestPipelineWrapper.test_optional_derived_dir_argument_is_supported)
+The wrapper should allow a custom output directory as argument 3. ... ok
+test_wrapper_reports_key_outputs (test_pipeline_wrapper.TestPipelineWrapper.test_wrapper_reports_key_outputs)
+The wrapper should print the important output locations. ... ok
 test_count_by_counts_blank_values (test_reports.TestReportHelpers.test_count_by_counts_blank_values) ... ok
 test_markdown_table_handles_empty_records (test_reports.TestReportHelpers.test_markdown_table_handles_empty_records) ... ok
 test_markdown_table_limits_rows (test_reports.TestReportHelpers.test_markdown_table_limits_rows) ... ok
 test_read_tsv_returns_empty_for_missing_file (test_reports.TestReportHelpers.test_read_tsv_returns_empty_for_missing_file) ... ok
 test_write_files_used_report_creates_markdown (test_reports.TestReportHelpers.test_write_files_used_report_creates_markdown) ... ok
 test_add_source_columns (test_tabular.TestTabularUtilities.test_add_source_columns)
-Source metadata should be added to every tabular record. ... /usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecdcdb022f0>
+Source metadata should be added to every tabular record. ... /usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ead2311a2f0>
   def append(self, code):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
-/usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ecdcdb027a0>
+/usr/lib/python3.13/re/_parser.py:175: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7ead2311a7a0>
   def append(self, code):
 ResourceWarning: Enable tracemalloc to get the object allocation traceback
 ok
@@ -91,6 +97,6 @@ test_text_line_ingestion (test_tabular.TestTabularUtilities.test_text_line_inges
 Text files should be preserved line by line. ... ok
 
 ----------------------------------------------------------------------
-Ran 54 tests in 0.036s
+Ran 57 tests in 0.035s
 
 OK
