@@ -1,0 +1,8 @@
+setting	value	description
+E3_RESOURCE_DUCKDB	/path/to/derived/duckdb/e3_protac_resource.duckdb	DuckDB created by the source-to-Parquet E3 PROTAC resource pipeline.
+E3_RESOURCE_DERIVED_DIR	/path/to/derived	Derived directory containing qc/, parquet/, duckdb/ and docs/.
+E3_EXPRESSION_DUCKDB	/path/to/e3_expression.duckdb	Optional Expression Atlas DuckDB created by the expression-downloader pipeline.
+E3_MAX_TABLE_ROWS	1000	Maximum rows collected for preview tables.
+E3_DEFAULT_EXPRESSION_UNIT	TPM	Default expression unit for Expression Atlas filters.
+E3_SHINY_HOST	127.0.0.1	Host used by shiny::runApp.
+E3_SHINY_PORT	3838	Port used by shiny::runApp; 0 lets Shiny choose a free port.

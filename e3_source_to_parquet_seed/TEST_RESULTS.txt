@@ -1,0 +1,98 @@
+E3 source-to-Parquet seed package v0.2.0 test results
+
+Command:
+    python -m unittest discover -s tests -v
+
+Result:
+    OK
+
+Tests run:
+    26
+
+Additional syntax check:
+    python -m compileall -q e3parquet scripts tests
+    Exit code: 0
+
+Notes:
+    The package preparation sandbox does not have pyarrow or duckdb installed,
+    so tests cover pure Python parsing, metadata preservation, folder
+    canonicalisation, macOS sidecar filtering, Parquet magic-byte validation,
+    and inherited-Parquet copy helper logic.
+
+    The sandbox prints an unrelated spreadsheet runtime warmup warning at
+    Python startup. The unittest and compileall exit codes were both 0.
+
+Raw unittest output:
+Spreadsheet runtime warmup failed during python startup
+Traceback (most recent call last):
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/patches/warm_spreadsheet_runtime_on_startup.py", line 26, in warm_spreadsheet_runtime_on_startup
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 785, in warm_spreadsheet_runtime
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 720, in _warm_feature_flows
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/spreadsheet_warmup.py", line 704, in _warm_collaboration_flows
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/generated/interface/models.py", line 30820, in hydrate_crdt_from_proto
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/remote.py", line 749, in __call__
+  File "/tmp/tmp.yTcnQsZYiA/artifact_tool_v2-2.8.4/artifact_tool/rpc/client.py", line 150, in call
+artifact_tool.rpc.client.RemoteError: hydrateCrdtFromProto requires an empty collaborative document.
+test_clean_macos_sidecar_files_dry_run_and_delete (test_cleanup.TestCleanupHelpers.test_clean_macos_sidecar_files_dry_run_and_delete)
+Dry-run should not delete; delete mode should remove the sidecar. ... ok
+test_find_macos_sidecar_files (test_cleanup.TestCleanupHelpers.test_find_macos_sidecar_files)
+Only sidecar files should be returned. ... ok
+test_parquet_paths_can_skip_magic_validation (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_can_skip_magic_validation)
+Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmphs2b1va_/._invalid.parquet
+ok
+test_parquet_paths_skip_invalid_and_sidecar_files (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_skip_invalid_and_sidecar_files)
+Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpbaq4zc65/nested/._good.parquet
+Skipping invalid Parquet-like file: /tmp/tmpbaq4zc65/nested/invalid.parquet
+ok
+test_view_name_for_parquet_is_stable (test_duckdb_views.TestDuckdbViewHelpers.test_view_name_for_parquet_is_stable)
+A nested parquet path should become a stable view name. ... ok
+test_copy_existing_parquets_skips_sidecars_and_invalid_files (test_existing_parquet_copy.TestCopyExistingParquets.test_copy_existing_parquets_skips_sidecars_and_invalid_files)
+AppleDouble files and invalid Parquet-like files should not be copied. ... Skipping macOS sidecar Parquet: Other_things/Denbi/._realigned_clusters.parquet
+Skipping invalid Parquet-like file: Other_things/Denbi/bad.parquet
+ok
+test_infer_accession_from_uniprot_header (test_fasta.TestFastaParsing.test_infer_accession_from_uniprot_header)
+UniProt-style headers should expose the accession token. ... ok
+test_parse_fasta_preserves_header_and_metadata (test_fasta.TestFastaParsing.test_parse_fasta_preserves_header_and_metadata)
+FASTA parsing should preserve sequence, header and source metadata. ... ok
+test_derived_output_path_preserves_nested_meaning (test_io_utils.TestCanonicalPaths.test_derived_output_path_preserves_nested_meaning)
+Derived Parquet outputs should live in explicit nested folders. ... ok
+test_main_folder_e3_database_is_renamed_in_derived_path (test_io_utils.TestCanonicalPaths.test_main_folder_e3_database_is_renamed_in_derived_path)
+Inherited vague folders should become explicit derived folders. ... ok
+test_other_things_deepclust_is_renamed_in_derived_path (test_io_utils.TestCanonicalPaths.test_other_things_deepclust_is_renamed_in_derived_path)
+DeepClust outputs should get a clear derived prefix. ... ok
+test_safe_path_from_relative_removes_spaces (test_io_utils.TestCanonicalPaths.test_safe_path_from_relative_removes_spaces)
+Safe nested paths should keep hierarchy while removing bad chars. ... ok
+test_table_name_uses_canonical_path (test_io_utils.TestCanonicalPaths.test_table_name_uses_canonical_path)
+Derived table names should avoid the inherited Main_folder wording. ... ok
+test_iter_source_files_skips_nested_sidecar_files (test_io_utils.TestHiddenAndParquetDetection.test_iter_source_files_skips_nested_sidecar_files)
+Source iteration should not include macOS sidecar files. ... ok
+test_nested_macos_sidecar_part_is_detected (test_io_utils.TestHiddenAndParquetDetection.test_nested_macos_sidecar_part_is_detected)
+Any AppleDouble path component should be treated as hidden. ... ok
+test_probable_parquet_requires_magic_bytes (test_io_utils.TestHiddenAndParquetDetection.test_probable_parquet_requires_magic_bytes)
+Real Parquet-like files should have PAR1 header and footer. ... ok
+test_manifest_contains_source_metadata (test_manifest.TestBuildFileManifest.test_manifest_contains_source_metadata)
+A small source tree should produce deterministic manifest records. ... ok
+test_file_format_guess (test_manifest.TestManifestUtilities.test_file_format_guess)
+Common inherited file suffixes should be classified. ... ok
+test_hidden_macos_sidecar_detection (test_manifest.TestManifestUtilities.test_hidden_macos_sidecar_detection)
+macOS resource-fork files should be recognised. ... ok
+test_logical_role_guess (test_manifest.TestManifestUtilities.test_logical_role_guess)
+Path keywords should provide useful role guesses. ... ok
+test_safe_name_removes_problem_characters (test_manifest.TestManifestUtilities.test_safe_name_removes_problem_characters)
+Safe names should be stable and filesystem friendly. ... ok
+test_add_source_columns (test_tabular.TestTabularUtilities.test_add_source_columns)
+Source metadata should be added to every tabular record. ... ok
+test_detect_delimiter_prefers_tabs (test_tabular.TestTabularUtilities.test_detect_delimiter_prefers_tabs)
+Delimiter detection should handle TSV files. ... ok
+test_output_table_name_includes_sheet (test_tabular.TestTabularUtilities.test_output_table_name_includes_sheet)
+Excel sheet names should be reflected in output table names. ... ok
+test_read_csv_preserves_values_as_strings (test_tabular.TestTabularUtilities.test_read_csv_preserves_values_as_strings)
+CSV reading should preserve input values as strings. ... ok
+test_text_line_ingestion (test_tabular.TestTabularUtilities.test_text_line_ingestion)
+Text files should be preserved line by line. ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.032s
+
+OK
+

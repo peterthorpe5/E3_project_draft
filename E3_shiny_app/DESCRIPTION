@@ -1,0 +1,36 @@
+Package: E3ExpressionShiny
+Title: Shiny Explorer for E3 PROTAC Expression and Source-First Resource Data
+Version: 0.3.0
+Authors@R: c(
+    person("Peter", "Thorpe", role = c("aut", "cre"), email = "p.thorpe@dundee.ac.uk")
+    )
+Description: A modular Shiny application for querying and visualising
+    Expression Atlas-derived expression data and the source-first E3 PROTAC
+    Parquet/DuckDB resource rebuilt from inherited project files. The
+    application uses DuckDB-backed bounded queries and is intended to remain
+    extensible for E3 ligase, ligandability, literature, GO, sequence,
+    Orthofinder and structural-conservation modules.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.3.0)
+Imports:
+    bslib,
+    dplyr,
+    DT,
+    duckplyr,
+    ggplot2,
+    shiny,
+    plotly,
+    rlang,
+    shinycssloaders,
+    stringr,
+    tibble,
+    tools
+Suggests:
+    DBI,
+    duckdb,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
