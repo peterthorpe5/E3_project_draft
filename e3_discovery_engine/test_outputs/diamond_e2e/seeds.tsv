@@ -1,0 +1,2 @@
+seed_id	source_value	source_column	source_row	source_path	seed_metadata_json
+E3A1	E3A1	Entry	2	/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/tests/fixtures/e3_seeds.csv	"{""Category"":""RING"",""Entry"":""E3A1"",""Name"":""Known E3 seed"",""Organism"":""Example species A""}"

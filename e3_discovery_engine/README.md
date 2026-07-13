@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.0**
+Version **0.1.2**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:
@@ -31,6 +31,14 @@ prototype. This implementation adds:
 - console and persistent file logging;
 - unit, integration, synthetic end-to-end and optional real-DIAMOND tests;
 - retained legacy code for traceability, not execution.
+
+## DIAMOND 2.2 command-line compatibility
+
+The workflow uses DIAMOND's canonical `--db` option for clustering and
+realignment. DIAMOND 2.2.x does not accept `--database` as a long option,
+even though some documentation describes the input as “database”. Supported
+masking values are validated before execution: `none`, `seg`, `seg-all` and
+`tantan`.
 
 ## Scientific interpretation
 

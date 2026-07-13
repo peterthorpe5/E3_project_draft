@@ -12,9 +12,9 @@ test_build_parser_requires_command_and_reads_log_file (unit.test_cli.CliTests.te
                     {prepare,build-resource,write-provenance,convert-clusters,convert-realignments,diamond-makedb,diamond-deepclust,diamond-realign,aggregate-benchmarks} ...
 e3-discovery: error: the following arguments are required: command
 ok
-test_main_returns_two_for_expected_error (unit.test_cli.CliTests.test_main_returns_two_for_expected_error) ... 2026-07-13 15:24:24 [ERROR] e3_discovery: Workflow stage failed: x
+test_main_returns_two_for_expected_error (unit.test_cli.CliTests.test_main_returns_two_for_expected_error) ... 2026-07-13 15:35:41 [ERROR] e3_discovery: Workflow stage failed: x
 Traceback (most recent call last):
-  File "/mnt/data/e3_discovery_engine_m1_v0_1_1/src/e3_discovery/cli.py", line 224, in main
+  File "/mnt/data/e3_discovery_engine_m1_v0_1_2/src/e3_discovery/cli.py", line 224, in main
     result = run_command(args)
   File "/usr/lib/python3.13/unittest/mock.py", line 1169, in __call__
     return self._mock_call(*args, **kwargs)
@@ -39,16 +39,16 @@ test_run_command_write_provenance (unit.test_cli.CliTests.test_run_command_write
 test_run_diamond_stage_rejects_unknown (unit.test_cli.CliTests.test_run_diamond_stage_rejects_unknown) ... ok
 test_run_diamond_stages (unit.test_cli.CliTests.test_run_diamond_stages) ... ok
 test_classify_alignment_pass_and_fail (unit.test_clusters.ClusterTests.test_classify_alignment_pass_and_fail) ... ok
-test_cluster_tsv_rejects_bad_header (unit.test_clusters.ClusterTests.test_cluster_tsv_rejects_bad_header) ... 2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpk3w9stm9/bad.tsv
+test_cluster_tsv_rejects_bad_header (unit.test_clusters.ClusterTests.test_cluster_tsv_rejects_bad_header) ... 2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpkut6mb7m/bad.tsv
 ok
-test_cluster_tsv_to_parquet (unit.test_clusters.ClusterTests.test_cluster_tsv_to_parquet) ... 2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpmfwnmlvk/clusters.tsv
-2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converted 2 cluster membership rows across 1 representatives
+test_cluster_tsv_to_parquet (unit.test_clusters.ClusterTests.test_cluster_tsv_to_parquet) ... 2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpmg3_ty2y/clusters.tsv
+2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converted 2 cluster membership rows across 1 representatives
 ok
 test_compute_coverage (unit.test_clusters.ClusterTests.test_compute_coverage) ... ok
-test_realign_tsv_rejects_missing_length (unit.test_clusters.ClusterTests.test_realign_tsv_rejects_missing_length) ... 2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmp_a177xjr/bad.tsv
+test_realign_tsv_rejects_missing_length (unit.test_clusters.ClusterTests.test_realign_tsv_rejects_missing_length) ... 2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmp8f7eho5y/bad.tsv
 ok
-test_realign_tsv_to_parquet (unit.test_clusters.ClusterTests.test_realign_tsv_to_parquet) ... 2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmpglws6cs5/realign.tsv
-2026-07-13 15:24:24 [INFO] e3_discovery.clusters: Converted 1 realignments; 1 passed all strict thresholds
+test_realign_tsv_to_parquet (unit.test_clusters.ClusterTests.test_realign_tsv_to_parquet) ... 2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmps6yte3c4/realign.tsv
+2026-07-13 15:35:41 [INFO] e3_discovery.clusters: Converted 1 realignments; 1 passed all strict thresholds
 ok
 test_thresholds_from_mapping (unit.test_clusters.ClusterTests.test_thresholds_from_mapping) ... ok
 test_thresholds_validate (unit.test_clusters.ClusterTests.test_thresholds_validate) ... ok
@@ -65,59 +65,61 @@ test_validate_config_rejects_missing_section (unit.test_config.ConfigTests.test_
 test_validate_config_rejects_non_list_cluster_steps (unit.test_config.ConfigTests.test_validate_config_rejects_non_list_cluster_steps) ... ok
 test_build_deepclust_command_approximate (unit.test_diamond.DiamondTests.test_build_deepclust_command_approximate) ... ok
 test_build_deepclust_command_exact_and_options (unit.test_diamond.DiamondTests.test_build_deepclust_command_exact_and_options) ... ok
+test_build_deepclust_command_rejects_invalid_identity_mode (unit.test_diamond.DiamondTests.test_build_deepclust_command_rejects_invalid_identity_mode) ... ok
+test_build_deepclust_command_rejects_invalid_masking (unit.test_diamond.DiamondTests.test_build_deepclust_command_rejects_invalid_masking) ... ok
 test_build_makedb_command (unit.test_diamond.DiamondTests.test_build_makedb_command) ... ok
 test_build_realign_command_has_exact_fields (unit.test_diamond.DiamondTests.test_build_realign_command_has_exact_fields) ... ok
 test_get_diamond_version (unit.test_diamond.DiamondTests.test_get_diamond_version) ... ok
 test_parse_semantic_version (unit.test_diamond.DiamondTests.test_parse_semantic_version) ... ok
 test_read_log_tail (unit.test_diamond.DiamondTests.test_read_log_tail) ... ok
 test_require_diamond_features (unit.test_diamond.DiamondTests.test_require_diamond_features) ... ok
-test_run_external_command_success_and_failure (unit.test_diamond.DiamondTests.test_run_external_command_success_and_failure) ... 2026-07-13 15:24:24 [INFO] e3_discovery.diamond: Running external command: python -c print('ok')
-2026-07-13 15:24:25 [INFO] e3_discovery.diamond: External command completed successfully
-2026-07-13 15:24:25 [INFO] e3_discovery.diamond: Running external command: python -c print('diagnostic'); raise SystemExit(3)
-2026-07-13 15:24:26 [ERROR] e3_discovery.diamond: External command failed with exit code 3; see /tmp/tmpc8axv5iq/log.txt
+test_run_external_command_success_and_failure (unit.test_diamond.DiamondTests.test_run_external_command_success_and_failure) ... 2026-07-13 15:35:41 [INFO] e3_discovery.diamond: Running external command: python -c print('ok')
+2026-07-13 15:35:42 [INFO] e3_discovery.diamond: External command completed successfully
+2026-07-13 15:35:42 [INFO] e3_discovery.diamond: Running external command: python -c print('diagnostic'); raise SystemExit(3)
+2026-07-13 15:35:44 [ERROR] e3_discovery.diamond: External command failed with exit code 3; see /tmp/tmps07qsspb/log.txt
 ok
 test_validate_expected_outputs (unit.test_diamond.DiamondTests.test_validate_expected_outputs) ... ok
-test_aggregate_missing_or_empty_directory (unit.test_edge_cases.BenchmarkEdgeCaseTests.test_aggregate_missing_or_empty_directory) ... 2026-07-13 15:24:26 [INFO] e3_discovery.benchmarks: Aggregating benchmark files below /tmp/tmp416o6yk1/missing
-2026-07-13 15:24:26 [INFO] e3_discovery.benchmarks: Aggregating benchmark files below /tmp/tmp416o6yk1
+test_aggregate_missing_or_empty_directory (unit.test_edge_cases.BenchmarkEdgeCaseTests.test_aggregate_missing_or_empty_directory) ... 2026-07-13 15:35:44 [INFO] e3_discovery.benchmarks: Aggregating benchmark files below /tmp/tmp9bpq035l/missing
+2026-07-13 15:35:44 [INFO] e3_discovery.benchmarks: Aggregating benchmark files below /tmp/tmp9bpq035l
 ok
 test_parse_missing_file_invalid_value_and_empty_rows (unit.test_edge_cases.BenchmarkEdgeCaseTests.test_parse_missing_file_invalid_value_and_empty_rows) ... ok
 test_summary_rejects_missing_rule_and_times (unit.test_edge_cases.BenchmarkEdgeCaseTests.test_summary_rejects_missing_rule_and_times) ... ok
-test_cluster_conversion_rejects_batch_blank_and_empty (unit.test_edge_cases.ClusterEdgeCaseTests.test_cluster_conversion_rejects_batch_blank_and_empty) ... 2026-07-13 15:24:26 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpf6z1jici/blank.tsv
-2026-07-13 15:24:26 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmpf6z1jici/empty.tsv
+test_cluster_conversion_rejects_batch_blank_and_empty (unit.test_edge_cases.ClusterEdgeCaseTests.test_cluster_conversion_rejects_batch_blank_and_empty) ... 2026-07-13 15:35:44 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmprmm1j5u4/blank.tsv
+2026-07-13 15:35:44 [INFO] e3_discovery.clusters: Converting cluster membership TSV: /tmp/tmprmm1j5u4/empty.tsv
 ok
 test_private_header_and_number_parsers (unit.test_edge_cases.ClusterEdgeCaseTests.test_private_header_and_number_parsers) ... ok
-test_realign_conversion_rejects_batch_blank_and_empty (unit.test_edge_cases.ClusterEdgeCaseTests.test_realign_conversion_rejects_batch_blank_and_empty) ... 2026-07-13 15:24:26 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmpco68n61t/blank.tsv
-2026-07-13 15:24:26 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmpco68n61t/empty.tsv
+test_realign_conversion_rejects_batch_blank_and_empty (unit.test_edge_cases.ClusterEdgeCaseTests.test_realign_conversion_rejects_batch_blank_and_empty) ... 2026-07-13 15:35:44 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmppvx7llml/blank.tsv
+2026-07-13 15:35:44 [INFO] e3_discovery.clusters: Converting and filtering realignment TSV: /tmp/tmppvx7llml/empty.tsv
 ok
 test_threshold_validation_and_negative_coverage (unit.test_edge_cases.ClusterEdgeCaseTests.test_threshold_validation_and_negative_coverage) ... ok
 test_config_rejects_invalid_required_values (unit.test_edge_cases.ConfigEdgeCaseTests.test_config_rejects_invalid_required_values) ... ok
 test_load_missing_and_private_mapping (unit.test_edge_cases.ConfigEdgeCaseTests.test_load_missing_and_private_mapping) ... ok
 test_external_and_output_validation (unit.test_edge_cases.DiamondEdgeCaseTests.test_external_and_output_validation) ... ok
 test_feature_and_command_validation (unit.test_edge_cases.DiamondEdgeCaseTests.test_feature_and_command_validation) ... ok
-test_get_version_failure (unit.test_edge_cases.DiamondEdgeCaseTests.test_get_version_failure) ... 2026-07-13 15:24:26 [ERROR] e3_discovery.diamond: Could not determine DIAMOND version; exit code 1
+test_get_version_failure (unit.test_edge_cases.DiamondEdgeCaseTests.test_get_version_failure) ... 2026-07-13 15:35:44 [ERROR] e3_discovery.diamond: Could not determine DIAMOND version; exit code 1
 ok
 test_capture_command_version_oserror (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_capture_command_version_oserror) ... ok
-test_fasta_empty_header_and_empty_sample (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_fasta_empty_header_and_empty_sample) ... 2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Preparing 1 proteome FASTA files using identifier mode prefix_sample
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Reading sample s from /tmp/tmpe8wyu5b5/empty.fasta
+test_fasta_empty_header_and_empty_sample (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_fasta_empty_header_and_empty_sample) ... 2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Preparing 1 proteome FASTA files using identifier mode prefix_sample
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Reading sample s from /tmp/tmpfugnrgt_/empty.fasta
 ok
 test_manifest_missing_empty_duplicate_path_and_sidecar (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_manifest_missing_empty_duplicate_path_and_sidecar) ... ok
 test_missing_empty_and_headerless_inputs (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_missing_empty_and_headerless_inputs) ... ok
-test_seed_column_and_no_valid_seeds (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_seed_column_and_no_valid_seeds) ... 2026-07-13 15:24:26 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmpgy6f92s2/seeds.csv
+test_seed_column_and_no_valid_seeds (unit.test_edge_cases.FileAndManifestEdgeCaseTests.test_seed_column_and_no_valid_seeds) ... 2026-07-13 15:35:44 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmpjm726mdm/seeds.csv
 ok
 test_extract_entry_uniprot_and_plain (unit.test_fasta.FastaTests.test_extract_entry_uniprot_and_plain) ... ok
 test_iter_fasta_plain_and_gzip (unit.test_fasta.FastaTests.test_iter_fasta_plain_and_gzip) ... ok
 test_iter_fasta_rejects_sequence_before_header (unit.test_fasta.FastaTests.test_iter_fasta_rejects_sequence_before_header) ... ok
 test_make_internal_id_modes (unit.test_fasta.FastaTests.test_make_internal_id_modes) ... ok
 test_normalise_sequence_id (unit.test_fasta.FastaTests.test_normalise_sequence_id) ... ok
-test_prepare_combined_fasta_rejects_duplicates_in_preserve_mode (unit.test_fasta.FastaTests.test_prepare_combined_fasta_rejects_duplicates_in_preserve_mode) ... 2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Preparing 2 proteome FASTA files using identifier mode preserve
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Reading sample a from /tmp/tmpnvbi2f8b/a.fasta
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Prepared sample a: 1 sequences, 3 residues
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Reading sample b from /tmp/tmpnvbi2f8b/b.fasta
+test_prepare_combined_fasta_rejects_duplicates_in_preserve_mode (unit.test_fasta.FastaTests.test_prepare_combined_fasta_rejects_duplicates_in_preserve_mode) ... 2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Preparing 2 proteome FASTA files using identifier mode preserve
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Reading sample a from /tmp/tmpn6tcwwhz/a.fasta
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Prepared sample a: 1 sequences, 3 residues
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Reading sample b from /tmp/tmpn6tcwwhz/b.fasta
 ok
-test_prepare_combined_fasta_streams_metadata (unit.test_fasta.FastaTests.test_prepare_combined_fasta_streams_metadata) ... 2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Preparing 1 proteome FASTA files using identifier mode prefix_sample
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Reading sample s1 from /tmp/tmp2h47vsxg/a.fasta
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Prepared sample s1: 1 sequences, 5 residues
-2026-07-13 15:24:26 [INFO] e3_discovery.fasta: Prepared combined FASTA: 1 samples, 1 sequences, 5 residues
+test_prepare_combined_fasta_streams_metadata (unit.test_fasta.FastaTests.test_prepare_combined_fasta_streams_metadata) ... 2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Preparing 1 proteome FASTA files using identifier mode prefix_sample
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Reading sample s1 from /tmp/tmpivvrjti2/a.fasta
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Prepared sample s1: 1 sequences, 5 residues
+2026-07-13 15:35:44 [INFO] e3_discovery.fasta: Prepared combined FASTA: 1 samples, 1 sequences, 5 residues
 ok
 test_sequence_schema_has_expected_fields (unit.test_fasta.FastaTests.test_sequence_schema_has_expected_fields) ... ok
 test_validate_protein_sequence (unit.test_fasta.FastaTests.test_validate_protein_sequence) ... ok
@@ -139,38 +141,38 @@ test_sha256_rejects_bad_chunk_size (unit.test_io_utils.IoUtilsTests.test_sha256_
 test_write_tsv_uses_union_of_fields (unit.test_io_utils.IoUtilsTests.test_write_tsv_uses_union_of_fields) ... ok
 test_get_logger_returns_named_logger (unit.test_logging_utils.LoggingUtilsTests.test_get_logger_returns_named_logger) ... ok
 test_repeated_setup_does_not_duplicate_handlers (unit.test_logging_utils.LoggingUtilsTests.test_repeated_setup_does_not_duplicate_handlers) ... ok
-test_setup_logging_writes_file (unit.test_logging_utils.LoggingUtilsTests.test_setup_logging_writes_file) ... 2026-07-13 15:24:26 [DEBUG] test_logger: debug message
+test_setup_logging_writes_file (unit.test_logging_utils.LoggingUtilsTests.test_setup_logging_writes_file) ... 2026-07-13 15:35:44 [DEBUG] test_logger: debug message
 ok
 test_read_sample_manifest_requires_columns (unit.test_manifest.ManifestTests.test_read_sample_manifest_requires_columns) ... ok
-test_read_sample_manifest_retains_metadata (unit.test_manifest.ManifestTests.test_read_sample_manifest_retains_metadata) ... 2026-07-13 15:24:26 [INFO] e3_discovery.manifest: Loaded 1 proteome samples from /tmp/tmpwmqjfuvb/samples.tsv
+test_read_sample_manifest_retains_metadata (unit.test_manifest.ManifestTests.test_read_sample_manifest_retains_metadata) ... 2026-07-13 15:35:44 [INFO] e3_discovery.manifest: Loaded 1 proteome samples from /tmp/tmpi4_fmd2n/samples.tsv
 ok
 test_validate_sample_records_rejects_bad_id (unit.test_manifest.ManifestTests.test_validate_sample_records_rejects_bad_id) ... ok
 test_validate_sample_records_rejects_duplicate_ids (unit.test_manifest.ManifestTests.test_validate_sample_records_rejects_duplicate_ids) ... ok
 test_validate_sample_records_rejects_missing_fasta (unit.test_manifest.ManifestTests.test_validate_sample_records_rejects_missing_fasta) ... ok
-test_write_sample_manifest_roundtrip (unit.test_manifest.ManifestTests.test_write_sample_manifest_roundtrip) ... 2026-07-13 15:24:26 [INFO] e3_discovery.manifest: Loaded 1 proteome samples from /tmp/tmpiq5m061p/samples.tsv
+test_write_sample_manifest_roundtrip (unit.test_manifest.ManifestTests.test_write_sample_manifest_roundtrip) ... 2026-07-13 15:35:44 [INFO] e3_discovery.manifest: Loaded 1 proteome samples from /tmp/tmpeu14420b/samples.tsv
 ok
 test_paths_from_config (unit.test_pipeline.PipelineTests.test_paths_from_config) ... ok
 test_thresholds_from_config (unit.test_pipeline.PipelineTests.test_thresholds_from_config) ... ok
 test_build_file_manifest_existing_and_missing (unit.test_provenance.ProvenanceTests.test_build_file_manifest_existing_and_missing) ... ok
 test_capture_command_version (unit.test_provenance.ProvenanceTests.test_capture_command_version) ... ok
 test_capture_software_versions_handles_missing (unit.test_provenance.ProvenanceTests.test_capture_software_versions_handles_missing) ... ok
-test_write_run_manifest (unit.test_provenance.ProvenanceTests.test_write_run_manifest) ... 2026-07-13 15:24:26 [INFO] e3_discovery.provenance: Writing run provenance manifest: /tmp/tmpx7rxixkf/manifest.json
-2026-07-13 15:24:26 [INFO] e3_discovery.provenance: Wrote provenance for 1 files
+test_write_run_manifest (unit.test_provenance.ProvenanceTests.test_write_run_manifest) ... 2026-07-13 15:35:44 [INFO] e3_discovery.provenance: Writing run provenance manifest: /tmp/tmpzhxiyonf/manifest.json
+2026-07-13 15:35:44 [INFO] e3_discovery.provenance: Wrote provenance for 1 files
 ok
 test_example_configurations_are_separate (unit.test_repository_contract.RepositoryContractTests.test_example_configurations_are_separate) ... ok
 test_legacy_code_is_labelled_reference_only (unit.test_repository_contract.RepositoryContractTests.test_legacy_code_is_labelled_reference_only) ... ok
 test_required_documentation_exists (unit.test_repository_contract.RepositoryContractTests.test_required_documentation_exists) ... ok
-test_build_resource_rejects_bad_duckdb_threads (unit.test_resource.ResourceUnitTests.test_build_resource_rejects_bad_duckdb_threads) ... 2026-07-13 15:24:26 [INFO] e3_discovery.resource: Building curated DuckDB resource: resource.duckdb
+test_build_resource_rejects_bad_duckdb_threads (unit.test_resource.ResourceUnitTests.test_build_resource_rejects_bad_duckdb_threads) ... 2026-07-13 15:35:44 [INFO] e3_discovery.resource: Building curated DuckDB resource: resource.duckdb
 ok
 test_get_table_row_counts (unit.test_resource.ResourceUnitTests.test_get_table_row_counts) ... ok
 test_sql_literal (unit.test_resource.ResourceUnitTests.test_sql_literal) ... ok
 test_validate_resource_reports_failures (unit.test_resource.ResourceUnitTests.test_validate_resource_reports_failures) ... ok
 test_choose_seed_column_explicit_and_auto (unit.test_seeds.SeedsTests.test_choose_seed_column_explicit_and_auto) ... ok
 test_normalise_seed_identifier (unit.test_seeds.SeedsTests.test_normalise_seed_identifier) ... ok
-test_prepare_seed_table_deduplicates_and_preserves_metadata (unit.test_seeds.SeedsTests.test_prepare_seed_table_deduplicates_and_preserves_metadata) ... 2026-07-13 15:24:27 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmpetcr8qzz/seeds.csv
-2026-07-13 15:24:27 [INFO] e3_discovery.seeds: Prepared 2 unique E3 seeds (1 duplicate rows, 1 blank rows)
+test_prepare_seed_table_deduplicates_and_preserves_metadata (unit.test_seeds.SeedsTests.test_prepare_seed_table_deduplicates_and_preserves_metadata) ... 2026-07-13 15:35:44 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmpzsi4njed/seeds.csv
+2026-07-13 15:35:44 [INFO] e3_discovery.seeds: Prepared 2 unique E3 seeds (1 duplicate rows, 1 blank rows)
 ok
-test_prepare_seed_table_rejects_empty_data (unit.test_seeds.SeedsTests.test_prepare_seed_table_rejects_empty_data) ... 2026-07-13 15:24:27 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmplfdzs06u/seeds.csv
+test_prepare_seed_table_rejects_empty_data (unit.test_seeds.SeedsTests.test_prepare_seed_table_rejects_empty_data) ... 2026-07-13 15:35:44 [INFO] e3_discovery.seeds: Preparing known E3 seed table from /tmp/tmpxmmezhzs/seeds.csv
 ok
 test_seed_ids (unit.test_seeds.SeedsTests.test_seed_ids) ... ok
 test_seed_schema (unit.test_seeds.SeedsTests.test_seed_schema) ... ok
@@ -180,6 +182,26 @@ test_rule_logs_and_benchmarks_are_retained (unit.test_snakefile_contract.Snakefi
 test_unsafe_legacy_commands_are_absent (unit.test_snakefile_contract.SnakefileContractTests.test_unsafe_legacy_commands_are_absent) ... ok
 
 ----------------------------------------------------------------------
-Ran 127 tests in 4.015s
+Ran 129 tests in 4.517s
 
 OK (skipped=2)
+Name                                Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------
+src/e3_discovery/__init__.py            6      0   100%
+src/e3_discovery/benchmarks.py         97      0   100%
+src/e3_discovery/cli.py               104      1    99%   233
+src/e3_discovery/clusters.py          144      2    99%   198, 357
+src/e3_discovery/config.py             97      0   100%
+src/e3_discovery/constants.py           5      0   100%
+src/e3_discovery/diamond.py           104      3    97%   218, 225, 256
+src/e3_discovery/exceptions.py          4      0   100%
+src/e3_discovery/fasta.py             140      3    98%   66, 85, 188
+src/e3_discovery/io_utils.py          104      1    99%   118
+src/e3_discovery/logging_utils.py      28      0   100%
+src/e3_discovery/manifest.py           72      1    99%   81
+src/e3_discovery/pipeline.py           50      0   100%
+src/e3_discovery/provenance.py         47      2    96%   56, 92
+src/e3_discovery/resource.py          118      0   100%
+src/e3_discovery/seeds.py              61      1    98%   111
+-----------------------------------------------------------------
+TOTAL                                1181     14    99%

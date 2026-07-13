@@ -124,11 +124,20 @@ def build_deepclust_command(
         raise ValueError("mutual_cover_percent must be in (0, 100]")
     if clustering_evalue <= 0:
         raise ValueError("clustering_evalue must be positive")
+    if identity_mode not in {"exact", "approximate"}:
+        raise ValueError(
+            "identity_mode must be either 'exact' or 'approximate'"
+        )
+    allowed_masking = {None, "none", "seg", "seg-all", "tantan"}
+    if masking not in allowed_masking:
+        raise ValueError(
+            "masking must be one of: none, seg, seg-all, tantan, or None"
+        )
     identity_option = "--id" if identity_mode == "exact" else "--approx-id"
     command = [
         executable,
         "deepclust",
-        "--database",
+        "--db",
         str(database),
         "--out",
         str(output_tsv),
@@ -168,7 +177,7 @@ def build_realign_command(
     return [
         executable,
         "realign",
-        "--database",
+        "--db",
         str(database),
         "--clusters",
         str(clusters_tsv),

@@ -51,6 +51,8 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertIn("--approx-id", command)
         self.assertIn("--mutual-cover", command)
+        self.assertIn("--db", command)
+        self.assertNotIn("--database", command)
 
     def test_build_deepclust_command_exact_and_options(self):
         command = build_deepclust_command(
@@ -70,6 +72,8 @@ class DiamondTests(unittest.TestCase):
         self.assertIn("--id", command)
         self.assertIn("--cluster-steps", command)
         self.assertIn("seg", command)
+        self.assertIn("--db", command)
+        self.assertNotIn("--database", command)
 
     def test_build_realign_command_has_exact_fields(self):
         command = build_realign_command(
@@ -77,6 +81,37 @@ class DiamondTests(unittest.TestCase):
         )
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
+        self.assertIn("--db", command)
+        self.assertNotIn("--database", command)
+
+    def test_build_deepclust_command_rejects_invalid_masking(self):
+        with self.assertRaisesRegex(ValueError, "masking must be one of"):
+            build_deepclust_command(
+                "diamond",
+                Path("db"),
+                Path("out"),
+                1,
+                "4G",
+                "exact",
+                50,
+                50,
+                0.1,
+                masking="0",
+            )
+
+    def test_build_deepclust_command_rejects_invalid_identity_mode(self):
+        with self.assertRaisesRegex(ValueError, "identity_mode must be"):
+            build_deepclust_command(
+                "diamond",
+                Path("db"),
+                Path("out"),
+                1,
+                "4G",
+                "unsupported",
+                50,
+                50,
+                0.1,
+            )
 
     def test_read_log_tail(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 - 2026-07-13
+
+- Fixed DIAMOND 2.2.x command construction to use the supported `--db`
+  option for `deepclust` and `realign`; `--database` is not accepted by the
+  DIAMOND 2.2.3 binary.
+- Updated the real-DIAMOND end-to-end test to use `--masking none` rather than
+  the unsupported legacy value `0`.
+- Added defensive validation for identity mode and masking values.
+- Added regression tests that reject `--database` and invalid masking values.
+
 ## 0.1.1 - 2026-07-13
 
 - Fixed a macOS-specific unit-test failure caused by `/tmp` resolving to `/private/tmp`.

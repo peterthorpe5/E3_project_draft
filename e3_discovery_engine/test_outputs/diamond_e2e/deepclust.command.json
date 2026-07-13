@@ -1,0 +1,24 @@
+{
+  "command": [
+    "/Users/PThorpe001/miniforge3/envs/e3_discovery/bin/diamond",
+    "deepclust",
+    "--database",
+    "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/combined.dmnd",
+    "--out",
+    "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/clusters.tsv",
+    "--threads",
+    "1",
+    "--memory-limit",
+    "4G",
+    "--id",
+    "20",
+    "--mutual-cover",
+    "20",
+    "--evalue",
+    "10",
+    "--header",
+    "--masking",
+    "0"
+  ],
+  "working_directory": "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine"
+}

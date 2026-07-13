@@ -95,7 +95,7 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
                     identity_percent=20,
                     mutual_cover_percent=20,
                     clustering_evalue=10,
-                    masking="0",
+                    masking="none",
                 ),
                 root / "deepclust.log",
                 (clusters,),
