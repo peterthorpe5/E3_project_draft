@@ -1,0 +1,44 @@
+project:
+  name: e3_milestone1_production
+  description: >-
+    Identify sequence clusters containing at least one previously identified
+    E3 candidate. Cluster membership is evidence of sequence similarity and is
+    not, by itself, confirmation that every member is an E3 ligase.
+
+inputs:
+  samples_tsv: samples.production.tsv
+  e3_seed_table: known_e3_candidates.csv
+  e3_seed_column: Entry
+  identifier_mode: prefix_sample
+  compute_input_checksums: true
+
+outputs:
+  root: ../results/production_run
+
+software:
+  environment: ../workflow/envs/production.yml
+
+resources:
+  threads: 16
+  parquet_batch_size: 250000
+
+diamond:
+  executable: diamond
+  identity_mode: exact
+  identity_percent: 50
+  mutual_cover_percent: 50
+  clustering_evalue: 0.1
+  memory_limit: 64G
+  masking: seg
+  cluster_steps: []
+  extra_args: []
+
+thresholds:
+  minimum_percent_identity: 50
+  minimum_representative_coverage: 50
+  minimum_member_coverage: 50
+  minimum_bitscore: 20
+  maximum_evalue: 1.0e-10
+
+benchmarking:
+  repeats: 3

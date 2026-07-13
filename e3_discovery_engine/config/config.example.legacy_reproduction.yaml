@@ -1,0 +1,54 @@
+project:
+  name: e3_milestone1_legacy_reproduction
+  description: >-
+    Reproduce the broad inherited DIAMOND 2.1.23 DeepClust approach for
+    comparison only. Do not use this profile as the final production evidence
+    without the strict post-realignment filtering step.
+
+inputs:
+  samples_tsv: samples.production.tsv
+  e3_seed_table: known_e3_candidates.csv
+  e3_seed_column: Entry
+  identifier_mode: prefix_sample
+  compute_input_checksums: true
+
+outputs:
+  root: ../results/legacy_reproduction
+
+software:
+  environment: ../workflow/envs/legacy_diamond_2_1_23.yml
+
+resources:
+  threads: 10
+  parquet_batch_size: 250000
+
+diamond:
+  executable: diamond
+  identity_mode: approximate
+  identity_percent: 50
+  mutual_cover_percent: 50
+  clustering_evalue: 0.1
+  memory_limit: 64G
+  masking: tantan
+  cluster_steps:
+    - faster_lin
+    - fast_lin
+    - fast
+    - default
+    - sensitive
+    - very-sensitive
+  extra_args:
+    - --swipe-task-size
+    - "10000000"
+    - --anchored-swipe
+    - --no-reassign
+
+thresholds:
+  minimum_percent_identity: 50
+  minimum_representative_coverage: 50
+  minimum_member_coverage: 50
+  minimum_bitscore: 20
+  maximum_evalue: 1.0e-10
+
+benchmarking:
+  repeats: 3

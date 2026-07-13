@@ -1,0 +1,19 @@
+name: e3_discovery
+
+channels:
+  - conda-forge
+  - bioconda
+
+dependencies:
+  - python=3.12
+  - diamond=2.2.3
+  - duckdb=1.5.*
+  - python-duckdb=1.5.*
+  - pyarrow=24.*
+  - pyyaml=6.*
+  - matplotlib=3.10.*
+  - pandas=2.3.*
+  - snakemake-minimal=9.23.*
+  - pycodestyle=2.14.*
+  - coverage=7.*
+  - pip

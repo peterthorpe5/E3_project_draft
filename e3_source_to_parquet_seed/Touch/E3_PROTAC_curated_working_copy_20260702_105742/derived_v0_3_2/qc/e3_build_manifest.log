@@ -1,0 +1,11 @@
+2026-07-02 16:22:28 [ERROR] __main__: Manifest creation failed
+Traceback (most recent call last):
+  File "/Users/PThorpe001/github_repos/E3_project_draft/e3_source_to_parquet_seed/scripts/e3_build_manifest.py", line 66, in main
+    manifest = build_file_manifest(
+        raw_root=args.raw_root,
+        checksum=not args.no_checksum,
+        include_hidden=args.include_hidden,
+    )
+  File "/Users/PThorpe001/github_repos/E3_project_draft/e3_source_to_parquet_seed/e3parquet/file_manifest.py", line 44, in build_file_manifest
+    raise FileNotFoundError(f"Raw root does not exist: {raw_root}")
+FileNotFoundError: Raw root does not exist: /Users/PThorpe001/github_repos/E3_project_draft/e3_source_to_parquet_seed/Touch/E3_PROTAC_curated_working_copy_20260702_105742/raw_inherited_selected

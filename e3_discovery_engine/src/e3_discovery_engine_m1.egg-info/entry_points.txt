@@ -1,0 +1,2 @@
+[console_scripts]
+e3-discovery = e3_discovery.cli:main

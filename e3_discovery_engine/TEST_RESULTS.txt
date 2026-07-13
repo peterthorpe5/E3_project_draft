@@ -1,0 +1,30 @@
+E3 Discovery Engine: Milestone 1 v0.1.0
+Final local validation: 2026-07-13
+
+Checks completed successfully
+-----------------------------
+- Python compilation: PASS
+- PEP8 (pycodestyle, max line length 88): PASS
+- Unit/integration/end-to-end discovery: 126 tests run
+- Passed: 124
+- Skipped: 2
+- Failed/errors: 0
+- Source coverage: 99% (1161 statements; 14 not executed)
+- Function-to-test contract: PASS
+- Snakemake static safety/contract tests: PASS
+- Repository documentation/packaging contract: PASS
+- Synthetic complete end-to-end workflow: PASS
+- Wheel build: PASS
+- Wheel isolated import/CLI smoke test: PASS
+
+Deliberately skipped in this container
+--------------------------------------
+The two tests requiring a real DIAMOND executable were skipped because DIAMOND
+was not available in the container. They are included in the release and must be
+run in the pinned production Conda environment before formal scientific release:
+
+  RUN_DIAMOND_E2E=1 python -m unittest \
+    tests.end_to_end.test_external_diamond_pipeline -v
+
+A full Snakemake dry run and full 1KP+/production dataset run must also be
+completed on the intended execution platform before performance claims are made.

@@ -1,0 +1,237 @@
+"""Production Snakemake workflow for Milestone 1 E3-seeded clustering."""
+
+import os
+from pathlib import Path
+
+CONFIG_PATH = Path(
+    os.environ.get("E3_DISCOVERY_CONFIG", "config/config.yaml")
+).resolve()
+configfile: str(CONFIG_PATH)
+
+CONFIG_DIR = CONFIG_PATH.parent
+
+
+def resolve_config_path(value):
+    path = Path(str(value)).expanduser()
+    if not path.is_absolute():
+        path = CONFIG_DIR / path
+    return path.resolve()
+
+
+ROOT = resolve_config_path(config["outputs"]["root"])
+ENVIRONMENT = str(resolve_config_path(config["software"]["environment"]))
+BENCHMARK_REPEATS = int(config["benchmarking"].get("repeats", 1))
+
+COMBINED_FASTA = ROOT / "prepared_inputs" / "combined_proteomes.fasta"
+SEQUENCES_PARQUET = ROOT / "prepared_inputs" / "sequence_records.parquet"
+SAMPLE_SUMMARY = ROOT / "qc" / "sample_summary.tsv"
+SEEDS_TSV = ROOT / "prepared_inputs" / "known_e3_seeds.tsv"
+SEEDS_PARQUET = ROOT / "prepared_inputs" / "known_e3_seeds.parquet"
+DIAMOND_DB = ROOT / "diamond" / "combined_proteomes.dmnd"
+CLUSTERS_TSV = ROOT / "diamond" / "raw_deepclust_membership.tsv"
+CLUSTERS_PARQUET = ROOT / "parquet" / "raw_deepclust_membership.parquet"
+REALIGN_TSV = ROOT / "diamond" / "realigned_membership.tsv"
+REALIGN_PARQUET = ROOT / "parquet" / "realigned_membership.parquet"
+RESOURCE_DB = ROOT / "duckdb" / "e3_discovery_resource.duckdb"
+VALIDATION = ROOT / "qc" / "resource_validation.tsv"
+BENCHMARK_SUMMARY = ROOT / "benchmark_summary" / "benchmark_summary.tsv"
+RUN_MANIFEST = ROOT / "provenance" / "run_manifest.json"
+
+rule all:
+    input:
+        RESOURCE_DB,
+        VALIDATION,
+        BENCHMARK_SUMMARY,
+        RUN_MANIFEST,
+        ROOT / "fasta_exports" / "e3_seeded_representatives.fasta",
+        ROOT / "fasta_exports" / "e3_seeded_all_members.fasta",
+        ROOT / "fasta_exports" / "e3_seeded_strict_members.fasta",
+
+rule prepare_inputs:
+    output:
+        fasta=ensure(COMBINED_FASTA, non_empty=True),
+        sequences=ensure(SEQUENCES_PARQUET, non_empty=True),
+        sample_summary=ensure(SAMPLE_SUMMARY, non_empty=True),
+        seeds_tsv=ensure(SEEDS_TSV, non_empty=True),
+        seeds_parquet=ensure(SEEDS_PARQUET, non_empty=True),
+    log:
+        ROOT / "logs" / "prepare_inputs.log",
+    benchmark:
+        repeat(ROOT / "benchmarks" / "prepare_inputs.tsv", BENCHMARK_REPEATS),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli prepare \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """
+
+rule make_diamond_database:
+    input:
+        COMBINED_FASTA,
+    output:
+        ensure(DIAMOND_DB, non_empty=True),
+    log:
+        ROOT / "logs" / "diamond_makedb_rule.log",
+    benchmark:
+        repeat(ROOT / "benchmarks" / "diamond_makedb.tsv", BENCHMARK_REPEATS),
+    threads:
+        int(config["resources"]["threads"]),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli diamond-makedb \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """
+
+rule run_deepclust:
+    input:
+        DIAMOND_DB,
+    output:
+        ensure(CLUSTERS_TSV, non_empty=True),
+    log:
+        ROOT / "logs" / "diamond_deepclust_rule.log",
+    benchmark:
+        repeat(ROOT / "benchmarks" / "diamond_deepclust.tsv", BENCHMARK_REPEATS),
+    threads:
+        int(config["resources"]["threads"]),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli diamond-deepclust \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """
+
+rule realign_clusters:
+    input:
+        database=DIAMOND_DB,
+        clusters=CLUSTERS_TSV,
+    output:
+        ensure(REALIGN_TSV, non_empty=True),
+    log:
+        ROOT / "logs" / "diamond_realign_rule.log",
+    benchmark:
+        repeat(ROOT / "benchmarks" / "diamond_realign.tsv", BENCHMARK_REPEATS),
+    threads:
+        int(config["resources"]["threads"]),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli diamond-realign \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """
+
+rule convert_cluster_membership:
+    input:
+        CLUSTERS_TSV,
+    output:
+        ensure(CLUSTERS_PARQUET, non_empty=True),
+    log:
+        ROOT / "logs" / "convert_cluster_membership.log",
+    benchmark:
+        repeat(
+            ROOT / "benchmarks" / "convert_cluster_membership.tsv",
+            BENCHMARK_REPEATS,
+        ),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli convert-clusters \
+          --input {input} --output {output} > {log} 2>&1
+        """
+
+rule convert_realignments:
+    input:
+        REALIGN_TSV,
+    output:
+        ensure(REALIGN_PARQUET, non_empty=True),
+    log:
+        ROOT / "logs" / "convert_realignments.log",
+    benchmark:
+        repeat(
+            ROOT / "benchmarks" / "convert_realignments.tsv",
+            BENCHMARK_REPEATS,
+        ),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli convert-realignments \
+          --config {CONFIG_PATH:q} --input {input} --output {output} \
+          > {log} 2>&1
+        """
+
+rule build_resource:
+    input:
+        sequences=SEQUENCES_PARQUET,
+        seeds=SEEDS_PARQUET,
+        clusters=CLUSTERS_PARQUET,
+        realignments=REALIGN_PARQUET,
+    output:
+        database=ensure(RESOURCE_DB, non_empty=True),
+        validation=ensure(VALIDATION, non_empty=True),
+        representatives=ensure(
+            ROOT / "fasta_exports" / "e3_seeded_representatives.fasta",
+            non_empty=True,
+        ),
+        all_members=ensure(
+            ROOT / "fasta_exports" / "e3_seeded_all_members.fasta",
+            non_empty=True,
+        ),
+        strict_members=ROOT / "fasta_exports" / "e3_seeded_strict_members.fasta",
+    log:
+        ROOT / "logs" / "build_resource.log",
+    benchmark:
+        repeat(ROOT / "benchmarks" / "build_resource.tsv", BENCHMARK_REPEATS),
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli build-resource \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """
+
+rule aggregate_benchmarks:
+    input:
+        RESOURCE_DB,
+    output:
+        ensure(BENCHMARK_SUMMARY, non_empty=True),
+    log:
+        ROOT / "logs" / "aggregate_benchmarks.log",
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli aggregate-benchmarks \
+          --benchmark-dir {ROOT}/benchmarks \
+          --output-dir {ROOT}/benchmark_summary > {log} 2>&1
+        """
+
+rule write_provenance:
+    input:
+        RESOURCE_DB,
+        BENCHMARK_SUMMARY,
+    output:
+        ensure(RUN_MANIFEST, non_empty=True),
+    log:
+        ROOT / "logs" / "write_provenance.log",
+    conda:
+        ENVIRONMENT
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH=src python -m e3_discovery.cli write-provenance \
+          --config {CONFIG_PATH:q} > {log} 2>&1
+        """

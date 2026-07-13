@@ -1,0 +1,3 @@
+sample_id	fasta_path	species	taxon_id	proteome_id	source_database	release	licence_or_access_note
+arabidopsis_thaliana	/path/to/Arabidopsis_thaliana.fasta	Arabidopsis thaliana	3702	UP000006548	UniProt	YYYY_MM	public
+oryza_sativa	/path/to/Oryza_sativa.fasta	Oryza sativa	4530	UP000059680	UniProt	YYYY_MM	public

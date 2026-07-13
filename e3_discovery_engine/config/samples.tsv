@@ -1,0 +1,3 @@
+sample_id	fasta_path	species	taxon_id	proteome_id	source_database	release
+species_a	../tests/fixtures/species_a.fasta	Example species A	1001	UP_TEST_A	synthetic	1
+species_b	../tests/fixtures/species_b.fasta	Example species B	1002	UP_TEST_B	synthetic	1

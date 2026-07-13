@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3-discovery-engine-m1"
+version = "0.1.0"
+description = "Production E3-seeded DIAMOND DeepClust workflow"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Peter Thorpe project team"}]
+dependencies = [
+  "duckdb>=1.1,<2",
+  "matplotlib>=3.8,<4",
+  "pyarrow>=17,<26",
+  "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pycodestyle>=2.12,<3",
+  "coverage>=7,<8",
+]
+
+[project.scripts]
+e3-discovery = "e3_discovery.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pycodestyle]
+max-line-length = 88
+exclude = ".git,.snakemake,results,legacy_reference"
