@@ -10,6 +10,7 @@ from e3_discovery.diamond import (
     build_realign_command,
     get_diamond_version,
     parse_semantic_version,
+    read_log_tail,
     require_diamond_features,
     run_external_command,
     validate_expected_outputs,
@@ -77,6 +78,15 @@ class DiamondTests(unittest.TestCase):
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
 
+    def test_read_log_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "log.txt"
+            log.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            self.assertEqual(read_log_tail(log, max_lines=2), "two\nthree")
+            self.assertEqual(read_log_tail(Path(tmp) / "missing"), "")
+            with self.assertRaises(ValueError):
+                read_log_tail(log, max_lines=0)
+
     def test_run_external_command_success_and_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "log.txt"
@@ -88,11 +98,16 @@ class DiamondTests(unittest.TestCase):
             )
             self.assertIn("ok", log.read_text())
             self.assertTrue(command_record.is_file())
-            with self.assertRaises(ExternalToolError):
+            with self.assertRaises(ExternalToolError) as context:
                 run_external_command(
-                    ["python", "-c", "raise SystemExit(3)"],
+                    [
+                        "python",
+                        "-c",
+                        "print('diagnostic'); raise SystemExit(3)",
+                    ],
                     log,
                 )
+            self.assertIn("diagnostic", str(context.exception))
 
     def test_validate_expected_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,7 +4,7 @@
 
 ```bash
 conda env create -f workflow/envs/production.yml
-conda activate e3_discovery_m1_production
+conda activate e3_discovery
 python -m pip install -e .
 ```
 

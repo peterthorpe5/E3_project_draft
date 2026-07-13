@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 - 2026-07-13
+
+- Fixed a macOS-specific unit-test failure caused by `/tmp` resolving to `/private/tmp`.
+- Corrected Conda environment files for macOS-64 by removing the invalid
+  `channel_priority` key and pinning PyArrow 24.
+- Renamed the production Conda environment to `e3_discovery`.
+- Added DIAMOND log-tail reporting to external-tool exceptions.
+- Added an optional persistent output directory for the external DIAMOND
+  end-to-end test to simplify debugging.
+
 ## 0.1.0 - 2026-07-13
 
 Initial production rewrite of the inherited Milestone 1 E3 discovery engine.

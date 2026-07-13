@@ -33,6 +33,7 @@ diamond	require_diamond_features	tests/unit/test_diamond.py;tests/unit/test_edge
 diamond	build_makedb_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_deepclust_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_realign_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
+diamond	read_log_tail	tests/unit/test_diamond.py	unit/integration as listed
 diamond	run_external_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	validate_expected_outputs	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 fasta	normalise_sequence_id	tests/unit/test_fasta.py;tests/unit/test_edge_cases.py	unit/integration as listed

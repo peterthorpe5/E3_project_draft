@@ -19,7 +19,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_paths_from_config(self):
         paths = paths_from_config(self.config())
-        self.assertEqual(paths.root, Path("/tmp/example"))
+        self.assertEqual(paths.root, Path("/tmp/example").resolve())
         self.assertTrue(str(paths.resource_duckdb).endswith(".duckdb"))
 
     def test_thresholds_from_config(self):

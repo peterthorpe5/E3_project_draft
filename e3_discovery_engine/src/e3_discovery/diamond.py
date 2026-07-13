@@ -196,6 +196,27 @@ def build_realign_command(
     ]
 
 
+def read_log_tail(
+    log_path: Path,
+    max_lines: int = 40,
+    max_characters: int = 12000,
+) -> str:
+    """Return a bounded tail of a UTF-8 log file for error reporting."""
+
+    if max_lines < 1:
+        raise ValueError("max_lines must be positive")
+    if max_characters < 1:
+        raise ValueError("max_characters must be positive")
+    path = Path(log_path)
+    if not path.is_file():
+        return ""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    tail = "\n".join(text.splitlines()[-max_lines:])
+    if len(tail) > max_characters:
+        tail = tail[-max_characters:]
+    return tail
+
+
 def run_external_command(
     command: Sequence[str],
     log_path: Path,
@@ -239,9 +260,15 @@ def run_external_command(
             completed.returncode,
             log_file,
         )
+        log_tail = read_log_tail(log_file)
+        tail_message = (
+            f"\n--- log tail ---\n{log_tail}\n--- end log tail ---"
+            if log_tail
+            else ""
+        )
         raise ExternalToolError(
             f"External command failed with exit code {completed.returncode}. "
-            f"See log: {log_file}"
+            f"See log: {log_file}{tail_message}"
         )
     LOGGER.info("External command completed successfully")
 

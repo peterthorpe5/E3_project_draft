@@ -1,14 +1,13 @@
-name: e3_discovery_m1_legacy
+name: e3_discovery_legacy
 channels:
   - conda-forge
   - bioconda
-channel_priority: strict
 dependencies:
   - python=3.12
   - diamond=2.1.23
   - duckdb=1.5.*
   - python-duckdb=1.5.*
-  - pyarrow=25.*
+  - pyarrow=24.*
   - pyyaml=6.*
   - matplotlib=3.10.*
   - pandas=2.3.*

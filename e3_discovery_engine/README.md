@@ -84,7 +84,7 @@ validation.
 
 ```bash
 conda env create -f workflow/envs/production.yml
-conda activate e3_discovery_m1_production
+conda activate e3_discovery
 python -m pip install -e .
 ```
 
@@ -114,6 +114,7 @@ The test suite includes:
 Run the external DIAMOND test after creating the production environment:
 
 ```bash
+E3_DIAMOND_E2E_DIR="${PWD}/test_outputs/diamond_e2e" \
 RUN_DIAMOND_E2E=1 python -m unittest \
   tests.end_to_end.test_external_diamond_pipeline -v
 ```

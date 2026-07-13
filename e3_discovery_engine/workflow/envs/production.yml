@@ -1,9 +1,7 @@
 name: e3_discovery
-
 channels:
   - conda-forge
   - bioconda
-
 dependencies:
   - python=3.12
   - diamond=2.2.3

@@ -38,6 +38,7 @@ The script performs compilation, PEP8 checking, unit/integration/end-to-end
 execution and coverage reporting.
 
 ```bash
+E3_DIAMOND_E2E_DIR="${PWD}/test_outputs/diamond_e2e" \
 RUN_DIAMOND_E2E=1 python -m unittest \
   tests.end_to_end.test_external_diamond_pipeline -v
 ```
@@ -47,3 +48,8 @@ RUN_DIAMOND_E2E=1 python -m unittest \
 Passing the Python suite proves the data handling and resource logic against
 controlled fixtures. It does not replace a full production run with the pinned
 DIAMOND/Snakemake environment and intended input dataset.
+
+When `E3_DIAMOND_E2E_DIR` is set, commands, logs and intermediate files are
+retained at that path. External-tool exceptions also include a bounded tail of
+the relevant log so failures remain diagnosable even when temporary directories
+are cleaned.
