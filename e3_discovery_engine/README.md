@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.2**
+Version **0.1.3**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:
@@ -22,6 +22,8 @@ prototype. This implementation adds:
 - preservation of source and biological metadata;
 - streaming FASTA and Parquet processing for large datasets;
 - explicit DIAMOND version and feature checks;
+- explicit composition-statistics control so exact identity traceback does not
+  use unsupported compositionally adjusted matrices;
 - exact realignment fields and an independent strict filtering stage;
 - E3-seed detection on the union of representatives and members;
 - DuckDB and compressed Parquet interrogation tables;

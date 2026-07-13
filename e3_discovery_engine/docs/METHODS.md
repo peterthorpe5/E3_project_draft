@@ -173,3 +173,15 @@ The repository includes unit tests mapped to every Python function, integration
 tests for DuckDB/Parquet construction, a synthetic end-to-end test and an
 opt-in end-to-end test using a real DIAMOND executable. PEP8 checks, compilation,
 coverage measurement and repository-contract checks are run by `run_tests.sh`.
+
+## Exact identity and composition-based statistics
+
+Production clustering uses DIAMOND exact identity (`--id`) followed by the
+separate `realign` stage. Both operations require alignment traceback. The
+workflow therefore sets `--comp-based-stats 0` explicitly for production runs
+to avoid compositionally adjusted matrix modes that are incompatible with
+traceback in DIAMOND 2.2.3. The chosen value is recorded in configuration,
+command JSON and the run provenance. Strict identity, representative coverage,
+member coverage, bit-score and e-value thresholds are calculated from the
+realignment table rather than inferred from broad cluster membership.
+

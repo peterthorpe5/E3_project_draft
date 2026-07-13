@@ -28,6 +28,7 @@ diamond:
   identity_percent: 50
   mutual_cover_percent: 50
   clustering_evalue: 0.1
+  comp_based_stats: 1
   memory_limit: 64G
   masking: tantan
   cluster_steps:

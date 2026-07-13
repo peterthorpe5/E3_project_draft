@@ -31,6 +31,7 @@ diamond	parse_semantic_version	tests/unit/test_diamond.py;tests/unit/test_edge_c
 diamond	get_diamond_version	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	require_diamond_features	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_makedb_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
+diamond	diamond_error_hint	tests/unit/test_diamond.py	unit
 diamond	build_deepclust_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_realign_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	read_log_tail	tests/unit/test_diamond.py	unit/integration as listed

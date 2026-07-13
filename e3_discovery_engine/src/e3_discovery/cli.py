@@ -118,6 +118,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
             identity_percent=float(diamond["identity_percent"]),
             mutual_cover_percent=float(diamond["mutual_cover_percent"]),
             clustering_evalue=float(diamond["clustering_evalue"]),
+            comp_based_stats=int(diamond.get("comp_based_stats", 0)),
             cluster_steps=diamond.get("cluster_steps"),
             masking=diamond.get("masking"),
             extra_args=diamond.get("extra_args"),
@@ -132,6 +133,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
             paths.realignments_tsv,
             threads,
             memory,
+            comp_based_stats=int(diamond.get("comp_based_stats", 0)),
         )
         outputs = (paths.realignments_tsv,)
         log_name = "diamond_realign"

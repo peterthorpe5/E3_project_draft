@@ -1,1 +1,54 @@
-Error: Invalid option: database
+diamond v2.2.3.183 (C) Max Planck Society for the Advancement of Science, Benjamin J. Buchfink, University of Tuebingen
+Documentation, support and updates available at http://www.diamondsearch.org
+Please cite: http://dx.doi.org/10.1038/s41592-021-01101-x Nature Methods (2021)
+
+#CPU threads: 1
+Scoring parameters: (Matrix=BLOSUM62 Lambda=0.267 K=0.041 Penalties=11/1)
+[0, 0] Bi-directional coverage = 20.000000
+[0, 0] Sequence id cutoff = 20.000000
+[0, 0] #Volumes = 1
+[0, 0] Memory limit = 4000000000
+[0, 0] Reading volume 1/1
+[0, 0] Warning: using legacy loader on .dmnd files
+[0, 0] Computing blocks
+[0, 0] Block size = 199299338, index chunks = 1
+[0, 0] Sequences in database = 4
+Letters in database = 335
+Database blocks:
+4	339
+
+[0, 0] Writing length sorted blocks
+[0, 0] Wrote 475 bytes to disk at 0.96 MB/s
+[0, 0] Starting round 1/5 sensitivity=faster linear=true
+[0, 0] Searching blocks. Blocks=1,1
+[0, 0] Database letter count: 335
+Opening the database...  [0.001s]
+FASTA file size: 351 bytes
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-wjeIng0e1r1H//
+#Target sequences to report alignments for: unlimited
+Database:  (type: FASTA file)
+Block size = 65536000000000
+Opening the input file...  [0s]
+Opening the output file...  [0s]
+Seeking in database...  [0s]
+Loading query sequences...  [0s]
+Loaded 351 bytes from disk at 1.16634 MB/s
+Length sorting queries...  [0s]
+Algorithm: Double-indexed
+Building query histograms...  [0s]
+Seeking in database...  [0s]
+Seeking in database...  [0s]
+Initializing temporary storage...  [0.015s]
+Building reference histograms...  [0s]
+Allocating buffers...  [0s]
+Processing query block 1, reference block 1, shape 1/1.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Deallocating buffers...  [0s]
+Clearing query masking...  [0s]
+Computing alignments... Error: Traceback with adjusted matrix not supported

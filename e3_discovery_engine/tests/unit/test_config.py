@@ -21,6 +21,7 @@ def valid_config():
             "mutual_cover_percent": 50,
             "clustering_evalue": 0.1,
             "memory_limit": "8G",
+            "comp_based_stats": 1,
             "extra_args": [],
         },
         "thresholds": {
@@ -48,6 +49,19 @@ class ConfigTests(unittest.TestCase):
         config = valid_config()
         config["diamond"]["identity_mode"] = "wrong"
         with self.assertRaises(ConfigurationError):
+            validate_config(config)
+
+    def test_validate_config_rejects_adjusted_matrix_with_exact_identity(self):
+        config = valid_config()
+        config["diamond"]["identity_mode"] = "exact"
+        config["diamond"]["comp_based_stats"] = 6
+        with self.assertRaisesRegex(ConfigurationError, "must be 0 or 1"):
+            validate_config(config)
+
+    def test_validate_config_rejects_invalid_comp_based_stats(self):
+        config = valid_config()
+        config["diamond"]["comp_based_stats"] = 7
+        with self.assertRaisesRegex(ConfigurationError, "integer from 0 to 6"):
             validate_config(config)
 
     def test_validate_config_rejects_bad_threads(self):

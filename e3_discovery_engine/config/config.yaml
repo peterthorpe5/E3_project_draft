@@ -29,6 +29,7 @@ diamond:
   identity_percent: 50
   mutual_cover_percent: 50
   clustering_evalue: 0.1
+  comp_based_stats: 0
   memory_limit: 16G
   masking: seg
   cluster_steps: []

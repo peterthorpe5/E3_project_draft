@@ -2,7 +2,7 @@
   "command": [
     "/Users/PThorpe001/miniforge3/envs/e3_discovery/bin/diamond",
     "deepclust",
-    "--database",
+    "--db",
     "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/combined.dmnd",
     "--out",
     "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/clusters.tsv",
@@ -18,7 +18,7 @@
     "10",
     "--header",
     "--masking",
-    "0"
+    "none"
   ],
   "working_directory": "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine"
 }

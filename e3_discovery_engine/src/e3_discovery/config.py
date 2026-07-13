@@ -95,6 +95,19 @@ def validate_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError("diamond.cluster_steps must be a list")
     if not isinstance(diamond.get("extra_args", []), list):
         raise ConfigurationError("diamond.extra_args must be a list")
+    comp_based_stats = diamond.get("comp_based_stats", 0)
+    if (
+        not isinstance(comp_based_stats, int)
+        or not 0 <= comp_based_stats <= 6
+    ):
+        raise ConfigurationError(
+            "diamond.comp_based_stats must be an integer from 0 to 6"
+        )
+    if identity_mode == "exact" and comp_based_stats not in {0, 1}:
+        raise ConfigurationError(
+            "diamond.identity_mode 'exact' requires traceback and therefore "
+            "diamond.comp_based_stats must be 0 or 1"
+        )
 
     thresholds = _require_mapping(config, "thresholds")
     for key in (

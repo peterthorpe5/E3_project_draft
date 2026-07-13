@@ -139,3 +139,13 @@ Use a fast project/scratch filesystem, not a home directory.
 Follow `docs/RELEASE_CHECKLIST.md`, freeze the configuration and manifests,
 record the git commit, archive logs/provenance and create checksums for the
 release bundle.
+
+### `Traceback with adjusted matrix not supported`
+
+This indicates that DIAMOND was asked to produce traceback-dependent identity
+or alignment fields while using a compositionally adjusted scoring matrix.
+Use `diamond.comp_based_stats: 0` for the production workflow. The configuration
+validator rejects incompatible modes 2-6 when exact identity is selected.
+Do not remove exact identity or strict post-realignment filtering merely to
+make the command run.
+

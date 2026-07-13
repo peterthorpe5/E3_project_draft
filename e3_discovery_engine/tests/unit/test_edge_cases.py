@@ -262,6 +262,19 @@ class DiamondEdgeCaseTests(unittest.TestCase):
             build_realign_command(
                 "diamond", Path("db"), Path("c"), Path("o"), 0, "8G"
             )
+        with self.assertRaises(ValueError):
+            build_deepclust_command(
+                "diamond",
+                Path("db"),
+                Path("out"),
+                1,
+                "8G",
+                "exact",
+                50,
+                50,
+                0.1,
+                comp_based_stats=6,
+            )
 
     def test_external_and_output_validation(self):
         with self.assertRaises(ValueError):

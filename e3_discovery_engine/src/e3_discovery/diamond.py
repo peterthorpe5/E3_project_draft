@@ -110,6 +110,7 @@ def build_deepclust_command(
     identity_percent: float,
     mutual_cover_percent: float,
     clustering_evalue: float,
+    comp_based_stats: int = 0,
     cluster_steps: Optional[Sequence[str]] = None,
     masking: Optional[str] = None,
     extra_args: Optional[Sequence[str]] = None,
@@ -127,6 +128,14 @@ def build_deepclust_command(
     if identity_mode not in {"exact", "approximate"}:
         raise ValueError(
             "identity_mode must be either 'exact' or 'approximate'"
+        )
+    if not isinstance(comp_based_stats, int) or not 0 <= comp_based_stats <= 6:
+        raise ValueError("comp_based_stats must be an integer from 0 to 6")
+    if identity_mode == "exact" and comp_based_stats not in {0, 1}:
+        raise ValueError(
+            "Exact identity requires alignment traceback and is incompatible "
+            "with compositionally adjusted matrix modes 2-6; use "
+            "comp_based_stats 0 or 1"
         )
     allowed_masking = {None, "none", "seg", "seg-all", "tantan"}
     if masking not in allowed_masking:
@@ -151,6 +160,8 @@ def build_deepclust_command(
         str(mutual_cover_percent),
         "--evalue",
         str(clustering_evalue),
+        "--comp-based-stats",
+        str(comp_based_stats),
         "--header",
     ]
     if cluster_steps:
@@ -169,11 +180,17 @@ def build_realign_command(
     output_tsv: Path,
     threads: int,
     memory_limit: str,
+    comp_based_stats: int = 0,
 ) -> List[str]:
     """Build a realignment command with exact identity and length fields."""
 
     if threads < 1:
         raise ValueError("threads must be positive")
+    if comp_based_stats not in {0, 1}:
+        raise ValueError(
+            "Realignment traceback is incompatible with compositionally "
+            "adjusted matrix modes 2-6; use comp_based_stats 0 or 1"
+        )
     return [
         executable,
         "realign",
@@ -187,6 +204,8 @@ def build_realign_command(
         str(threads),
         "--memory-limit",
         str(memory_limit),
+        "--comp-based-stats",
+        str(comp_based_stats),
         "--outfmt",
         "6",
         "qseqid",
@@ -224,6 +243,19 @@ def read_log_tail(
     if len(tail) > max_characters:
         tail = tail[-max_characters:]
     return tail
+
+
+def diamond_error_hint(log_text: str) -> str:
+    """Return a focused diagnostic hint for a recognised DIAMOND error."""
+
+    normalised = str(log_text).lower()
+    if "traceback with adjusted matrix not supported" in normalised:
+        return (
+            "DIAMOND exact identity/traceback cannot be used with a "
+            "compositionally adjusted matrix. Set diamond.comp_based_stats "
+            "to 0 (recommended for this workflow) or 1."
+        )
+    return ""
 
 
 def run_external_command(
@@ -270,6 +302,8 @@ def run_external_command(
             log_file,
         )
         log_tail = read_log_tail(log_file)
+        hint = diamond_error_hint(log_tail)
+        hint_message = f"\nDiagnostic hint: {hint}" if hint else ""
         tail_message = (
             f"\n--- log tail ---\n{log_tail}\n--- end log tail ---"
             if log_tail
@@ -277,7 +311,7 @@ def run_external_command(
         )
         raise ExternalToolError(
             f"External command failed with exit code {completed.returncode}. "
-            f"See log: {log_file}{tail_message}"
+            f"See log: {log_file}{tail_message}{hint_message}"
         )
     LOGGER.info("External command completed successfully")
 

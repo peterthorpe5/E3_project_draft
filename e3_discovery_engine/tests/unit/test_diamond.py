@@ -8,6 +8,7 @@ from e3_discovery.diamond import (
     build_deepclust_command,
     build_makedb_command,
     build_realign_command,
+    diamond_error_hint,
     get_diamond_version,
     parse_semantic_version,
     read_log_tail,
@@ -51,6 +52,9 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertIn("--approx-id", command)
         self.assertIn("--mutual-cover", command)
+        self.assertEqual(
+            command[command.index("--comp-based-stats") + 1], "0"
+        )
         self.assertIn("--db", command)
         self.assertNotIn("--database", command)
 
@@ -67,11 +71,15 @@ class DiamondTests(unittest.TestCase):
             0.1,
             cluster_steps=["fast", "sensitive"],
             masking="seg",
+            comp_based_stats=1,
             extra_args=["--no-reassign"],
         )
         self.assertIn("--id", command)
         self.assertIn("--cluster-steps", command)
         self.assertIn("seg", command)
+        self.assertEqual(
+            command[command.index("--comp-based-stats") + 1], "1"
+        )
         self.assertIn("--db", command)
         self.assertNotIn("--database", command)
 
@@ -82,7 +90,44 @@ class DiamondTests(unittest.TestCase):
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
         self.assertIn("--db", command)
+        self.assertEqual(
+            command[command.index("--comp-based-stats") + 1], "0"
+        )
         self.assertNotIn("--database", command)
+
+    def test_exact_traceback_rejects_adjusted_matrix_modes(self):
+        with self.assertRaisesRegex(ValueError, "adjusted matrix modes"):
+            build_deepclust_command(
+                "diamond",
+                Path("db"),
+                Path("out"),
+                1,
+                "4G",
+                "exact",
+                50,
+                50,
+                0.1,
+                comp_based_stats=6,
+            )
+        with self.assertRaisesRegex(ValueError, "adjusted matrix modes"):
+            build_realign_command(
+                "diamond",
+                Path("db"),
+                Path("clusters"),
+                Path("out"),
+                1,
+                "4G",
+                comp_based_stats=6,
+            )
+
+    def test_diamond_error_hint(self):
+        self.assertIn(
+            "comp_based_stats",
+            diamond_error_hint(
+                "Error: Traceback with adjusted matrix not supported"
+            ),
+        )
+        self.assertEqual(diamond_error_hint("other error"), "")
 
     def test_build_deepclust_command_rejects_invalid_masking(self):
         with self.assertRaisesRegex(ValueError, "masking must be one of"):

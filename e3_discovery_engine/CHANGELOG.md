@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3 - 2026-07-13
+
+- Fixed DIAMOND 2.2.3 exact-identity clustering failure: `--id` requires
+  alignment traceback, which is incompatible with compositionally adjusted
+  matrix modes.
+- Added explicit `diamond.comp_based_stats` configuration and pass
+  `--comp-based-stats` to both `deepclust` and `realign`.
+- Production and end-to-end profiles now use mode `0`; legacy approximate
+  reproduction uses mode `1`.
+- Added defensive rejection of modes 2-6 for exact identity/realignment.
+- Added focused diagnostic hints for the DIAMOND error
+  `Traceback with adjusted matrix not supported`.
+- Added unit and configuration regression tests for this compatibility rule.
+
 ## 0.1.2 - 2026-07-13
 
 - Fixed DIAMOND 2.2.x command construction to use the supported `--db`

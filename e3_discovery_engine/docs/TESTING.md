@@ -53,3 +53,11 @@ When `E3_DIAMOND_E2E_DIR` is set, commands, logs and intermediate files are
 retained at that path. External-tool exceptions also include a bounded tail of
 the relevant log so failures remain diagnosable even when temporary directories
 are cleaned.
+
+## Release 0.1.3 check summary
+
+The bundled offline suite contains 133 tests. In the release environment, 131
+pass and two are deliberately skipped unless `RUN_DIAMOND_E2E=1` and a real
+DIAMOND executable are available. The real-DIAMOND end-to-end test is retained
+as a mandatory pre-production quality gate. Source coverage is 99%.
+
