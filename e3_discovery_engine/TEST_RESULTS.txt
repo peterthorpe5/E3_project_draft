@@ -1,4 +1,4 @@
-E3 Discovery Engine Milestone 1 v0.1.5
+E3 Discovery Engine Milestone 1 v0.1.6
 Release checks completed: 2026-07-14
 
 Automated checks in the package-build environment
@@ -6,24 +6,29 @@ Automated checks in the package-build environment
 - Python compilation: PASS
 - PEP8/pycodestyle: PASS
 - Unit, integration and Python-managed end-to-end tests: PASS
-- Tests run: 138
-- Tests passed: 136
+- Tests run: 140
+- Tests passed: 138
 - Tests skipped: 2
 - Test failures/errors: 0
 - Source coverage: 99%
 - Function-to-test matrix: PASS
 - Required documentation checks: PASS
+- Wheel build: PASS
+- Isolated wheel installation smoke test: PASS
 
 Skipped tests
 -------------
 The two skipped tests require a real DIAMOND executable. They remain included
-and must be run in the pinned e3_discovery Conda environment before release on
-the target platform.
+and must be run in the pinned e3_discovery Conda environment on the target
+platform.
 
-DIAMOND header regression covered in v0.1.5
--------------------------------------------
-- DeepClust command construction emits the flag-only --header option.
-- The generated command does not pass a value after --header.
-- The parser accepts the native DIAMOND 2.2.x header: centroid<TAB>member.
-- Headerless two-column files remain importable for audit purposes.
-- The real-DIAMOND end-to-end test remains the final platform validation.
+DIAMOND 2.2.3 realignment-header regression covered in v0.1.6
+------------------------------------------------------------
+- The parser accepts the exact observed native header:
+  cseqid, mseqid, pident, clen, mlen, cstart, cend, mstart, mend,
+  length, evalue and Bitscore.
+- clen and mlen are normalised to representative_length and member_length.
+- The native header is tested through direct field mapping, TSV-to-Parquet
+  conversion and the complete Python-managed end-to-end resource build.
+- Query/subject aliases qseqid, sseqid, qlen and slen remain supported.
+- The real-DIAMOND end-to-end test remains the final target-platform gate.

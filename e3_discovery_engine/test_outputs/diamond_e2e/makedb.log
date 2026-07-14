@@ -5,9 +5,9 @@ Please cite: http://dx.doi.org/10.1038/s41592-021-01101-x Nature Methods (2021)
 #CPU threads: 1
 Scoring parameters: (Matrix=BLOSUM62 Lambda=0.267 K=0.041 Penalties=11/1)
 Database input file: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/combined.fasta
-Opening the database file...  [0.007s]
-Loading sequences...  [0.001s]
-Masking sequences...  [0.003s]
+Opening the database file...  [0.008s]
+Loading sequences...  [0s]
+Masking sequences...  [0.002s]
 Writing sequences...  [0s]
 Hashing sequences...  [0s]
 Loading sequences...  [0s]
@@ -18,4 +18,4 @@ Closing the database file...  [0s]
 Database sequences  4
   Database letters  335
      Database hash  11a2a8c278de04ce66592361fee33484
-        Total time  0.013000s
+        Total time  0.012000s

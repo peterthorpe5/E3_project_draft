@@ -151,6 +151,59 @@ class ClusterTests(unittest.TestCase):
             self.assertEqual(summary["strict_pass_rows"], 1)
             self.assertTrue(table.column("passes_all")[0].as_py())
 
+    def test_native_diamond_realign_header_aliases(self):
+        """Map the exact DIAMOND 2.2.3 realign header seen on macOS."""
+
+        header = [
+            "cseqid",
+            "mseqid",
+            "pident",
+            "clen",
+            "mlen",
+            "cstart",
+            "cend",
+            "mstart",
+            "mend",
+            "length",
+            "evalue",
+            "Bitscore",
+        ]
+        mapping = _required_realign_fields(header)
+        self.assertEqual(mapping["representative_id"], "cseqid")
+        self.assertEqual(mapping["member_id"], "mseqid")
+        self.assertEqual(mapping["representative_length"], "clen")
+        self.assertEqual(mapping["member_length"], "mlen")
+        self.assertEqual(mapping["bitscore"], "Bitscore")
+
+    def test_native_diamond_realign_tsv_to_parquet(self):
+        """Convert a row using DIAMOND's centroid/member field names."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "native_realign.tsv"
+            source.write_text(
+                "cseqid\tmseqid\tpident\tclen\tmlen\tcstart\tcend\t"
+                "mstart\tmend\tlength\tevalue\tBitscore\n"
+                "r1\tm1\t60\t100\t120\t1\t60\t5\t64\t60\t"
+                "1e-20\t30\n",
+                encoding="utf-8",
+            )
+            output = Path(tmp) / "native_realign.parquet"
+            summary = realign_tsv_to_parquet(
+                source,
+                output,
+                self.thresholds(),
+                batch_size=1,
+            )
+            table = pq.read_table(output)
+            self.assertEqual(summary["realignment_rows"], 1)
+            self.assertEqual(summary["strict_pass_rows"], 1)
+            self.assertEqual(
+                table.column("representative_length")[0].as_py(),
+                100,
+            )
+            self.assertEqual(table.column("member_length")[0].as_py(), 120)
+            self.assertTrue(table.column("passes_all")[0].as_py())
+
     def test_realign_header_aliases_and_empty_output(self):
         mapping = _required_realign_fields(
             [

@@ -67,7 +67,7 @@ class SyntheticEndToEndTests(unittest.TestCase):
                 batch_size=1,
             )
             realign_tsv_to_parquet(
-                FIXTURES / "realignments.tsv",
+                FIXTURES / "realignments_diamond_2_2_3.tsv",
                 paths.realignments_parquet,
                 thresholds_from_config(config),
                 batch_size=1,

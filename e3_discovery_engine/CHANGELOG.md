@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.6 - 2026-07-14
+
+- Fixed parsing of native DIAMOND 2.2.3 `realign` output, which labels
+  representative/member sequence lengths as `clen` and `mlen` rather than
+  the requested `qlen` and `slen`.
+- Retained support for both query/subject and centroid/member field naming,
+  including DIAMOND's capitalised `Bitscore` header.
+- Added regression tests using the exact 12-column header observed in the
+  external macOS DIAMOND run, a complete Parquet conversion test and the
+  Python-managed end-to-end resource build using native DIAMOND field names.
+- Corrected README wording so the DeepClust header requirement and tolerant
+  historical-file parser are described consistently.
+
 ## 0.1.5 - 2026-07-14
 
 - Restored DIAMOND's flag-only `--header` option for `deepclust`. DIAMOND

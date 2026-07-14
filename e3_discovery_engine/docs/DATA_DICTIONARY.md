@@ -58,6 +58,10 @@ One row per raw representative-member assignment returned by DeepClust.
 
 One row per DIAMOND representative-member realignment.
 
+The parser normalises both query/subject field names (`qseqid`, `sseqid`,
+`qlen`, `slen`) and the centroid/member names emitted by DIAMOND 2.2.3
+(`cseqid`, `mseqid`, `clen`, `mlen`).
+
 | Field | Type | Meaning |
 |---|---|---|
 | `representative_id` | string | Representative sequence ID. |

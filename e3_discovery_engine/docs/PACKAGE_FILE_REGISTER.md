@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.5.
+This register explains the role of the principal files in release 0.1.6.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration

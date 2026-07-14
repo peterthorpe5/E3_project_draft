@@ -185,7 +185,12 @@ def build_realign_command(
     comp_based_stats: int = 0,
     masking: Optional[str] = None,
 ) -> List[str]:
-    """Build a realignment command with exact identity and length fields."""
+    """Build a realignment command requesting identity and length fields.
+
+    DIAMOND realign may label the requested query/subject columns with
+    centroid/member names (for example, ``clen`` and ``mlen``). The parser
+    therefore accepts both naming conventions.
+    """
 
     if threads < 1:
         raise ValueError("threads must be positive")

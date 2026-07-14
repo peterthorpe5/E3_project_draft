@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.5**
+Version **0.1.6**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:
@@ -42,11 +42,16 @@ even though some documentation describes the input as “database”. Supported
 masking values are validated before execution: `none`, `seg`, `seg-all` and
 `tantan`.
 
-DeepClust membership is parsed using DIAMOND's documented fixed two-column
-format: representative accession first, member accession second. The workflow
-does not require a clustering header because header behaviour has varied across
-DIAMOND releases. Recognised header variants are accepted when present, and the
-realignment command requests an explicit simple tabular header.
+DeepClust membership is parsed using DIAMOND's fixed two-column format:
+representative accession first, member accession second. The production command
+emits DIAMOND's native clustering header because DIAMOND 2.2.x `realign`
+requires it. The parser also accepts recognised header variants and headerless
+two-column files when importing historical results.
+
+DIAMOND 2.2.3 may relabel requested query/subject realignment fields using
+centroid/member names. For example, `qlen`/`slen` can be emitted as
+`clen`/`mlen`, and `bitscore` as `Bitscore`. The normalisation layer accepts
+both conventions before applying the strict post-realignment filters.
 
 ## Scientific interpretation
 

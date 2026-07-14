@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-discovery-engine-m1"
-version = "0.1.5"
+version = "0.1.6"
 description = "Production E3-seeded DIAMOND DeepClust workflow"
 readme = "README.md"
 requires-python = ">=3.11"
