@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.4**
+Version **0.1.5**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:
@@ -281,3 +281,10 @@ The Python unit, integration and synthetic end-to-end suite can run without
 DIAMOND. The optional external end-to-end test must be run in the pinned Conda
 environment before a formal release or scientific delivery. A full 1KP+ run is
 also required before claiming large-scale production performance.
+
+### DIAMOND clustering-header contract
+
+The production DeepClust command includes the flag-only `--header` option.
+DIAMOND 2.2.x emits `centroid<TAB>member`, and `diamond realign` requires that
+header. The parser remains able to import headerless two-column files for
+audit purposes, but a headerless file must not be passed to `realign`.

@@ -1,39 +1,29 @@
-E3 Discovery Engine Milestone 1 v0.1.4
-Release checks performed: 2026-07-13
+E3 Discovery Engine Milestone 1 v0.1.5
+Release checks completed: 2026-07-14
 
-Offline automated suite
------------------------
-Tests discovered: 137
-Passed: 135
-Skipped: 2
-Failed: 0
-Errors: 0
+Automated checks in the package-build environment
+-------------------------------------------------
+- Python compilation: PASS
+- PEP8/pycodestyle: PASS
+- Unit, integration and Python-managed end-to-end tests: PASS
+- Tests run: 138
+- Tests passed: 136
+- Tests skipped: 2
+- Test failures/errors: 0
+- Source coverage: 99%
+- Function-to-test matrix: PASS
+- Required documentation checks: PASS
 
-The two skipped tests require a real DIAMOND executable and are enabled with
-RUN_DIAMOND_E2E=1. The external test must be run in the pinned `e3_discovery`
-Conda environment before production analysis.
+Skipped tests
+-------------
+The two skipped tests require a real DIAMOND executable. They remain included
+and must be run in the pinned e3_discovery Conda environment before release on
+the target platform.
 
-Coverage
---------
-Overall source coverage: 99%
-Required minimum: 98%
-
-Additional checks
------------------
-- Python compilation: passed
-- PEP8/pycodestyle: passed
-- Function-to-test matrix: passed
-- Synthetic end-to-end workflow: passed
-- DuckDB/Parquet integration: passed
-- Empty-realignment DuckDB integration: passed
-- Snakemake safety/contract checks: passed
-
-External DIAMOND compatibility changes in this release
-------------------------------------------------------
-The DeepClust parser now accepts DIAMOND's documented headerless two-column
-cluster membership output and recognised header variants. DeepClust no longer
-requests a version-dependent clustering header. Realignment requests an
-explicit simple header and uses the configured masking mode. Header-only
-realignment output is retained as a valid zero-row Parquet table with a warning.
-The external command path still requires confirmation in the user's DIAMOND
-environment.
+DIAMOND header regression covered in v0.1.5
+-------------------------------------------
+- DeepClust command construction emits the flag-only --header option.
+- The generated command does not pass a value after --header.
+- The parser accepts the native DIAMOND 2.2.x header: centroid<TAB>member.
+- Headerless two-column files remain importable for audit purposes.
+- The real-DIAMOND end-to-end test remains the final platform validation.

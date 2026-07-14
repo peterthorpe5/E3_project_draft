@@ -57,7 +57,7 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertIn("--db", command)
         self.assertNotIn("--database", command)
-        self.assertNotIn("--header", command)
+        self.assertEqual(command.count("--header"), 1)
 
     def test_build_deepclust_command_exact_and_options(self):
         command = build_deepclust_command(
@@ -83,6 +83,8 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertIn("--db", command)
         self.assertNotIn("--database", command)
+        self.assertEqual(command.count("--header"), 1)
+        self.assertNotIn("simple", command)
 
     def test_build_realign_command_has_exact_fields(self):
         command = build_realign_command(
@@ -141,6 +143,10 @@ class DiamondTests(unittest.TestCase):
             diamond_error_hint(
                 "Error: Traceback with adjusted matrix not supported"
             ),
+        )
+        self.assertIn(
+            "native clustering header",
+            diamond_error_hint("Clusters file is missing header line"),
         )
         self.assertEqual(diamond_error_hint("other error"), "")
 

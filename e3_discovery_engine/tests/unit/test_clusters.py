@@ -76,6 +76,26 @@ class ClusterTests(unittest.TestCase):
             self.assertEqual(summary, {"membership_rows": 2, "cluster_count": 1})
             self.assertEqual(pq.read_table(output).num_rows, 2)
 
+    def test_cluster_tsv_to_parquet_native_diamond_header(self):
+        """Parse the exact centroid/member header emitted by DIAMOND 2.2.x."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "clusters.tsv"
+            source.write_text(
+                "centroid\tmember\n"
+                "r1\tr1\nr1\tm1\n",
+                encoding="utf-8",
+            )
+            output = Path(tmp) / "clusters.parquet"
+            summary = cluster_tsv_to_parquet(source, output, batch_size=1)
+            table = pq.read_table(output)
+            self.assertEqual(
+                summary,
+                {"membership_rows": 2, "cluster_count": 1},
+            )
+            self.assertEqual(table.column("representative_id")[0].as_py(), "r1")
+            self.assertEqual(table.column("member_id")[1].as_py(), "m1")
+
     def test_cluster_tsv_to_parquet_headerless_preserves_first_row(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "clusters.tsv"

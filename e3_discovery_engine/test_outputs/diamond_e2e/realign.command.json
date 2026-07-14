@@ -28,7 +28,10 @@
     "length",
     "evalue",
     "bitscore",
-    "--header"
+    "--header",
+    "simple",
+    "--masking",
+    "none"
   ],
   "working_directory": "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine"
 }

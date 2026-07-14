@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5 - 2026-07-14
+
+- Restored DIAMOND's flag-only `--header` option for `deepclust`. DIAMOND
+  2.2.x `realign` requires this native header and rejects a headerless
+  clustering-membership file.
+- Verified from recovered inherited DeepClust outputs that DIAMOND 2.2.x emits
+  the native header `centroid<TAB>member`; the parser accepts this format.
+- Added command-construction and parser regression tests for the exact native
+  header contract.
+- Added a focused diagnostic hint for `Clusters file is missing header line`.
+
 ## 0.1.4 - 2026-07-13
 
 - Fixed conversion of real DIAMOND 2.2.3 DeepClust output. Cluster membership
@@ -7,8 +18,9 @@
   longer requires a specific header spelling.
 - Added support for recognised header variants including representative/member,
   cseqid/mseqid, centroid/member and cluster-representative labels.
-- Removed `--header` from the DeepClust command to avoid version-dependent
-  clustering-header behaviour; realignment now requests `--header simple`.
+- Made the cluster parser tolerant of both native-header and headerless
+  two-column files. Release 0.1.5 restores the native header because DIAMOND
+  2.2.x `realign` requires it.
 - Applied the configured masking mode consistently to DeepClust and realign.
 - Treat a header-only realignment table as a valid zero-row result, which can
   occur when all clusters are singletons, while logging a prominent warning.

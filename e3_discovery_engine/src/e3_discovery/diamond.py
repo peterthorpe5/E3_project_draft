@@ -165,6 +165,9 @@ def build_deepclust_command(
     ]
     if cluster_steps:
         command.extend(["--cluster-steps", *cluster_steps])
+    # DIAMOND 2.2.x realign requires the native clustering header.  The
+    # flag-only option emits ``centroid\tmember`` for clustering output.
+    command.append("--header")
     if masking:
         command.extend(["--masking", masking])
     if extra_args:
@@ -263,6 +266,12 @@ def diamond_error_hint(log_text: str) -> str:
             "DIAMOND exact identity/traceback cannot be used with a "
             "compositionally adjusted matrix. Set diamond.comp_based_stats "
             "to 0 (recommended for this workflow) or 1."
+        )
+    if "clusters file is missing header line" in normalised:
+        return (
+            "DIAMOND realign requires the native clustering header. Recreate "
+            "the DeepClust file with the flag-only --header option; DIAMOND "
+            "2.2.x emits centroid<TAB>member."
         )
     return ""
 
