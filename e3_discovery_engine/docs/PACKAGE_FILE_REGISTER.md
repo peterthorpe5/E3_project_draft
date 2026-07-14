@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.6.
+This register explains the role of the principal files in release 0.1.7.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration
@@ -63,6 +63,7 @@ Generated run outputs are deliberately excluded from the source package.
 | `docs/EXAMPLE_QUERIES.sql` | Example DuckDB interrogation queries. |
 | `docs/TESTING.md` | Test layers and validation boundary. |
 | `docs/RELEASE_CHECKLIST.md` | Pre-delivery quality gate. |
+| `docs/CODE_DOCUMENTATION_STANDARD.md` | Required PEP 257/Google-style docstring structure and automated checks. |
 
 ## Legacy reference
 

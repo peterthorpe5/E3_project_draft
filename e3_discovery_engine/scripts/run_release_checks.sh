@@ -26,7 +26,8 @@ for required in \
   docs/RELEASE_CHECKLIST.md \
   docs/TESTING.md \
   docs/PACKAGE_FILE_REGISTER.md \
-  docs/LEGACY_AUDIT_EVIDENCE_REGISTER.md; do
+  docs/LEGACY_AUDIT_EVIDENCE_REGISTER.md \
+  docs/CODE_DOCUMENTATION_STANDARD.md; do
   test -s "${required}"
 done
 

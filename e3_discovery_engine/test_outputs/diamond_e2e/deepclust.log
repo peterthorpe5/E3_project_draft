@@ -18,13 +18,13 @@ Database blocks:
 4	339
 
 [0, 0] Writing length sorted blocks
-[0, 0] Wrote 475 bytes to disk at 1.45 MB/s
+[0, 0] Wrote 475 bytes to disk at 1.55 MB/s
 [0, 0] Starting round 1/5 sensitivity=faster linear=true
 [0, 0] Searching blocks. Blocks=1,1
 [0, 0] Database letter count: 335
-Opening the database...  [0s]
+Opening the database...  [0.003s]
 FASTA file size: 351 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
 #Target sequences to report alignments for: unlimited
 Database:  (type: FASTA file)
 Block size = 65536000000000
@@ -32,7 +32,7 @@ Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 351 bytes from disk at 1.14637 MB/s
+Loaded 351 bytes from disk at 1.07288 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
@@ -47,7 +47,7 @@ Building query seed array...  [0s]
 Computing hash join...  [0s]
 Masking low complexity seeds...  [0s]
 Building kmer ranking...  [0s]
-Searching alignments...  [0.001s]
+Searching alignments...  [0s]
 Deallocating memory...  [0s]
 Deallocating buffers...  [0s]
 Clearing query masking...  [0s]
@@ -61,7 +61,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.026s
+Total time = 0.027s
 Reported 1 pairwise alignments, 1 HSPs.
 1 queries aligned.
 [0, 0] Concatenating alignment files
@@ -70,9 +70,9 @@ Reported 1 pairwise alignments, 1 HSPs.
 Coverage cutoff: 80%
 Edge format: triplet
 Symmetric: yes
-Reading mapping file...  [0.002s]
+Reading mapping file...  [0.001s]
 #Sequences in database: 4
-Reading input lines...  [0.006s]
+Reading input lines...  [0.009s]
 #Input lines: 1
 #Input edges: 2
 Finding neighbor counts bucket 1/256 records=1
@@ -596,13 +596,13 @@ Generating output...  [0s]
 [0, 0] Writing representative ids
 [0, 0] Writing representatives. Volume=1/1 Records=4
 [0, 0] Representatives written: 3 letters: 247
-[0, 0] Wrote 259 bytes to disk at 0.04 MB/s
+[0, 0] Wrote 259 bytes to disk at 0.09 MB/s
 [0, 0] Starting round 2/5 sensitivity=fast linear=true
 [0, 0] Searching blocks. Blocks=1,1
 [0, 0] Database letter count: 247
-Opening the database...  [0.001s]
+Opening the database...  [0.003s]
 FASTA file size: 259 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
 #Target sequences to report alignments for: unlimited
 Database:  (type: FASTA file)
 Block size = 65536000000000
@@ -610,13 +610,13 @@ Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 0.760005 MB/s
+Loaded 259 bytes from disk at 0.484317 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.008s]
+Initializing temporary storage...  [0.005s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/1.
@@ -639,7 +639,814 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.013s
+Total time = 0.011s
+Reported 0 pairwise alignments, 0 HSPs.
+0 queries aligned.
+[0, 0] Concatenating alignment files
+[0, 0] Running greedy vertex cover
+Coverage cutoff: 80%
+Edge format: triplet
+Symmetric: yes
+Reading mapping file...  [0s]
+#Sequences in database: 3
+Reading input lines...  [0s]
+#Input lines: 0
+#Input edges: 0
+Finding neighbor counts bucket 1/256 records=0
+Finding neighbor counts bucket 2/256 records=0
+Finding neighbor counts bucket 3/256 records=0
+Finding neighbor counts bucket 4/256 records=0
+Finding neighbor counts bucket 5/256 records=0
+Finding neighbor counts bucket 6/256 records=0
+Finding neighbor counts bucket 7/256 records=0
+Finding neighbor counts bucket 8/256 records=0
+Finding neighbor counts bucket 9/256 records=0
+Finding neighbor counts bucket 10/256 records=0
+Finding neighbor counts bucket 11/256 records=0
+Finding neighbor counts bucket 12/256 records=0
+Finding neighbor counts bucket 13/256 records=0
+Finding neighbor counts bucket 14/256 records=0
+Finding neighbor counts bucket 15/256 records=0
+Finding neighbor counts bucket 16/256 records=0
+Finding neighbor counts bucket 17/256 records=0
+Finding neighbor counts bucket 18/256 records=0
+Finding neighbor counts bucket 19/256 records=0
+Finding neighbor counts bucket 20/256 records=0
+Finding neighbor counts bucket 21/256 records=0
+Finding neighbor counts bucket 22/256 records=0
+Finding neighbor counts bucket 23/256 records=0
+Finding neighbor counts bucket 24/256 records=0
+Finding neighbor counts bucket 25/256 records=0
+Finding neighbor counts bucket 26/256 records=0
+Finding neighbor counts bucket 27/256 records=0
+Finding neighbor counts bucket 28/256 records=0
+Finding neighbor counts bucket 29/256 records=0
+Finding neighbor counts bucket 30/256 records=0
+Finding neighbor counts bucket 31/256 records=0
+Finding neighbor counts bucket 32/256 records=0
+Finding neighbor counts bucket 33/256 records=0
+Finding neighbor counts bucket 34/256 records=0
+Finding neighbor counts bucket 35/256 records=0
+Finding neighbor counts bucket 36/256 records=0
+Finding neighbor counts bucket 37/256 records=0
+Finding neighbor counts bucket 38/256 records=0
+Finding neighbor counts bucket 39/256 records=0
+Finding neighbor counts bucket 40/256 records=0
+Finding neighbor counts bucket 41/256 records=0
+Finding neighbor counts bucket 42/256 records=0
+Finding neighbor counts bucket 43/256 records=0
+Finding neighbor counts bucket 44/256 records=0
+Finding neighbor counts bucket 45/256 records=0
+Finding neighbor counts bucket 46/256 records=0
+Finding neighbor counts bucket 47/256 records=0
+Finding neighbor counts bucket 48/256 records=0
+Finding neighbor counts bucket 49/256 records=0
+Finding neighbor counts bucket 50/256 records=0
+Finding neighbor counts bucket 51/256 records=0
+Finding neighbor counts bucket 52/256 records=0
+Finding neighbor counts bucket 53/256 records=0
+Finding neighbor counts bucket 54/256 records=0
+Finding neighbor counts bucket 55/256 records=0
+Finding neighbor counts bucket 56/256 records=0
+Finding neighbor counts bucket 57/256 records=0
+Finding neighbor counts bucket 58/256 records=0
+Finding neighbor counts bucket 59/256 records=0
+Finding neighbor counts bucket 60/256 records=0
+Finding neighbor counts bucket 61/256 records=0
+Finding neighbor counts bucket 62/256 records=0
+Finding neighbor counts bucket 63/256 records=0
+Finding neighbor counts bucket 64/256 records=0
+Finding neighbor counts bucket 65/256 records=0
+Finding neighbor counts bucket 66/256 records=0
+Finding neighbor counts bucket 67/256 records=0
+Finding neighbor counts bucket 68/256 records=0
+Finding neighbor counts bucket 69/256 records=0
+Finding neighbor counts bucket 70/256 records=0
+Finding neighbor counts bucket 71/256 records=0
+Finding neighbor counts bucket 72/256 records=0
+Finding neighbor counts bucket 73/256 records=0
+Finding neighbor counts bucket 74/256 records=0
+Finding neighbor counts bucket 75/256 records=0
+Finding neighbor counts bucket 76/256 records=0
+Finding neighbor counts bucket 77/256 records=0
+Finding neighbor counts bucket 78/256 records=0
+Finding neighbor counts bucket 79/256 records=0
+Finding neighbor counts bucket 80/256 records=0
+Finding neighbor counts bucket 81/256 records=0
+Finding neighbor counts bucket 82/256 records=0
+Finding neighbor counts bucket 83/256 records=0
+Finding neighbor counts bucket 84/256 records=0
+Finding neighbor counts bucket 85/256 records=0
+Finding neighbor counts bucket 86/256 records=0
+Finding neighbor counts bucket 87/256 records=0
+Finding neighbor counts bucket 88/256 records=0
+Finding neighbor counts bucket 89/256 records=0
+Finding neighbor counts bucket 90/256 records=0
+Finding neighbor counts bucket 91/256 records=0
+Finding neighbor counts bucket 92/256 records=0
+Finding neighbor counts bucket 93/256 records=0
+Finding neighbor counts bucket 94/256 records=0
+Finding neighbor counts bucket 95/256 records=0
+Finding neighbor counts bucket 96/256 records=0
+Finding neighbor counts bucket 97/256 records=0
+Finding neighbor counts bucket 98/256 records=0
+Finding neighbor counts bucket 99/256 records=0
+Finding neighbor counts bucket 100/256 records=0
+Finding neighbor counts bucket 101/256 records=0
+Finding neighbor counts bucket 102/256 records=0
+Finding neighbor counts bucket 103/256 records=0
+Finding neighbor counts bucket 104/256 records=0
+Finding neighbor counts bucket 105/256 records=0
+Finding neighbor counts bucket 106/256 records=0
+Finding neighbor counts bucket 107/256 records=0
+Finding neighbor counts bucket 108/256 records=0
+Finding neighbor counts bucket 109/256 records=0
+Finding neighbor counts bucket 110/256 records=0
+Finding neighbor counts bucket 111/256 records=0
+Finding neighbor counts bucket 112/256 records=0
+Finding neighbor counts bucket 113/256 records=0
+Finding neighbor counts bucket 114/256 records=0
+Finding neighbor counts bucket 115/256 records=0
+Finding neighbor counts bucket 116/256 records=0
+Finding neighbor counts bucket 117/256 records=0
+Finding neighbor counts bucket 118/256 records=0
+Finding neighbor counts bucket 119/256 records=0
+Finding neighbor counts bucket 120/256 records=0
+Finding neighbor counts bucket 121/256 records=0
+Finding neighbor counts bucket 122/256 records=0
+Finding neighbor counts bucket 123/256 records=0
+Finding neighbor counts bucket 124/256 records=0
+Finding neighbor counts bucket 125/256 records=0
+Finding neighbor counts bucket 126/256 records=0
+Finding neighbor counts bucket 127/256 records=0
+Finding neighbor counts bucket 128/256 records=0
+Finding neighbor counts bucket 129/256 records=0
+Finding neighbor counts bucket 130/256 records=0
+Finding neighbor counts bucket 131/256 records=0
+Finding neighbor counts bucket 132/256 records=0
+Finding neighbor counts bucket 133/256 records=0
+Finding neighbor counts bucket 134/256 records=0
+Finding neighbor counts bucket 135/256 records=0
+Finding neighbor counts bucket 136/256 records=0
+Finding neighbor counts bucket 137/256 records=0
+Finding neighbor counts bucket 138/256 records=0
+Finding neighbor counts bucket 139/256 records=0
+Finding neighbor counts bucket 140/256 records=0
+Finding neighbor counts bucket 141/256 records=0
+Finding neighbor counts bucket 142/256 records=0
+Finding neighbor counts bucket 143/256 records=0
+Finding neighbor counts bucket 144/256 records=0
+Finding neighbor counts bucket 145/256 records=0
+Finding neighbor counts bucket 146/256 records=0
+Finding neighbor counts bucket 147/256 records=0
+Finding neighbor counts bucket 148/256 records=0
+Finding neighbor counts bucket 149/256 records=0
+Finding neighbor counts bucket 150/256 records=0
+Finding neighbor counts bucket 151/256 records=0
+Finding neighbor counts bucket 152/256 records=0
+Finding neighbor counts bucket 153/256 records=0
+Finding neighbor counts bucket 154/256 records=0
+Finding neighbor counts bucket 155/256 records=0
+Finding neighbor counts bucket 156/256 records=0
+Finding neighbor counts bucket 157/256 records=0
+Finding neighbor counts bucket 158/256 records=0
+Finding neighbor counts bucket 159/256 records=0
+Finding neighbor counts bucket 160/256 records=0
+Finding neighbor counts bucket 161/256 records=0
+Finding neighbor counts bucket 162/256 records=0
+Finding neighbor counts bucket 163/256 records=0
+Finding neighbor counts bucket 164/256 records=0
+Finding neighbor counts bucket 165/256 records=0
+Finding neighbor counts bucket 166/256 records=0
+Finding neighbor counts bucket 167/256 records=0
+Finding neighbor counts bucket 168/256 records=0
+Finding neighbor counts bucket 169/256 records=0
+Finding neighbor counts bucket 170/256 records=0
+Finding neighbor counts bucket 171/256 records=0
+Finding neighbor counts bucket 172/256 records=0
+Finding neighbor counts bucket 173/256 records=0
+Finding neighbor counts bucket 174/256 records=0
+Finding neighbor counts bucket 175/256 records=0
+Finding neighbor counts bucket 176/256 records=0
+Finding neighbor counts bucket 177/256 records=0
+Finding neighbor counts bucket 178/256 records=0
+Finding neighbor counts bucket 179/256 records=0
+Finding neighbor counts bucket 180/256 records=0
+Finding neighbor counts bucket 181/256 records=0
+Finding neighbor counts bucket 182/256 records=0
+Finding neighbor counts bucket 183/256 records=0
+Finding neighbor counts bucket 184/256 records=0
+Finding neighbor counts bucket 185/256 records=0
+Finding neighbor counts bucket 186/256 records=0
+Finding neighbor counts bucket 187/256 records=0
+Finding neighbor counts bucket 188/256 records=0
+Finding neighbor counts bucket 189/256 records=0
+Finding neighbor counts bucket 190/256 records=0
+Finding neighbor counts bucket 191/256 records=0
+Finding neighbor counts bucket 192/256 records=0
+Finding neighbor counts bucket 193/256 records=0
+Finding neighbor counts bucket 194/256 records=0
+Finding neighbor counts bucket 195/256 records=0
+Finding neighbor counts bucket 196/256 records=0
+Finding neighbor counts bucket 197/256 records=0
+Finding neighbor counts bucket 198/256 records=0
+Finding neighbor counts bucket 199/256 records=0
+Finding neighbor counts bucket 200/256 records=0
+Finding neighbor counts bucket 201/256 records=0
+Finding neighbor counts bucket 202/256 records=0
+Finding neighbor counts bucket 203/256 records=0
+Finding neighbor counts bucket 204/256 records=0
+Finding neighbor counts bucket 205/256 records=0
+Finding neighbor counts bucket 206/256 records=0
+Finding neighbor counts bucket 207/256 records=0
+Finding neighbor counts bucket 208/256 records=0
+Finding neighbor counts bucket 209/256 records=0
+Finding neighbor counts bucket 210/256 records=0
+Finding neighbor counts bucket 211/256 records=0
+Finding neighbor counts bucket 212/256 records=0
+Finding neighbor counts bucket 213/256 records=0
+Finding neighbor counts bucket 214/256 records=0
+Finding neighbor counts bucket 215/256 records=0
+Finding neighbor counts bucket 216/256 records=0
+Finding neighbor counts bucket 217/256 records=0
+Finding neighbor counts bucket 218/256 records=0
+Finding neighbor counts bucket 219/256 records=0
+Finding neighbor counts bucket 220/256 records=0
+Finding neighbor counts bucket 221/256 records=0
+Finding neighbor counts bucket 222/256 records=0
+Finding neighbor counts bucket 223/256 records=0
+Finding neighbor counts bucket 224/256 records=0
+Finding neighbor counts bucket 225/256 records=0
+Finding neighbor counts bucket 226/256 records=0
+Finding neighbor counts bucket 227/256 records=0
+Finding neighbor counts bucket 228/256 records=0
+Finding neighbor counts bucket 229/256 records=0
+Finding neighbor counts bucket 230/256 records=0
+Finding neighbor counts bucket 231/256 records=0
+Finding neighbor counts bucket 232/256 records=0
+Finding neighbor counts bucket 233/256 records=0
+Finding neighbor counts bucket 234/256 records=0
+Finding neighbor counts bucket 235/256 records=0
+Finding neighbor counts bucket 236/256 records=0
+Finding neighbor counts bucket 237/256 records=0
+Finding neighbor counts bucket 238/256 records=0
+Finding neighbor counts bucket 239/256 records=0
+Finding neighbor counts bucket 240/256 records=0
+Finding neighbor counts bucket 241/256 records=0
+Finding neighbor counts bucket 242/256 records=0
+Finding neighbor counts bucket 243/256 records=0
+Finding neighbor counts bucket 244/256 records=0
+Finding neighbor counts bucket 245/256 records=0
+Finding neighbor counts bucket 246/256 records=0
+Finding neighbor counts bucket 247/256 records=0
+Finding neighbor counts bucket 248/256 records=0
+Finding neighbor counts bucket 249/256 records=0
+Finding neighbor counts bucket 250/256 records=0
+Finding neighbor counts bucket 251/256 records=0
+Finding neighbor counts bucket 252/256 records=0
+Finding neighbor counts bucket 253/256 records=0
+Finding neighbor counts bucket 254/256 records=0
+Finding neighbor counts bucket 255/256 records=0
+Finding neighbor counts bucket 256/256 records=0
+Writing degree sorted edges 1/256 records=0
+Writing degree sorted edges 2/256 records=0
+Writing degree sorted edges 3/256 records=0
+Writing degree sorted edges 4/256 records=0
+Writing degree sorted edges 5/256 records=0
+Writing degree sorted edges 6/256 records=0
+Writing degree sorted edges 7/256 records=0
+Writing degree sorted edges 8/256 records=0
+Writing degree sorted edges 9/256 records=0
+Writing degree sorted edges 10/256 records=0
+Writing degree sorted edges 11/256 records=0
+Writing degree sorted edges 12/256 records=0
+Writing degree sorted edges 13/256 records=0
+Writing degree sorted edges 14/256 records=0
+Writing degree sorted edges 15/256 records=0
+Writing degree sorted edges 16/256 records=0
+Writing degree sorted edges 17/256 records=0
+Writing degree sorted edges 18/256 records=0
+Writing degree sorted edges 19/256 records=0
+Writing degree sorted edges 20/256 records=0
+Writing degree sorted edges 21/256 records=0
+Writing degree sorted edges 22/256 records=0
+Writing degree sorted edges 23/256 records=0
+Writing degree sorted edges 24/256 records=0
+Writing degree sorted edges 25/256 records=0
+Writing degree sorted edges 26/256 records=0
+Writing degree sorted edges 27/256 records=0
+Writing degree sorted edges 28/256 records=0
+Writing degree sorted edges 29/256 records=0
+Writing degree sorted edges 30/256 records=0
+Writing degree sorted edges 31/256 records=0
+Writing degree sorted edges 32/256 records=0
+Writing degree sorted edges 33/256 records=0
+Writing degree sorted edges 34/256 records=0
+Writing degree sorted edges 35/256 records=0
+Writing degree sorted edges 36/256 records=0
+Writing degree sorted edges 37/256 records=0
+Writing degree sorted edges 38/256 records=0
+Writing degree sorted edges 39/256 records=0
+Writing degree sorted edges 40/256 records=0
+Writing degree sorted edges 41/256 records=0
+Writing degree sorted edges 42/256 records=0
+Writing degree sorted edges 43/256 records=0
+Writing degree sorted edges 44/256 records=0
+Writing degree sorted edges 45/256 records=0
+Writing degree sorted edges 46/256 records=0
+Writing degree sorted edges 47/256 records=0
+Writing degree sorted edges 48/256 records=0
+Writing degree sorted edges 49/256 records=0
+Writing degree sorted edges 50/256 records=0
+Writing degree sorted edges 51/256 records=0
+Writing degree sorted edges 52/256 records=0
+Writing degree sorted edges 53/256 records=0
+Writing degree sorted edges 54/256 records=0
+Writing degree sorted edges 55/256 records=0
+Writing degree sorted edges 56/256 records=0
+Writing degree sorted edges 57/256 records=0
+Writing degree sorted edges 58/256 records=0
+Writing degree sorted edges 59/256 records=0
+Writing degree sorted edges 60/256 records=0
+Writing degree sorted edges 61/256 records=0
+Writing degree sorted edges 62/256 records=0
+Writing degree sorted edges 63/256 records=0
+Writing degree sorted edges 64/256 records=0
+Writing degree sorted edges 65/256 records=0
+Writing degree sorted edges 66/256 records=0
+Writing degree sorted edges 67/256 records=0
+Writing degree sorted edges 68/256 records=0
+Writing degree sorted edges 69/256 records=0
+Writing degree sorted edges 70/256 records=0
+Writing degree sorted edges 71/256 records=0
+Writing degree sorted edges 72/256 records=0
+Writing degree sorted edges 73/256 records=0
+Writing degree sorted edges 74/256 records=0
+Writing degree sorted edges 75/256 records=0
+Writing degree sorted edges 76/256 records=0
+Writing degree sorted edges 77/256 records=0
+Writing degree sorted edges 78/256 records=0
+Writing degree sorted edges 79/256 records=0
+Writing degree sorted edges 80/256 records=0
+Writing degree sorted edges 81/256 records=0
+Writing degree sorted edges 82/256 records=0
+Writing degree sorted edges 83/256 records=0
+Writing degree sorted edges 84/256 records=0
+Writing degree sorted edges 85/256 records=0
+Writing degree sorted edges 86/256 records=0
+Writing degree sorted edges 87/256 records=0
+Writing degree sorted edges 88/256 records=0
+Writing degree sorted edges 89/256 records=0
+Writing degree sorted edges 90/256 records=0
+Writing degree sorted edges 91/256 records=0
+Writing degree sorted edges 92/256 records=0
+Writing degree sorted edges 93/256 records=0
+Writing degree sorted edges 94/256 records=0
+Writing degree sorted edges 95/256 records=0
+Writing degree sorted edges 96/256 records=0
+Writing degree sorted edges 97/256 records=0
+Writing degree sorted edges 98/256 records=0
+Writing degree sorted edges 99/256 records=0
+Writing degree sorted edges 100/256 records=0
+Writing degree sorted edges 101/256 records=0
+Writing degree sorted edges 102/256 records=0
+Writing degree sorted edges 103/256 records=0
+Writing degree sorted edges 104/256 records=0
+Writing degree sorted edges 105/256 records=0
+Writing degree sorted edges 106/256 records=0
+Writing degree sorted edges 107/256 records=0
+Writing degree sorted edges 108/256 records=0
+Writing degree sorted edges 109/256 records=0
+Writing degree sorted edges 110/256 records=0
+Writing degree sorted edges 111/256 records=0
+Writing degree sorted edges 112/256 records=0
+Writing degree sorted edges 113/256 records=0
+Writing degree sorted edges 114/256 records=0
+Writing degree sorted edges 115/256 records=0
+Writing degree sorted edges 116/256 records=0
+Writing degree sorted edges 117/256 records=0
+Writing degree sorted edges 118/256 records=0
+Writing degree sorted edges 119/256 records=0
+Writing degree sorted edges 120/256 records=0
+Writing degree sorted edges 121/256 records=0
+Writing degree sorted edges 122/256 records=0
+Writing degree sorted edges 123/256 records=0
+Writing degree sorted edges 124/256 records=0
+Writing degree sorted edges 125/256 records=0
+Writing degree sorted edges 126/256 records=0
+Writing degree sorted edges 127/256 records=0
+Writing degree sorted edges 128/256 records=0
+Writing degree sorted edges 129/256 records=0
+Writing degree sorted edges 130/256 records=0
+Writing degree sorted edges 131/256 records=0
+Writing degree sorted edges 132/256 records=0
+Writing degree sorted edges 133/256 records=0
+Writing degree sorted edges 134/256 records=0
+Writing degree sorted edges 135/256 records=0
+Writing degree sorted edges 136/256 records=0
+Writing degree sorted edges 137/256 records=0
+Writing degree sorted edges 138/256 records=0
+Writing degree sorted edges 139/256 records=0
+Writing degree sorted edges 140/256 records=0
+Writing degree sorted edges 141/256 records=0
+Writing degree sorted edges 142/256 records=0
+Writing degree sorted edges 143/256 records=0
+Writing degree sorted edges 144/256 records=0
+Writing degree sorted edges 145/256 records=0
+Writing degree sorted edges 146/256 records=0
+Writing degree sorted edges 147/256 records=0
+Writing degree sorted edges 148/256 records=0
+Writing degree sorted edges 149/256 records=0
+Writing degree sorted edges 150/256 records=0
+Writing degree sorted edges 151/256 records=0
+Writing degree sorted edges 152/256 records=0
+Writing degree sorted edges 153/256 records=0
+Writing degree sorted edges 154/256 records=0
+Writing degree sorted edges 155/256 records=0
+Writing degree sorted edges 156/256 records=0
+Writing degree sorted edges 157/256 records=0
+Writing degree sorted edges 158/256 records=0
+Writing degree sorted edges 159/256 records=0
+Writing degree sorted edges 160/256 records=0
+Writing degree sorted edges 161/256 records=0
+Writing degree sorted edges 162/256 records=0
+Writing degree sorted edges 163/256 records=0
+Writing degree sorted edges 164/256 records=0
+Writing degree sorted edges 165/256 records=0
+Writing degree sorted edges 166/256 records=0
+Writing degree sorted edges 167/256 records=0
+Writing degree sorted edges 168/256 records=0
+Writing degree sorted edges 169/256 records=0
+Writing degree sorted edges 170/256 records=0
+Writing degree sorted edges 171/256 records=0
+Writing degree sorted edges 172/256 records=0
+Writing degree sorted edges 173/256 records=0
+Writing degree sorted edges 174/256 records=0
+Writing degree sorted edges 175/256 records=0
+Writing degree sorted edges 176/256 records=0
+Writing degree sorted edges 177/256 records=0
+Writing degree sorted edges 178/256 records=0
+Writing degree sorted edges 179/256 records=0
+Writing degree sorted edges 180/256 records=0
+Writing degree sorted edges 181/256 records=0
+Writing degree sorted edges 182/256 records=0
+Writing degree sorted edges 183/256 records=0
+Writing degree sorted edges 184/256 records=0
+Writing degree sorted edges 185/256 records=0
+Writing degree sorted edges 186/256 records=0
+Writing degree sorted edges 187/256 records=0
+Writing degree sorted edges 188/256 records=0
+Writing degree sorted edges 189/256 records=0
+Writing degree sorted edges 190/256 records=0
+Writing degree sorted edges 191/256 records=0
+Writing degree sorted edges 192/256 records=0
+Writing degree sorted edges 193/256 records=0
+Writing degree sorted edges 194/256 records=0
+Writing degree sorted edges 195/256 records=0
+Writing degree sorted edges 196/256 records=0
+Writing degree sorted edges 197/256 records=0
+Writing degree sorted edges 198/256 records=0
+Writing degree sorted edges 199/256 records=0
+Writing degree sorted edges 200/256 records=0
+Writing degree sorted edges 201/256 records=0
+Writing degree sorted edges 202/256 records=0
+Writing degree sorted edges 203/256 records=0
+Writing degree sorted edges 204/256 records=0
+Writing degree sorted edges 205/256 records=0
+Writing degree sorted edges 206/256 records=0
+Writing degree sorted edges 207/256 records=0
+Writing degree sorted edges 208/256 records=0
+Writing degree sorted edges 209/256 records=0
+Writing degree sorted edges 210/256 records=0
+Writing degree sorted edges 211/256 records=0
+Writing degree sorted edges 212/256 records=0
+Writing degree sorted edges 213/256 records=0
+Writing degree sorted edges 214/256 records=0
+Writing degree sorted edges 215/256 records=0
+Writing degree sorted edges 216/256 records=0
+Writing degree sorted edges 217/256 records=0
+Writing degree sorted edges 218/256 records=0
+Writing degree sorted edges 219/256 records=0
+Writing degree sorted edges 220/256 records=0
+Writing degree sorted edges 221/256 records=0
+Writing degree sorted edges 222/256 records=0
+Writing degree sorted edges 223/256 records=0
+Writing degree sorted edges 224/256 records=0
+Writing degree sorted edges 225/256 records=0
+Writing degree sorted edges 226/256 records=0
+Writing degree sorted edges 227/256 records=0
+Writing degree sorted edges 228/256 records=0
+Writing degree sorted edges 229/256 records=0
+Writing degree sorted edges 230/256 records=0
+Writing degree sorted edges 231/256 records=0
+Writing degree sorted edges 232/256 records=0
+Writing degree sorted edges 233/256 records=0
+Writing degree sorted edges 234/256 records=0
+Writing degree sorted edges 235/256 records=0
+Writing degree sorted edges 236/256 records=0
+Writing degree sorted edges 237/256 records=0
+Writing degree sorted edges 238/256 records=0
+Writing degree sorted edges 239/256 records=0
+Writing degree sorted edges 240/256 records=0
+Writing degree sorted edges 241/256 records=0
+Writing degree sorted edges 242/256 records=0
+Writing degree sorted edges 243/256 records=0
+Writing degree sorted edges 244/256 records=0
+Writing degree sorted edges 245/256 records=0
+Writing degree sorted edges 246/256 records=0
+Writing degree sorted edges 247/256 records=0
+Writing degree sorted edges 248/256 records=0
+Writing degree sorted edges 249/256 records=0
+Writing degree sorted edges 250/256 records=0
+Writing degree sorted edges 251/256 records=0
+Writing degree sorted edges 252/256 records=0
+Writing degree sorted edges 253/256 records=0
+Writing degree sorted edges 254/256 records=0
+Writing degree sorted edges 255/256 records=0
+Writing degree sorted edges 256/256 records=0
+Computing transitive closure...  [0s]
+Building reverse mapping...  [0s]
+Generating output...  [0s]
+#Clusters: 3
+[0, 0] Writing representative ids
+[0, 0] Writing representatives. Volume=1/1 Records=3
+[0, 0] Representatives written: 3 letters: 247
+[0, 0] Wrote 259 bytes to disk at 0.12 MB/s
+[0, 0] Starting round 3/5 sensitivity=linclust-20 linear=true
+[0, 0] Searching blocks. Blocks=1,1
+[0, 0] Database letter count: 247
+Opening the database...  [0s]
+FASTA file size: 259 bytes
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+#Target sequences to report alignments for: unlimited
+Database:  (type: FASTA file)
+Block size = 65536000000000
+Opening the input file...  [0s]
+Opening the output file...  [0s]
+Seeking in database...  [0s]
+Loading query sequences...  [0s]
+Loaded 259 bytes from disk at 1.06927 MB/s
+Length sorting queries...  [0s]
+Algorithm: Double-indexed
+Building query histograms...  [0s]
+Seeking in database...  [0s]
+Seeking in database...  [0s]
+Initializing temporary storage...  [0.006s]
+Building reference histograms...  [0s]
+Allocating buffers...  [0s]
+Processing query block 1, reference block 1, shape 1/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 2/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 3/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 4/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 5/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 6/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 7/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 8/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 9/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 10/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 11/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 12/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 13/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 14/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 15/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 16/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 17/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 18/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 19/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 20/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 21/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.001s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 22/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.001s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 23/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.001s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 24/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.001s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 25/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 26/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 27/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 28/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 29/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Processing query block 1, reference block 1, shape 30/30.
+Building reference seed array...  [0s]
+Building query seed array...  [0s]
+Computing hash join...  [0s]
+Masking low complexity seeds...  [0s]
+Building kmer ranking...  [0.002s]
+Searching alignments...  [0s]
+Deallocating memory...  [0s]
+Deallocating buffers...  [0s]
+Clearing query masking...  [0s]
+Computing alignments...  [0.001s]
+Deallocating reference...  [0s]
+Loading reference sequences...  [0s]
+Deallocating buffers...  [0s]
+Deallocating queries...  [0s]
+Seeking in database...  [0s]
+Loading query sequences...  [0s]
+Closing the output file...  [0s]
+Closing the database...  [0s]
+Cleaning up...  [0s]
+Total time = 0.061s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 0] Concatenating alignment files
@@ -1171,834 +1978,27 @@ Generating output...  [0s]
 [0, 1] Writing representative ids
 [0, 1] Writing representatives. Volume=1/1 Records=3
 [0, 1] Representatives written: 3 letters: 247
-[0, 1] Wrote 259 bytes to disk at 0.11 MB/s
-[0, 1] Starting round 3/5 sensitivity=linclust-20 linear=true
-[0, 1] Searching blocks. Blocks=1,1
-[0, 1] Database letter count: 247
-Opening the database...  [0.001s]
-FASTA file size: 259 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//
-#Target sequences to report alignments for: unlimited
-Database:  (type: FASTA file)
-Block size = 65536000000000
-Opening the input file...  [0s]
-Opening the output file...  [0s]
-Seeking in database...  [0s]
-Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 0.7743 MB/s
-Length sorting queries...  [0s]
-Algorithm: Double-indexed
-Building query histograms...  [0s]
-Seeking in database...  [0s]
-Seeking in database...  [0s]
-Initializing temporary storage...  [0.004s]
-Building reference histograms...  [0s]
-Allocating buffers...  [0s]
-Processing query block 1, reference block 1, shape 1/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 2/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 3/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 4/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 5/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 6/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 7/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 8/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 9/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 10/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 11/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 12/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 13/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 14/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 15/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 16/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 17/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 18/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 19/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 20/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 21/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.001s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 22/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.001s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 23/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.001s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 24/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.001s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 25/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 26/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 27/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 28/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 29/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Processing query block 1, reference block 1, shape 30/30.
-Building reference seed array...  [0s]
-Building query seed array...  [0s]
-Computing hash join...  [0s]
-Masking low complexity seeds...  [0s]
-Building kmer ranking...  [0.002s]
-Searching alignments...  [0s]
-Deallocating memory...  [0s]
-Deallocating buffers...  [0s]
-Clearing query masking...  [0s]
-Computing alignments...  [0.001s]
-Deallocating reference...  [0s]
-Loading reference sequences...  [0s]
-Deallocating buffers...  [0s]
-Deallocating queries...  [0s]
-Seeking in database...  [0s]
-Loading query sequences...  [0s]
-Closing the output file...  [0s]
-Closing the database...  [0s]
-Cleaning up...  [0s]
-Total time = 0.065s
-Reported 0 pairwise alignments, 0 HSPs.
-0 queries aligned.
-[0, 1] Concatenating alignment files
-[0, 1] Running greedy vertex cover
-Coverage cutoff: 80%
-Edge format: triplet
-Symmetric: yes
-Reading mapping file...  [0s]
-#Sequences in database: 3
-Reading input lines...  [0s]
-#Input lines: 0
-#Input edges: 0
-Finding neighbor counts bucket 1/256 records=0
-Finding neighbor counts bucket 2/256 records=0
-Finding neighbor counts bucket 3/256 records=0
-Finding neighbor counts bucket 4/256 records=0
-Finding neighbor counts bucket 5/256 records=0
-Finding neighbor counts bucket 6/256 records=0
-Finding neighbor counts bucket 7/256 records=0
-Finding neighbor counts bucket 8/256 records=0
-Finding neighbor counts bucket 9/256 records=0
-Finding neighbor counts bucket 10/256 records=0
-Finding neighbor counts bucket 11/256 records=0
-Finding neighbor counts bucket 12/256 records=0
-Finding neighbor counts bucket 13/256 records=0
-Finding neighbor counts bucket 14/256 records=0
-Finding neighbor counts bucket 15/256 records=0
-Finding neighbor counts bucket 16/256 records=0
-Finding neighbor counts bucket 17/256 records=0
-Finding neighbor counts bucket 18/256 records=0
-Finding neighbor counts bucket 19/256 records=0
-Finding neighbor counts bucket 20/256 records=0
-Finding neighbor counts bucket 21/256 records=0
-Finding neighbor counts bucket 22/256 records=0
-Finding neighbor counts bucket 23/256 records=0
-Finding neighbor counts bucket 24/256 records=0
-Finding neighbor counts bucket 25/256 records=0
-Finding neighbor counts bucket 26/256 records=0
-Finding neighbor counts bucket 27/256 records=0
-Finding neighbor counts bucket 28/256 records=0
-Finding neighbor counts bucket 29/256 records=0
-Finding neighbor counts bucket 30/256 records=0
-Finding neighbor counts bucket 31/256 records=0
-Finding neighbor counts bucket 32/256 records=0
-Finding neighbor counts bucket 33/256 records=0
-Finding neighbor counts bucket 34/256 records=0
-Finding neighbor counts bucket 35/256 records=0
-Finding neighbor counts bucket 36/256 records=0
-Finding neighbor counts bucket 37/256 records=0
-Finding neighbor counts bucket 38/256 records=0
-Finding neighbor counts bucket 39/256 records=0
-Finding neighbor counts bucket 40/256 records=0
-Finding neighbor counts bucket 41/256 records=0
-Finding neighbor counts bucket 42/256 records=0
-Finding neighbor counts bucket 43/256 records=0
-Finding neighbor counts bucket 44/256 records=0
-Finding neighbor counts bucket 45/256 records=0
-Finding neighbor counts bucket 46/256 records=0
-Finding neighbor counts bucket 47/256 records=0
-Finding neighbor counts bucket 48/256 records=0
-Finding neighbor counts bucket 49/256 records=0
-Finding neighbor counts bucket 50/256 records=0
-Finding neighbor counts bucket 51/256 records=0
-Finding neighbor counts bucket 52/256 records=0
-Finding neighbor counts bucket 53/256 records=0
-Finding neighbor counts bucket 54/256 records=0
-Finding neighbor counts bucket 55/256 records=0
-Finding neighbor counts bucket 56/256 records=0
-Finding neighbor counts bucket 57/256 records=0
-Finding neighbor counts bucket 58/256 records=0
-Finding neighbor counts bucket 59/256 records=0
-Finding neighbor counts bucket 60/256 records=0
-Finding neighbor counts bucket 61/256 records=0
-Finding neighbor counts bucket 62/256 records=0
-Finding neighbor counts bucket 63/256 records=0
-Finding neighbor counts bucket 64/256 records=0
-Finding neighbor counts bucket 65/256 records=0
-Finding neighbor counts bucket 66/256 records=0
-Finding neighbor counts bucket 67/256 records=0
-Finding neighbor counts bucket 68/256 records=0
-Finding neighbor counts bucket 69/256 records=0
-Finding neighbor counts bucket 70/256 records=0
-Finding neighbor counts bucket 71/256 records=0
-Finding neighbor counts bucket 72/256 records=0
-Finding neighbor counts bucket 73/256 records=0
-Finding neighbor counts bucket 74/256 records=0
-Finding neighbor counts bucket 75/256 records=0
-Finding neighbor counts bucket 76/256 records=0
-Finding neighbor counts bucket 77/256 records=0
-Finding neighbor counts bucket 78/256 records=0
-Finding neighbor counts bucket 79/256 records=0
-Finding neighbor counts bucket 80/256 records=0
-Finding neighbor counts bucket 81/256 records=0
-Finding neighbor counts bucket 82/256 records=0
-Finding neighbor counts bucket 83/256 records=0
-Finding neighbor counts bucket 84/256 records=0
-Finding neighbor counts bucket 85/256 records=0
-Finding neighbor counts bucket 86/256 records=0
-Finding neighbor counts bucket 87/256 records=0
-Finding neighbor counts bucket 88/256 records=0
-Finding neighbor counts bucket 89/256 records=0
-Finding neighbor counts bucket 90/256 records=0
-Finding neighbor counts bucket 91/256 records=0
-Finding neighbor counts bucket 92/256 records=0
-Finding neighbor counts bucket 93/256 records=0
-Finding neighbor counts bucket 94/256 records=0
-Finding neighbor counts bucket 95/256 records=0
-Finding neighbor counts bucket 96/256 records=0
-Finding neighbor counts bucket 97/256 records=0
-Finding neighbor counts bucket 98/256 records=0
-Finding neighbor counts bucket 99/256 records=0
-Finding neighbor counts bucket 100/256 records=0
-Finding neighbor counts bucket 101/256 records=0
-Finding neighbor counts bucket 102/256 records=0
-Finding neighbor counts bucket 103/256 records=0
-Finding neighbor counts bucket 104/256 records=0
-Finding neighbor counts bucket 105/256 records=0
-Finding neighbor counts bucket 106/256 records=0
-Finding neighbor counts bucket 107/256 records=0
-Finding neighbor counts bucket 108/256 records=0
-Finding neighbor counts bucket 109/256 records=0
-Finding neighbor counts bucket 110/256 records=0
-Finding neighbor counts bucket 111/256 records=0
-Finding neighbor counts bucket 112/256 records=0
-Finding neighbor counts bucket 113/256 records=0
-Finding neighbor counts bucket 114/256 records=0
-Finding neighbor counts bucket 115/256 records=0
-Finding neighbor counts bucket 116/256 records=0
-Finding neighbor counts bucket 117/256 records=0
-Finding neighbor counts bucket 118/256 records=0
-Finding neighbor counts bucket 119/256 records=0
-Finding neighbor counts bucket 120/256 records=0
-Finding neighbor counts bucket 121/256 records=0
-Finding neighbor counts bucket 122/256 records=0
-Finding neighbor counts bucket 123/256 records=0
-Finding neighbor counts bucket 124/256 records=0
-Finding neighbor counts bucket 125/256 records=0
-Finding neighbor counts bucket 126/256 records=0
-Finding neighbor counts bucket 127/256 records=0
-Finding neighbor counts bucket 128/256 records=0
-Finding neighbor counts bucket 129/256 records=0
-Finding neighbor counts bucket 130/256 records=0
-Finding neighbor counts bucket 131/256 records=0
-Finding neighbor counts bucket 132/256 records=0
-Finding neighbor counts bucket 133/256 records=0
-Finding neighbor counts bucket 134/256 records=0
-Finding neighbor counts bucket 135/256 records=0
-Finding neighbor counts bucket 136/256 records=0
-Finding neighbor counts bucket 137/256 records=0
-Finding neighbor counts bucket 138/256 records=0
-Finding neighbor counts bucket 139/256 records=0
-Finding neighbor counts bucket 140/256 records=0
-Finding neighbor counts bucket 141/256 records=0
-Finding neighbor counts bucket 142/256 records=0
-Finding neighbor counts bucket 143/256 records=0
-Finding neighbor counts bucket 144/256 records=0
-Finding neighbor counts bucket 145/256 records=0
-Finding neighbor counts bucket 146/256 records=0
-Finding neighbor counts bucket 147/256 records=0
-Finding neighbor counts bucket 148/256 records=0
-Finding neighbor counts bucket 149/256 records=0
-Finding neighbor counts bucket 150/256 records=0
-Finding neighbor counts bucket 151/256 records=0
-Finding neighbor counts bucket 152/256 records=0
-Finding neighbor counts bucket 153/256 records=0
-Finding neighbor counts bucket 154/256 records=0
-Finding neighbor counts bucket 155/256 records=0
-Finding neighbor counts bucket 156/256 records=0
-Finding neighbor counts bucket 157/256 records=0
-Finding neighbor counts bucket 158/256 records=0
-Finding neighbor counts bucket 159/256 records=0
-Finding neighbor counts bucket 160/256 records=0
-Finding neighbor counts bucket 161/256 records=0
-Finding neighbor counts bucket 162/256 records=0
-Finding neighbor counts bucket 163/256 records=0
-Finding neighbor counts bucket 164/256 records=0
-Finding neighbor counts bucket 165/256 records=0
-Finding neighbor counts bucket 166/256 records=0
-Finding neighbor counts bucket 167/256 records=0
-Finding neighbor counts bucket 168/256 records=0
-Finding neighbor counts bucket 169/256 records=0
-Finding neighbor counts bucket 170/256 records=0
-Finding neighbor counts bucket 171/256 records=0
-Finding neighbor counts bucket 172/256 records=0
-Finding neighbor counts bucket 173/256 records=0
-Finding neighbor counts bucket 174/256 records=0
-Finding neighbor counts bucket 175/256 records=0
-Finding neighbor counts bucket 176/256 records=0
-Finding neighbor counts bucket 177/256 records=0
-Finding neighbor counts bucket 178/256 records=0
-Finding neighbor counts bucket 179/256 records=0
-Finding neighbor counts bucket 180/256 records=0
-Finding neighbor counts bucket 181/256 records=0
-Finding neighbor counts bucket 182/256 records=0
-Finding neighbor counts bucket 183/256 records=0
-Finding neighbor counts bucket 184/256 records=0
-Finding neighbor counts bucket 185/256 records=0
-Finding neighbor counts bucket 186/256 records=0
-Finding neighbor counts bucket 187/256 records=0
-Finding neighbor counts bucket 188/256 records=0
-Finding neighbor counts bucket 189/256 records=0
-Finding neighbor counts bucket 190/256 records=0
-Finding neighbor counts bucket 191/256 records=0
-Finding neighbor counts bucket 192/256 records=0
-Finding neighbor counts bucket 193/256 records=0
-Finding neighbor counts bucket 194/256 records=0
-Finding neighbor counts bucket 195/256 records=0
-Finding neighbor counts bucket 196/256 records=0
-Finding neighbor counts bucket 197/256 records=0
-Finding neighbor counts bucket 198/256 records=0
-Finding neighbor counts bucket 199/256 records=0
-Finding neighbor counts bucket 200/256 records=0
-Finding neighbor counts bucket 201/256 records=0
-Finding neighbor counts bucket 202/256 records=0
-Finding neighbor counts bucket 203/256 records=0
-Finding neighbor counts bucket 204/256 records=0
-Finding neighbor counts bucket 205/256 records=0
-Finding neighbor counts bucket 206/256 records=0
-Finding neighbor counts bucket 207/256 records=0
-Finding neighbor counts bucket 208/256 records=0
-Finding neighbor counts bucket 209/256 records=0
-Finding neighbor counts bucket 210/256 records=0
-Finding neighbor counts bucket 211/256 records=0
-Finding neighbor counts bucket 212/256 records=0
-Finding neighbor counts bucket 213/256 records=0
-Finding neighbor counts bucket 214/256 records=0
-Finding neighbor counts bucket 215/256 records=0
-Finding neighbor counts bucket 216/256 records=0
-Finding neighbor counts bucket 217/256 records=0
-Finding neighbor counts bucket 218/256 records=0
-Finding neighbor counts bucket 219/256 records=0
-Finding neighbor counts bucket 220/256 records=0
-Finding neighbor counts bucket 221/256 records=0
-Finding neighbor counts bucket 222/256 records=0
-Finding neighbor counts bucket 223/256 records=0
-Finding neighbor counts bucket 224/256 records=0
-Finding neighbor counts bucket 225/256 records=0
-Finding neighbor counts bucket 226/256 records=0
-Finding neighbor counts bucket 227/256 records=0
-Finding neighbor counts bucket 228/256 records=0
-Finding neighbor counts bucket 229/256 records=0
-Finding neighbor counts bucket 230/256 records=0
-Finding neighbor counts bucket 231/256 records=0
-Finding neighbor counts bucket 232/256 records=0
-Finding neighbor counts bucket 233/256 records=0
-Finding neighbor counts bucket 234/256 records=0
-Finding neighbor counts bucket 235/256 records=0
-Finding neighbor counts bucket 236/256 records=0
-Finding neighbor counts bucket 237/256 records=0
-Finding neighbor counts bucket 238/256 records=0
-Finding neighbor counts bucket 239/256 records=0
-Finding neighbor counts bucket 240/256 records=0
-Finding neighbor counts bucket 241/256 records=0
-Finding neighbor counts bucket 242/256 records=0
-Finding neighbor counts bucket 243/256 records=0
-Finding neighbor counts bucket 244/256 records=0
-Finding neighbor counts bucket 245/256 records=0
-Finding neighbor counts bucket 246/256 records=0
-Finding neighbor counts bucket 247/256 records=0
-Finding neighbor counts bucket 248/256 records=0
-Finding neighbor counts bucket 249/256 records=0
-Finding neighbor counts bucket 250/256 records=0
-Finding neighbor counts bucket 251/256 records=0
-Finding neighbor counts bucket 252/256 records=0
-Finding neighbor counts bucket 253/256 records=0
-Finding neighbor counts bucket 254/256 records=0
-Finding neighbor counts bucket 255/256 records=0
-Finding neighbor counts bucket 256/256 records=0
-Writing degree sorted edges 1/256 records=0
-Writing degree sorted edges 2/256 records=0
-Writing degree sorted edges 3/256 records=0
-Writing degree sorted edges 4/256 records=0
-Writing degree sorted edges 5/256 records=0
-Writing degree sorted edges 6/256 records=0
-Writing degree sorted edges 7/256 records=0
-Writing degree sorted edges 8/256 records=0
-Writing degree sorted edges 9/256 records=0
-Writing degree sorted edges 10/256 records=0
-Writing degree sorted edges 11/256 records=0
-Writing degree sorted edges 12/256 records=0
-Writing degree sorted edges 13/256 records=0
-Writing degree sorted edges 14/256 records=0
-Writing degree sorted edges 15/256 records=0
-Writing degree sorted edges 16/256 records=0
-Writing degree sorted edges 17/256 records=0
-Writing degree sorted edges 18/256 records=0
-Writing degree sorted edges 19/256 records=0
-Writing degree sorted edges 20/256 records=0
-Writing degree sorted edges 21/256 records=0
-Writing degree sorted edges 22/256 records=0
-Writing degree sorted edges 23/256 records=0
-Writing degree sorted edges 24/256 records=0
-Writing degree sorted edges 25/256 records=0
-Writing degree sorted edges 26/256 records=0
-Writing degree sorted edges 27/256 records=0
-Writing degree sorted edges 28/256 records=0
-Writing degree sorted edges 29/256 records=0
-Writing degree sorted edges 30/256 records=0
-Writing degree sorted edges 31/256 records=0
-Writing degree sorted edges 32/256 records=0
-Writing degree sorted edges 33/256 records=0
-Writing degree sorted edges 34/256 records=0
-Writing degree sorted edges 35/256 records=0
-Writing degree sorted edges 36/256 records=0
-Writing degree sorted edges 37/256 records=0
-Writing degree sorted edges 38/256 records=0
-Writing degree sorted edges 39/256 records=0
-Writing degree sorted edges 40/256 records=0
-Writing degree sorted edges 41/256 records=0
-Writing degree sorted edges 42/256 records=0
-Writing degree sorted edges 43/256 records=0
-Writing degree sorted edges 44/256 records=0
-Writing degree sorted edges 45/256 records=0
-Writing degree sorted edges 46/256 records=0
-Writing degree sorted edges 47/256 records=0
-Writing degree sorted edges 48/256 records=0
-Writing degree sorted edges 49/256 records=0
-Writing degree sorted edges 50/256 records=0
-Writing degree sorted edges 51/256 records=0
-Writing degree sorted edges 52/256 records=0
-Writing degree sorted edges 53/256 records=0
-Writing degree sorted edges 54/256 records=0
-Writing degree sorted edges 55/256 records=0
-Writing degree sorted edges 56/256 records=0
-Writing degree sorted edges 57/256 records=0
-Writing degree sorted edges 58/256 records=0
-Writing degree sorted edges 59/256 records=0
-Writing degree sorted edges 60/256 records=0
-Writing degree sorted edges 61/256 records=0
-Writing degree sorted edges 62/256 records=0
-Writing degree sorted edges 63/256 records=0
-Writing degree sorted edges 64/256 records=0
-Writing degree sorted edges 65/256 records=0
-Writing degree sorted edges 66/256 records=0
-Writing degree sorted edges 67/256 records=0
-Writing degree sorted edges 68/256 records=0
-Writing degree sorted edges 69/256 records=0
-Writing degree sorted edges 70/256 records=0
-Writing degree sorted edges 71/256 records=0
-Writing degree sorted edges 72/256 records=0
-Writing degree sorted edges 73/256 records=0
-Writing degree sorted edges 74/256 records=0
-Writing degree sorted edges 75/256 records=0
-Writing degree sorted edges 76/256 records=0
-Writing degree sorted edges 77/256 records=0
-Writing degree sorted edges 78/256 records=0
-Writing degree sorted edges 79/256 records=0
-Writing degree sorted edges 80/256 records=0
-Writing degree sorted edges 81/256 records=0
-Writing degree sorted edges 82/256 records=0
-Writing degree sorted edges 83/256 records=0
-Writing degree sorted edges 84/256 records=0
-Writing degree sorted edges 85/256 records=0
-Writing degree sorted edges 86/256 records=0
-Writing degree sorted edges 87/256 records=0
-Writing degree sorted edges 88/256 records=0
-Writing degree sorted edges 89/256 records=0
-Writing degree sorted edges 90/256 records=0
-Writing degree sorted edges 91/256 records=0
-Writing degree sorted edges 92/256 records=0
-Writing degree sorted edges 93/256 records=0
-Writing degree sorted edges 94/256 records=0
-Writing degree sorted edges 95/256 records=0
-Writing degree sorted edges 96/256 records=0
-Writing degree sorted edges 97/256 records=0
-Writing degree sorted edges 98/256 records=0
-Writing degree sorted edges 99/256 records=0
-Writing degree sorted edges 100/256 records=0
-Writing degree sorted edges 101/256 records=0
-Writing degree sorted edges 102/256 records=0
-Writing degree sorted edges 103/256 records=0
-Writing degree sorted edges 104/256 records=0
-Writing degree sorted edges 105/256 records=0
-Writing degree sorted edges 106/256 records=0
-Writing degree sorted edges 107/256 records=0
-Writing degree sorted edges 108/256 records=0
-Writing degree sorted edges 109/256 records=0
-Writing degree sorted edges 110/256 records=0
-Writing degree sorted edges 111/256 records=0
-Writing degree sorted edges 112/256 records=0
-Writing degree sorted edges 113/256 records=0
-Writing degree sorted edges 114/256 records=0
-Writing degree sorted edges 115/256 records=0
-Writing degree sorted edges 116/256 records=0
-Writing degree sorted edges 117/256 records=0
-Writing degree sorted edges 118/256 records=0
-Writing degree sorted edges 119/256 records=0
-Writing degree sorted edges 120/256 records=0
-Writing degree sorted edges 121/256 records=0
-Writing degree sorted edges 122/256 records=0
-Writing degree sorted edges 123/256 records=0
-Writing degree sorted edges 124/256 records=0
-Writing degree sorted edges 125/256 records=0
-Writing degree sorted edges 126/256 records=0
-Writing degree sorted edges 127/256 records=0
-Writing degree sorted edges 128/256 records=0
-Writing degree sorted edges 129/256 records=0
-Writing degree sorted edges 130/256 records=0
-Writing degree sorted edges 131/256 records=0
-Writing degree sorted edges 132/256 records=0
-Writing degree sorted edges 133/256 records=0
-Writing degree sorted edges 134/256 records=0
-Writing degree sorted edges 135/256 records=0
-Writing degree sorted edges 136/256 records=0
-Writing degree sorted edges 137/256 records=0
-Writing degree sorted edges 138/256 records=0
-Writing degree sorted edges 139/256 records=0
-Writing degree sorted edges 140/256 records=0
-Writing degree sorted edges 141/256 records=0
-Writing degree sorted edges 142/256 records=0
-Writing degree sorted edges 143/256 records=0
-Writing degree sorted edges 144/256 records=0
-Writing degree sorted edges 145/256 records=0
-Writing degree sorted edges 146/256 records=0
-Writing degree sorted edges 147/256 records=0
-Writing degree sorted edges 148/256 records=0
-Writing degree sorted edges 149/256 records=0
-Writing degree sorted edges 150/256 records=0
-Writing degree sorted edges 151/256 records=0
-Writing degree sorted edges 152/256 records=0
-Writing degree sorted edges 153/256 records=0
-Writing degree sorted edges 154/256 records=0
-Writing degree sorted edges 155/256 records=0
-Writing degree sorted edges 156/256 records=0
-Writing degree sorted edges 157/256 records=0
-Writing degree sorted edges 158/256 records=0
-Writing degree sorted edges 159/256 records=0
-Writing degree sorted edges 160/256 records=0
-Writing degree sorted edges 161/256 records=0
-Writing degree sorted edges 162/256 records=0
-Writing degree sorted edges 163/256 records=0
-Writing degree sorted edges 164/256 records=0
-Writing degree sorted edges 165/256 records=0
-Writing degree sorted edges 166/256 records=0
-Writing degree sorted edges 167/256 records=0
-Writing degree sorted edges 168/256 records=0
-Writing degree sorted edges 169/256 records=0
-Writing degree sorted edges 170/256 records=0
-Writing degree sorted edges 171/256 records=0
-Writing degree sorted edges 172/256 records=0
-Writing degree sorted edges 173/256 records=0
-Writing degree sorted edges 174/256 records=0
-Writing degree sorted edges 175/256 records=0
-Writing degree sorted edges 176/256 records=0
-Writing degree sorted edges 177/256 records=0
-Writing degree sorted edges 178/256 records=0
-Writing degree sorted edges 179/256 records=0
-Writing degree sorted edges 180/256 records=0
-Writing degree sorted edges 181/256 records=0
-Writing degree sorted edges 182/256 records=0
-Writing degree sorted edges 183/256 records=0
-Writing degree sorted edges 184/256 records=0
-Writing degree sorted edges 185/256 records=0
-Writing degree sorted edges 186/256 records=0
-Writing degree sorted edges 187/256 records=0
-Writing degree sorted edges 188/256 records=0
-Writing degree sorted edges 189/256 records=0
-Writing degree sorted edges 190/256 records=0
-Writing degree sorted edges 191/256 records=0
-Writing degree sorted edges 192/256 records=0
-Writing degree sorted edges 193/256 records=0
-Writing degree sorted edges 194/256 records=0
-Writing degree sorted edges 195/256 records=0
-Writing degree sorted edges 196/256 records=0
-Writing degree sorted edges 197/256 records=0
-Writing degree sorted edges 198/256 records=0
-Writing degree sorted edges 199/256 records=0
-Writing degree sorted edges 200/256 records=0
-Writing degree sorted edges 201/256 records=0
-Writing degree sorted edges 202/256 records=0
-Writing degree sorted edges 203/256 records=0
-Writing degree sorted edges 204/256 records=0
-Writing degree sorted edges 205/256 records=0
-Writing degree sorted edges 206/256 records=0
-Writing degree sorted edges 207/256 records=0
-Writing degree sorted edges 208/256 records=0
-Writing degree sorted edges 209/256 records=0
-Writing degree sorted edges 210/256 records=0
-Writing degree sorted edges 211/256 records=0
-Writing degree sorted edges 212/256 records=0
-Writing degree sorted edges 213/256 records=0
-Writing degree sorted edges 214/256 records=0
-Writing degree sorted edges 215/256 records=0
-Writing degree sorted edges 216/256 records=0
-Writing degree sorted edges 217/256 records=0
-Writing degree sorted edges 218/256 records=0
-Writing degree sorted edges 219/256 records=0
-Writing degree sorted edges 220/256 records=0
-Writing degree sorted edges 221/256 records=0
-Writing degree sorted edges 222/256 records=0
-Writing degree sorted edges 223/256 records=0
-Writing degree sorted edges 224/256 records=0
-Writing degree sorted edges 225/256 records=0
-Writing degree sorted edges 226/256 records=0
-Writing degree sorted edges 227/256 records=0
-Writing degree sorted edges 228/256 records=0
-Writing degree sorted edges 229/256 records=0
-Writing degree sorted edges 230/256 records=0
-Writing degree sorted edges 231/256 records=0
-Writing degree sorted edges 232/256 records=0
-Writing degree sorted edges 233/256 records=0
-Writing degree sorted edges 234/256 records=0
-Writing degree sorted edges 235/256 records=0
-Writing degree sorted edges 236/256 records=0
-Writing degree sorted edges 237/256 records=0
-Writing degree sorted edges 238/256 records=0
-Writing degree sorted edges 239/256 records=0
-Writing degree sorted edges 240/256 records=0
-Writing degree sorted edges 241/256 records=0
-Writing degree sorted edges 242/256 records=0
-Writing degree sorted edges 243/256 records=0
-Writing degree sorted edges 244/256 records=0
-Writing degree sorted edges 245/256 records=0
-Writing degree sorted edges 246/256 records=0
-Writing degree sorted edges 247/256 records=0
-Writing degree sorted edges 248/256 records=0
-Writing degree sorted edges 249/256 records=0
-Writing degree sorted edges 250/256 records=0
-Writing degree sorted edges 251/256 records=0
-Writing degree sorted edges 252/256 records=0
-Writing degree sorted edges 253/256 records=0
-Writing degree sorted edges 254/256 records=0
-Writing degree sorted edges 255/256 records=0
-Writing degree sorted edges 256/256 records=0
-Computing transitive closure...  [0s]
-Building reverse mapping...  [0s]
-Generating output...  [0s]
-#Clusters: 3
-[0, 1] Writing representative ids
-[0, 1] Writing representatives. Volume=1/1 Records=3
-[0, 1] Representatives written: 3 letters: 247
-[0, 1] Wrote 259 bytes to disk at 0.08 MB/s
+[0, 1] Wrote 259 bytes to disk at 0.09 MB/s
 [0, 1] Starting round 4/5 sensitivity=default linear=false
 [0, 1] Database letter count: 247
 [0, 1] Running all-vs-all search for round 4/5
 [0, 1] Block size: 0.20 GB, index chunks: 1
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
 #Target sequences to report alignments for: unlimited
-Opening the database...  [0.002s]
+Opening the database...  [0s]
 FASTA file size: 259 bytes
-Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//round2//reps/reps_all.faa (type: FASTA file)
+Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//round2//reps/reps_all.faa (type: FASTA file)
 Block size = 199299338
 Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 0.904768 MB/s
+Loaded 259 bytes from disk at 1.18751 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.014s]
+Initializing temporary storage...  [0.005s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/2.
@@ -2027,7 +2027,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.023s
+Total time = 0.012s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 1] Running greedy vertex cover
@@ -2558,27 +2558,27 @@ Generating output...  [0s]
 [0, 1] Writing representative ids
 [0, 1] Writing representatives. Volume=1/1 Records=3
 [0, 1] Representatives written: 3 letters: 247
-[0, 1] Wrote 259 bytes to disk at 0.06 MB/s
+[0, 1] Wrote 259 bytes to disk at 0.10 MB/s
 [0, 1] Starting round 5/5 sensitivity=more-sensitive linear=false
 [0, 1] Database letter count: 247
 [0, 1] Running all-vs-all search for round 5/5
 [0, 1] Block size: 0.20 GB, index chunks: 1
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
 #Target sequences to report alignments for: unlimited
-Opening the database...  [0s]
+Opening the database...  [0.002s]
 FASTA file size: 259 bytes
-Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-iq7oN81p8Wdu//round3//reps/reps_all.faa (type: FASTA file)
+Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//round3//reps/reps_all.faa (type: FASTA file)
 Block size = 199299338
 Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 1.72728 MB/s
+Loaded 259 bytes from disk at 1.26021 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.004s]
+Initializing temporary storage...  [0.006s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/16.
@@ -2695,7 +2695,7 @@ Searching alignments...  [0s]
 Deallocating memory...  [0s]
 Deallocating buffers...  [0s]
 Clearing query masking...  [0s]
-Computing alignments...  [0.006s]
+Computing alignments...  [0.001s]
 Deallocating reference...  [0s]
 Loading reference sequences...  [0s]
 Deallocating buffers...  [0s]
@@ -2705,7 +2705,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.043s
+Total time = 0.041s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 1] Running greedy vertex cover
@@ -3233,9 +3233,9 @@ Computing transitive closure...  [0s]
 Building reverse mapping...  [0s]
 Generating output...  [0s]
 #Clusters: 3
-[0, 2] Merging clusterings
-[0, 2] Building output table (round 1) volume 1/1
-[0, 2] Building output table (round 2) volume 1/1 oid 0 - 4
+[0, 1] Merging clusterings
+[0, 1] Building output table (round 1) volume 1/1
+[0, 1] Building output table (round 2) volume 1/1 oid 0 - 4
 [0, 2] Total clusters: 3
 [0, 2] 
 [0, 2] Extensions computed: 3

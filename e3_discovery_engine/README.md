@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.6**
+Version **0.1.7**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:
@@ -31,6 +31,7 @@ prototype. This implementation adds:
 - source checksums, software versions and run manifests;
 - rule-level Snakemake benchmarks and summary figures;
 - console and persistent file logging;
+- comprehensive PEP 257/Google-style function and method docstrings;
 - unit, integration, synthetic end-to-end and optional real-DIAMOND tests;
 - retained legacy code for traceability, not execution.
 

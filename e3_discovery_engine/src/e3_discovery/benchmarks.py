@@ -19,7 +19,23 @@ LOGGER = logging.getLogger(__name__)
 
 
 def parse_snakemake_benchmark(path: Path) -> List[Dict[str, object]]:
-    """Parse one Snakemake benchmark TSV and annotate its source file."""
+    """Parse one Snakemake benchmark table into typed records.
+
+    Numeric benchmark fields are converted to floats, missing numeric values
+    are represented by ``None``, and every record is annotated with its source
+    file, inferred rule name and one-based repeat index.
+
+    Args:
+        path: Path to a tab-separated Snakemake benchmark file.
+
+    Returns:
+        A list of dictionaries, one for each recorded benchmark repeat.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not identify an existing file.
+        DataValidationError: If the required ``s`` column is absent, a numeric
+            value is invalid, or the file contains no benchmark rows.
+    """
 
     source = Path(path)
     if not source.is_file():
@@ -68,7 +84,23 @@ def aggregate_benchmark_directory(
     benchmark_dir: Path,
     dataset_metadata: Mapping[str, object] | None = None,
 ) -> List[Dict[str, object]]:
-    """Aggregate all benchmark TSV files below a directory."""
+    """Collect benchmark records from every TSV file below a directory.
+
+    Files are visited recursively in deterministic path order. Optional
+    dataset metadata is copied into every parsed record.
+
+    Args:
+        benchmark_dir: Root directory containing Snakemake benchmark TSV files.
+        dataset_metadata: Optional metadata fields to add to every record.
+
+    Returns:
+        A flat list of typed benchmark-record dictionaries.
+
+    Raises:
+        FileNotFoundError: If ``benchmark_dir`` is not an existing directory.
+        DataValidationError: If no TSV files are found or a benchmark file is
+            malformed.
+    """
 
     root = Path(benchmark_dir)
     LOGGER.info("Aggregating benchmark files below %s", root)
@@ -89,7 +121,22 @@ def aggregate_benchmark_directory(
 def summarise_benchmarks(
     records: Iterable[Mapping[str, object]],
 ) -> List[Dict[str, object]]:
-    """Summarise repeated benchmark measurements by rule name."""
+    """Summarise repeated benchmark observations by workflow rule.
+
+    Wall-clock time is summarised with the mean, minimum, maximum and
+    population standard deviation. Peak resident-memory values are summarised
+    when present.
+
+    Args:
+        records: Benchmark records containing at least ``rule_name`` and ``s``.
+
+    Returns:
+        One summary dictionary per rule, ordered by rule name.
+
+    Raises:
+        DataValidationError: If a record lacks ``rule_name`` or a rule has no
+            usable wall-clock measurements.
+    """
 
     groups: Dict[str, List[Mapping[str, object]]] = {}
     for record in records:
@@ -124,6 +171,17 @@ def summarise_benchmarks(
 
 
 def _population_sd(values: Sequence[float]) -> float:
+    """Calculate the population standard deviation of numeric values.
+
+    Args:
+        values: Non-empty sequence of floating-point observations.
+
+    Returns:
+        The population standard deviation using ``N`` as the denominator.
+
+    Raises:
+        ValueError: If ``values`` is empty.
+    """
     if not values:
         raise ValueError("At least one value is required")
     mean = sum(values) / len(values)
@@ -137,7 +195,26 @@ def write_benchmark_outputs(
     output_parquet: Path,
     summary_tsv: Path,
 ) -> None:
-    """Write detailed and summary benchmark tables."""
+    """Write detailed and summarised benchmark outputs.
+
+    Detailed records are written as TSV and Zstandard-compressed Parquet;
+    summary records are written as TSV. File publication is atomic where
+    supported by the package I/O helpers.
+
+    Args:
+        records: Detailed benchmark records to serialise.
+        summary_records: Aggregated rule-level benchmark summaries.
+        output_tsv: Destination for the detailed TSV table.
+        output_parquet: Destination for the detailed Parquet table.
+        summary_tsv: Destination for the summary TSV table.
+
+    Returns:
+        None.
+
+    Raises:
+        OSError: If an output cannot be created or replaced.
+        ValueError: If records cannot be represented as one Arrow table.
+    """
 
     write_tsv(records, output_tsv)
     write_tsv(summary_records, summary_tsv)
@@ -151,7 +228,25 @@ def plot_runtime_by_rule(
     output_png: Path,
     output_pdf: Path | None = None,
 ) -> None:
-    """Plot mean rule runtime with standard-deviation error bars."""
+    """Plot mean wall-clock runtime by workflow rule.
+
+    Rules are ordered from slowest to fastest and population standard
+    deviations are shown as horizontal error bars. A 300-dpi PNG is always
+    written and an optional vector PDF can also be produced.
+
+    Args:
+        summary_records: Rule summaries containing runtime means and standard
+            deviations.
+        output_png: Destination path for the PNG figure.
+        output_pdf: Optional destination path for a PDF copy.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If ``summary_records`` is empty or lacks required values.
+        OSError: If a requested output figure cannot be written.
+    """
 
     if not summary_records:
         raise ValueError("summary_records cannot be empty")

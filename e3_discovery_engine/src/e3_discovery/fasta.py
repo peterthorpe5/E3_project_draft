@@ -32,7 +32,13 @@ _INTERNAL_ID_SAFE = re.compile(r"[^A-Za-z0-9_.:@|+-]")
 
 @dataclass(frozen=True)
 class FastaRecord:
-    """One FASTA record with header and validated sequence text."""
+    """Store one parsed and validated protein FASTA record.
+
+    Attributes:
+        identifier: Normalised first token from the FASTA header.
+        description: Remaining free-text FASTA header description.
+        sequence: Uppercase validated amino-acid sequence.
+    """
 
     identifier: str
     description: str
@@ -40,7 +46,20 @@ class FastaRecord:
 
 
 def normalise_sequence_id(identifier: str) -> str:
-    """Return a FASTA-safe identifier without whitespace."""
+    """Convert a raw FASTA identifier into a stable FASTA-safe token.
+
+    Only the first whitespace-delimited token is retained and unsupported
+    characters are replaced with underscores.
+
+    Args:
+        identifier: Raw FASTA identifier or full header text.
+
+    Returns:
+        A non-empty identifier suitable for generated FASTA files.
+
+    Raises:
+        DataValidationError: If no identifier token remains after trimming.
+    """
 
     token = str(identifier).strip().split()[0] if str(identifier).strip() else ""
     if not token:
@@ -49,7 +68,20 @@ def normalise_sequence_id(identifier: str) -> str:
 
 
 def extract_entry(identifier: str) -> str:
-    """Extract a UniProt-style entry accession where possible."""
+    """Extract a UniProt accession from an identifier when possible.
+
+    ``sp|ACCESSION|NAME`` and ``tr|ACCESSION|NAME`` identifiers return the
+    middle accession. Other identifiers return their normalised token unchanged.
+
+    Args:
+        identifier: Raw or normalised sequence identifier.
+
+    Returns:
+        UniProt accession when recognised, otherwise the normalised identifier.
+
+    Raises:
+        DataValidationError: If the identifier is empty.
+    """
 
     token = normalise_sequence_id(identifier)
     parts = token.split("|")
@@ -59,7 +91,21 @@ def extract_entry(identifier: str) -> str:
 
 
 def validate_protein_sequence(sequence: str) -> str:
-    """Normalise and validate an amino-acid sequence."""
+    """Normalise and validate an amino-acid sequence.
+
+    Whitespace is removed, letters are uppercased and all remaining characters
+    must occur in the package protein alphabet.
+
+    Args:
+        sequence: Raw amino-acid sequence text.
+
+    Returns:
+        A non-empty uppercase sequence without whitespace.
+
+    Raises:
+        DataValidationError: If the sequence is empty or contains unsupported
+            characters.
+    """
 
     clean = "".join(str(sequence).split()).upper()
     if not clean:
@@ -74,7 +120,18 @@ def validate_protein_sequence(sequence: str) -> str:
 
 
 def iter_fasta(path: Path) -> Iterator[FastaRecord]:
-    """Stream FASTA records from plain or gzip-compressed input."""
+    """Stream validated records from a plain or gzip-compressed FASTA file.
+
+    Args:
+        path: Input FASTA or ``.gz``-compressed FASTA path.
+
+    Yields:
+        :class:`FastaRecord` objects in source-file order.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        DataValidationError: If headers, record order or sequences are invalid.
+    """
 
     current_header: Optional[str] = None
     sequence_parts: List[str] = []
@@ -103,6 +160,18 @@ def iter_fasta(path: Path) -> Iterator[FastaRecord]:
 
 
 def _record_from_parts(header: str, sequence_parts: Sequence[str]) -> FastaRecord:
+    """Build a validated FASTA record from one header and sequence fragments.
+
+    Args:
+        header: FASTA header text without the leading ``>`` character.
+        sequence_parts: Ordered sequence lines belonging to the record.
+
+    Returns:
+        A normalised and validated :class:`FastaRecord`.
+
+    Raises:
+        DataValidationError: If the identifier or assembled sequence is invalid.
+    """
     identifier = normalise_sequence_id(header)
     description = header[len(header.split()[0]):].strip()
     sequence = validate_protein_sequence("".join(sequence_parts))
@@ -114,7 +183,24 @@ def make_internal_id(
     original_id: str,
     identifier_mode: str,
 ) -> str:
-    """Create a globally unique sequence identifier for the combined database."""
+    """Create the sequence identifier used in the combined protein database.
+
+    ``preserve`` retains the normalised source identifier. ``prefix_sample``
+    prefixes it with the sample identifier and ``@@`` to avoid cross-proteome
+    collisions.
+
+    Args:
+        sample_id: Unique sample identifier from the manifest.
+        original_id: Source FASTA identifier.
+        identifier_mode: ``preserve`` or ``prefix_sample``.
+
+    Returns:
+        A normalised internal sequence identifier.
+
+    Raises:
+        DataValidationError: If either identifier is empty after normalisation.
+        ValueError: If ``identifier_mode`` is unsupported.
+    """
 
     if identifier_mode == "preserve":
         return normalise_sequence_id(original_id)
@@ -128,7 +214,12 @@ def make_internal_id(
 
 
 def sequence_schema() -> pa.Schema:
-    """Return the stable Arrow schema used for sequence metadata."""
+    """Define the stable Arrow schema for prepared sequence metadata.
+
+    Returns:
+        A ``pyarrow.Schema`` covering identifiers, biological metadata,
+        sequence values, checksums and source-record provenance.
+    """
 
     return pa.schema(
         [
@@ -155,6 +246,22 @@ def _flush_sequence_rows(
     writer: pq.ParquetWriter,
     rows: List[Mapping[str, object]],
 ) -> None:
+    """Write buffered sequence records to an open Parquet writer.
+
+    The supplied list is cleared after a successful write so it can be reused as
+    the next streaming batch.
+
+    Args:
+        writer: Open Parquet writer using :func:`sequence_schema`.
+        rows: Mutable list of sequence-record mappings.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If rows cannot be converted to the required Arrow schema.
+        OSError: If the Parquet batch cannot be written.
+    """
     if not rows:
         return
     table = pa.Table.from_pylist(rows, schema=sequence_schema())
@@ -171,10 +278,32 @@ def prepare_combined_fasta(
     batch_size: int = 100_000,
     compute_checksums: bool = True,
 ) -> Dict[str, int]:
-    """Create a combined FASTA and streaming sequence Parquet table.
+    """Prepare deterministic combined FASTA and sequence-metadata outputs.
 
-    Source FASTA files are never modified. Duplicate internal identifiers are
-    rejected before a completed output is published.
+    Source FASTA files are streamed without modification. The function validates
+    sample records, creates globally unique internal identifiers, rejects
+    duplicates, computes sequence and optional source checksums, writes sequence
+    metadata in Parquet batches, and writes one per-sample QC summary table.
+    Outputs are published atomically only after successful completion.
+
+    Args:
+        samples: Proteome sample records to process in the supplied order.
+        combined_fasta: Destination combined protein FASTA.
+        sequence_parquet: Destination sequence-record Parquet table.
+        sample_summary_tsv: Destination per-sample summary TSV.
+        identifier_mode: Internal identifier policy, normally ``prefix_sample``.
+        batch_size: Maximum sequence records held before each Parquet write.
+        compute_checksums: Whether to calculate SHA-256 for each source FASTA.
+
+    Returns:
+        Counts for processed samples, protein sequences and amino-acid residues.
+
+    Raises:
+        ValueError: If ``batch_size`` or ``identifier_mode`` is invalid.
+        FileNotFoundError: If a manifest FASTA path is missing.
+        DataValidationError: If samples, identifiers or protein records fail
+            validation, or a source FASTA contains no records.
+        OSError: If outputs cannot be written.
     """
 
     materialised = list(samples)
@@ -310,7 +439,19 @@ def write_fasta_records(
     records: Iterable[Tuple[str, str]],
     output_path: Path,
 ) -> int:
-    """Write identifier/sequence pairs to FASTA using 80-character wrapping."""
+    """Write identifier-sequence pairs as an atomic, wrapped FASTA file.
+
+    Args:
+        records: Iterable of ``(identifier, sequence)`` pairs.
+        output_path: Destination FASTA path.
+
+    Returns:
+        Number of FASTA records written.
+
+    Raises:
+        DataValidationError: If an identifier or sequence is invalid.
+        OSError: If the FASTA output cannot be written or replaced.
+    """
 
     count = 0
     with atomic_text_writer(output_path, newline="\n") as handle:

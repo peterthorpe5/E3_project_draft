@@ -19,7 +19,28 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class WorkflowPaths:
-    """Canonical output paths derived from one workflow root directory."""
+    """Store canonical output paths for one workflow result root.
+
+    Attributes:
+        root: Top-level result directory.
+        combined_fasta: Prepared combined-proteome FASTA.
+        sequence_parquet: Prepared sequence metadata table.
+        sample_summary_tsv: Per-sample input QC summary.
+        seed_tsv: Normalised known-E3 seed TSV.
+        seed_parquet: Normalised known-E3 seed Parquet table.
+        diamond_database: DIAMOND protein database.
+        clusters_tsv: Raw native DeepClust membership table.
+        clusters_parquet: Normalised cluster membership Parquet table.
+        realignments_tsv: Native DIAMOND realignment table.
+        realignments_parquet: Classified realignment Parquet table.
+        resource_duckdb: Curated DuckDB resource.
+        curated_parquet_dir: Directory for exported resource tables.
+        fasta_output_dir: Directory for curated FASTA exports.
+        validation_tsv: Resource-integrity findings table.
+        logs_dir: Persistent workflow-log directory.
+        benchmarks_dir: Snakemake benchmark-output directory.
+        provenance_dir: Commands, versions and run-manifest directory.
+    """
 
     root: Path
     combined_fasta: Path
@@ -42,7 +63,17 @@ class WorkflowPaths:
 
 
 def paths_from_config(config: Mapping[str, Any]) -> WorkflowPaths:
-    """Create all standard output paths from a validated configuration."""
+    """Derive every standard output path from validated configuration.
+
+    Args:
+        config: Workflow configuration containing ``outputs.root``.
+
+    Returns:
+        Immutable :class:`WorkflowPaths` rooted at the resolved output directory.
+
+    Raises:
+        KeyError: If the required output configuration is absent.
+    """
 
     root = Path(str(config["outputs"]["root"])).resolve()
     return WorkflowPaths(
@@ -68,7 +99,24 @@ def paths_from_config(config: Mapping[str, Any]) -> WorkflowPaths:
 
 
 def prepare_inputs_from_config(config_path: Path) -> Dict[str, object]:
-    """Prepare combined FASTA, sequence metadata, and known E3 seed tables."""
+    """Prepare combined sequences and normalised known-E3 seed inputs.
+
+    The function loads configuration, validates the sample manifest, creates the
+    combined FASTA and sequence metadata, and normalises the supplied E3 seed
+    table using configured identifier and batching policies.
+
+    Args:
+        config_path: Path to the workflow YAML configuration.
+
+    Returns:
+        A dictionary containing canonical paths and FASTA/seed summary counts.
+
+    Raises:
+        FileNotFoundError: If configuration, FASTA or seed inputs are missing.
+        ConfigurationError: If workflow configuration is invalid.
+        DataValidationError: If sequence, manifest or seed data is invalid.
+        OSError: If outputs cannot be written.
+    """
 
     LOGGER.info("Preparing workflow inputs using %s", config_path)
     config = load_config(config_path)
@@ -99,13 +147,38 @@ def prepare_inputs_from_config(config_path: Path) -> Dict[str, object]:
 
 
 def thresholds_from_config(config: Mapping[str, Any]) -> Thresholds:
-    """Return strict thresholds from a validated workflow configuration."""
+    """Build strict post-realignment thresholds from workflow configuration.
+
+    Args:
+        config: Validated workflow configuration mapping.
+
+    Returns:
+        A validated :class:`Thresholds` instance.
+
+    Raises:
+        KeyError: If the thresholds section or a required value is absent.
+        TypeError: If a threshold cannot be converted to a float.
+        ValueError: If a threshold lies outside its valid range.
+    """
 
     return thresholds_from_mapping(config["thresholds"])
 
 
 def build_resource_from_config(config_path: Path) -> Dict[str, object]:
-    """Build the curated DuckDB and Parquet resource from workflow outputs."""
+    """Build the curated DuckDB, Parquet and FASTA resource from workflow outputs.
+
+    Args:
+        config_path: Path to the workflow YAML configuration.
+
+    Returns:
+        Resource location, table counts, validation findings and export details.
+
+    Raises:
+        FileNotFoundError: If configuration or required Parquet inputs are absent.
+        ConfigurationError: If workflow configuration is invalid.
+        DataValidationError: If resource construction or integrity checks fail.
+        OSError: If database or export outputs cannot be written.
+    """
 
     LOGGER.info("Building workflow resource using %s", config_path)
     config = load_config(config_path)

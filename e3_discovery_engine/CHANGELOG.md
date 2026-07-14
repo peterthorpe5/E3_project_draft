@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.7 - 2026-07-14
+
+- Expanded every Python function and method docstring using a consistent
+  PEP 257-compatible Google style.
+- Documented purpose, arguments, return or yield values, and relevant raised
+  exceptions, including private helpers and nested generator functions.
+- Expanded dataclass documentation with field-level ``Attributes`` sections.
+- Added an automated source-documentation contract test covering module, class,
+  function and method docstrings.
+- Added a code-documentation standard describing the required format for future
+  development. No workflow behaviour or scientific logic changed.
+
 ## 0.1.6 - 2026-07-14
 
 - Fixed parsing of native DIAMOND 2.2.3 `realign` output, which labels

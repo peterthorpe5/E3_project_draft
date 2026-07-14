@@ -18,7 +18,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 def capture_command_version(command: Sequence[str]) -> str:
-    """Return the first non-empty version line or a diagnostic string."""
+    """Run a version command and capture a concise diagnostic string.
+
+    The helper never raises for an unavailable executable or non-zero exit; it
+    records the status so provenance generation can continue.
+
+    Args:
+        command: Executable and argument sequence used to request a version.
+
+    Returns:
+        Text containing the exit status and first non-empty output line, or an
+        ``unavailable`` diagnostic when the process cannot be started.
+    """
 
     try:
         completed = subprocess.run(
@@ -37,7 +48,15 @@ def capture_command_version(command: Sequence[str]) -> str:
 def capture_software_versions(
     tools: Mapping[str, Sequence[str]] | None = None,
 ) -> Dict[str, str]:
-    """Capture Python and external-tool versions without failing on absence."""
+    """Capture Python, platform and selected external-tool versions.
+
+    Args:
+        tools: Optional mapping from display name to version-command arguments.
+            Defaults to DIAMOND, Snakemake and DuckDB command-line clients.
+
+    Returns:
+        Mapping from software or platform name to captured version diagnostics.
+    """
 
     selected = tools or {
         "diamond": ("diamond", "version"),
@@ -58,7 +77,20 @@ def capture_software_versions(
 
 
 def build_file_manifest(paths: Iterable[Path]) -> Dict[str, Dict[str, object]]:
-    """Build checksums and sizes for named input/output files."""
+    """Record existence, size and SHA-256 checksum for workflow files.
+
+    Duplicate paths are removed and paths are sorted after absolute resolution.
+    Missing paths are retained with ``exists`` set to false.
+
+    Args:
+        paths: Input and output file paths to describe.
+
+    Returns:
+        Mapping from absolute path string to file-provenance metadata.
+
+    Raises:
+        OSError: If an existing file cannot be read or inspected.
+    """
 
     manifest: Dict[str, Dict[str, object]] = {}
     for path in sorted({Path(item).resolve() for item in paths}):
@@ -79,7 +111,21 @@ def write_run_manifest(
     files: Iterable[Path],
     additional_metadata: Mapping[str, object] | None = None,
 ) -> Dict[str, object]:
-    """Write a deterministic JSON run manifest with provenance information."""
+    """Write a JSON manifest describing configuration, software and workflow files.
+
+    Args:
+        output_path: Destination JSON path.
+        configuration: Resolved workflow configuration to record.
+        files: Input and output paths included in the file manifest.
+        additional_metadata: Optional extra run-level metadata.
+
+    Returns:
+        The complete manifest dictionary written to disk.
+
+    Raises:
+        TypeError: If configuration or metadata is not JSON serialisable.
+        OSError: If files cannot be inspected or the manifest cannot be written.
+    """
 
     LOGGER.info("Writing run provenance manifest: %s", output_path)
     record: Dict[str, object] = {

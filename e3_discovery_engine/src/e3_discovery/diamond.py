@@ -21,20 +21,43 @@ _VERSION_PATTERN = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
 @dataclass(frozen=True, order=True)
 class SemanticVersion:
-    """Small semantic-version representation suitable for feature checks."""
+    """Represent a three-component semantic version for feature checks.
+
+    Instances are immutable and orderable, allowing direct comparison of
+    installed and minimum-supported DIAMOND versions.
+
+    Attributes:
+        major: Major release component.
+        minor: Minor release component.
+        patch: Patch release component.
+    """
 
     major: int
     minor: int
     patch: int
 
     def __str__(self) -> str:
-        """Return the conventional dotted semantic-version representation."""
+        """Format the semantic version using dotted decimal notation.
+
+        Returns:
+            A string in ``major.minor.patch`` form.
+        """
 
         return f"{self.major}.{self.minor}.{self.patch}"
 
 
 def parse_semantic_version(text: str) -> SemanticVersion:
-    """Extract the first three-component semantic version from text."""
+    """Extract the first three-component semantic version from text.
+
+    Args:
+        text: Arbitrary command output or metadata containing a version string.
+
+    Returns:
+        Parsed :class:`SemanticVersion` values.
+
+    Raises:
+        ValueError: If no ``major.minor.patch`` pattern is present.
+    """
 
     match = _VERSION_PATTERN.search(str(text))
     if not match:
@@ -43,7 +66,19 @@ def parse_semantic_version(text: str) -> SemanticVersion:
 
 
 def get_diamond_version(executable: str = "diamond") -> SemanticVersion:
-    """Run ``diamond version`` and return its parsed semantic version."""
+    """Query a DIAMOND executable and parse its reported version.
+
+    Args:
+        executable: DIAMOND executable name or absolute path.
+
+    Returns:
+        Parsed semantic version reported by ``diamond version``.
+
+    Raises:
+        OSError: If the executable cannot be started.
+        ExternalToolError: If the version command exits unsuccessfully.
+        ValueError: If successful output contains no semantic version.
+    """
 
     completed = subprocess.run(
         [executable, "version"],
@@ -66,7 +101,19 @@ def require_diamond_features(
     version: SemanticVersion,
     identity_mode: str,
 ) -> None:
-    """Validate that the selected DIAMOND version supports requested features."""
+    """Check that an installed DIAMOND version supports the identity mode.
+
+    Args:
+        version: Installed DIAMOND semantic version.
+        identity_mode: Requested ``exact`` or ``approximate`` clustering mode.
+
+    Returns:
+        None.
+
+    Raises:
+        ConfigurationError: If the mode is invalid or exact identity is
+            requested with DIAMOND older than 2.2.1.
+    """
 
     if identity_mode == "exact" and version < SemanticVersion(2, 2, 1):
         raise ConfigurationError(
@@ -84,7 +131,20 @@ def build_makedb_command(
     output_database: Path,
     threads: int,
 ) -> List[str]:
-    """Build a DIAMOND ``makedb`` command."""
+    """Construct a DIAMOND ``makedb`` argument vector.
+
+    Args:
+        executable: DIAMOND executable name or path.
+        input_fasta: Combined protein FASTA used to build the database.
+        output_database: Destination DIAMOND database path.
+        threads: Number of DIAMOND worker threads.
+
+    Returns:
+        Command arguments suitable for ``subprocess.run`` without shell parsing.
+
+    Raises:
+        ValueError: If ``threads`` is smaller than one.
+    """
 
     if threads < 1:
         raise ValueError("threads must be positive")
@@ -115,7 +175,35 @@ def build_deepclust_command(
     masking: Optional[str] = None,
     extra_args: Optional[Sequence[str]] = None,
 ) -> List[str]:
-    """Build a DIAMOND DeepClust command with explicit core parameters."""
+    """Construct a validated DIAMOND DeepClust argument vector.
+
+    The command uses exact or approximate identity as requested, applies
+    explicit coverage, e-value, memory and composition-statistics settings, and
+    emits the native cluster header required by DIAMOND ``realign``.
+
+    Args:
+        executable: DIAMOND executable name or path.
+        database: Existing DIAMOND protein database.
+        output_tsv: Destination cluster-membership TSV.
+        threads: Number of DIAMOND worker threads.
+        memory_limit: DIAMOND memory-limit expression, such as ``64G``.
+        identity_mode: ``exact`` for ``--id`` or ``approximate`` for
+            ``--approx-id``.
+        identity_percent: Minimum clustering identity percentage.
+        mutual_cover_percent: Minimum mutual sequence coverage percentage.
+        clustering_evalue: Clustering-stage e-value threshold.
+        comp_based_stats: DIAMOND composition-based statistics mode from 0 to 6.
+        cluster_steps: Optional additional DeepClust step definitions.
+        masking: Optional supported masking mode.
+        extra_args: Optional additional argument tokens appended verbatim.
+
+    Returns:
+        Validated command arguments suitable for ``subprocess.run``.
+
+    Raises:
+        ValueError: If numeric ranges, identity mode, masking mode or
+            identity/composition-statistics compatibility is invalid.
+    """
 
     if threads < 1:
         raise ValueError("threads must be positive")
@@ -185,11 +273,27 @@ def build_realign_command(
     comp_based_stats: int = 0,
     masking: Optional[str] = None,
 ) -> List[str]:
-    """Build a realignment command requesting identity and length fields.
+    """Construct a validated DIAMOND ``realign`` argument vector.
 
-    DIAMOND realign may label the requested query/subject columns with
-    centroid/member names (for example, ``clen`` and ``mlen``). The parser
-    therefore accepts both naming conventions.
+    The command requests the identifiers, lengths, coordinates, identity,
+    alignment length, e-value and bit score required for strict downstream
+    classification, with a simple tabular header.
+
+    Args:
+        executable: DIAMOND executable name or path.
+        database: DIAMOND database used during clustering.
+        clusters_tsv: Native headered DeepClust membership table.
+        output_tsv: Destination realignment TSV.
+        threads: Number of DIAMOND worker threads.
+        memory_limit: DIAMOND memory-limit expression.
+        comp_based_stats: Traceback-compatible mode ``0`` or ``1``.
+        masking: Optional supported masking mode.
+
+    Returns:
+        Validated command arguments suitable for ``subprocess.run``.
+
+    Raises:
+        ValueError: If threads, matrix mode or masking mode is invalid.
     """
 
     if threads < 1:
@@ -246,7 +350,20 @@ def read_log_tail(
     max_lines: int = 40,
     max_characters: int = 12000,
 ) -> str:
-    """Return a bounded tail of a UTF-8 log file for error reporting."""
+    """Read a bounded tail from a UTF-8 external-tool log.
+
+    Args:
+        log_path: Path to the log file.
+        max_lines: Maximum number of final lines to retain.
+        max_characters: Maximum number of final characters to retain.
+
+    Returns:
+        The bounded log tail, or an empty string when the file is absent.
+
+    Raises:
+        ValueError: If either bound is smaller than one.
+        OSError: If an existing log cannot be read.
+    """
 
     if max_lines < 1:
         raise ValueError("max_lines must be positive")
@@ -263,7 +380,14 @@ def read_log_tail(
 
 
 def diamond_error_hint(log_text: str) -> str:
-    """Return a focused diagnostic hint for a recognised DIAMOND error."""
+    """Translate recognised DIAMOND failures into focused remediation guidance.
+
+    Args:
+        log_text: Full or partial DIAMOND log text.
+
+    Returns:
+        A diagnostic hint for a recognised failure, otherwise an empty string.
+    """
 
     normalised = str(log_text).lower()
     if "traceback with adjusted matrix not supported" in normalised:
@@ -287,7 +411,26 @@ def run_external_command(
     command_record_path: Optional[Path] = None,
     environment: Optional[Mapping[str, str]] = None,
 ) -> None:
-    """Run a command with combined stdout/stderr logging and command capture."""
+    """Run an external command with persistent combined logging and provenance.
+
+    Standard output and standard error are merged into ``log_path``. An optional
+    JSON record captures the exact argument vector and working directory. A
+    caller-supplied environment is merged with the current process environment.
+
+    Args:
+        command: Non-empty argument sequence; no shell interpretation is used.
+        log_path: Destination for combined standard output and error.
+        command_record_path: Optional JSON command-provenance destination.
+        environment: Optional environment-variable overrides.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If ``command`` is empty.
+        OSError: If the process cannot be started or logs cannot be written.
+        ExternalToolError: If the command exits with a non-zero status.
+    """
 
     if not command:
         raise ValueError("command cannot be empty")
@@ -340,7 +483,18 @@ def run_external_command(
 
 
 def validate_expected_outputs(paths: Iterable[Path]) -> Tuple[Path, ...]:
-    """Validate expected outputs and return them as a tuple."""
+    """Verify that all expected external-tool outputs exist and are non-empty.
+
+    Args:
+        paths: Iterable of output paths to validate.
+
+    Returns:
+        A tuple containing the validated paths in input order.
+
+    Raises:
+        ValueError: If no expected outputs are supplied.
+        DataValidationError: If any expected output is absent or empty.
+    """
 
     validated = tuple(require_nonempty_file(path) for path in paths)
     if not validated:

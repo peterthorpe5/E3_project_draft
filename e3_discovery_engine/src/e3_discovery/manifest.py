@@ -19,7 +19,16 @@ _SAMPLE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 @dataclass(frozen=True)
 class SampleRecord:
-    """Description of one proteome FASTA and its biological metadata."""
+    """Describe one proteome input and its biological provenance.
+
+    Attributes:
+        sample_id: Unique workflow-safe identifier for the proteome sample.
+        fasta_path: Absolute or resolved path to the protein FASTA file.
+        species: Optional scientific species name.
+        taxon_id: Optional taxonomy identifier.
+        proteome_id: Optional source-database proteome or assembly identifier.
+        metadata: Additional manifest fields retained without interpretation.
+    """
 
     sample_id: str
     fasta_path: Path
@@ -30,11 +39,35 @@ class SampleRecord:
 
 
 def _normalise_row(row: Mapping[str, str]) -> Dict[str, str]:
+    """Trim manifest field names and values and replace null values with blanks.
+
+    Args:
+        row: Raw row mapping returned by ``csv.DictReader``.
+
+    Returns:
+        A new dictionary containing stripped string keys and values.
+    """
     return {str(key).strip(): str(value or "").strip() for key, value in row.items()}
 
 
 def read_sample_manifest(path: Path) -> List[SampleRecord]:
-    """Read a TSV manifest while retaining arbitrary extra metadata columns."""
+    """Read, resolve and validate a proteome sample manifest.
+
+    Relative FASTA paths are resolved against the manifest directory. Standard
+    biological fields are assigned explicitly and all source columns, plus the
+    original row number, are retained as metadata.
+
+    Args:
+        path: Tab-separated sample-manifest path.
+
+    Returns:
+        Validated :class:`SampleRecord` objects in manifest order.
+
+    Raises:
+        FileNotFoundError: If the manifest or a referenced FASTA is absent.
+        DataValidationError: If required columns, identifiers, paths or records
+            fail validation.
+    """
 
     source = Path(path)
     if not source.is_file():
@@ -68,7 +101,21 @@ def read_sample_manifest(path: Path) -> List[SampleRecord]:
 
 
 def validate_sample_records(records: Iterable[SampleRecord]) -> None:
-    """Validate identifiers, paths, and duplicates in sample records."""
+    """Validate proteome sample identifiers and source paths.
+
+    The function requires at least one record, unique workflow-safe sample IDs,
+    unique existing FASTA paths, and rejects common macOS sidecar files.
+
+    Args:
+        records: Sample records to validate.
+
+    Returns:
+        None.
+
+    Raises:
+        FileNotFoundError: If a referenced FASTA file does not exist.
+        DataValidationError: If records are empty, duplicated or malformed.
+    """
 
     materialised = list(records)
     if not materialised:
@@ -105,7 +152,23 @@ def validate_sample_records(records: Iterable[SampleRecord]) -> None:
 
 
 def write_sample_manifest(records: Iterable[SampleRecord], path: Path) -> int:
-    """Write a normalised sample manifest with standard fields first."""
+    """Write validated sample records as a normalised TSV manifest.
+
+    Standard fields are written first, followed by sorted additional metadata
+    columns. Metadata values cannot override the canonical standard fields.
+
+    Args:
+        records: Sample records to validate and serialise.
+        path: Destination manifest TSV.
+
+    Returns:
+        Number of sample rows written.
+
+    Raises:
+        FileNotFoundError: If a referenced FASTA file does not exist.
+        DataValidationError: If records fail validation.
+        OSError: If the manifest cannot be written or replaced.
+    """
 
     materialised = list(records)
     validate_sample_records(materialised)

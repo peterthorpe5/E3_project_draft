@@ -40,7 +40,12 @@ from e3_discovery.provenance import write_run_manifest
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser and all subcommands."""
+    """Build the command-line parser for all supported workflow stages.
+
+    Returns:
+        A configured ``argparse.ArgumentParser`` with required subcommands and
+        stage-specific options.
+    """
 
     parser = argparse.ArgumentParser(
         prog="e3-discovery",
@@ -84,10 +89,39 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _print_json(value: Any) -> None:
+    """Print a Python value as deterministic, human-readable JSON.
+
+    Args:
+        value: JSON-serialisable value or value supported by ``str`` fallback.
+
+    Returns:
+        None.
+    """
     print(json.dumps(value, indent=2, sort_keys=True, default=str))
 
 
 def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
+    """Execute one configured DIAMOND workflow stage.
+
+    The function loads and validates configuration, checks the installed
+    DIAMOND version, builds the stage command, captures logs and command
+    provenance, and validates expected output files.
+
+    Args:
+        command_name: One of ``diamond-makedb``, ``diamond-deepclust`` or
+            ``diamond-realign``.
+        config_path: Path to the workflow YAML configuration.
+
+    Returns:
+        A dictionary containing the DIAMOND version, executed command and
+        generated output paths.
+
+    Raises:
+        ValueError: If ``command_name`` is unsupported.
+        ConfigurationError: If configuration or DIAMOND features are invalid.
+        ExternalToolError: If DIAMOND cannot be queried or exits unsuccessfully.
+        DataValidationError: If an expected output is absent or empty.
+    """
     config = load_config(config_path)
     paths = paths_from_config(config)
     diamond = config["diamond"]
@@ -155,7 +189,20 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
 
 
 def run_command(args: argparse.Namespace) -> Dict[str, Any]:
-    """Execute a parsed CLI subcommand and return its structured result."""
+    """Dispatch a parsed command-line namespace to its workflow implementation.
+
+    Args:
+        args: Parsed arguments produced by :func:`build_parser`.
+
+    Returns:
+        A structured dictionary describing the completed stage and outputs.
+
+    Raises:
+        ValueError: If the command name is unsupported.
+        E3DiscoveryError: If a selected workflow stage fails validation or an
+            external tool fails.
+        FileNotFoundError: If a required input path is missing.
+    """
 
     if args.command == "prepare":
         return prepare_inputs_from_config(args.config)
@@ -214,7 +261,18 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry point with structured logging and expected-error handling."""
+    """Run the command-line interface with logging and controlled error handling.
+
+    Args:
+        argv: Optional argument sequence. ``None`` uses ``sys.argv``.
+
+    Returns:
+        ``0`` after successful execution or ``2`` for an expected workflow,
+        input or configuration failure.
+
+    Raises:
+        SystemExit: If argument parsing fails or help is requested.
+    """
 
     parser = build_parser()
     args = parser.parse_args(argv)

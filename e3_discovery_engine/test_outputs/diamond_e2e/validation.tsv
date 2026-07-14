@@ -1,0 +1,5 @@
+check	status	value	message
+duplicate_internal_ids	pass	0	Sequence internal identifiers must be unique.
+missing_cluster_sequences	pass	0	Every cluster identifier must map to sequence metadata.
+e3_seeded_clusters_present	pass	1	At least one cluster must contain a known E3 seed.
+strict_members_present	pass	2	Strict post-realignment membership may legitimately be empty on small or deliberately relaxed tests.

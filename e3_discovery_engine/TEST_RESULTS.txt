@@ -1,4 +1,4 @@
-E3 Discovery Engine Milestone 1 v0.1.6
+E3 Discovery Engine Milestone 1 v0.1.7
 Release checks completed: 2026-07-14
 
 Automated checks in the package-build environment
@@ -6,29 +6,38 @@ Automated checks in the package-build environment
 - Python compilation: PASS
 - PEP8/pycodestyle: PASS
 - Unit, integration and Python-managed end-to-end tests: PASS
-- Tests run: 140
-- Tests passed: 138
+- Tests run: 144
+- Tests passed: 142
 - Tests skipped: 2
 - Test failures/errors: 0
 - Source coverage: 99%
 - Function-to-test matrix: PASS
+- Source docstring-quality contract: PASS
 - Required documentation checks: PASS
 - Wheel build: PASS
 - Isolated wheel installation smoke test: PASS
 
+Documentation audit
+-------------------
+- All 94 Python functions and methods in src/e3_discovery have docstrings.
+- Function and method docstrings describe arguments and return or yield values.
+- Explicitly raised exceptions are documented.
+- Dataclass fields are documented under Attributes sections.
+- Private helpers and nested functions are included in the documentation audit.
+- Source-code AST comparison, excluding docstrings and the package version
+  fallback, found no workflow-logic changes from v0.1.6.
+
 Skipped tests
 -------------
-The two skipped tests require a real DIAMOND executable. They remain included
-and must be run in the pinned e3_discovery Conda environment on the target
-platform.
+The two skipped tests require a real DIAMOND executable. The complete external
+DIAMOND test passed for v0.1.6 on the target macOS environment. Release v0.1.7
+changes source documentation and release metadata only; it does not change the
+DIAMOND commands, parsers, thresholds or resource-building logic.
 
-DIAMOND 2.2.3 realignment-header regression covered in v0.1.6
-------------------------------------------------------------
-- The parser accepts the exact observed native header:
+DIAMOND 2.2.3 realignment-header regression retained
+----------------------------------------------------
+- The parser accepts the observed native header:
   cseqid, mseqid, pident, clen, mlen, cstart, cend, mstart, mend,
   length, evalue and Bitscore.
 - clen and mlen are normalised to representative_length and member_length.
-- The native header is tested through direct field mapping, TSV-to-Parquet
-  conversion and the complete Python-managed end-to-end resource build.
 - Query/subject aliases qseqid, sseqid, qlen and slen remain supported.
-- The real-DIAMOND end-to-end test remains the final target-platform gate.

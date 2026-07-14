@@ -21,7 +21,19 @@ _REQUIRED_TOP_LEVEL = (
 
 
 def load_yaml(path: Path) -> Dict[str, Any]:
-    """Load a YAML mapping from disk."""
+    """Load a YAML configuration file as a dictionary.
+
+    Args:
+        path: Path to the UTF-8 YAML file.
+
+    Returns:
+        The top-level YAML mapping as a mutable dictionary.
+
+    Raises:
+        FileNotFoundError: If ``path`` is not an existing file.
+        yaml.YAMLError: If the YAML syntax is invalid.
+        ConfigurationError: If the YAML root is not a mapping.
+    """
 
     source = Path(path)
     if not source.is_file():
@@ -34,6 +46,18 @@ def load_yaml(path: Path) -> Dict[str, Any]:
 
 
 def _require_mapping(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    """Retrieve a required configuration section and verify its type.
+
+    Args:
+        config: Parent configuration mapping.
+        key: Section name to retrieve.
+
+    Returns:
+        The requested nested mapping.
+
+    Raises:
+        ConfigurationError: If the section is absent or is not a mapping.
+    """
     value = config.get(key)
     if not isinstance(value, Mapping):
         raise ConfigurationError(f"Configuration section '{key}' must be a mapping")
@@ -41,6 +65,19 @@ def _require_mapping(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
 
 
 def _require_positive_number(section: Mapping[str, Any], key: str) -> float:
+    """Retrieve a required positive numeric configuration value.
+
+    Args:
+        section: Configuration section containing the value.
+        key: Name of the numeric setting.
+
+    Returns:
+        The validated setting converted to ``float``.
+
+    Raises:
+        ConfigurationError: If the value is absent, non-numeric or not
+            positive.
+    """
     value = section.get(key)
     if not isinstance(value, (int, float)) or value <= 0:
         raise ConfigurationError(f"'{key}' must be a positive number")
@@ -48,7 +85,22 @@ def _require_positive_number(section: Mapping[str, Any], key: str) -> float:
 
 
 def validate_config(config: Mapping[str, Any]) -> None:
-    """Validate required settings and incompatible parameter combinations."""
+    """Validate the complete workflow configuration without modifying it.
+
+    Validation covers required sections, input/output settings, DIAMOND
+    identity and matrix compatibility, strict thresholds, resource controls,
+    benchmark repeats and sequence-identifier policy.
+
+    Args:
+        config: Parsed workflow configuration mapping.
+
+    Returns:
+        None.
+
+    Raises:
+        ConfigurationError: If a required value is missing, has the wrong type,
+            falls outside its valid range or conflicts with another setting.
+    """
 
     missing = [key for key in _REQUIRED_TOP_LEVEL if key not in config]
     if missing:
@@ -149,7 +201,18 @@ def validate_config(config: Mapping[str, Any]) -> None:
 
 
 def resolve_paths(config: Mapping[str, Any], config_path: Path) -> Dict[str, Any]:
-    """Return a deep copy with relative file paths resolved from the YAML file."""
+    """Resolve configured workflow paths relative to the configuration file.
+
+    The input mapping is deep-copied. Only recognised path fields are expanded
+    and resolved, so the caller's configuration object is not modified.
+
+    Args:
+        config: Validated workflow configuration mapping.
+        config_path: Location of the YAML file used as the relative-path base.
+
+    Returns:
+        A deep-copied dictionary containing absolute resolved path strings.
+    """
 
     resolved = deepcopy(dict(config))
     base = Path(config_path).resolve().parent
@@ -169,7 +232,19 @@ def resolve_paths(config: Mapping[str, Any], config_path: Path) -> Dict[str, Any
 
 
 def load_config(path: Path) -> Dict[str, Any]:
-    """Load, validate, and resolve a workflow configuration file."""
+    """Load, validate and path-resolve a workflow YAML configuration.
+
+    Args:
+        path: Path to the workflow configuration file.
+
+    Returns:
+        A validated configuration dictionary with absolute workflow paths.
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist.
+        yaml.YAMLError: If the YAML syntax is invalid.
+        ConfigurationError: If configuration values fail validation.
+    """
 
     raw = load_yaml(path)
     validate_config(raw)

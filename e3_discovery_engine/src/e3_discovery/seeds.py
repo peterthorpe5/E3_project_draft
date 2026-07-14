@@ -22,7 +22,18 @@ LOGGER = logging.getLogger(__name__)
 
 
 def normalise_seed_identifier(value: str) -> str:
-    """Normalise a seed accession for comparison with sequence identifiers."""
+    """Normalise a supplied E3 seed value for sequence-identifier matching.
+
+    UniProt ``sp|ACCESSION|NAME`` and ``tr|ACCESSION|NAME`` forms return the
+    accession component. Blank values remain blank; other values retain their
+    first whitespace-delimited token.
+
+    Args:
+        value: Raw seed accession value.
+
+    Returns:
+        Normalised seed identifier, or an empty string for blank input.
+    """
 
     token = str(value or "").strip().split()[0] if str(value or "").strip() else ""
     if not token:
@@ -37,7 +48,22 @@ def choose_seed_column(
     fieldnames: Sequence[str],
     requested: Optional[str] = None,
 ) -> str:
-    """Choose the accession column explicitly or from recognised candidates."""
+    """Select the source column containing E3 seed accessions.
+
+    An explicitly requested column takes precedence. Otherwise recognised column
+    names are examined in configured priority order.
+
+    Args:
+        fieldnames: Available source-table column names.
+        requested: Optional explicit seed-column name.
+
+    Returns:
+        Selected source column name.
+
+    Raises:
+        DataValidationError: If the requested column is absent or no recognised
+            accession column can be identified.
+    """
 
     available = list(fieldnames)
     if requested:
@@ -57,7 +83,12 @@ def choose_seed_column(
 
 
 def seed_schema() -> pa.Schema:
-    """Return the stable Arrow schema for normalised known-E3 seeds."""
+    """Define the stable Arrow schema for normalised known-E3 seeds.
+
+    Returns:
+        A ``pyarrow.Schema`` containing normalised accessions, source values,
+        row provenance and retained source metadata.
+    """
 
     return pa.schema(
         [
@@ -77,7 +108,28 @@ def prepare_seed_table(
     output_parquet: Path,
     seed_column: Optional[str] = None,
 ) -> Dict[str, int]:
-    """Normalise and deduplicate known E3 seeds while retaining source metadata."""
+    """Normalise, deduplicate and serialise the supplied E3 candidate seed table.
+
+    The source delimiter and accession column are resolved, blank accessions are
+    counted and skipped, duplicate normalised accessions retain their first row,
+    and complete source metadata is stored as deterministic JSON. Normalised TSV
+    and compressed Parquet outputs are published atomically.
+
+    Args:
+        input_path: Source E3 candidate CSV or TSV table.
+        output_tsv: Destination normalised seed TSV.
+        output_parquet: Destination normalised seed Parquet table.
+        seed_column: Optional explicit source accession-column name.
+
+    Returns:
+        Counts for input rows, unique seeds, blank rows and duplicate rows.
+
+    Raises:
+        FileNotFoundError: If the source table does not exist.
+        DataValidationError: If the table is empty, lacks an accession column or
+            yields no valid seed accessions.
+        OSError: If normalised outputs cannot be written.
+    """
 
     LOGGER.info("Preparing known E3 seed table from %s", input_path)
     rows = read_delimited(input_path)
@@ -131,7 +183,14 @@ def prepare_seed_table(
 
 
 def seed_ids(records: Iterable[Mapping[str, object]]) -> List[str]:
-    """Extract non-empty seed IDs from record dictionaries."""
+    """Extract sorted unique non-empty seed identifiers from record mappings.
+
+    Args:
+        records: Iterable of mappings that may contain a ``seed_id`` value.
+
+    Returns:
+        Lexicographically sorted unique seed identifier strings.
+    """
 
     return sorted(
         {

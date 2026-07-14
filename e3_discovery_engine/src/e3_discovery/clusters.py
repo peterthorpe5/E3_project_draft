@@ -20,7 +20,17 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Thresholds:
-    """Strict post-realignment thresholds used for member classification."""
+    """Store strict post-realignment classification thresholds.
+
+    Attributes:
+        minimum_percent_identity: Minimum accepted alignment identity percent.
+        minimum_representative_coverage: Minimum percent of the representative
+            sequence covered by the alignment.
+        minimum_member_coverage: Minimum percent of the member sequence covered
+            by the alignment.
+        minimum_bitscore: Exclusive lower bound for DIAMOND bit score.
+        maximum_evalue: Exclusive upper bound for DIAMOND e-value.
+    """
 
     minimum_percent_identity: float
     minimum_representative_coverage: float
@@ -29,7 +39,15 @@ class Thresholds:
     maximum_evalue: float
 
     def validate(self) -> None:
-        """Raise ValueError if a threshold is outside its valid range."""
+        """Validate that all threshold values are scientifically and numerically valid.
+
+        Returns:
+            None.
+
+        Raises:
+            ValueError: If identity or coverage is outside ``(0, 100]``, or if bit
+                score or e-value thresholds are not positive.
+        """
 
         for name, value in (
             ("minimum_percent_identity", self.minimum_percent_identity),
@@ -83,7 +101,22 @@ REALIGN_SCHEMA = pa.schema(
 
 
 def compute_coverage(alignment_length: int, sequence_length: int) -> float:
-    """Calculate percent sequence coverage with defensive length checking."""
+    """Calculate alignment coverage as a percentage of sequence length.
+
+    Coverage is capped at 100 percent to protect downstream tables from minor
+    coordinate inconsistencies in external alignment output.
+
+    Args:
+        alignment_length: Number of aligned residues.
+        sequence_length: Full length of the sequence being assessed.
+
+    Returns:
+        Alignment coverage in the inclusive range ``0.0`` to ``100.0``.
+
+    Raises:
+        ValueError: If ``alignment_length`` is negative or
+            ``sequence_length`` is not positive.
+    """
 
     if alignment_length < 0:
         raise ValueError("alignment_length cannot be negative")
@@ -96,7 +129,25 @@ def classify_alignment(
     record: Mapping[str, object],
     thresholds: Thresholds,
 ) -> Dict[str, object]:
-    """Add coverage and strict-threshold flags to one realignment record."""
+    """Calculate coverage and classify one representative-member alignment.
+
+    The returned record retains all input fields and adds coverage percentages,
+    one Boolean flag per threshold, and a combined ``passes_all`` flag.
+
+    Args:
+        record: Mapping containing alignment length, sequence lengths, identity,
+            bit score and e-value fields.
+        thresholds: Validated strict classification thresholds.
+
+    Returns:
+        A new dictionary containing the original fields plus derived metrics and
+        pass/fail flags.
+
+    Raises:
+        KeyError: If a required alignment field is absent.
+        TypeError: If a required value cannot be converted numerically.
+        ValueError: If numeric values or thresholds are invalid.
+    """
 
     thresholds.validate()
     aligned = int(record["alignment_length"])
@@ -157,7 +208,14 @@ _CLUSTER_MEMBER_HEADERS = {
 
 
 def _normalise_header_token(value: str) -> str:
-    """Normalise a DIAMOND header token across supported versions."""
+    """Normalise an external table header token for alias matching.
+
+    Args:
+        value: Raw header value from a DIAMOND-generated table.
+
+    Returns:
+        A lowercase underscore-delimited token without leading comment marks.
+    """
 
     token = str(value).strip().lower().lstrip("#")
     token = re.sub(r"[^a-z0-9]+", "_", token).strip("_")
@@ -167,12 +225,22 @@ def _normalise_header_token(value: str) -> str:
 def _normalise_cluster_header(
     fieldnames: Optional[List[str]],
 ) -> Optional[Tuple[int, int]]:
-    """Return representative/member indexes for a recognised cluster header.
+    """Identify a recognised representative/member cluster header.
 
-    DIAMOND's clustering output is officially a fixed two-column table.  Some
-    versions emit no header, while versions or builds using ``--header`` have
-    used several labels.  ``None`` therefore means that the first row should be
-    interpreted positionally as data rather than rejected as a bad header.
+    DIAMOND clustering output is a fixed two-column table. A return value of
+    ``None`` means the supplied first row should be interpreted positionally as
+    data rather than as an unrecognised header.
+
+    Args:
+        fieldnames: Two values from the first non-comment cluster row.
+
+    Returns:
+        ``(0, 1)`` for a recognised representative/member header, otherwise
+        ``None`` for a valid positional data row.
+
+    Raises:
+        DataValidationError: If the file is empty or the row does not contain
+            exactly two fields.
     """
 
     if not fieldnames:
@@ -196,12 +264,26 @@ def cluster_tsv_to_parquet(
     output_parquet: Path,
     batch_size: int = 250_000,
 ) -> Dict[str, int]:
-    """Convert DIAMOND two-column cluster membership to Parquet.
+    """Stream DIAMOND cluster membership from TSV to Parquet.
 
-    The official clustering format is positional: representative accession in
-    column one and member accession in column two.  A recognised header is
-    accepted when present, but headerless output is handled without guessing
-    that the first accession pair is a header.
+    The first column is interpreted as the cluster representative and the second
+    as the member. Native and recognised alternative headers are skipped;
+    headerless historical files are accepted. Blank rows and DIAMOND comments
+    are ignored, while malformed rows fail validation.
+
+    Args:
+        input_tsv: DIAMOND two-column cluster-membership table.
+        output_parquet: Destination for normalised cluster membership Parquet.
+        batch_size: Maximum number of records held before each Parquet write.
+
+    Returns:
+        Counts for membership rows and unique cluster representatives.
+
+    Raises:
+        ValueError: If ``batch_size`` is smaller than one.
+        FileNotFoundError: If ``input_tsv`` does not exist.
+        DataValidationError: If rows are malformed, identifiers are blank, or
+            the file contains no membership data.
     """
 
     if batch_size < 1:
@@ -289,6 +371,21 @@ def cluster_tsv_to_parquet(
 
 
 def _required_realign_fields(fieldnames: Optional[List[str]]) -> Dict[str, str]:
+    """Map supported DIAMOND realignment headers to canonical field names.
+
+    Query/subject and centroid/member aliases are accepted, including native
+    DIAMOND 2.2.x names such as ``clen``, ``mlen`` and ``Bitscore``.
+
+    Args:
+        fieldnames: Header names parsed from the realignment table.
+
+    Returns:
+        Mapping from each canonical field name to its source header name.
+
+    Raises:
+        DataValidationError: If the header is absent or any required alignment
+            field cannot be resolved.
+    """
     if not fieldnames:
         raise DataValidationError("Realignment file has no header")
     aliases = {
@@ -330,6 +427,22 @@ def _required_realign_fields(fieldnames: Optional[List[str]]) -> Dict[str, str]:
 
 
 def _parse_int(value: str, field: str, row_number: int) -> int:
+    """Parse an integer-valued alignment field with row-aware diagnostics.
+
+    Numeric strings containing an integral floating representation are accepted
+    for compatibility with external tabular output.
+
+    Args:
+        value: Raw field value.
+        field: Canonical field name used in error messages.
+        row_number: One-based source row number.
+
+    Returns:
+        Parsed integer value.
+
+    Raises:
+        DataValidationError: If ``value`` cannot be converted to an integer.
+    """
     try:
         return int(float(value))
     except (TypeError, ValueError) as error:
@@ -339,6 +452,19 @@ def _parse_int(value: str, field: str, row_number: int) -> int:
 
 
 def _parse_float(value: str, field: str, row_number: int) -> float:
+    """Parse a floating-point alignment field with row-aware diagnostics.
+
+    Args:
+        value: Raw field value.
+        field: Canonical field name used in error messages.
+        row_number: One-based source row number.
+
+    Returns:
+        Parsed floating-point value.
+
+    Raises:
+        DataValidationError: If ``value`` cannot be converted to a float.
+    """
     try:
         return float(value)
     except (TypeError, ValueError) as error:
@@ -353,7 +479,27 @@ def realign_tsv_to_parquet(
     thresholds: Thresholds,
     batch_size: int = 250_000,
 ) -> Dict[str, int]:
-    """Convert explicit DIAMOND realign output and classify strict matches."""
+    """Convert DIAMOND realignment output and apply strict membership thresholds.
+
+    Header aliases are normalised, numeric fields are validated, representative
+    and member coverage are calculated, and every alignment receives individual
+    and combined threshold flags before being written in Parquet batches.
+
+    Args:
+        input_tsv: Headered DIAMOND realignment table.
+        output_parquet: Destination for classified realignment Parquet.
+        thresholds: Strict post-realignment classification thresholds.
+        batch_size: Maximum number of records held before each Parquet write.
+
+    Returns:
+        Counts for total realignment rows and rows passing all thresholds.
+
+    Raises:
+        ValueError: If thresholds are invalid or ``batch_size`` is below one.
+        FileNotFoundError: If ``input_tsv`` does not exist.
+        DataValidationError: If headers, identifiers or numeric fields are
+            invalid.
+    """
 
     thresholds.validate()
     if batch_size < 1:
@@ -457,7 +603,19 @@ def realign_tsv_to_parquet(
 
 
 def thresholds_from_mapping(values: Mapping[str, object]) -> Thresholds:
-    """Construct validated Thresholds from a configuration mapping."""
+    """Construct and validate thresholds from a configuration mapping.
+
+    Args:
+        values: Mapping containing all five strict-threshold configuration keys.
+
+    Returns:
+        A validated immutable :class:`Thresholds` instance.
+
+    Raises:
+        KeyError: If a required threshold key is absent.
+        TypeError: If a threshold cannot be converted to a float.
+        ValueError: If a threshold lies outside its accepted range.
+    """
 
     thresholds = Thresholds(
         minimum_percent_identity=float(values["minimum_percent_identity"]),

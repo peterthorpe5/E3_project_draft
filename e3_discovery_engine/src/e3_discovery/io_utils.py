@@ -17,7 +17,17 @@ from e3_discovery.exceptions import DataValidationError
 
 
 def ensure_parent(path: Path) -> Path:
-    """Create the parent directory for *path* and return the normalised path."""
+    """Create an output path's parent directories when necessary.
+
+    Args:
+        path: Intended file path.
+
+    Returns:
+        The path normalised as a :class:`pathlib.Path` instance.
+
+    Raises:
+        OSError: If a parent directory cannot be created.
+    """
 
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -26,7 +36,22 @@ def ensure_parent(path: Path) -> Path:
 
 @contextmanager
 def atomic_text_writer(path: Path, newline: str = "") -> Iterator[TextIO]:
-    """Yield a temporary text handle and atomically replace *path* on success."""
+    """Provide a UTF-8 text handle that is atomically published on success.
+
+    A temporary file is created beside the destination. It replaces the target
+    only after the context exits normally; failures remove the temporary file and
+    preserve any existing destination.
+
+    Args:
+        path: Final destination path.
+        newline: Newline handling forwarded to the temporary text file.
+
+    Yields:
+        Writable UTF-8 text handle for the temporary file.
+
+    Raises:
+        OSError: If temporary-file creation, writing or atomic replacement fails.
+    """
 
     output = ensure_parent(Path(path))
     handle = tempfile.NamedTemporaryFile(
@@ -50,7 +75,21 @@ def atomic_text_writer(path: Path, newline: str = "") -> Iterator[TextIO]:
 
 @contextmanager
 def atomic_binary_path(path: Path) -> Iterator[Path]:
-    """Yield a temporary binary output path and atomically replace *path*."""
+    """Provide a temporary path for atomically published binary output.
+
+    The caller writes binary data to the yielded path. On normal exit, the
+    temporary output must exist and is atomically moved to the destination.
+
+    Args:
+        path: Final destination path.
+
+    Yields:
+        Temporary path on the same filesystem as the destination.
+
+    Raises:
+        DataValidationError: If the caller does not create the temporary output.
+        OSError: If temporary-file creation or atomic replacement fails.
+    """
 
     output = ensure_parent(Path(path))
     descriptor, name = tempfile.mkstemp(
@@ -73,7 +112,18 @@ def atomic_binary_path(path: Path) -> Iterator[Path]:
 
 
 def open_text_auto(path: Path) -> TextIO:
-    """Open plain or gzip-compressed text input using UTF-8 decoding."""
+    """Open plain or gzip-compressed text input with UTF-8 decoding.
+
+    Args:
+        path: Existing plain-text or ``.gz`` input path.
+
+    Returns:
+        A readable text handle that the caller must close.
+
+    Raises:
+        FileNotFoundError: If the input file does not exist.
+        OSError: If the file cannot be opened or decompressed.
+    """
 
     source = Path(path)
     if not source.is_file():
@@ -84,7 +134,20 @@ def open_text_auto(path: Path) -> TextIO:
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    """Return the SHA-256 checksum of a file without loading it into memory."""
+    """Calculate a file's SHA-256 checksum using bounded memory.
+
+    Args:
+        path: File whose raw bytes will be hashed.
+        chunk_size: Number of bytes read per iteration.
+
+    Returns:
+        Lowercase hexadecimal SHA-256 digest.
+
+    Raises:
+        ValueError: If ``chunk_size`` is smaller than one byte.
+        FileNotFoundError: If ``path`` does not exist.
+        OSError: If the file cannot be read.
+    """
 
     if chunk_size < 1:
         raise ValueError("chunk_size must be at least 1 byte")
@@ -96,7 +159,22 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def detect_delimiter(path: Path, sample_size: int = 8192) -> str:
-    """Detect comma or tab delimiters, falling back to file extension."""
+    """Detect comma or tab delimiters in a small text-table sample.
+
+    CSV sniffer detection is attempted first. Ambiguous files fall back to tab
+    for ``.tsv`` and ``.txt`` paths, otherwise comma.
+
+    Args:
+        path: Delimited text input path.
+        sample_size: Maximum characters inspected for delimiter detection.
+
+    Returns:
+        A comma or tab delimiter string.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        DataValidationError: If the input contains no non-whitespace text.
+    """
 
     with open_text_auto(path) as handle:
         sample = handle.read(sample_size)
@@ -109,7 +187,22 @@ def detect_delimiter(path: Path, sample_size: int = 8192) -> str:
 
 
 def read_delimited(path: Path) -> List[Dict[str, str]]:
-    """Read a small CSV or TSV file into dictionaries, preserving all columns."""
+    """Read a small comma- or tab-delimited table into row dictionaries.
+
+    This helper deliberately materialises the entire table and is intended for
+    configuration and seed metadata rather than large alignment outputs.
+
+    Args:
+        path: CSV or TSV input path.
+
+    Returns:
+        Row dictionaries preserving every source column.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        DataValidationError: If delimiter detection fails on an empty file or the
+            table has no header row.
+    """
 
     delimiter = detect_delimiter(path)
     with open_text_auto(path) as handle:
@@ -120,7 +213,22 @@ def read_delimited(path: Path) -> List[Dict[str, str]]:
 
 
 def write_tsv(records: Iterable[Mapping[str, Any]], path: Path) -> int:
-    """Write dictionaries to a UTF-8 TSV using the union of record fields."""
+    """Write mapping records to an atomic UTF-8 TSV file.
+
+    Output columns follow first appearance across the materialised records. An
+    empty iterable creates an empty file without a header.
+
+    Args:
+        records: Iterable of row mappings.
+        path: Destination TSV path.
+
+    Returns:
+        Number of data rows written.
+
+    Raises:
+        ValueError: If a row contains fields outside the constructed union.
+        OSError: If the output cannot be written or replaced.
+    """
 
     materialised = [dict(record) for record in records]
     fieldnames: List[str] = []
@@ -148,13 +256,34 @@ def write_tsv(records: Iterable[Mapping[str, Any]], path: Path) -> int:
 
 
 def json_dumps_sorted(value: Mapping[str, Any]) -> str:
-    """Serialise metadata deterministically for storage in Parquet tables."""
+    """Serialise a mapping as compact deterministic JSON.
+
+    Args:
+        value: Mapping whose keys and values are JSON serialisable.
+
+    Returns:
+        JSON text with sorted keys and compact separators.
+
+    Raises:
+        TypeError: If a value is not JSON serialisable.
+    """
 
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
 def require_nonempty_file(path: Path, label: str = "output") -> Path:
-    """Validate that an expected file exists and contains at least one byte."""
+    """Verify that a required file exists and contains at least one byte.
+
+    Args:
+        path: File path to validate.
+        label: Human-readable file role used in error messages.
+
+    Returns:
+        The validated path as a :class:`pathlib.Path`.
+
+    Raises:
+        DataValidationError: If the file is absent or empty.
+    """
 
     candidate = Path(path)
     if not candidate.is_file():
@@ -165,13 +294,31 @@ def require_nonempty_file(path: Path, label: str = "output") -> Path:
 
 
 def read_text(path: Path) -> str:
-    """Return UTF-8 text from a plain or gzip-compressed input file."""
+    """Read all UTF-8 text from a plain or gzip-compressed file.
+
+    Args:
+        path: Existing text input path.
+
+    Returns:
+        Complete decoded file content.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        OSError: If the file cannot be opened, decompressed or read.
+    """
 
     with open_text_auto(path) as handle:
         return handle.read()
 
 
 def text_stream(content: str) -> io.StringIO:
-    """Create a StringIO object; mainly useful for deterministic tests."""
+    """Create an in-memory text stream from a string.
+
+    Args:
+        content: Initial text content.
+
+    Returns:
+        A seekable ``io.StringIO`` object positioned at the beginning.
+    """
 
     return io.StringIO(content)

@@ -27,6 +27,7 @@ class RepositoryContractTests(unittest.TestCase):
             "docs/EXAMPLE_QUERIES.sql",
             "docs/PACKAGE_FILE_REGISTER.md",
             "docs/LEGACY_AUDIT_EVIDENCE_REGISTER.md",
+            "docs/CODE_DOCUMENTATION_STANDARD.md",
         )
         for relative in required:
             path = self.root / relative

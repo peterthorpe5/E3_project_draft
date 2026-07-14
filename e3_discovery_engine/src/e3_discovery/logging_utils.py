@@ -15,10 +15,22 @@ def setup_logging(
     verbose: bool = False,
     logger_name: Optional[str] = None,
 ) -> logging.Logger:
-    """Configure and return a logger with console and optional file output.
+    """Configure deterministic console and optional persistent file logging.
 
-    Repeated calls replace handlers on the selected logger. This avoids
-    duplicate messages in command-line programs and unit tests.
+    Existing handlers on the selected logger are closed and replaced to prevent
+    duplicate messages during repeated CLI calls and tests. Console verbosity is
+    controlled by ``verbose``; file logging always captures debug-level records.
+
+    Args:
+        log_file: Optional path for append-mode UTF-8 file logging.
+        verbose: Enable debug-level console and logger output when true.
+        logger_name: Logger name, or ``None`` for the root logger.
+
+    Returns:
+        The configured :class:`logging.Logger` instance.
+
+    Raises:
+        OSError: If the log directory or file cannot be created.
     """
 
     logger = logging.getLogger(logger_name)
@@ -48,6 +60,13 @@ def setup_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a module logger without changing global configuration."""
+    """Retrieve a named logger without altering logging configuration.
+
+    Args:
+        name: Logger name, normally the calling module's ``__name__``.
+
+    Returns:
+        The corresponding :class:`logging.Logger` instance.
+    """
 
     return logging.getLogger(name)
