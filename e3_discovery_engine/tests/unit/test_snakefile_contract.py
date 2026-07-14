@@ -41,6 +41,32 @@ class SnakefileContractTests(unittest.TestCase):
         self.assertGreaterEqual(self.text.count("log:"), 9)
         self.assertGreaterEqual(self.text.count("benchmark:"), 6)
 
+    def test_shell_paths_are_shell_quoted(self) -> None:
+        """Require Snakemake path placeholders to use shell quoting."""
+        unsafe_tokens = (
+            "> {log} ",
+            "--input {input} ",
+            "--output {output} ",
+            "--benchmark-dir {ROOT}/",
+            "--output-dir {ROOT}/",
+        )
+        for token in unsafe_tokens:
+            with self.subTest(token=token):
+                self.assertNotIn(token, self.text)
+
+        self.assertGreaterEqual(self.text.count("{log:q}"), 9)
+        self.assertIn("{input:q}", self.text)
+        self.assertIn("{output:q}", self.text)
+        self.assertIn("{params.benchmark_dir:q}", self.text)
+        self.assertIn("{params.output_dir:q}", self.text)
+
+    def test_each_shell_rule_creates_log_directory(self) -> None:
+        """Ensure log parents exist before shell redirection is opened."""
+        self.assertGreaterEqual(
+            self.text.count('mkdir -p "$(dirname {log:q})"'),
+            9,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

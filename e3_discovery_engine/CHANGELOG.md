@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8 - 2026-07-14
+
+- Quote every Snakemake-expanded input, output, log, configuration, benchmark,
+  and output-directory path used in shell commands.
+- Support repository and result paths containing spaces, including macOS
+  external volumes such as `/Volumes/One Touch`.
+- Create each rule's log directory before shell redirection occurs.
+- Add regression tests that reject unquoted workflow path placeholders.
+- No scientific thresholds or clustering behaviour changed.
+
 ## 0.1.7 - 2026-07-14
 
 - Expanded every Python function and method docstring using a consistent

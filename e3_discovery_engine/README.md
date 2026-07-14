@@ -1,6 +1,6 @@
 # E3 Discovery Engine: Milestone 1 production workflow
 
-Version **0.1.7**
+Version **0.1.8**
 
 This repository provides a reproducible DIAMOND DeepClust/Snakemake workflow
 for:

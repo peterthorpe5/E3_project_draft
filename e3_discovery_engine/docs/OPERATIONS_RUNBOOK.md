@@ -149,3 +149,11 @@ validator rejects incompatible modes 2-6 when exact identity is selected.
 Do not remove exact identity or strict post-realignment filtering merely to
 make the command run.
 
+
+## Paths containing spaces
+
+Release 0.1.8 shell-quotes all Snakemake-expanded paths. Output directories on
+macOS volumes such as `/Volumes/One Touch/...` are therefore supported. Each
+rule also creates the parent directory of its log before opening shell
+redirection. Earlier releases should not be used for output paths containing
+spaces.

@@ -12,6 +12,14 @@ CONFIG_DIR = CONFIG_PATH.parent
 
 
 def resolve_config_path(value):
+    """Resolve a configuration path relative to the configuration file.
+
+    Args:
+        value: Absolute or configuration-relative filesystem path.
+
+    Returns:
+        Fully resolved absolute path with a leading user-home marker expanded.
+    """
     path = Path(str(value)).expanduser()
     if not path.is_absolute():
         path = CONFIG_DIR / path
@@ -63,8 +71,9 @@ rule prepare_inputs:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli prepare \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule make_diamond_database:
@@ -83,8 +92,9 @@ rule make_diamond_database:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli diamond-makedb \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule run_deepclust:
@@ -103,8 +113,9 @@ rule run_deepclust:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli diamond-deepclust \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule realign_clusters:
@@ -124,8 +135,9 @@ rule realign_clusters:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli diamond-realign \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule convert_cluster_membership:
@@ -145,8 +157,9 @@ rule convert_cluster_membership:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli convert-clusters \
-          --input {input} --output {output} > {log} 2>&1
+          --input {input:q} --output {output:q} > {log:q} 2>&1
         """
 
 rule convert_realignments:
@@ -166,9 +179,10 @@ rule convert_realignments:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli convert-realignments \
-          --config {CONFIG_PATH:q} --input {input} --output {output} \
-          > {log} 2>&1
+          --config {CONFIG_PATH:q} --input {input:q} --output {output:q} \
+          > {log:q} 2>&1
         """
 
 rule build_resource:
@@ -198,8 +212,9 @@ rule build_resource:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli build-resource \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule aggregate_benchmarks:
@@ -207,6 +222,9 @@ rule aggregate_benchmarks:
         RESOURCE_DB,
     output:
         ensure(BENCHMARK_SUMMARY, non_empty=True),
+    params:
+        benchmark_dir=ROOT / "benchmarks",
+        output_dir=ROOT / "benchmark_summary",
     log:
         ROOT / "logs" / "aggregate_benchmarks.log",
     conda:
@@ -214,9 +232,10 @@ rule aggregate_benchmarks:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli aggregate-benchmarks \
-          --benchmark-dir {ROOT}/benchmarks \
-          --output-dir {ROOT}/benchmark_summary > {log} 2>&1
+          --benchmark-dir {params.benchmark_dir:q} \
+          --output-dir {params.output_dir:q} > {log:q} 2>&1
         """
 
 rule write_provenance:
@@ -232,6 +251,7 @@ rule write_provenance:
     shell:
         """
         set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli write-provenance \
-          --config {CONFIG_PATH:q} > {log} 2>&1
+          --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
