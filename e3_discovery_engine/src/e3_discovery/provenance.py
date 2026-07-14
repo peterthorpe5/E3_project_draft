@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.metadata import PackageNotFoundError, version
 import logging
 import platform
 import shutil
@@ -45,6 +46,84 @@ def capture_command_version(command: Sequence[str]) -> str:
     return f"exit={completed.returncode}; {first_line}"
 
 
+def capture_python_package_versions(
+    package_names: Sequence[str] | None = None,
+) -> Dict[str, str]:
+    """Capture installed Python package versions without importing packages.
+
+    Args:
+        package_names: Optional distribution names. Defaults to the workflow,
+            DuckDB, PyArrow, psutil and PyYAML distributions.
+
+    Returns:
+        Mapping from distribution name to installed version or ``unavailable``.
+    """
+
+    selected = package_names or (
+        "e3-discovery-engine-m1",
+        "duckdb",
+        "pyarrow",
+        "psutil",
+        "PyYAML",
+    )
+    versions: Dict[str, str] = {}
+    for package_name in selected:
+        try:
+            versions[str(package_name)] = version(str(package_name))
+        except PackageNotFoundError:
+            versions[str(package_name)] = "unavailable: distribution not found"
+    return versions
+
+
+def capture_git_state(repository_root: Path) -> Dict[str, object]:
+    """Capture Git commit and working-tree state for a repository.
+
+    Args:
+        repository_root: Directory expected to reside inside a Git repository.
+
+    Returns:
+        Mapping containing availability, repository root, commit identifier and
+        dirty status. Errors are recorded rather than raised.
+    """
+
+    root = Path(repository_root).resolve()
+    git = shutil.which("git")
+    if git is None:
+        return {"available": False, "reason": "git executable not found"}
+    try:
+        top_level = subprocess.run(
+            [git, "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        commit = subprocess.run(
+            [git, "-C", top_level, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            [git, "-C", top_level, "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        return {
+            "available": False,
+            "repository_root": str(root),
+            "reason": str(error),
+        }
+    return {
+        "available": True,
+        "repository_root": str(Path(top_level).resolve()),
+        "commit": commit,
+        "dirty": bool(status.strip()),
+        "status_porcelain": status.splitlines(),
+    }
+
+
 def capture_software_versions(
     tools: Mapping[str, Sequence[str]] | None = None,
 ) -> Dict[str, str]:
@@ -73,6 +152,10 @@ def capture_software_versions(
             versions[name] = "unavailable: executable not found"
         else:
             versions[name] = capture_command_version((executable, *command[1:]))
+    for package_name, package_version in (
+        capture_python_package_versions().items()
+    ):
+        versions[f"python_package:{package_name}"] = package_version
     return versions
 
 
@@ -110,6 +193,7 @@ def write_run_manifest(
     configuration: Mapping[str, object],
     files: Iterable[Path],
     additional_metadata: Mapping[str, object] | None = None,
+    repository_root: Path | None = None,
 ) -> Dict[str, object]:
     """Write a JSON manifest describing configuration, software and workflow files.
 
@@ -118,6 +202,8 @@ def write_run_manifest(
         configuration: Resolved workflow configuration to record.
         files: Input and output paths included in the file manifest.
         additional_metadata: Optional extra run-level metadata.
+        repository_root: Optional Git working-tree location. Defaults to the
+            current working directory.
 
     Returns:
         The complete manifest dictionary written to disk.
@@ -132,6 +218,7 @@ def write_run_manifest(
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "configuration": dict(configuration),
         "software_versions": capture_software_versions(),
+        "git": capture_git_state(repository_root or Path.cwd()),
         "files": build_file_manifest(files),
     }
     if additional_metadata:

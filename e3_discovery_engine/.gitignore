@@ -1,1 +1,17 @@
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+.pytest_cache/
+.snakemake/
+results/
+logs/
+*.egg-info/
+build/
+dist/
+.DS_Store
+._*
+.e3_path_aliases/
 config/*.local.yaml
+config/*.local.yml
+config/*.local.tsv

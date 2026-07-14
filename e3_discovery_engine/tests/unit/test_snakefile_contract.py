@@ -56,7 +56,10 @@ class SnakefileContractTests(unittest.TestCase):
 
         self.assertGreaterEqual(self.text.count("{log:q}"), 9)
         self.assertIn("{input:q}", self.text)
-        self.assertIn("{output:q}", self.text)
+        self.assertTrue(
+            "{output:q}" in self.text
+            or "{output.parquet:q}" in self.text
+        )
         self.assertIn("{params.benchmark_dir:q}", self.text)
         self.assertIn("{params.output_dir:q}", self.text)
 

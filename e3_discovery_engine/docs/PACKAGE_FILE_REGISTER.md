@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.8.
+This register explains the role of the principal files in release 0.1.12.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration
@@ -32,8 +32,10 @@ Generated run outputs are deliberately excluded from the source package.
 | `logging_utils.py` | Console and persistent file logging configuration. |
 | `manifest.py` | Proteome sample-manifest reading, validation and normalised writing. |
 | `pipeline.py` | Configuration-driven orchestration of Python-managed stages. |
-| `provenance.py` | Software versions, file manifests and run provenance JSON. |
-| `resource.py` | DuckDB/Parquet construction, validation and candidate FASTA exports. |
+| `path_safety.py` | Whitespace-safe external-tool path aliases and provenance records for DIAMOND. |
+| `provenance.py` | External and Python package versions, Git state, file manifests and run provenance JSON. |
+| `resource.py` | DuckDB/Parquet construction, validation, scientific summaries and candidate/seed FASTA exports. |
+| `resource_monitor.py` | Cross-platform process-tree CPU and peak-RAM monitoring, aggregation and figures. |
 | `seeds.py` | Known-E3 seed normalisation, deduplication and metadata preservation. |
 
 ## Tests
@@ -64,6 +66,7 @@ Generated run outputs are deliberately excluded from the source package.
 | `docs/TESTING.md` | Test layers and validation boundary. |
 | `docs/RELEASE_CHECKLIST.md` | Pre-delivery quality gate. |
 | `docs/CODE_DOCUMENTATION_STANDARD.md` | Required PEP 257/Google-style docstring structure and automated checks. |
+| `docs/RESOURCE_MONITORING.md` | Meaning, implementation and limits of process-tree CPU and RAM measurements. |
 
 ## Legacy reference
 

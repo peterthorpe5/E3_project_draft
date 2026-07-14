@@ -147,6 +147,17 @@ def validate_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError("diamond.cluster_steps must be a list")
     if not isinstance(diamond.get("extra_args", []), list):
         raise ConfigurationError("diamond.extra_args must be a list")
+    path_alias_root = diamond.get("path_alias_root")
+    if path_alias_root is not None:
+        alias_text = str(path_alias_root)
+        if not alias_text.strip():
+            raise ConfigurationError(
+                "diamond.path_alias_root must be omitted or a non-empty path"
+            )
+        if any(character.isspace() for character in alias_text):
+            raise ConfigurationError(
+                "diamond.path_alias_root must not contain whitespace"
+            )
     comp_based_stats = diamond.get("comp_based_stats", 0)
     if (
         not isinstance(comp_based_stats, int)

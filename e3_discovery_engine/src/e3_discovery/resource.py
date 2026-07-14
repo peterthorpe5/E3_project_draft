@@ -28,7 +28,16 @@ _RESOURCE_TABLES = (
     "e3_seeded_cluster_members",
     "threshold_pass_membership",
     "strict_e3_seeded_cluster_members",
+    "all_matched_e3_seed_sequences",
+    "strict_matched_e3_seed_sequences",
+    "non_strict_matched_e3_seed_sequences",
+    "strict_nonseed_candidate_members",
     "e3_seeded_cluster_summary",
+    "e3_seeded_cross_species_summary",
+    "e3_seeded_cluster_size_distribution",
+    "sample_e3_summary",
+    "realignment_content_summary",
+    "workflow_key_metrics",
     "workflow_thresholds",
 )
 
@@ -247,6 +256,55 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
     )
     connection.execute(
         """
+        CREATE TABLE all_matched_e3_seed_sequences AS
+        SELECT DISTINCT
+            sm.internal_id,
+            sm.sample_id,
+            sm.species,
+            sm.original_id,
+            sm.entry,
+            sm.seed_id,
+            cs.representative_id,
+            r.pident,
+            r.representative_coverage,
+            r.member_coverage,
+            r.evalue,
+            r.bitscore,
+            COALESCE(r.passes_all, FALSE) AS passes_strict_thresholds
+        FROM sequence_seed_matches AS sm
+        LEFT JOIN raw_cluster_sequences AS cs
+            ON sm.internal_id = cs.sequence_id
+        LEFT JOIN realigned_membership AS r
+            ON cs.representative_id = r.representative_id
+            AND sm.internal_id = r.member_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE strict_matched_e3_seed_sequences AS
+        SELECT *
+        FROM all_matched_e3_seed_sequences
+        WHERE passes_strict_thresholds
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE non_strict_matched_e3_seed_sequences AS
+        SELECT *
+        FROM all_matched_e3_seed_sequences
+        WHERE NOT passes_strict_thresholds
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE strict_nonseed_candidate_members AS
+        SELECT *
+        FROM strict_e3_seeded_cluster_members
+        WHERE NOT is_known_e3_seed
+        """
+    )
+    connection.execute(
+        """
         CREATE TABLE e3_seeded_cluster_summary AS
         SELECT
             m.representative_id,
@@ -269,6 +327,127 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         INNER JOIN e3_seeded_clusters AS c
             ON m.representative_id = c.representative_id
         GROUP BY m.representative_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE e3_seeded_cross_species_summary AS
+        SELECT
+            species_count,
+            COUNT(*) AS cluster_count,
+            SUM(raw_member_count) AS raw_member_count,
+            SUM(strict_member_count) AS strict_member_count,
+            SUM(known_e3_sequence_count) AS known_e3_sequence_count
+        FROM e3_seeded_cluster_summary
+        GROUP BY species_count
+        ORDER BY species_count
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE e3_seeded_cluster_size_distribution AS
+        SELECT
+            raw_member_count AS raw_cluster_size,
+            strict_member_count AS strict_cluster_size,
+            COUNT(*) AS cluster_count
+        FROM e3_seeded_cluster_summary
+        GROUP BY raw_member_count, strict_member_count
+        ORDER BY raw_member_count, strict_member_count
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sample_e3_summary AS
+        SELECT
+            s.sample_id,
+            MAX(s.species) AS species,
+            COUNT(DISTINCT s.internal_id) AS input_sequence_count,
+            COUNT(DISTINCT a.internal_id) AS matched_e3_seed_count,
+            COUNT(DISTINCT st.internal_id) AS strict_matched_e3_seed_count,
+            COUNT(DISTINCT ns.internal_id) AS non_strict_matched_e3_seed_count,
+            COUNT(DISTINCT c.member_id) AS strict_nonseed_candidate_count,
+            COUNT(DISTINCT m.member_id) AS strict_e3_seeded_member_count
+        FROM sequence_records AS s
+        LEFT JOIN all_matched_e3_seed_sequences AS a
+            ON s.internal_id = a.internal_id
+        LEFT JOIN strict_matched_e3_seed_sequences AS st
+            ON s.internal_id = st.internal_id
+        LEFT JOIN non_strict_matched_e3_seed_sequences AS ns
+            ON s.internal_id = ns.internal_id
+        LEFT JOIN strict_nonseed_candidate_members AS c
+            ON s.internal_id = c.member_id
+        LEFT JOIN strict_e3_seeded_cluster_members AS m
+            ON s.internal_id = m.member_id
+        GROUP BY s.sample_id
+        ORDER BY s.sample_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE realignment_content_summary AS
+        SELECT
+            COUNT(*) AS data_rows,
+            COUNT(*) FILTER (
+                WHERE representative_id = member_id
+            ) AS representative_self_rows,
+            COUNT(*) FILTER (
+                WHERE representative_id <> member_id
+            ) AS nonself_member_rows,
+            COUNT(*) FILTER (
+                WHERE representative_id IS NULL
+                   OR member_id IS NULL
+                   OR pident IS NULL
+                   OR representative_coverage IS NULL
+                   OR member_coverage IS NULL
+                   OR evalue IS NULL
+                   OR bitscore IS NULL
+            ) AS rows_with_missing_values,
+            COUNT(*) FILTER (WHERE passes_all) AS strict_pass_rows,
+            MIN(pident) AS minimum_identity,
+            MAX(pident) AS maximum_identity,
+            MIN(representative_coverage) AS minimum_representative_coverage,
+            MIN(member_coverage) AS minimum_member_coverage
+        FROM realigned_membership
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE workflow_key_metrics AS
+        SELECT 'input_proteins' AS metric, COUNT(*)::BIGINT AS value
+        FROM sequence_records
+        UNION ALL SELECT 'input_proteomes', COUNT(DISTINCT sample_id)::BIGINT
+        FROM sequence_records
+        UNION ALL SELECT 'supplied_e3_seed_ids', COUNT(*)::BIGINT
+        FROM known_e3_seeds
+        UNION ALL SELECT 'matched_input_sequences',
+            COUNT(DISTINCT internal_id)::BIGINT FROM sequence_seed_matches
+        UNION ALL SELECT 'matched_e3_seed_ids',
+            COUNT(DISTINCT seed_id)::BIGINT FROM sequence_seed_matches
+        UNION ALL SELECT 'raw_cluster_count',
+            COUNT(DISTINCT representative_id)::BIGINT
+            FROM raw_deepclust_membership
+        UNION ALL SELECT 'raw_cluster_membership_rows', COUNT(*)::BIGINT
+            FROM raw_deepclust_membership
+        UNION ALL SELECT 'realigned_membership_rows', COUNT(*)::BIGINT
+            FROM realigned_membership
+        UNION ALL SELECT 'realignment_self_rows', COUNT(*)::BIGINT
+            FROM realigned_membership WHERE representative_id = member_id
+        UNION ALL SELECT 'realignment_nonself_rows', COUNT(*)::BIGINT
+            FROM realigned_membership WHERE representative_id <> member_id
+        UNION ALL SELECT 'all_threshold_pass_rows', COUNT(*)::BIGINT
+            FROM threshold_pass_membership
+        UNION ALL SELECT 'e3_seeded_clusters', COUNT(*)::BIGINT
+            FROM e3_seeded_clusters
+        UNION ALL SELECT 'e3_seeded_raw_members', COUNT(*)::BIGINT
+            FROM e3_seeded_cluster_members
+        UNION ALL SELECT 'e3_seeded_strict_members', COUNT(*)::BIGINT
+            FROM strict_e3_seeded_cluster_members
+        UNION ALL SELECT 'strict_matched_e3_seed_sequences', COUNT(*)::BIGINT
+            FROM strict_matched_e3_seed_sequences
+        UNION ALL SELECT 'non_strict_matched_e3_seed_sequences', COUNT(*)::BIGINT
+            FROM non_strict_matched_e3_seed_sequences
+        UNION ALL SELECT 'strict_nonseed_candidate_members', COUNT(*)::BIGINT
+            FROM strict_nonseed_candidate_members
         """
     )
 
@@ -395,6 +574,127 @@ def _validation_findings(
         strict_members,
         "Strict post-realignment membership may legitimately be empty on "
         "small or deliberately relaxed tests.",
+    )
+
+    sequence_count = int(
+        connection.execute("SELECT COUNT(*) FROM sequence_records").fetchone()[0]
+    )
+    realignment_count = int(
+        connection.execute("SELECT COUNT(*) FROM realigned_membership").fetchone()[0]
+    )
+    alignment_status = (
+        "warning" if realignment_count == 0
+        else "pass" if realignment_count == sequence_count
+        else "fail"
+    )
+    add(
+        "realignment_rows_match_sequences",
+        alignment_status,
+        realignment_count,
+        f"Expected one representative-member realignment row per input "
+        f"sequence ({sequence_count}).",
+    )
+
+    cluster_count = int(
+        connection.execute(
+            "SELECT COUNT(DISTINCT representative_id) "
+            "FROM raw_deepclust_membership"
+        ).fetchone()[0]
+    )
+    self_rows = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM realigned_membership "
+            "WHERE representative_id = member_id"
+        ).fetchone()[0]
+    )
+    self_status = (
+        "warning" if realignment_count == 0
+        else "pass" if self_rows == cluster_count
+        else "fail"
+    )
+    add(
+        "representative_self_rows_match_clusters",
+        self_status,
+        self_rows,
+        f"Expected one representative self-alignment per raw cluster "
+        f"({cluster_count}).",
+    )
+
+    unmatched_realignments = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM realigned_membership AS r
+            LEFT JOIN raw_deepclust_membership AS c
+              ON r.representative_id = c.representative_id
+             AND r.member_id = c.member_id
+            WHERE c.representative_id IS NULL
+            """
+        ).fetchone()[0]
+    )
+    add(
+        "realignments_match_cluster_membership",
+        "pass" if unmatched_realignments == 0 else "fail",
+        unmatched_realignments,
+        "Every realignment row must correspond to a raw cluster assignment.",
+    )
+
+    missing_alignment_values = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM realigned_membership
+            WHERE representative_id IS NULL
+               OR member_id IS NULL
+               OR pident IS NULL
+               OR representative_coverage IS NULL
+               OR member_coverage IS NULL
+               OR evalue IS NULL
+               OR bitscore IS NULL
+            """
+        ).fetchone()[0]
+    )
+    add(
+        "missing_realignments_values",
+        "pass" if missing_alignment_values == 0 else "fail",
+        missing_alignment_values,
+        "Realignment identifiers and numeric evidence fields must be complete.",
+    )
+
+    matched_seed_count = int(
+        connection.execute(
+            "SELECT COUNT(DISTINCT internal_id) FROM sequence_seed_matches"
+        ).fetchone()[0]
+    )
+    explicit_seed_count = int(
+        connection.execute(
+            "SELECT COUNT(DISTINCT internal_id) "
+            "FROM all_matched_e3_seed_sequences"
+        ).fetchone()[0]
+    )
+    add(
+        "all_matched_seeds_preserved",
+        "pass" if explicit_seed_count == matched_seed_count else "fail",
+        explicit_seed_count,
+        f"All {matched_seed_count} matched E3 seed sequences must remain "
+        "explicitly represented regardless of strict-filter status.",
+    )
+
+    candidate_violations = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM strict_nonseed_candidate_members
+            WHERE is_known_e3_seed OR NOT passes_strict_thresholds
+            """
+        ).fetchone()[0]
+    )
+    add(
+        "strict_nonseed_candidate_definition",
+        "pass" if candidate_violations == 0 else "fail",
+        candidate_violations,
+        "Candidate-expansion rows must be strict-pass members absent from the "
+        "inherited E3 seed list.",
     )
 
     return findings
@@ -558,11 +858,87 @@ def export_curated_fastas(
         """,
         destination / "e3_seeded_strict_members.fasta",
     )
+    all_matched_seeds = _write_fasta_query(
+        connection,
+        """
+        SELECT DISTINCT s.internal_id, s.sequence
+        FROM all_matched_e3_seed_sequences AS m
+        INNER JOIN sequence_records AS s
+            ON m.internal_id = s.internal_id
+        ORDER BY s.internal_id
+        """,
+        destination / "all_matched_e3_seeds.fasta",
+    )
+    strict_matched_seeds = _write_fasta_query(
+        connection,
+        """
+        SELECT DISTINCT s.internal_id, s.sequence
+        FROM strict_matched_e3_seed_sequences AS m
+        INNER JOIN sequence_records AS s
+            ON m.internal_id = s.internal_id
+        ORDER BY s.internal_id
+        """,
+        destination / "strict_matched_e3_seeds.fasta",
+    )
+    strict_nonseed_candidates = _write_fasta_query(
+        connection,
+        """
+        SELECT DISTINCT s.internal_id, s.sequence
+        FROM strict_nonseed_candidate_members AS m
+        INNER JOIN sequence_records AS s
+            ON m.member_id = s.internal_id
+        ORDER BY s.internal_id
+        """,
+        destination / "strict_nonseed_candidates.fasta",
+    )
     return {
         "representative_sequences": representatives,
         "all_member_sequences": all_members,
         "strict_member_sequences": strict_members,
+        "all_matched_e3_seed_sequences": all_matched_seeds,
+        "strict_matched_e3_seed_sequences": strict_matched_seeds,
+        "strict_nonseed_candidate_sequences": strict_nonseed_candidates,
     }
+
+
+def export_summary_tables(
+    connection: duckdb.DuckDBPyConnection,
+    output_dir: Path,
+) -> Dict[str, Path]:
+    """Export compact scientific and quality-control summary tables as TSV.
+
+    Args:
+        connection: Open DuckDB connection containing completed resource tables.
+        output_dir: Destination directory for human-readable TSV summaries.
+
+    Returns:
+        Mapping from summary table name to its resolved TSV path.
+
+    Raises:
+        duckdb.Error: If a summary table is absent or export fails.
+        OSError: If the destination directory cannot be created.
+    """
+
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    table_names = (
+        "workflow_key_metrics",
+        "realignment_content_summary",
+        "sample_e3_summary",
+        "e3_seeded_cross_species_summary",
+        "e3_seeded_cluster_size_distribution",
+        "e3_seeded_cluster_summary",
+    )
+    outputs: Dict[str, Path] = {}
+    for table_name in table_names:
+        output = destination / f"{table_name}.tsv"
+        connection.execute(
+            f"COPY (SELECT * FROM {table_name}) TO "
+            f"{sql_literal(str(output.resolve()))} "
+            "(FORMAT CSV, HEADER TRUE, DELIMITER '\t')"
+        )
+        outputs[table_name] = output.resolve()
+    return outputs
 
 
 def build_duckdb_resource(
@@ -575,6 +951,7 @@ def build_duckdb_resource(
     curated_parquet_dir: Path,
     fasta_output_dir: Path,
     validation_tsv: Path,
+    summary_output_dir: Path | None = None,
     metadata: Mapping[str, object] | None = None,
     duckdb_threads: int = 4,
 ) -> Dict[str, object]:
@@ -595,6 +972,8 @@ def build_duckdb_resource(
         curated_parquet_dir: Destination directory for exported resource tables.
         fasta_output_dir: Destination directory for curated FASTA files.
         validation_tsv: Destination for resource integrity findings.
+        summary_output_dir: Optional compact TSV summary directory. Defaults to
+            a ``summaries`` sibling below the workflow result root.
         metadata: Optional project, DIAMOND and threshold metadata.
         duckdb_threads: Number of DuckDB execution threads.
 
@@ -654,6 +1033,21 @@ def build_duckdb_resource(
                 curated_parquet_dir,
             )
             fasta_counts = export_curated_fastas(connection, fasta_output_dir)
+            database_parent = Path(database_path).resolve().parent
+            default_summary_root = (
+                database_parent.parent
+                if database_parent.name == "duckdb"
+                else database_parent
+            )
+            resolved_summary_dir = (
+                Path(summary_output_dir)
+                if summary_output_dir is not None
+                else default_summary_root / "summaries"
+            )
+            summary_outputs = export_summary_tables(
+                connection,
+                resolved_summary_dir,
+            )
             connection.execute("CHECKPOINT")
             LOGGER.info(
                 "Curated resource validated: %d seeded clusters, %d strict members",
@@ -671,4 +1065,7 @@ def build_duckdb_resource(
             key: str(value) for key, value in parquet_outputs.items()
         },
         "fasta_counts": fasta_counts,
+        "summary_outputs": {
+            key: str(value) for key, value in summary_outputs.items()
+        },
     }

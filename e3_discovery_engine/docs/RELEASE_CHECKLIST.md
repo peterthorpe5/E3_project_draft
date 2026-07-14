@@ -60,3 +60,12 @@
 - [ ] No passwords, tokens, user-specific absolute paths or macOS sidecars exist.
 - [ ] Source archive checksum is written.
 - [ ] Documentation files and example configuration are included.
+
+## Version 0.1.12 additions
+
+- [ ] `psutil` is present in the production environment.
+- [ ] Every major stage writes a non-empty `resource_metrics/*.tsv` file.
+- [ ] `resource_usage_summary.tsv` contains non-zero peak RSS values.
+- [ ] `realignment_content_summary.tsv` agrees with input and cluster counts.
+- [ ] All matched seed, strict seed and strict non-seed candidate outputs exist.
+- [ ] The provenance manifest records the Python DuckDB version and Git state.

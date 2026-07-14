@@ -69,3 +69,14 @@ centroid/member realignment headers, and valid zero-row realignment tables.
 An integration test confirms
 that the DuckDB resource can still be built when no pairwise realignments are
 reported.
+
+## Version 0.1.12 resource-monitor and evidence-separation tests
+
+The release suite now verifies that the process-tree monitor samples the parent
+Python process and a child process with an explicit memory allocation. It also
+round-trips resource TSV files, ignores hidden artefacts, aggregates repeated
+records and creates the peak-RAM figures.
+
+Resource integration tests verify the explicit all-seed, strict-seed,
+non-strict-seed and strict non-seed candidate tables, automatic scientific TSV
+summaries, and the realignment-content validation contract.

@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.1.12 - 2026-07-14
+
+- Add cross-platform process-tree resource monitoring with `psutil` for every
+  major workflow stage, including aggregate peak resident memory (RAM), wall
+  time, user CPU time, system CPU time and process count.
+- Write per-stage resource records, a stage summary table and peak-RAM PNG/PDF
+  figures independently of Snakemake's platform-dependent memory fields.
+- Add automatic realignment-content checks confirming one row per input
+  sequence, one representative self-alignment per cluster, complete numeric
+  evidence and agreement with raw DeepClust membership.
+- Preserve every matched inherited E3 seed explicitly, split strict and
+  non-strict matched seeds, and expose strict non-seed candidate members as a
+  separate DuckDB table, Parquet export and FASTA file.
+- Add automatic key-metric, per-sample, realignment, cluster-size and
+  cross-species TSV summaries.
+- Record installed Python package versions, including Python DuckDB, plus the
+  Git commit and dirty working-tree state in the run manifest.
+- Retain the `tantan` production masking default and all strict scientific
+  thresholds unchanged.
+- Expand the unit and integration suite to cover the new monitoring,
+  provenance, validation, summary and candidate-separation functions.
+
+## 0.1.11 - 2026-07-14
+
+- Ignore macOS AppleDouble sidecar files such as `._benchmark.tsv` when
+  discovering Snakemake benchmark tables on external volumes.
+- Ignore benchmark tables located below hidden directories.
+- Accept UTF-8 benchmark files with or without a byte-order mark while still
+  rejecting malformed visible benchmark files with a clear validation error.
+- Add regression tests for AppleDouble files, hidden directories, UTF-8 BOM
+  handling and malformed benchmark input.
+- No scientific thresholds, clustering behaviour, E3-seed logic or DuckDB
+  schemas changed.
+
+## 0.1.10 - 2026-07-14
+
+- Corrected the production masking default from target-only `seg` to symmetric
+  `tantan` for DIAMOND DeepClust self-alignment.
+- Added defensive validation that rejects `seg` and unsupported asymmetric
+  masking before launching DIAMOND.
+- Added a focused diagnostic for `asymmetric masking for self alignment`.
+- Updated real-DIAMOND end-to-end tests to exercise the production `tantan`
+  setting.
+- Updated README, methods and operations documentation.
+- No clustering thresholds, E3-seed logic or output schemas changed.
+
+## 0.1.9 - 2026-07-14
+
+- Fix DIAMOND 2.2.x clustering failures when the configured output root
+  contains whitespace, such as `/Volumes/One Touch/...`.
+- Create or reuse a deterministic whitespace-free symbolic-link alias and use
+  the alias for all `makedb`, `deepclust` and `realign` input/output paths.
+- Keep files physically in the configured result directory and record the
+  mapping in `provenance/diamond_path_alias.json`.
+- Add optional `diamond.path_alias_root` configuration for an explicitly
+  chosen whitespace-free alias parent.
+- Shell-quote external command logging with `shlex.join` so diagnostic logs
+  show argument boundaries accurately.
+- Add unit and CLI integration tests for alias creation, reuse, conflicts,
+  provenance and whitespace-free DIAMOND command arguments.
+- Extend the optional real-DIAMOND end-to-end suite with a workflow root that
+  deliberately contains spaces.
+- No scientific thresholds, clustering criteria or downstream interpretation
+  changed.
+
 ## 0.1.8 - 2026-07-14
 
 - Quote every Snakemake-expanded input, output, log, configuration, benchmark,

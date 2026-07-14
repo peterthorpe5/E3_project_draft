@@ -134,3 +134,10 @@ A formal benchmark passes when:
 3. Peak RSS by rule and dataset.
 4. Raw clusters, E3-seeded clusters and strict-member counts by dataset.
 5. Legacy versus production overlap for representative sequences/clusters.
+
+## Package-owned RAM monitoring
+
+Version 0.1.12 records sampled aggregate process-tree peak RSS, CPU time and
+wall time for each major stage. Use `benchmark_summary/resource_usage_summary.tsv`
+for observed RAM. Do not substitute DIAMOND memory limits, scheduler requests
+or macOS Snakemake `max_rss` values of zero for observed memory.

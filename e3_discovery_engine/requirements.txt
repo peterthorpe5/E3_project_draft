@@ -2,3 +2,4 @@ duckdb>=1.1,<2
 matplotlib>=3.8,<4
 pyarrow>=17,<26
 PyYAML>=6,<7
+psutil>=5.9,<8

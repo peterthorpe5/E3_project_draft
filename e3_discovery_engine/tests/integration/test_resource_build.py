@@ -73,8 +73,17 @@ class ResourceIntegrationTests(unittest.TestCase):
                 "SELECT raw_member_count, strict_member_count "
                 "FROM e3_seeded_cluster_summary"
             ).fetchone()
-            connection.close()
             self.assertEqual(summary, (2, 2))
+            counts = connection.execute(
+                "SELECT "
+                "(SELECT COUNT(*) FROM all_matched_e3_seed_sequences), "
+                "(SELECT COUNT(*) FROM strict_nonseed_candidate_members)"
+            ).fetchone()
+            self.assertEqual(counts, (1, 1))
+            connection.close()
+            self.assertTrue(
+                (root / "summaries" / "workflow_key_metrics.tsv").is_file()
+            )
 
     def test_build_resource_with_header_only_realignments(self):
         with tempfile.TemporaryDirectory() as tmp:

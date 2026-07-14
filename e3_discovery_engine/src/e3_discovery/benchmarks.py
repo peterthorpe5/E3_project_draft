@@ -18,6 +18,33 @@ from e3_discovery.io_utils import atomic_binary_path, write_tsv
 LOGGER = logging.getLogger(__name__)
 
 
+def _is_hidden_benchmark_artifact(path: Path, root: Path) -> bool:
+    """Return whether a candidate benchmark path is a hidden artefact.
+
+    macOS can create AppleDouble resource-fork sidecars named ``._*.tsv``
+    when files are written to some external-drive filesystems. Those files
+    are binary metadata rather than Snakemake benchmark tables. Hidden files
+    and files below hidden directories are therefore excluded from benchmark
+    discovery.
+
+    Args:
+        path: Candidate benchmark path.
+        root: Benchmark directory used as the discovery root.
+
+    Returns:
+        ``True`` when any relative path component starts with a full stop;
+        otherwise ``False``.
+    """
+
+    candidate = Path(path)
+    benchmark_root = Path(root)
+    try:
+        relative = candidate.relative_to(benchmark_root)
+    except ValueError:
+        relative = candidate
+    return any(part.startswith(".") for part in relative.parts)
+
+
 def parse_snakemake_benchmark(path: Path) -> List[Dict[str, object]]:
     """Parse one Snakemake benchmark table into typed records.
 
@@ -40,41 +67,49 @@ def parse_snakemake_benchmark(path: Path) -> List[Dict[str, object]]:
     source = Path(path)
     if not source.is_file():
         raise FileNotFoundError(f"Benchmark file does not exist: {source}")
-    with source.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        if not reader.fieldnames or "s" not in reader.fieldnames:
-            raise DataValidationError(
-                f"Benchmark file lacks required 's' column: {source}"
-            )
-        records = []
-        for repeat_index, row in enumerate(reader, start=1):
-            record: Dict[str, object] = {
-                "benchmark_file": str(source.resolve()),
-                "rule_name": source.stem,
-                "repeat_index": repeat_index,
-            }
-            for key, value in row.items():
-                clean = str(value or "").strip()
-                if key in {
-                    "s",
-                    "max_rss",
-                    "max_vms",
-                    "max_uss",
-                    "max_pss",
-                    "io_in",
-                    "io_out",
-                    "mean_load",
-                    "cpu_time",
-                }:
-                    try:
-                        record[key] = float(clean) if clean not in {"", "-"} else None
-                    except ValueError as error:
-                        raise DataValidationError(
-                            f"Invalid benchmark number for {key}: {clean!r}"
-                        ) from error
-                else:
-                    record[key] = clean
-            records.append(record)
+    try:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            if not reader.fieldnames or "s" not in reader.fieldnames:
+                raise DataValidationError(
+                    f"Benchmark file lacks required 's' column: {source}"
+                )
+            records = []
+            for repeat_index, row in enumerate(reader, start=1):
+                record: Dict[str, object] = {
+                    "benchmark_file": str(source.resolve()),
+                    "rule_name": source.stem,
+                    "repeat_index": repeat_index,
+                }
+                for key, value in row.items():
+                    clean = str(value or "").strip()
+                    if key in {
+                        "s",
+                        "max_rss",
+                        "max_vms",
+                        "max_uss",
+                        "max_pss",
+                        "io_in",
+                        "io_out",
+                        "mean_load",
+                        "cpu_time",
+                    }:
+                        try:
+                            record[key] = (
+                                float(clean) if clean not in {"", "-"} else None
+                            )
+                        except ValueError as error:
+                            raise DataValidationError(
+                                f"Invalid benchmark number for {key}: {clean!r}"
+                            ) from error
+                    else:
+                        record[key] = clean
+                records.append(record)
+    except UnicodeDecodeError as error:
+        raise DataValidationError(
+            "Benchmark file is not UTF-8 text and may be a binary "
+            f"filesystem sidecar: {source}"
+        ) from error
     if not records:
         raise DataValidationError(f"Benchmark file contains no runs: {source}")
     return records
@@ -108,6 +143,12 @@ def aggregate_benchmark_directory(
         raise FileNotFoundError(f"Benchmark directory does not exist: {root}")
     records: List[Dict[str, object]] = []
     for path in sorted(root.rglob("*.tsv")):
+        if _is_hidden_benchmark_artifact(path, root):
+            LOGGER.info("Ignoring hidden benchmark artefact: %s", path)
+            continue
+        if not path.is_file():
+            LOGGER.warning("Ignoring non-file benchmark candidate: %s", path)
+            continue
         for record in parse_snakemake_benchmark(path):
             if dataset_metadata:
                 record.update(dataset_metadata)

@@ -75,7 +75,7 @@ The default production clustering parameters are:
 - identity: 50% using exact `--id`;
 - mutual coverage: 50%;
 - clustering e-value: 0.1;
-- SEG masking enabled;
+- symmetric tantan repeat masking enabled;
 - threads and memory limit supplied by configuration.
 
 These settings define broad cluster formation. They are intentionally separated
@@ -85,9 +85,9 @@ from the stricter post-realignment criteria used for final interrogation.
 
 DIAMOND clustering output is treated as the documented two-column positional
 format: the first column is the cluster representative accession and the
-second is the cluster member accession. The production command does not depend
-on `--header`. The parser accepts recognised header variants if a different
-DIAMOND build emits one, preserves the first data row in headerless files,
+second is the cluster member accession. The production command emits DIAMOND's native clustering header because
+DIAMOND 2.2.x `realign` requires it. The parser accepts recognised header
+variants, preserves the first data row when importing headerless historical files,
 skips comment-only lines, and rejects rows that do not contain exactly two
 columns.
 
@@ -195,3 +195,11 @@ command JSON and the run provenance. Strict identity, representative coverage,
 member coverage, bit-score and e-value thresholds are calculated from the
 realignment table rather than inferred from broad cluster membership.
 
+
+## Process-tree resource monitoring
+
+Major stages were sampled at 0.2-second intervals using psutil. Resident memory
+was summed across the stage Python process and all recursively observed child
+processes. The maximum simultaneous sum was reported as peak RSS. User and
+system CPU times were accumulated from the maximum cumulative value observed
+for each process identity.

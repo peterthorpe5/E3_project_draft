@@ -9,8 +9,8 @@ Opening the database...  [0s]
 Found 3 centroids, 4 mappings in input file.
 Block size: 2000000000 byte.
 Loading centroid block...  [0s]
-Processing centroid block 1, member block 1...  [1.006s]
-Joining centroid block 1...  [0.001s]
+Processing centroid block 1, member block 1...  [1.005s]
+Joining centroid block 1...  [0s]
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 Freeing memory...  [0s]

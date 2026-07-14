@@ -24,13 +24,15 @@ resources:
 
 diamond:
   executable: diamond
+  # Optional whitespace-free parent for DIAMOND path aliases.
+  # path_alias_root: ../.e3_path_aliases
   identity_mode: exact
   identity_percent: 50
   mutual_cover_percent: 50
   clustering_evalue: 0.1
   comp_based_stats: 0
   memory_limit: 64G
-  masking: seg
+  masking: tantan
   cluster_steps: []
   extra_args: []
 
@@ -42,4 +44,4 @@ thresholds:
   maximum_evalue: 1.0e-10
 
 benchmarking:
-  repeats: 3
+  repeats: 1

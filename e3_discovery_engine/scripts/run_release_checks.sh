@@ -27,7 +27,8 @@ for required in \
   docs/TESTING.md \
   docs/PACKAGE_FILE_REGISTER.md \
   docs/LEGACY_AUDIT_EVIDENCE_REGISTER.md \
-  docs/CODE_DOCUMENTATION_STANDARD.md; do
+  docs/CODE_DOCUMENTATION_STANDARD.md \
+  docs/RESOURCE_MONITORING.md; do
   test -s "${required}"
 done
 

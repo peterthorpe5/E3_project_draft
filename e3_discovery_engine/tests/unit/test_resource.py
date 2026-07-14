@@ -51,6 +51,30 @@ class ResourceUnitTests(unittest.TestCase):
                 "CREATE TABLE strict_e3_seeded_cluster_members "
                 "(member_id VARCHAR)"
             )
+            connection.execute(
+                "CREATE TABLE realigned_membership "
+                "(representative_id VARCHAR, member_id VARCHAR, "
+                "pident DOUBLE, representative_coverage DOUBLE, "
+                "member_coverage DOUBLE, evalue DOUBLE, bitscore DOUBLE, "
+                "passes_all BOOLEAN)"
+            )
+            connection.execute(
+                "CREATE TABLE raw_deepclust_membership "
+                "(representative_id VARCHAR, member_id VARCHAR)"
+            )
+            connection.execute(
+                "CREATE TABLE sequence_seed_matches "
+                "(internal_id VARCHAR, seed_id VARCHAR)"
+            )
+            connection.execute(
+                "CREATE TABLE all_matched_e3_seed_sequences "
+                "(internal_id VARCHAR)"
+            )
+            connection.execute(
+                "CREATE TABLE strict_nonseed_candidate_members "
+                "(is_known_e3_seed BOOLEAN, "
+                "passes_strict_thresholds BOOLEAN)"
+            )
             with self.assertRaises(Exception):
                 validate_resource(connection, Path(tmp) / "findings.tsv")
             self.assertTrue((Path(tmp) / "findings.tsv").is_file())

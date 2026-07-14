@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -225,10 +226,12 @@ def build_deepclust_command(
             "with compositionally adjusted matrix modes 2-6; use "
             "comp_based_stats 0 or 1"
         )
-    allowed_masking = {None, "none", "seg", "seg-all", "tantan"}
+    allowed_masking = {None, "none", "tantan"}
     if masking not in allowed_masking:
         raise ValueError(
-            "masking must be one of: none, seg, seg-all, tantan, or None"
+            "DeepClust self-alignment requires symmetric masking. "
+            "Use 'tantan', 'none', or None; target-only SEG masking "
+            "causes DIAMOND to fail with asymmetric masking."
         )
     identity_option = "--id" if identity_mode == "exact" else "--approx-id"
     command = [
@@ -303,10 +306,11 @@ def build_realign_command(
             "Realignment traceback is incompatible with compositionally "
             "adjusted matrix modes 2-6; use comp_based_stats 0 or 1"
         )
-    allowed_masking = {None, "none", "seg", "seg-all", "tantan"}
+    allowed_masking = {None, "none", "tantan"}
     if masking not in allowed_masking:
         raise ValueError(
-            "masking must be one of: none, seg, seg-all, tantan, or None"
+            "The production workflow uses one symmetric masking mode for "
+            "DeepClust and realignment. Use 'tantan', 'none', or None."
         )
     command = [
         executable,
@@ -402,6 +406,12 @@ def diamond_error_hint(log_text: str) -> str:
             "the DeepClust file with the flag-only --header option; DIAMOND "
             "2.2.x emits centroid<TAB>member."
         )
+    if "asymmetric masking for self alignment" in normalised:
+        return (
+            "DIAMOND DeepClust performs self-alignment. SEG masks target "
+            "sequences asymmetrically in DIAMOND 2.2.3, so use "
+            "diamond.masking: tantan (recommended) or none."
+        )
     return ""
 
 
@@ -434,7 +444,7 @@ def run_external_command(
 
     if not command:
         raise ValueError("command cannot be empty")
-    LOGGER.info("Running external command: %s", " ".join(map(str, command)))
+    LOGGER.info("Running external command: %s", shlex.join(map(str, command)))
     log_file = ensure_parent(Path(log_path))
     if command_record_path is not None:
         record = ensure_parent(Path(command_record_path))

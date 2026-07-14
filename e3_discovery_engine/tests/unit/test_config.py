@@ -88,6 +88,23 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             validate_config(config)
 
+    def test_validate_config_accepts_safe_path_alias_root(self):
+        config = valid_config()
+        config["diamond"]["path_alias_root"] = "/tmp/e3_aliases"
+        validate_config(config)
+
+    def test_validate_config_rejects_blank_path_alias_root(self):
+        config = valid_config()
+        config["diamond"]["path_alias_root"] = "   "
+        with self.assertRaises(ConfigurationError):
+            validate_config(config)
+
+    def test_validate_config_rejects_spaced_path_alias_root(self):
+        config = valid_config()
+        config["diamond"]["path_alias_root"] = "/tmp/e3 aliases"
+        with self.assertRaises(ConfigurationError):
+            validate_config(config)
+
     def test_validate_config_rejects_non_list_cluster_steps(self):
         config = valid_config()
         config["diamond"]["cluster_steps"] = "fast"

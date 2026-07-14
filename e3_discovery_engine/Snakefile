@@ -44,16 +44,64 @@ RESOURCE_DB = ROOT / "duckdb" / "e3_discovery_resource.duckdb"
 VALIDATION = ROOT / "qc" / "resource_validation.tsv"
 BENCHMARK_SUMMARY = ROOT / "benchmark_summary" / "benchmark_summary.tsv"
 RUN_MANIFEST = ROOT / "provenance" / "run_manifest.json"
+RESOURCE_METRICS_DIR = ROOT / "resource_metrics"
+RESOURCE_USAGE_RECORDS = (
+    ROOT / "benchmark_summary" / "resource_usage_records.tsv"
+)
+RESOURCE_USAGE_SUMMARY = (
+    ROOT / "benchmark_summary" / "resource_usage_summary.tsv"
+)
+PEAK_RAM_PNG = ROOT / "benchmark_summary" / "peak_ram_by_stage.png"
+PEAK_RAM_PDF = ROOT / "benchmark_summary" / "peak_ram_by_stage.pdf"
+KEY_METRICS = ROOT / "summaries" / "workflow_key_metrics.tsv"
+REALIGNMENT_SUMMARY = (
+    ROOT / "summaries" / "realignment_content_summary.tsv"
+)
+SAMPLE_E3_SUMMARY = ROOT / "summaries" / "sample_e3_summary.tsv"
+CROSS_SPECIES_SUMMARY = (
+    ROOT / "summaries" / "e3_seeded_cross_species_summary.tsv"
+)
+CLUSTER_SIZE_SUMMARY = (
+    ROOT / "summaries" / "e3_seeded_cluster_size_distribution.tsv"
+)
+CLUSTER_SUMMARY = ROOT / "summaries" / "e3_seeded_cluster_summary.tsv"
+
+RESOURCE_METRIC_FILES = {
+    "prepare": RESOURCE_METRICS_DIR / "prepare_inputs.tsv",
+    "makedb": RESOURCE_METRICS_DIR / "diamond_makedb.tsv",
+    "deepclust": RESOURCE_METRICS_DIR / "diamond_deepclust.tsv",
+    "realign": RESOURCE_METRICS_DIR / "diamond_realign.tsv",
+    "convert_clusters": (
+        RESOURCE_METRICS_DIR / "convert_cluster_membership.tsv"
+    ),
+    "convert_realignments": (
+        RESOURCE_METRICS_DIR / "convert_realignments.tsv"
+    ),
+    "build_resource": RESOURCE_METRICS_DIR / "build_resource.tsv",
+}
 
 rule all:
     input:
         RESOURCE_DB,
         VALIDATION,
         BENCHMARK_SUMMARY,
+        RESOURCE_USAGE_RECORDS,
+        RESOURCE_USAGE_SUMMARY,
+        PEAK_RAM_PNG,
+        PEAK_RAM_PDF,
         RUN_MANIFEST,
+        KEY_METRICS,
+        REALIGNMENT_SUMMARY,
+        SAMPLE_E3_SUMMARY,
+        CROSS_SPECIES_SUMMARY,
+        CLUSTER_SIZE_SUMMARY,
+        CLUSTER_SUMMARY,
         ROOT / "fasta_exports" / "e3_seeded_representatives.fasta",
         ROOT / "fasta_exports" / "e3_seeded_all_members.fasta",
         ROOT / "fasta_exports" / "e3_seeded_strict_members.fasta",
+        ROOT / "fasta_exports" / "all_matched_e3_seeds.fasta",
+        ROOT / "fasta_exports" / "strict_matched_e3_seeds.fasta",
+        ROOT / "fasta_exports" / "strict_nonseed_candidates.fasta",
 
 rule prepare_inputs:
     output:
@@ -62,6 +110,7 @@ rule prepare_inputs:
         sample_summary=ensure(SAMPLE_SUMMARY, non_empty=True),
         seeds_tsv=ensure(SEEDS_TSV, non_empty=True),
         seeds_parquet=ensure(SEEDS_PARQUET, non_empty=True),
+        metrics=ensure(RESOURCE_METRIC_FILES["prepare"], non_empty=True),
     log:
         ROOT / "logs" / "prepare_inputs.log",
     benchmark:
@@ -72,7 +121,8 @@ rule prepare_inputs:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli prepare \
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} prepare \
           --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
@@ -80,7 +130,8 @@ rule make_diamond_database:
     input:
         COMBINED_FASTA,
     output:
-        ensure(DIAMOND_DB, non_empty=True),
+        database=ensure(DIAMOND_DB, non_empty=True),
+        metrics=ensure(RESOURCE_METRIC_FILES["makedb"], non_empty=True),
     log:
         ROOT / "logs" / "diamond_makedb_rule.log",
     benchmark:
@@ -93,7 +144,8 @@ rule make_diamond_database:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli diamond-makedb \
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} diamond-makedb \
           --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
@@ -101,7 +153,8 @@ rule run_deepclust:
     input:
         DIAMOND_DB,
     output:
-        ensure(CLUSTERS_TSV, non_empty=True),
+        clusters=ensure(CLUSTERS_TSV, non_empty=True),
+        metrics=ensure(RESOURCE_METRIC_FILES["deepclust"], non_empty=True),
     log:
         ROOT / "logs" / "diamond_deepclust_rule.log",
     benchmark:
@@ -114,7 +167,8 @@ rule run_deepclust:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli diamond-deepclust \
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} diamond-deepclust \
           --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
@@ -123,7 +177,8 @@ rule realign_clusters:
         database=DIAMOND_DB,
         clusters=CLUSTERS_TSV,
     output:
-        ensure(REALIGN_TSV, non_empty=True),
+        realignments=ensure(REALIGN_TSV, non_empty=True),
+        metrics=ensure(RESOURCE_METRIC_FILES["realign"], non_empty=True),
     log:
         ROOT / "logs" / "diamond_realign_rule.log",
     benchmark:
@@ -136,7 +191,8 @@ rule realign_clusters:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli diamond-realign \
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} diamond-realign \
           --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
@@ -144,7 +200,11 @@ rule convert_cluster_membership:
     input:
         CLUSTERS_TSV,
     output:
-        ensure(CLUSTERS_PARQUET, non_empty=True),
+        parquet=ensure(CLUSTERS_PARQUET, non_empty=True),
+        metrics=ensure(
+            RESOURCE_METRIC_FILES["convert_clusters"],
+            non_empty=True,
+        ),
     log:
         ROOT / "logs" / "convert_cluster_membership.log",
     benchmark:
@@ -158,15 +218,20 @@ rule convert_cluster_membership:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli convert-clusters \
-          --input {input:q} --output {output:q} > {log:q} 2>&1
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} convert-clusters \
+          --input {input:q} --output {output.parquet:q} > {log:q} 2>&1
         """
 
 rule convert_realignments:
     input:
         REALIGN_TSV,
     output:
-        ensure(REALIGN_PARQUET, non_empty=True),
+        parquet=ensure(REALIGN_PARQUET, non_empty=True),
+        metrics=ensure(
+            RESOURCE_METRIC_FILES["convert_realignments"],
+            non_empty=True,
+        ),
     log:
         ROOT / "logs" / "convert_realignments.log",
     benchmark:
@@ -180,9 +245,10 @@ rule convert_realignments:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli convert-realignments \
-          --config {CONFIG_PATH:q} --input {input:q} --output {output:q} \
-          > {log:q} 2>&1
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} convert-realignments \
+          --config {CONFIG_PATH:q} --input {input:q} \
+          --output {output.parquet:q} > {log:q} 2>&1
         """
 
 rule build_resource:
@@ -203,6 +269,23 @@ rule build_resource:
             non_empty=True,
         ),
         strict_members=ROOT / "fasta_exports" / "e3_seeded_strict_members.fasta",
+        all_matched_seeds=ROOT / "fasta_exports" / "all_matched_e3_seeds.fasta",
+        strict_matched_seeds=(
+            ROOT / "fasta_exports" / "strict_matched_e3_seeds.fasta"
+        ),
+        strict_nonseed_candidates=(
+            ROOT / "fasta_exports" / "strict_nonseed_candidates.fasta"
+        ),
+        key_metrics=ensure(KEY_METRICS, non_empty=True),
+        realignment_summary=ensure(REALIGNMENT_SUMMARY, non_empty=True),
+        sample_summary=ensure(SAMPLE_E3_SUMMARY, non_empty=True),
+        cross_species_summary=ensure(CROSS_SPECIES_SUMMARY, non_empty=True),
+        cluster_size_summary=ensure(CLUSTER_SIZE_SUMMARY, non_empty=True),
+        cluster_summary=ensure(CLUSTER_SUMMARY, non_empty=True),
+        metrics=ensure(
+            RESOURCE_METRIC_FILES["build_resource"],
+            non_empty=True,
+        ),
     log:
         ROOT / "logs" / "build_resource.log",
     benchmark:
@@ -213,17 +296,24 @@ rule build_resource:
         """
         set -euo pipefail
         mkdir -p "$(dirname {log:q})"
-        PYTHONPATH=src python -m e3_discovery.cli build-resource \
+        PYTHONPATH=src python -m e3_discovery.cli \
+          --resource-metrics {output.metrics:q} build-resource \
           --config {CONFIG_PATH:q} > {log:q} 2>&1
         """
 
 rule aggregate_benchmarks:
     input:
-        RESOURCE_DB,
+        database=RESOURCE_DB,
+        resource_metrics=list(RESOURCE_METRIC_FILES.values()),
     output:
-        ensure(BENCHMARK_SUMMARY, non_empty=True),
+        benchmark=ensure(BENCHMARK_SUMMARY, non_empty=True),
+        resource_records=ensure(RESOURCE_USAGE_RECORDS, non_empty=True),
+        resource_summary=ensure(RESOURCE_USAGE_SUMMARY, non_empty=True),
+        peak_ram_png=ensure(PEAK_RAM_PNG, non_empty=True),
+        peak_ram_pdf=ensure(PEAK_RAM_PDF, non_empty=True),
     params:
         benchmark_dir=ROOT / "benchmarks",
+        resource_metrics_dir=RESOURCE_METRICS_DIR,
         output_dir=ROOT / "benchmark_summary",
     log:
         ROOT / "logs" / "aggregate_benchmarks.log",
@@ -235,6 +325,7 @@ rule aggregate_benchmarks:
         mkdir -p "$(dirname {log:q})"
         PYTHONPATH=src python -m e3_discovery.cli aggregate-benchmarks \
           --benchmark-dir {params.benchmark_dir:q} \
+          --resource-metrics-dir {params.resource_metrics_dir:q} \
           --output-dir {params.output_dir:q} > {log:q} 2>&1
         """
 
@@ -242,6 +333,9 @@ rule write_provenance:
     input:
         RESOURCE_DB,
         BENCHMARK_SUMMARY,
+        RESOURCE_USAGE_SUMMARY,
+        KEY_METRICS,
+        REALIGNMENT_SUMMARY,
     output:
         ensure(RUN_MANIFEST, non_empty=True),
     log:

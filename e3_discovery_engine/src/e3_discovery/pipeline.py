@@ -37,6 +37,8 @@ class WorkflowPaths:
         curated_parquet_dir: Directory for exported resource tables.
         fasta_output_dir: Directory for curated FASTA exports.
         validation_tsv: Resource-integrity findings table.
+        summary_dir: Compact scientific and quality-control TSV summaries.
+        resource_metrics_dir: Per-stage process-tree CPU and RAM measurements.
         logs_dir: Persistent workflow-log directory.
         benchmarks_dir: Snakemake benchmark-output directory.
         provenance_dir: Commands, versions and run-manifest directory.
@@ -57,6 +59,8 @@ class WorkflowPaths:
     curated_parquet_dir: Path
     fasta_output_dir: Path
     validation_tsv: Path
+    summary_dir: Path
+    resource_metrics_dir: Path
     logs_dir: Path
     benchmarks_dir: Path
     provenance_dir: Path
@@ -92,6 +96,8 @@ def paths_from_config(config: Mapping[str, Any]) -> WorkflowPaths:
         curated_parquet_dir=root / "curated_parquet",
         fasta_output_dir=root / "fasta_exports",
         validation_tsv=root / "qc" / "resource_validation.tsv",
+        summary_dir=root / "summaries",
+        resource_metrics_dir=root / "resource_metrics",
         logs_dir=root / "logs",
         benchmarks_dir=root / "benchmarks",
         provenance_dir=root / "provenance",
@@ -192,6 +198,7 @@ def build_resource_from_config(config_path: Path) -> Dict[str, object]:
         thresholds=thresholds_from_config(config),
         curated_parquet_dir=paths.curated_parquet_dir,
         fasta_output_dir=paths.fasta_output_dir,
+        summary_output_dir=paths.summary_dir,
         validation_tsv=paths.validation_tsv,
         metadata={
             "project": config["project"],

@@ -24,6 +24,8 @@ resources:
 
 diamond:
   executable: diamond
+  # Optional whitespace-free parent for DIAMOND path aliases.
+  # path_alias_root: ../.e3_path_aliases
   identity_mode: approximate
   identity_percent: 50
   mutual_cover_percent: 50

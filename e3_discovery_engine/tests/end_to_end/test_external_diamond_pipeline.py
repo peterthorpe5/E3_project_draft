@@ -20,6 +20,7 @@ from e3_discovery.diamond import (
 )
 from e3_discovery.fasta import prepare_combined_fasta
 from e3_discovery.manifest import SampleRecord
+from e3_discovery.path_safety import prepare_external_tool_path_alias
 from e3_discovery.resource import build_duckdb_resource
 from e3_discovery.seeds import prepare_seed_table
 
@@ -47,7 +48,27 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self._run_pipeline(Path(tmp))
 
-    def _run_pipeline(self, root: Path) -> None:
+    def test_complete_pipeline_with_whitespace_output_root(self):
+        if PERSISTENT_OUTPUT:
+            base = Path(PERSISTENT_OUTPUT).expanduser().resolve()
+            root = base / "results with spaces"
+            alias_parent = base / "path_aliases"
+            root.mkdir(parents=True, exist_ok=True)
+            self._run_pipeline(root, alias_parent=alias_parent)
+            return
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            self._run_pipeline(
+                base / "results with spaces",
+                alias_parent=base / "path_aliases",
+            )
+
+    def _run_pipeline(
+        self,
+        root: Path,
+        alias_parent: Path | None = None,
+    ) -> None:
         combined = root / "combined.fasta"
         sequences = root / "sequences.parquet"
         prepare_combined_fasta(
@@ -70,6 +91,17 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
         database = root / "combined.dmnd"
         clusters = root / "clusters.tsv"
         realignments = root / "realignments.tsv"
+        path_alias = prepare_external_tool_path_alias(
+            real_root=root,
+            config_path=root.parent / "config" / "config.yaml",
+            configured_parent=(
+                str(alias_parent) if alias_parent is not None else None
+            ),
+        )
+        tool_combined = path_alias.map_path(combined)
+        tool_database = path_alias.map_path(database)
+        tool_clusters = path_alias.map_path(clusters)
+        tool_realignments = path_alias.map_path(realignments)
         version = get_diamond_version(str(DIAMOND))
         identity_mode = (
             "exact"
@@ -79,7 +111,7 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
         commands = [
             (
                 build_makedb_command(
-                    str(DIAMOND), combined, database, threads=1
+                    str(DIAMOND), tool_combined, tool_database, threads=1
                 ),
                 root / "makedb.log",
                 (database,),
@@ -87,8 +119,8 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
             (
                 build_deepclust_command(
                     executable=str(DIAMOND),
-                    database=database,
-                    output_tsv=clusters,
+                    database=tool_database,
+                    output_tsv=tool_clusters,
                     threads=1,
                     memory_limit="4G",
                     identity_mode=identity_mode,
@@ -96,7 +128,7 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
                     mutual_cover_percent=20,
                     clustering_evalue=10,
                     comp_based_stats=0,
-                    masking="none",
+                    masking="tantan",
                 ),
                 root / "deepclust.log",
                 (clusters,),
@@ -104,13 +136,13 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
             (
                 build_realign_command(
                     str(DIAMOND),
-                    database,
-                    clusters,
-                    realignments,
+                    tool_database,
+                    tool_clusters,
+                    tool_realignments,
                     threads=1,
                     memory_limit="4G",
                     comp_based_stats=0,
-                    masking="none",
+                    masking="tantan",
                 ),
                 root / "realign.log",
                 (realignments,),

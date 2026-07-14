@@ -45,6 +45,12 @@ class RepositoryContractTests(unittest.TestCase):
             legacy.read_text(encoding="utf-8"),
         )
 
+    def test_production_config_uses_symmetric_masking(self) -> None:
+        production = self.root / "config/config.example.production.yaml"
+        text = production.read_text(encoding="utf-8")
+        self.assertIn("masking: tantan", text)
+        self.assertNotIn("masking: seg\n", text)
+
     def test_legacy_code_is_labelled_reference_only(self) -> None:
         readme = self.root / "legacy_reference/README.md"
         text = readme.read_text(encoding="utf-8").lower()

@@ -1,53 +1,66 @@
-E3 Discovery Engine Milestone 1 v0.1.8
-Release checks completed: 2026-07-14
+E3 Discovery Engine Milestone 1 v0.1.12
+Release validation date: 2026-07-14
 
-Automated checks in the package-build environment
--------------------------------------------------
-- Python compilation: PASS
-- PEP8/pycodestyle: PASS
-- Unit, integration and Python-managed end-to-end tests: PASS
-- Tests run: 146
-- Tests passed: 144
-- Tests skipped: 2
-- Test failures/errors: 0
-- Source coverage: 99%
-- Function-to-test matrix: PASS
-- Source docstring-quality contract: PASS
-- Required documentation checks: PASS
-- Wheel build: PASS
-- Isolated wheel installation smoke test: PASS
+Automated tests
+---------------
+Command:
+  PYTHONPATH=src python -m unittest discover -s tests -v
 
-Documentation audit
--------------------
-- All 94 Python functions and methods in src/e3_discovery have docstrings.
-- Function and method docstrings describe arguments and return or yield values.
-- Explicitly raised exceptions are documented.
-- Dataclass fields are documented under Attributes sections.
-- Private helpers and nested functions are included in the documentation audit.
-- Source-code AST comparison performed for v0.1.7 confirmed that the docstring
-  update did not alter Python workflow logic.
+Result:
+  Ran 180 tests
+  Passed: 177
+  Skipped: 3
+  Failures: 0
+  Errors: 0
 
-Skipped tests
--------------
-The two skipped tests require a real DIAMOND executable. The complete external
-DIAMOND test passed for v0.1.6 on the target macOS environment. Release v0.1.8
-changes Snakemake shell path handling and release metadata. It does not change
-DIAMOND commands, parsers, scientific thresholds or resource-building logic.
+The three skipped tests require a real DIAMOND executable. The DIAMOND 2.2.3
+external end-to-end workflow had already passed on the user's macOS system for
+v0.1.6. Version 0.1.12 does not change DIAMOND command construction or the
+scientific thresholds, but it does change Snakemake outputs and resource
+monitoring. A fresh real five-proteome run is therefore required and is the
+next validation step.
 
-DIAMOND 2.2.3 realignment-header regression retained
-----------------------------------------------------
-- The parser accepts the observed native header:
-  cseqid, mseqid, pident, clen, mlen, cstart, cend, mstart, mend,
-  length, evalue and Bitscore.
-- clen and mlen are normalised to representative_length and member_length.
-- Query/subject aliases qseqid, sseqid, qlen and slen remain supported.
+Coverage
+--------
+Command:
+  coverage run --source=src/e3_discovery \
+    -m unittest discover -s tests
+  coverage report --fail-under=98 -m
 
-Release 0.1.8 adds workflow path-quoting regression coverage for paths containing spaces.
+Result:
+  1,605 executable source statements
+  39 statements not exercised
+  Reported total coverage: 98%
+  Required threshold: 98%
+  Threshold passed
 
-Snakemake path-safety checks
-----------------------------
-- Every shell-expanded log, input, output, benchmark and output-directory path
-  uses Snakemake shell quoting.
-- Every shell rule creates its log parent before redirection.
-- Regression checks reject the unquoted forms that failed on `/Volumes/One Touch`.
-- Scientific logic and DIAMOND parameters are unchanged from v0.1.7.
+Code quality
+------------
+- Python compilation passed.
+- pycodestyle passed with an explicit maximum line length of 88.
+- PEP 257/Google-style docstring contract passed.
+- Every defined source function and method is mapped to an existing test file.
+- Synthetic Python-managed end-to-end test passed.
+- DuckDB, Parquet, FASTA, summary and candidate-separation integration tests
+  passed.
+- Process-tree monitor tests passed, including observation of a child process
+  allocating memory.
+- macOS AppleDouble benchmark-sidecar regression test passed.
+- Static Snakemake safety and shell-quoting contracts passed.
+
+Packaging
+---------
+- Wheel build passed:
+  e3_discovery_engine_m1-0.1.12-py3-none-any.whl
+- Clean target-directory installation smoke test passed.
+- Installed package version reported 0.1.12.
+- CLI parser and dependency imports passed from the installed wheel.
+
+Limitations of build-environment validation
+-------------------------------------------
+- DIAMOND is not installed in the release-build environment, so the three
+  external-DIAMOND tests remain deliberately skipped here.
+- Snakemake 9.23.1 could not be installed in the release-build environment due
+  to an unavailable dependency from the package mirror. The Snakefile passed
+  static contracts, but the fresh real five-proteome run on the user's macOS
+  system remains the definitive workflow validation for v0.1.12.

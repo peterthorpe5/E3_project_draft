@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from e3_discovery.benchmarks import (
+    _is_hidden_benchmark_artifact,
     aggregate_benchmark_directory,
     parse_snakemake_benchmark,
     plot_runtime_by_rule,
@@ -41,6 +42,49 @@ class BenchmarkTests(unittest.TestCase):
             self.benchmark_file(tmp)
             records = aggregate_benchmark_directory(Path(tmp), {"dataset": "test"})
             self.assertEqual(records[0]["dataset"], "test")
+
+    def test_hidden_appledouble_benchmark_sidecar_is_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.benchmark_file(root)
+            sidecar = root / "._rule.tsv"
+            sidecar.write_bytes(b"AppleDouble metadata\xb0not UTF-8")
+
+            records = aggregate_benchmark_directory(root)
+
+            self.assertEqual(len(records), 2)
+            self.assertTrue(
+                all(
+                    Path(record["benchmark_file"]).name == "rule.tsv"
+                    for record in records
+                )
+            )
+
+    def test_hidden_benchmark_artifact_detection(self):
+        root = Path("benchmarks")
+        self.assertTrue(
+            _is_hidden_benchmark_artifact(root / "._rule.tsv", root)
+        )
+        self.assertTrue(
+            _is_hidden_benchmark_artifact(
+                root / ".temporary" / "rule.tsv",
+                root,
+            )
+        )
+        self.assertFalse(
+            _is_hidden_benchmark_artifact(root / "rule.tsv", root)
+        )
+
+    def test_parse_rejects_binary_benchmark_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "binary.tsv"
+            path.write_bytes(b"benchmark metadata\xb0not UTF-8")
+
+            with self.assertRaisesRegex(
+                DataValidationError,
+                "not UTF-8 text",
+            ):
+                parse_snakemake_benchmark(path)
 
     def test_summarise_benchmarks(self):
         records = [

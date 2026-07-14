@@ -30,6 +30,10 @@ from e3_discovery.diamond import (
 )
 from e3_discovery.exceptions import E3DiscoveryError
 from e3_discovery.logging_utils import setup_logging
+from e3_discovery.path_safety import (
+    prepare_external_tool_path_alias,
+    write_path_alias_record,
+)
 from e3_discovery.pipeline import (
     build_resource_from_config,
     paths_from_config,
@@ -37,6 +41,14 @@ from e3_discovery.pipeline import (
     thresholds_from_config,
 )
 from e3_discovery.provenance import write_run_manifest
+from e3_discovery.resource_monitor import (
+    ProcessTreeResourceMonitor,
+    aggregate_resource_usage_directory,
+    plot_peak_ram_by_stage,
+    summarise_resource_usage,
+    write_resource_usage,
+    write_resource_usage_outputs,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +71,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--log-file",
         type=Path,
         help="Optional persistent log file in addition to console logging.",
+    )
+    parser.add_argument(
+        "--resource-metrics",
+        type=Path,
+        help=(
+            "Optional one-row TSV recording wall time, CPU time and peak "
+            "process-tree RAM for this command."
+        ),
+    )
+    parser.add_argument(
+        "--resource-sample-interval",
+        type=float,
+        default=0.2,
+        help="Resource-monitor sampling interval in seconds (default: 0.2).",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -84,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark = subparsers.add_parser("aggregate-benchmarks")
     benchmark.add_argument("--benchmark-dir", required=True, type=Path)
     benchmark.add_argument("--output-dir", required=True, type=Path)
+    benchmark.add_argument("--resource-metrics-dir", type=Path)
 
     return parser
 
@@ -131,12 +158,27 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
     require_diamond_features(version, str(diamond["identity_mode"]))
     threads = int(resources["threads"])
     memory = str(diamond["memory_limit"])
+    path_alias = prepare_external_tool_path_alias(
+        real_root=paths.root,
+        config_path=config_path,
+        configured_parent=diamond.get("path_alias_root"),
+    )
+    write_path_alias_record(
+        paths.provenance_dir / "diamond_path_alias.json",
+        path_alias,
+        metadata={"diamond_version": str(version)},
+    )
+
+    tool_combined_fasta = path_alias.map_path(paths.combined_fasta)
+    tool_database = path_alias.map_path(paths.diamond_database)
+    tool_clusters = path_alias.map_path(paths.clusters_tsv)
+    tool_realignments = path_alias.map_path(paths.realignments_tsv)
 
     if command_name == "diamond-makedb":
         command = build_makedb_command(
             executable,
-            paths.combined_fasta,
-            paths.diamond_database,
+            tool_combined_fasta,
+            tool_database,
             threads,
         )
         outputs = (paths.diamond_database,)
@@ -144,8 +186,8 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
     elif command_name == "diamond-deepclust":
         command = build_deepclust_command(
             executable=executable,
-            database=paths.diamond_database,
-            output_tsv=paths.clusters_tsv,
+            database=tool_database,
+            output_tsv=tool_clusters,
             threads=threads,
             memory_limit=memory,
             identity_mode=str(diamond["identity_mode"]),
@@ -162,9 +204,9 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
     elif command_name == "diamond-realign":
         command = build_realign_command(
             executable,
-            paths.diamond_database,
-            paths.clusters_tsv,
-            paths.realignments_tsv,
+            tool_database,
+            tool_clusters,
+            tool_realignments,
             threads,
             memory,
             comp_based_stats=int(diamond.get("comp_based_stats", 0)),
@@ -185,6 +227,8 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
         "diamond_version": str(version),
         "command": command,
         "outputs": [str(path) for path in outputs],
+        "path_alias_created": path_alias.alias_created,
+        "external_tool_root": str(path_alias.tool_root),
     }
 
 
@@ -240,7 +284,34 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
             args.output_dir / "runtime_by_rule.png",
             args.output_dir / "runtime_by_rule.pdf",
         )
-        return {"record_count": len(records), "summary_count": len(summaries)}
+        result = {
+            "record_count": len(records),
+            "summary_count": len(summaries),
+        }
+        if args.resource_metrics_dir is not None:
+            resource_records = aggregate_resource_usage_directory(
+                args.resource_metrics_dir
+            )
+            resource_summaries = summarise_resource_usage(resource_records)
+            write_resource_usage_outputs(
+                resource_records,
+                resource_summaries,
+                args.output_dir / "resource_usage_records.tsv",
+                args.output_dir / "resource_usage_summary.tsv",
+            )
+            if resource_summaries:
+                plot_peak_ram_by_stage(
+                    resource_summaries,
+                    args.output_dir / "peak_ram_by_stage.png",
+                    args.output_dir / "peak_ram_by_stage.pdf",
+                )
+            result.update(
+                {
+                    "resource_record_count": len(resource_records),
+                    "resource_summary_count": len(resource_summaries),
+                }
+            )
+        return result
     if args.command == "write-provenance":
         config = load_config(args.config)
         paths = paths_from_config(config)
@@ -248,20 +319,29 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
             paths.provenance_dir / "run_manifest.json",
             config,
             [
+                args.config,
+                Path(config["inputs"]["samples_tsv"]),
+                Path(config["inputs"]["e3_seed_table"]),
                 paths.combined_fasta,
                 paths.sequence_parquet,
                 paths.seed_parquet,
                 paths.clusters_tsv,
                 paths.realignments_tsv,
                 paths.resource_duckdb,
+                paths.validation_tsv,
+                paths.summary_dir / "workflow_key_metrics.tsv",
+                paths.summary_dir / "realignment_content_summary.tsv",
+                paths.root / "benchmark_summary" / "benchmark_summary.tsv",
+                paths.root / "benchmark_summary" / "resource_usage_summary.tsv",
             ],
+            repository_root=Path.cwd(),
         )
         return manifest
     raise ValueError(f"Unsupported command: {args.command}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run the command-line interface with logging and controlled error handling.
+    """Run the command-line interface with logging and resource monitoring.
 
     Args:
         argv: Optional argument sequence. ``None`` uses ``sys.argv``.
@@ -281,13 +361,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         verbose=args.verbose,
         logger_name="e3_discovery",
     )
+    monitor = None
+    if args.resource_metrics is not None:
+        monitor = ProcessTreeResourceMonitor(
+            stage_name=args.command,
+            sample_interval_seconds=args.resource_sample_interval,
+        )
+        monitor.start()
+    return_code = 0
     try:
         result = run_command(args)
         _print_json(result)
-        return 0
     except (E3DiscoveryError, FileNotFoundError, ValueError) as error:
+        return_code = 2
         logger.exception("Workflow stage failed: %s", error)
-        return 2
+    finally:
+        if monitor is not None:
+            usage = monitor.stop(return_code=return_code)
+            write_resource_usage(usage, args.resource_metrics)
+            logger.info(
+                "Measured peak process-tree RAM for %s: %.2f MiB",
+                args.command,
+                usage.peak_rss_mb,
+            )
+    return return_code
 
 
 if __name__ == "__main__":

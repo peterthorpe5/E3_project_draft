@@ -155,3 +155,17 @@ workflow products.
 ### `provenance/*_command.json`
 
 Exact argument array and working directory for each external DIAMOND stage.
+
+## Version 0.1.12 evidence-separation tables
+
+- `all_matched_e3_seed_sequences`: every input sequence matching a supplied
+  inherited E3 seed, with cluster and strict-alignment status.
+- `strict_matched_e3_seed_sequences`: matched seed sequences passing all strict
+  representative-alignment thresholds.
+- `non_strict_matched_e3_seed_sequences`: matched seed sequences retained even
+  though they do not pass all strict representative-alignment thresholds.
+- `strict_nonseed_candidate_members`: strict-pass E3-seeded cluster members not
+  present in the supplied seed list. These are candidates, not confirmed E3s.
+- `realignment_content_summary`: row counts, self/non-self counts, strict-pass
+  count and observed minimum/maximum identity and coverage.
+- `workflow_key_metrics`: compact count summary for review and comparison.

@@ -18,13 +18,13 @@ Database blocks:
 4	339
 
 [0, 0] Writing length sorted blocks
-[0, 0] Wrote 475 bytes to disk at 1.55 MB/s
+[0, 0] Wrote 475 bytes to disk at 1.75 MB/s
 [0, 0] Starting round 1/5 sensitivity=faster linear=true
 [0, 0] Searching blocks. Blocks=1,1
 [0, 0] Database letter count: 335
-Opening the database...  [0.003s]
+Opening the database...  [0s]
 FASTA file size: 351 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//
 #Target sequences to report alignments for: unlimited
 Database:  (type: FASTA file)
 Block size = 65536000000000
@@ -32,13 +32,13 @@ Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 351 bytes from disk at 1.07288 MB/s
+Loaded 351 bytes from disk at 1.14246 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.012s]
+Initializing temporary storage...  [0.009s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/1.
@@ -51,7 +51,7 @@ Searching alignments...  [0s]
 Deallocating memory...  [0s]
 Deallocating buffers...  [0s]
 Clearing query masking...  [0s]
-Computing alignments...  [0.007s]
+Computing alignments...  [0.002s]
 Deallocating reference...  [0s]
 Loading reference sequences...  [0s]
 Deallocating buffers...  [0s]
@@ -61,7 +61,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.027s
+Total time = 0.015s
 Reported 1 pairwise alignments, 1 HSPs.
 1 queries aligned.
 [0, 0] Concatenating alignment files
@@ -70,9 +70,9 @@ Reported 1 pairwise alignments, 1 HSPs.
 Coverage cutoff: 80%
 Edge format: triplet
 Symmetric: yes
-Reading mapping file...  [0.001s]
+Reading mapping file...  [0s]
 #Sequences in database: 4
-Reading input lines...  [0.009s]
+Reading input lines...  [0.005s]
 #Input lines: 1
 #Input edges: 2
 Finding neighbor counts bucket 1/256 records=1
@@ -596,13 +596,13 @@ Generating output...  [0s]
 [0, 0] Writing representative ids
 [0, 0] Writing representatives. Volume=1/1 Records=4
 [0, 0] Representatives written: 3 letters: 247
-[0, 0] Wrote 259 bytes to disk at 0.09 MB/s
+[0, 0] Wrote 259 bytes to disk at 0.13 MB/s
 [0, 0] Starting round 2/5 sensitivity=fast linear=true
 [0, 0] Searching blocks. Blocks=1,1
 [0, 0] Database letter count: 247
-Opening the database...  [0.003s]
+Opening the database...  [0s]
 FASTA file size: 259 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//
 #Target sequences to report alignments for: unlimited
 Database:  (type: FASTA file)
 Block size = 65536000000000
@@ -610,13 +610,13 @@ Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 0.484317 MB/s
+Loaded 259 bytes from disk at 0.728618 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.005s]
+Initializing temporary storage...  [0.006s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/1.
@@ -629,7 +629,7 @@ Searching alignments...  [0s]
 Deallocating memory...  [0s]
 Deallocating buffers...  [0s]
 Clearing query masking...  [0s]
-Computing alignments...  [0.001s]
+Computing alignments...  [0.013s]
 Deallocating reference...  [0s]
 Loading reference sequences...  [0s]
 Deallocating buffers...  [0s]
@@ -639,7 +639,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.011s
+Total time = 0.024s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 0] Concatenating alignment files
@@ -1171,13 +1171,13 @@ Generating output...  [0s]
 [0, 0] Writing representative ids
 [0, 0] Writing representatives. Volume=1/1 Records=3
 [0, 0] Representatives written: 3 letters: 247
-[0, 0] Wrote 259 bytes to disk at 0.12 MB/s
+[0, 0] Wrote 259 bytes to disk at 0.13 MB/s
 [0, 0] Starting round 3/5 sensitivity=linclust-20 linear=true
 [0, 0] Searching blocks. Blocks=1,1
 [0, 0] Database letter count: 247
 Opening the database...  [0s]
 FASTA file size: 259 bytes
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//
 #Target sequences to report alignments for: unlimited
 Database:  (type: FASTA file)
 Block size = 65536000000000
@@ -1185,13 +1185,13 @@ Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 1.06927 MB/s
+Loaded 259 bytes from disk at 1.77699 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.006s]
+Initializing temporary storage...  [0.005s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/30.
@@ -1436,7 +1436,7 @@ Searching alignments...  [0s]
 Deallocating memory...  [0s]
 Deallocating buffers...  [0s]
 Clearing query masking...  [0s]
-Computing alignments...  [0.001s]
+Computing alignments...  [0.003s]
 Deallocating reference...  [0s]
 Loading reference sequences...  [0s]
 Deallocating buffers...  [0s]
@@ -1446,7 +1446,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.061s
+Total time = 0.06s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 0] Concatenating alignment files
@@ -1978,22 +1978,22 @@ Generating output...  [0s]
 [0, 1] Writing representative ids
 [0, 1] Writing representatives. Volume=1/1 Records=3
 [0, 1] Representatives written: 3 letters: 247
-[0, 1] Wrote 259 bytes to disk at 0.09 MB/s
+[0, 1] Wrote 259 bytes to disk at 0.10 MB/s
 [0, 1] Starting round 4/5 sensitivity=default linear=false
 [0, 1] Database letter count: 247
 [0, 1] Running all-vs-all search for round 4/5
 [0, 1] Block size: 0.20 GB, index chunks: 1
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//
 #Target sequences to report alignments for: unlimited
-Opening the database...  [0s]
+Opening the database...  [0.003s]
 FASTA file size: 259 bytes
-Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//round2//reps/reps_all.faa (type: FASTA file)
+Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//round2//reps/reps_all.faa (type: FASTA file)
 Block size = 199299338
 Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 1.18751 MB/s
+Loaded 259 bytes from disk at 1.47905 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
@@ -2027,7 +2027,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.012s
+Total time = 0.013s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 1] Running greedy vertex cover
@@ -2558,27 +2558,27 @@ Generating output...  [0s]
 [0, 1] Writing representative ids
 [0, 1] Writing representatives. Volume=1/1 Records=3
 [0, 1] Representatives written: 3 letters: 247
-[0, 1] Wrote 259 bytes to disk at 0.10 MB/s
+[0, 1] Wrote 259 bytes to disk at 0.09 MB/s
 [0, 1] Starting round 5/5 sensitivity=more-sensitive linear=false
 [0, 1] Database letter count: 247
 [0, 1] Running all-vs-all search for round 5/5
 [0, 1] Block size: 0.20 GB, index chunks: 1
-Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//
+Temporary directory: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//
 #Target sequences to report alignments for: unlimited
-Opening the database...  [0.002s]
+Opening the database...  [0s]
 FASTA file size: 259 bytes
-Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-s7VjCwF2I7gO//round3//reps/reps_all.faa (type: FASTA file)
+Database: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/diamond-tmp-GcVFCxJFYLnw//round3//reps/reps_all.faa (type: FASTA file)
 Block size = 199299338
 Opening the input file...  [0s]
 Opening the output file...  [0s]
 Seeking in database...  [0s]
 Loading query sequences...  [0s]
-Loaded 259 bytes from disk at 1.26021 MB/s
+Loaded 259 bytes from disk at 1.57326 MB/s
 Length sorting queries...  [0s]
 Algorithm: Double-indexed
 Building query histograms...  [0s]
 Seeking in database...  [0s]
-Initializing temporary storage...  [0.006s]
+Initializing temporary storage...  [0.005s]
 Building reference histograms...  [0s]
 Allocating buffers...  [0s]
 Processing query block 1, reference block 1, shape 1/16.
@@ -2705,7 +2705,7 @@ Loading query sequences...  [0s]
 Closing the output file...  [0s]
 Closing the database...  [0s]
 Cleaning up...  [0s]
-Total time = 0.041s
+Total time = 0.039s
 Reported 0 pairwise alignments, 0 HSPs.
 0 queries aligned.
 [0, 1] Running greedy vertex cover
@@ -3236,6 +3236,6 @@ Generating output...  [0s]
 [0, 1] Merging clusterings
 [0, 1] Building output table (round 1) volume 1/1
 [0, 1] Building output table (round 2) volume 1/1 oid 0 - 4
-[0, 2] Total clusters: 3
-[0, 2] 
-[0, 2] Extensions computed: 3
+[0, 1] Total clusters: 3
+[0, 1] 
+[0, 1] Extensions computed: 3

@@ -71,13 +71,13 @@ class DiamondTests(unittest.TestCase):
             50,
             0.1,
             cluster_steps=["fast", "sensitive"],
-            masking="seg",
+            masking="tantan",
             comp_based_stats=1,
             extra_args=["--no-reassign"],
         )
         self.assertIn("--id", command)
         self.assertIn("--cluster-steps", command)
-        self.assertIn("seg", command)
+        self.assertIn("tantan", command)
         self.assertEqual(
             command[command.index("--comp-based-stats") + 1], "1"
         )
@@ -94,7 +94,7 @@ class DiamondTests(unittest.TestCase):
             Path("out"),
             4,
             "8G",
-            masking="seg",
+            masking="tantan",
         )
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
@@ -109,7 +109,7 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertEqual(
             command[command.index("--masking") + 1],
-            "seg",
+            "tantan",
         )
 
     def test_exact_traceback_rejects_adjusted_matrix_modes(self):
@@ -148,10 +148,16 @@ class DiamondTests(unittest.TestCase):
             "native clustering header",
             diamond_error_hint("Clusters file is missing header line"),
         )
+        self.assertIn(
+            "diamond.masking: tantan",
+            diamond_error_hint(
+                "Error: asymmetric masking for self alignment"
+            ),
+        )
         self.assertEqual(diamond_error_hint("other error"), "")
 
     def test_build_deepclust_command_rejects_invalid_masking(self):
-        with self.assertRaisesRegex(ValueError, "masking must be one of"):
+        with self.assertRaisesRegex(ValueError, "symmetric masking"):
             build_deepclust_command(
                 "diamond",
                 Path("db"),
@@ -164,7 +170,7 @@ class DiamondTests(unittest.TestCase):
                 0.1,
                 masking="0",
             )
-        with self.assertRaisesRegex(ValueError, "masking must be one of"):
+        with self.assertRaisesRegex(ValueError, "symmetric masking mode"):
             build_realign_command(
                 "diamond",
                 Path("db"),
@@ -173,6 +179,21 @@ class DiamondTests(unittest.TestCase):
                 1,
                 "4G",
                 masking="0",
+            )
+
+    def test_deepclust_rejects_asymmetric_seg_masking(self):
+        with self.assertRaisesRegex(ValueError, "asymmetric masking"):
+            build_deepclust_command(
+                "diamond",
+                Path("db"),
+                Path("out"),
+                1,
+                "4G",
+                "exact",
+                50,
+                50,
+                0.1,
+                masking="seg",
             )
 
     def test_build_deepclust_command_rejects_invalid_identity_mode(self):

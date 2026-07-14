@@ -1,4 +1,5 @@
 module	function	test_files	coverage_type
+benchmarks	_is_hidden_benchmark_artifact	tests/unit/test_benchmarks.py	unit
 benchmarks	parse_snakemake_benchmark	tests/unit/test_benchmarks.py;tests/unit/test_edge_cases.py	unit/integration as listed
 benchmarks	aggregate_benchmark_directory	tests/unit/test_benchmarks.py;tests/unit/test_edge_cases.py	unit/integration as listed
 benchmarks	summarise_benchmarks	tests/unit/test_benchmarks.py;tests/unit/test_edge_cases.py	unit/integration as listed
@@ -32,10 +33,10 @@ diamond	parse_semantic_version	tests/unit/test_diamond.py;tests/unit/test_edge_c
 diamond	get_diamond_version	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	require_diamond_features	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_makedb_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
-diamond	diamond_error_hint	tests/unit/test_diamond.py	unit
 diamond	build_deepclust_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	build_realign_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	read_log_tail	tests/unit/test_diamond.py	unit/integration as listed
+diamond	diamond_error_hint	tests/unit/test_diamond.py	unit
 diamond	run_external_command	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 diamond	validate_expected_outputs	tests/unit/test_diamond.py;tests/unit/test_edge_cases.py;tests/end_to_end/test_external_diamond_pipeline.py	unit/integration as listed
 fasta	normalise_sequence_id	tests/unit/test_fasta.py;tests/unit/test_edge_cases.py	unit/integration as listed
@@ -66,11 +67,20 @@ manifest	_normalise_row	tests/unit/test_manifest.py;tests/unit/test_edge_cases.p
 manifest	read_sample_manifest	tests/unit/test_manifest.py;tests/unit/test_edge_cases.py	unit/integration as listed
 manifest	validate_sample_records	tests/unit/test_manifest.py;tests/unit/test_edge_cases.py	unit/integration as listed
 manifest	write_sample_manifest	tests/unit/test_manifest.py;tests/unit/test_edge_cases.py	unit/integration as listed
+path_safety	ExternalToolPathAlias.map_path	tests/unit/test_path_safety.py	unit
+path_safety	path_contains_whitespace	tests/unit/test_path_safety.py	unit
+path_safety	_default_alias_parent	tests/unit/test_path_safety.py	unit
+path_safety	_resolve_alias_parent	tests/unit/test_path_safety.py	unit
+path_safety	_alias_name	tests/unit/test_path_safety.py	unit
+path_safety	prepare_external_tool_path_alias	tests/unit/test_path_safety.py;tests/unit/test_cli.py	unit/integration as listed
+path_safety	write_path_alias_record	tests/unit/test_path_safety.py;tests/unit/test_cli.py	unit/integration as listed
 pipeline	paths_from_config	tests/unit/test_pipeline.py;tests/end_to_end/test_end_to_end_synthetic.py	unit/integration as listed
 pipeline	prepare_inputs_from_config	tests/unit/test_pipeline.py;tests/end_to_end/test_end_to_end_synthetic.py	unit/integration as listed
 pipeline	thresholds_from_config	tests/unit/test_pipeline.py;tests/end_to_end/test_end_to_end_synthetic.py	unit/integration as listed
 pipeline	build_resource_from_config	tests/unit/test_pipeline.py;tests/end_to_end/test_end_to_end_synthetic.py	unit/integration as listed
 provenance	capture_command_version	tests/unit/test_provenance.py;tests/unit/test_edge_cases.py	unit/integration as listed
+provenance	capture_python_package_versions	tests/unit/test_provenance.py	unit/integration as listed
+provenance	capture_git_state	tests/unit/test_provenance.py	unit/integration as listed
 provenance	capture_software_versions	tests/unit/test_provenance.py;tests/unit/test_edge_cases.py	unit/integration as listed
 provenance	build_file_manifest	tests/unit/test_provenance.py;tests/unit/test_edge_cases.py	unit/integration as listed
 provenance	write_run_manifest	tests/unit/test_provenance.py;tests/unit/test_edge_cases.py	unit/integration as listed
@@ -85,7 +95,20 @@ resource	validate_resource	tests/unit/test_resource.py;tests/integration/test_re
 resource	_write_fasta_query	tests/unit/test_resource.py;tests/integration/test_resource_build.py	unit/integration as listed
 resource	export_resource_tables	tests/unit/test_resource.py;tests/integration/test_resource_build.py	unit/integration as listed
 resource	export_curated_fastas	tests/unit/test_resource.py;tests/integration/test_resource_build.py	unit/integration as listed
+resource	export_summary_tables	tests/unit/test_resource.py;tests/integration/test_resource_build.py	unit/integration as listed
 resource	build_duckdb_resource	tests/unit/test_resource.py;tests/integration/test_resource_build.py	unit/integration as listed
+resource_monitor	ResourceUsage.as_record	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	ProcessTreeResourceMonitor.__init__	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	ProcessTreeResourceMonitor.start	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	ProcessTreeResourceMonitor._sampling_loop	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	ProcessTreeResourceMonitor._sample_once	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	ProcessTreeResourceMonitor.stop	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	write_resource_usage	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	read_resource_usage	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	aggregate_resource_usage_directory	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	summarise_resource_usage	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	write_resource_usage_outputs	tests/unit/test_resource_monitor.py	unit/integration as listed
+resource_monitor	plot_peak_ram_by_stage	tests/unit/test_resource_monitor.py	unit/integration as listed
 seeds	normalise_seed_identifier	tests/unit/test_seeds.py;tests/unit/test_edge_cases.py	unit/integration as listed
 seeds	choose_seed_column	tests/unit/test_seeds.py;tests/unit/test_edge_cases.py	unit/integration as listed
 seeds	seed_schema	tests/unit/test_seeds.py;tests/unit/test_edge_cases.py	unit/integration as listed
