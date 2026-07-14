@@ -1,6 +1,6 @@
 __pycache__/
 *.py[cod]
-.coverage
+#.coverage
 htmlcov/
 .pytest_cache/
 .snakemake/
@@ -12,6 +12,6 @@ dist/
 .DS_Store
 ._*
 .e3_path_aliases/
-config/*.local.yaml
-config/*.local.yml
-config/*.local.tsv
+#config/*.local.yaml
+#config/*.local.yml
+#config/*.local.tsv
