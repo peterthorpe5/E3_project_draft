@@ -1,0 +1,16 @@
+diamond v2.2.3.183 (C) Max Planck Society for the Advancement of Science, Benjamin J. Buchfink, University of Tuebingen
+Documentation, support and updates available at http://www.diamondsearch.org
+Please cite: http://dx.doi.org/10.1038/s41592-021-01101-x Nature Methods (2021)
+
+Scoring parameters: (Matrix=BLOSUM62 Lambda=0.267 K=0.041 Penalties=11/1)
+Opening the output file...  [0s]
+Opening the database...  [0s]
+#Database sequences: 4, #Letters: 335
+Found 3 centroids, 4 mappings in input file.
+Block size: 2000000000 byte.
+Loading centroid block...  [0s]
+Processing centroid block 1, member block 1...  [1.006s]
+Joining centroid block 1...  [0s]
+Reported 0 pairwise alignments, 0 HSPs.
+0 queries aligned.
+Freeing memory...  [0s]

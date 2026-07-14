@@ -57,6 +57,7 @@ class DiamondTests(unittest.TestCase):
         )
         self.assertIn("--db", command)
         self.assertNotIn("--database", command)
+        self.assertNotIn("--header", command)
 
     def test_build_deepclust_command_exact_and_options(self):
         command = build_deepclust_command(
@@ -85,7 +86,13 @@ class DiamondTests(unittest.TestCase):
 
     def test_build_realign_command_has_exact_fields(self):
         command = build_realign_command(
-            "diamond", Path("db"), Path("clusters"), Path("out"), 4, "8G"
+            "diamond",
+            Path("db"),
+            Path("clusters"),
+            Path("out"),
+            4,
+            "8G",
+            masking="seg",
         )
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
@@ -94,6 +101,14 @@ class DiamondTests(unittest.TestCase):
             command[command.index("--comp-based-stats") + 1], "0"
         )
         self.assertNotIn("--database", command)
+        self.assertEqual(
+            command[command.index("--header") + 1],
+            "simple",
+        )
+        self.assertEqual(
+            command[command.index("--masking") + 1],
+            "seg",
+        )
 
     def test_exact_traceback_rejects_adjusted_matrix_modes(self):
         with self.assertRaisesRegex(ValueError, "adjusted matrix modes"):
@@ -141,6 +156,16 @@ class DiamondTests(unittest.TestCase):
                 50,
                 50,
                 0.1,
+                masking="0",
+            )
+        with self.assertRaisesRegex(ValueError, "masking must be one of"):
+            build_realign_command(
+                "diamond",
+                Path("db"),
+                Path("clusters"),
+                Path("out"),
+                1,
+                "4G",
                 masking="0",
             )
 

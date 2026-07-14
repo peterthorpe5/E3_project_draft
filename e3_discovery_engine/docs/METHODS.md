@@ -81,6 +81,16 @@ The default production clustering parameters are:
 These settings define broad cluster formation. They are intentionally separated
 from the stricter post-realignment criteria used for final interrogation.
 
+## Cluster membership file handling
+
+DIAMOND clustering output is treated as the documented two-column positional
+format: the first column is the cluster representative accession and the
+second is the cluster member accession. The production command does not depend
+on `--header`. The parser accepts recognised header variants if a different
+DIAMOND build emits one, preserves the first data row in headerless files,
+skips comment-only lines, and rejects rows that do not contain exactly two
+columns.
+
 ## Representative-member realignment
 
 DIAMOND `realign` is run for the raw clusters and exports explicit tabular

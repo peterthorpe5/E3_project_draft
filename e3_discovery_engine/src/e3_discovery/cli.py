@@ -134,6 +134,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
             threads,
             memory,
             comp_based_stats=int(diamond.get("comp_based_stats", 0)),
+            masking=diamond.get("masking"),
         )
         outputs = (paths.realignments_tsv,)
         log_name = "diamond_realign"

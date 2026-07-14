@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import csv
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Tuple
@@ -134,18 +135,60 @@ def classify_alignment(
     return result
 
 
-def _normalise_cluster_header(fieldnames: Optional[List[str]]) -> Tuple[str, str]:
+_CLUSTER_REPRESENTATIVE_HEADERS = {
+    "representative",
+    "representative_id",
+    "cluster_representative",
+    "cluster_representative_id",
+    "centroid",
+    "centroid_id",
+    "cluster",
+    "cseqid",
+    "qseqid",
+}
+_CLUSTER_MEMBER_HEADERS = {
+    "member",
+    "member_id",
+    "cluster_member",
+    "cluster_member_id",
+    "mseqid",
+    "sseqid",
+}
+
+
+def _normalise_header_token(value: str) -> str:
+    """Normalise a DIAMOND header token across supported versions."""
+
+    token = str(value).strip().lower().lstrip("#")
+    token = re.sub(r"[^a-z0-9]+", "_", token).strip("_")
+    return token
+
+
+def _normalise_cluster_header(
+    fieldnames: Optional[List[str]],
+) -> Optional[Tuple[int, int]]:
+    """Return representative/member indexes for a recognised cluster header.
+
+    DIAMOND's clustering output is officially a fixed two-column table.  Some
+    versions emit no header, while versions or builds using ``--header`` have
+    used several labels.  ``None`` therefore means that the first row should be
+    interpreted positionally as data rather than rejected as a bad header.
+    """
+
     if not fieldnames:
-        raise DataValidationError("Cluster membership file has no header")
-    lowered = {field.lower(): field for field in fieldnames}
-    representative = lowered.get("representative") or lowered.get("cseqid")
-    member = lowered.get("member") or lowered.get("mseqid")
-    if not representative or not member:
+        raise DataValidationError("Cluster membership file is empty")
+    if len(fieldnames) != 2:
         raise DataValidationError(
-            "Cluster membership header must contain representative/member "
-            "or cseqid/mseqid"
+            "Cluster membership rows must contain exactly two tab-separated "
+            f"columns; observed {len(fieldnames)} columns"
         )
-    return representative, member
+    normalised = [_normalise_header_token(field) for field in fieldnames]
+    if (
+        normalised[0] in _CLUSTER_REPRESENTATIVE_HEADERS
+        and normalised[1] in _CLUSTER_MEMBER_HEADERS
+    ):
+        return 0, 1
+    return None
 
 
 def cluster_tsv_to_parquet(
@@ -153,7 +196,13 @@ def cluster_tsv_to_parquet(
     output_parquet: Path,
     batch_size: int = 250_000,
 ) -> Dict[str, int]:
-    """Convert a DIAMOND two-column cluster file to compressed Parquet."""
+    """Convert DIAMOND two-column cluster membership to Parquet.
+
+    The official clustering format is positional: representative accession in
+    column one and member accession in column two.  A recognised header is
+    accepted when present, but headerless output is handled without guessing
+    that the first accession pair is a header.
+    """
 
     if batch_size < 1:
         raise ValueError("batch_size must be at least 1")
@@ -161,13 +210,12 @@ def cluster_tsv_to_parquet(
     rows: List[Dict[str, object]] = []
     count = 0
     representatives = set()
+    first_data_or_header_seen = False
+    header_detected = False
     with open_text_auto(input_tsv) as handle, atomic_binary_path(
         output_parquet
     ) as temporary:
-        reader = csv.DictReader(handle, delimiter="\t")
-        representative_field, member_field = _normalise_cluster_header(
-            reader.fieldnames
-        )
+        reader = csv.reader(handle, delimiter="\t")
         writer = pq.ParquetWriter(
             temporary,
             CLUSTER_SCHEMA,
@@ -175,9 +223,36 @@ def cluster_tsv_to_parquet(
             use_dictionary=True,
         )
         try:
-            for source_row, row in enumerate(reader, start=2):
-                representative = str(row.get(representative_field, "")).strip()
-                member = str(row.get(member_field, "")).strip()
+            for source_row, fields in enumerate(reader, start=1):
+                if not fields or all(not str(value).strip() for value in fields):
+                    continue
+                if len(fields) == 1 and str(fields[0]).lstrip().startswith("#"):
+                    LOGGER.debug(
+                        "Skipping DIAMOND cluster comment at row %d", source_row
+                    )
+                    continue
+                if len(fields) != 2:
+                    raise DataValidationError(
+                        "Cluster membership rows must contain exactly two "
+                        f"tab-separated columns; row {source_row} has "
+                        f"{len(fields)} columns: {fields!r}"
+                    )
+                if not first_data_or_header_seen:
+                    first_data_or_header_seen = True
+                    if _normalise_cluster_header(list(fields)) is not None:
+                        header_detected = True
+                        LOGGER.info(
+                            "Detected cluster membership header at row %d: %s",
+                            source_row,
+                            fields,
+                        )
+                        continue
+                    LOGGER.info(
+                        "No cluster header detected; using DIAMOND's official "
+                        "positional two-column format"
+                    )
+                representative = str(fields[0]).strip()
+                member = str(fields[1]).strip()
                 if not representative or not member:
                     raise DataValidationError(
                         f"Blank cluster identifier at row {source_row}"
@@ -198,8 +273,13 @@ def cluster_tsv_to_parquet(
                 writer.write_table(pa.Table.from_pylist(rows, CLUSTER_SCHEMA))
         finally:
             writer.close()
+    if not first_data_or_header_seen:
+        raise DataValidationError("Cluster membership file contains no rows")
     if count == 0:
-        raise DataValidationError("Cluster membership file contains no data rows")
+        detail = " after its header" if header_detected else ""
+        raise DataValidationError(
+            f"Cluster membership file contains no data rows{detail}"
+        )
     LOGGER.info(
         "Converted %d cluster membership rows across %d representatives",
         count,
@@ -225,14 +305,14 @@ def _required_realign_fields(fieldnames: Optional[List[str]]) -> Dict[str, str]:
         "evalue": ("evalue",),
         "bitscore": ("bitscore", "Bitscore"),
     }
-    available = {field.lower(): field for field in fieldnames}
+    available = {_normalise_header_token(field): field for field in fieldnames}
     mapping: Dict[str, str] = {}
     for standard, candidates in aliases.items():
         matched = next(
             (
-                available[candidate.lower()]
+                available[_normalise_header_token(candidate)]
                 for candidate in candidates
-                if candidate.lower() in available
+                if _normalise_header_token(candidate) in available
             ),
             None,
         )
@@ -358,12 +438,17 @@ def realign_tsv_to_parquet(
         finally:
             writer.close()
     if total == 0:
-        raise DataValidationError("Realignment file contains no data rows")
-    LOGGER.info(
-        "Converted %d realignments; %d passed all strict thresholds",
-        total,
-        passed,
-    )
+        LOGGER.warning(
+            "Realignment file contains no pairwise data rows. This is valid "
+            "when all clusters are singletons, but should be reviewed for "
+            "unexpectedly empty non-singleton datasets."
+        )
+    else:
+        LOGGER.info(
+            "Converted %d realignments; %d passed all strict thresholds",
+            total,
+            passed,
+        )
     return {"realignment_rows": total, "strict_pass_rows": passed}
 
 

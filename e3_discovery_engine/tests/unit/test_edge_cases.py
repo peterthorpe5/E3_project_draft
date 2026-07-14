@@ -130,8 +130,10 @@ class ClusterEdgeCaseTests(unittest.TestCase):
     def test_private_header_and_number_parsers(self):
         with self.assertRaises(DataValidationError):
             _normalise_cluster_header(None)
-        self.assertEqual(_normalise_cluster_header(["cseqid", "mseqid"]),
-                         ("cseqid", "mseqid"))
+        self.assertEqual(
+            _normalise_cluster_header(["cseqid", "mseqid"]),
+            (0, 1),
+        )
         with self.assertRaises(DataValidationError):
             _required_realign_fields(None)
         with self.assertRaises(DataValidationError):
@@ -182,12 +184,15 @@ class ClusterEdgeCaseTests(unittest.TestCase):
                 )
             empty = root / "empty.tsv"
             empty.write_text(header, encoding="utf-8")
-            with self.assertRaises(DataValidationError):
-                realign_tsv_to_parquet(
-                    empty,
-                    root / "empty.parquet",
-                    self.thresholds(),
-                )
+            summary = realign_tsv_to_parquet(
+                empty,
+                root / "empty.parquet",
+                self.thresholds(),
+            )
+            self.assertEqual(
+                summary,
+                {"realignment_rows": 0, "strict_pass_rows": 0},
+            )
 
 
 class ConfigEdgeCaseTests(unittest.TestCase):

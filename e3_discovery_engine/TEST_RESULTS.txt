@@ -1,10 +1,10 @@
-E3 Discovery Engine Milestone 1 v0.1.3
+E3 Discovery Engine Milestone 1 v0.1.4
 Release checks performed: 2026-07-13
 
 Offline automated suite
 -----------------------
-Tests discovered: 133
-Passed: 131
+Tests discovered: 137
+Passed: 135
 Skipped: 2
 Failed: 0
 Errors: 0
@@ -25,11 +25,15 @@ Additional checks
 - Function-to-test matrix: passed
 - Synthetic end-to-end workflow: passed
 - DuckDB/Parquet integration: passed
+- Empty-realignment DuckDB integration: passed
 - Snakemake safety/contract checks: passed
 
-External DIAMOND compatibility fix in this release
---------------------------------------------------
-The production and external end-to-end profiles explicitly set
-`--comp-based-stats 0` for exact identity clustering and realignment, avoiding
-DIAMOND 2.2.3's `Traceback with adjusted matrix not supported` failure. This
-external command path requires confirmation in the user's DIAMOND environment.
+External DIAMOND compatibility changes in this release
+------------------------------------------------------
+The DeepClust parser now accepts DIAMOND's documented headerless two-column
+cluster membership output and recognised header variants. DeepClust no longer
+requests a version-dependent clustering header. Realignment requests an
+explicit simple header and uses the configured masking mode. Header-only
+realignment output is retained as a valid zero-row Parquet table with a warning.
+The external command path still requires confirmation in the user's DIAMOND
+environment.

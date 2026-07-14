@@ -162,7 +162,6 @@ def build_deepclust_command(
         str(clustering_evalue),
         "--comp-based-stats",
         str(comp_based_stats),
-        "--header",
     ]
     if cluster_steps:
         command.extend(["--cluster-steps", *cluster_steps])
@@ -181,6 +180,7 @@ def build_realign_command(
     threads: int,
     memory_limit: str,
     comp_based_stats: int = 0,
+    masking: Optional[str] = None,
 ) -> List[str]:
     """Build a realignment command with exact identity and length fields."""
 
@@ -191,7 +191,12 @@ def build_realign_command(
             "Realignment traceback is incompatible with compositionally "
             "adjusted matrix modes 2-6; use comp_based_stats 0 or 1"
         )
-    return [
+    allowed_masking = {None, "none", "seg", "seg-all", "tantan"}
+    if masking not in allowed_masking:
+        raise ValueError(
+            "masking must be one of: none, seg, seg-all, tantan, or None"
+        )
+    command = [
         executable,
         "realign",
         "--db",
@@ -221,7 +226,11 @@ def build_realign_command(
         "evalue",
         "bitscore",
         "--header",
+        "simple",
     ]
+    if masking:
+        command.extend(["--masking", masking])
+    return command
 
 
 def read_log_tail(

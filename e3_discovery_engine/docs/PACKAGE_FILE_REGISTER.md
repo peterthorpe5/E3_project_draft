@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.3.
+This register explains the role of the principal files in release 0.1.4.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration
@@ -22,7 +22,7 @@ Generated run outputs are deliberately excluded from the source package.
 |---|---|
 | `benchmarks.py` | Parse, aggregate, summarise and plot Snakemake benchmark records. |
 | `cli.py` | Command-line interface and stage routing. |
-| `clusters.py` | Cluster/realignment parsing, exact coverage calculations and strict threshold classification. |
+| `clusters.py` | Headerless/header-tolerant cluster parsing, realignment parsing, exact coverage calculations and strict threshold classification. |
 | `config.py` | YAML loading, path resolution and defensive configuration validation. |
 | `constants.py` | Stable package constants. |
 | `diamond.py` | DIAMOND version checks, argument-array construction, execution and output validation. |

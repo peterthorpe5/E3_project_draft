@@ -13,6 +13,7 @@ cli	main	tests/unit/test_cli.py	unit/integration as listed
 clusters	Thresholds.validate	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed
 clusters	compute_coverage	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed
 clusters	classify_alignment	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed
+clusters	_normalise_header_token	tests/unit/test_clusters.py	unit
 clusters	_normalise_cluster_header	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed
 clusters	cluster_tsv_to_parquet	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed
 clusters	_required_realign_fields	tests/unit/test_clusters.py;tests/unit/test_edge_cases.py	unit/integration as listed

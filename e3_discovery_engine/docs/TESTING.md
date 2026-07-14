@@ -61,3 +61,10 @@ pass and two are deliberately skipped unless `RUN_DIAMOND_E2E=1` and a real
 DIAMOND executable are available. The real-DIAMOND end-to-end test is retained
 as a mandatory pre-production quality gate. Source coverage is 99%.
 
+## DIAMOND output-format regression coverage
+
+The test suite covers headerless two-column DeepClust output, multiple header
+spellings, DIAMOND comment lines, malformed column counts, simple realignment
+headers and valid zero-row realignment tables. An integration test confirms
+that the DuckDB resource can still be built when no pairwise realignments are
+reported.

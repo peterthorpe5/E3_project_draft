@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.4 - 2026-07-13
+
+- Fixed conversion of real DIAMOND 2.2.3 DeepClust output. Cluster membership
+  is now parsed using the documented positional two-column format and no
+  longer requires a specific header spelling.
+- Added support for recognised header variants including representative/member,
+  cseqid/mseqid, centroid/member and cluster-representative labels.
+- Removed `--header` from the DeepClust command to avoid version-dependent
+  clustering-header behaviour; realignment now requests `--header simple`.
+- Applied the configured masking mode consistently to DeepClust and realign.
+- Treat a header-only realignment table as a valid zero-row result, which can
+  occur when all clusters are singletons, while logging a prominent warning.
+- Added unit and integration tests for headerless clustering, header variants,
+  comments, malformed rows, empty realignment output and DuckDB construction
+  with zero realigned pairs.
+
 ## 0.1.3 - 2026-07-13
 
 - Fixed DIAMOND 2.2.3 exact-identity clustering failure: `--id` requires

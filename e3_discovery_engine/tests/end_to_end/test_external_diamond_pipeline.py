@@ -110,6 +110,7 @@ class ExternalDiamondPipelineTests(unittest.TestCase):
                     threads=1,
                     memory_limit="4G",
                     comp_based_stats=0,
+                    masking="none",
                 ),
                 root / "realign.log",
                 (realignments,),
