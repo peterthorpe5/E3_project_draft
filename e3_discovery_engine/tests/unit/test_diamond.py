@@ -72,6 +72,7 @@ class DiamondTests(unittest.TestCase):
             0.1,
             cluster_steps=["fast", "sensitive"],
             masking="tantan",
+            tmpdir=Path("tmp"),
             comp_based_stats=1,
             extra_args=["--no-reassign"],
         )
@@ -85,6 +86,7 @@ class DiamondTests(unittest.TestCase):
         self.assertNotIn("--database", command)
         self.assertEqual(command.count("--header"), 1)
         self.assertNotIn("simple", command)
+        self.assertEqual(command[command.index("--tmpdir") + 1], "tmp")
 
     def test_build_realign_command_has_exact_fields(self):
         command = build_realign_command(
@@ -95,6 +97,7 @@ class DiamondTests(unittest.TestCase):
             4,
             "8G",
             masking="tantan",
+            tmpdir=Path("tmp"),
         )
         for field in ("pident", "qlen", "slen", "length", "bitscore"):
             self.assertIn(field, command)
@@ -111,6 +114,7 @@ class DiamondTests(unittest.TestCase):
             command[command.index("--masking") + 1],
             "tantan",
         )
+        self.assertEqual(command[command.index("--tmpdir") + 1], "tmp")
 
     def test_exact_traceback_rejects_adjusted_matrix_modes(self):
         with self.assertRaisesRegex(ValueError, "adjusted matrix modes"):

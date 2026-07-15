@@ -338,9 +338,13 @@ for sample in samples:
                 first_header = line[1:].strip()
                 break
 
+    header_parser = "manifest"
+    header_parser_strict = "false"
     if sample == "onekp_dataset":
         species = "1KP combined transcriptome-derived protein dataset"
         source_database = "1KP inherited combined dataset"
+        header_parser = "onekp_scaffold"
+        header_parser_strict = "true"
     else:
         os_match = os_pattern.search(first_header)
         ox_match = ox_pattern.search(first_header)
@@ -359,6 +363,8 @@ for sample in samples:
             "source_database": source_database,
             "release": "not_recorded",
             "provenance_status": "source_release_to_be_confirmed",
+            "header_parser": header_parser,
+            "header_parser_strict": header_parser_strict,
         }
     )
 
@@ -377,6 +383,8 @@ fieldnames = [
     "source_database",
     "release",
     "provenance_status",
+    "header_parser",
+    "header_parser_strict",
 ]
 with manifest_path.open("w", encoding="utf-8", newline="") as handle:
     writer = csv.DictWriter(

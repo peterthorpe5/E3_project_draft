@@ -158,6 +158,11 @@ def validate_config(config: Mapping[str, Any]) -> None:
             raise ConfigurationError(
                 "diamond.path_alias_root must not contain whitespace"
             )
+    tmpdir = diamond.get("tmpdir")
+    if tmpdir is not None and not str(tmpdir).strip():
+        raise ConfigurationError(
+            "diamond.tmpdir must be omitted or a non-empty path"
+        )
     comp_based_stats = diamond.get("comp_based_stats", 0)
     if (
         not isinstance(comp_based_stats, int)
@@ -228,11 +233,15 @@ def resolve_paths(config: Mapping[str, Any], config_path: Path) -> Dict[str, Any
     resolved = deepcopy(dict(config))
     base = Path(config_path).resolve().parent
 
-    path_fields = (
+    path_fields = [
         ("inputs", "samples_tsv"),
         ("inputs", "e3_seed_table"),
         ("outputs", "root"),
-    )
+    ]
+    if resolved.get("diamond", {}).get("tmpdir") is not None:
+        path_fields.append(("diamond", "tmpdir"))
+    if resolved.get("diamond", {}).get("path_alias_root") is not None:
+        path_fields.append(("diamond", "path_alias_root"))
     for section, key in path_fields:
         raw = Path(str(resolved[section][key])).expanduser()
         if not raw.is_absolute():

@@ -24,6 +24,7 @@ from e3_discovery.io_utils import (
     write_tsv,
 )
 from e3_discovery.manifest import SampleRecord, validate_sample_records
+from e3_discovery.sequence_metadata import sequence_biological_metadata
 
 LOGGER = logging.getLogger(__name__)
 
@@ -224,10 +225,15 @@ def sequence_schema() -> pa.Schema:
     return pa.schema(
         [
             ("internal_id", pa.string()),
+            ("source_file_sample_id", pa.string()),
+            ("source_file_species", pa.string()),
             ("sample_id", pa.string()),
             ("species", pa.string()),
             ("taxon_id", pa.string()),
             ("proteome_id", pa.string()),
+            ("onekp_sample_code", pa.string()),
+            ("header_parser", pa.string()),
+            ("header_parse_status", pa.string()),
             ("original_id", pa.string()),
             ("entry", pa.string()),
             ("description", pa.string()),
@@ -321,6 +327,9 @@ def prepare_combined_fasta(
     summaries: List[Dict[str, object]] = []
     total_sequences = 0
     total_residues = 0
+    total_header_parse_failures = 0
+    biological_sample_ids = set()
+    biological_species = set()
 
     with atomic_binary_path(sequence_parquet) as parquet_tmp:
         writer = pq.ParquetWriter(
@@ -342,6 +351,10 @@ def prepare_combined_fasta(
                     )
                     sample_count = 0
                     sample_residues = 0
+                    header_parse_success_count = 0
+                    header_parse_failure_count = 0
+                    sample_biological_ids = set()
+                    sample_biological_species = set()
                     metadata_json = json_dumps_sorted(dict(sample.metadata))
                     for record_index, record in enumerate(
                         iter_fasta(sample.fasta_path),
@@ -359,6 +372,28 @@ def prepare_combined_fasta(
                                 "the source identifiers."
                             )
                         seen_ids.add(internal_id)
+                        record_metadata = sequence_biological_metadata(
+                            sample,
+                            record.identifier,
+                        )
+                        if record_metadata.header_parse_status == "parsed":
+                            header_parse_success_count += 1
+                        elif record_metadata.header_parse_status == "unparsed":
+                            header_parse_failure_count += 1
+                        sample_biological_ids.add(
+                            record_metadata.biological_sample_id
+                        )
+                        if record_metadata.biological_species:
+                            sample_biological_species.add(
+                                record_metadata.biological_species
+                            )
+                        biological_sample_ids.add(
+                            record_metadata.biological_sample_id
+                        )
+                        if record_metadata.biological_species:
+                            biological_species.add(
+                                record_metadata.biological_species
+                            )
                         sequence = record.sequence
                         length = len(sequence)
                         digest = hashlib.md5(
@@ -366,17 +401,36 @@ def prepare_combined_fasta(
                         ).hexdigest()
                         fasta_out.write(
                             f">{internal_id} original_id={record.identifier} "
-                            f"sample_id={sample.sample_id}\n"
+                            f"source_file_sample_id={sample.sample_id} "
+                            f"biological_sample_id="
+                            f"{record_metadata.biological_sample_id}\n"
                         )
                         for start in range(0, length, 80):
                             fasta_out.write(sequence[start:start + 80] + "\n")
                         sequence_rows.append(
                             {
                                 "internal_id": internal_id,
-                                "sample_id": sample.sample_id,
-                                "species": sample.species,
-                                "taxon_id": sample.taxon_id,
+                                "source_file_sample_id": (
+                                    record_metadata.source_file_sample_id
+                                ),
+                                "source_file_species": (
+                                    record_metadata.source_file_species
+                                ),
+                                "sample_id": (
+                                    record_metadata.biological_sample_id
+                                ),
+                                "species": record_metadata.biological_species,
+                                "taxon_id": (
+                                    record_metadata.biological_taxon_id
+                                ),
                                 "proteome_id": sample.proteome_id,
+                                "onekp_sample_code": (
+                                    record_metadata.onekp_sample_code
+                                ),
+                                "header_parser": record_metadata.header_parser,
+                                "header_parse_status": (
+                                    record_metadata.header_parse_status
+                                ),
                                 "original_id": record.identifier,
                                 "entry": extract_entry(record.identifier),
                                 "description": record.description,
@@ -399,10 +453,28 @@ def prepare_combined_fasta(
                         )
                     summaries.append(
                         {
-                            "sample_id": sample.sample_id,
-                            "species": sample.species,
+                            "source_file_sample_id": sample.sample_id,
+                            "source_file_species": sample.species,
                             "taxon_id": sample.taxon_id,
                             "proteome_id": sample.proteome_id,
+                            "header_parser": str(
+                                sample.metadata.get(
+                                    "header_parser",
+                                    "manifest",
+                                )
+                            ),
+                            "header_parse_success_count": (
+                                header_parse_success_count
+                            ),
+                            "header_parse_failure_count": (
+                                header_parse_failure_count
+                            ),
+                            "biological_sample_count": len(
+                                sample_biological_ids
+                            ),
+                            "biological_species_count": len(
+                                sample_biological_species
+                            ),
                             "fasta_path": str(sample.fasta_path),
                             "source_sha256": source_checksum,
                             "sequence_count": sample_count,
@@ -411,6 +483,9 @@ def prepare_combined_fasta(
                     )
                     total_sequences += sample_count
                     total_residues += sample_residues
+                    total_header_parse_failures += (
+                        header_parse_failure_count
+                    )
                     LOGGER.info(
                         "Prepared sample %s: %d sequences, %d residues",
                         sample.sample_id,
@@ -429,7 +504,11 @@ def prepare_combined_fasta(
         total_residues,
     )
     return {
+        "source_file_count": len(materialised),
         "sample_count": len(materialised),
+        "biological_sample_count": len(biological_sample_ids),
+        "biological_species_count": len(biological_species),
+        "header_parse_failure_count": total_header_parse_failures,
         "sequence_count": total_sequences,
         "total_residues": total_residues,
     }

@@ -28,6 +28,7 @@ class RepositoryContractTests(unittest.TestCase):
             "docs/PACKAGE_FILE_REGISTER.md",
             "docs/LEGACY_AUDIT_EVIDENCE_REGISTER.md",
             "docs/CODE_DOCUMENTATION_STANDARD.md",
+            "docs/SLURM_FULL_ONEKP_RUNBOOK.md",
         )
         for relative in required:
             path = self.root / relative
@@ -50,6 +51,22 @@ class RepositoryContractTests(unittest.TestCase):
         text = production.read_text(encoding="utf-8")
         self.assertIn("masking: tantan", text)
         self.assertNotIn("masking: seg\n", text)
+
+    def test_slurm_cluster_examples_exist(self) -> None:
+        """Require cluster configuration examples and operating scripts."""
+
+        required = (
+            "config/config.cluster.full_onekp.example.yaml",
+            "config/full_onekp_cluster.example.samples.tsv",
+            "scripts/submit_full_onekp_slurm.sh",
+            "scripts/slurm_full_onekp_job.sh",
+            "scripts/check_full_onekp_slurm.sh",
+        )
+        for relative in required:
+            path = self.root / relative
+            with self.subTest(path=relative):
+                self.assertTrue(path.is_file())
+                self.assertGreater(path.stat().st_size, 100)
 
     def test_legacy_code_is_labelled_reference_only(self) -> None:
         readme = self.root / "legacy_reference/README.md"

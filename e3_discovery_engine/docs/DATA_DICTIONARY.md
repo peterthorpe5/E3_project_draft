@@ -169,3 +169,22 @@ Exact argument array and working directory for each external DIAMOND stage.
 - `realignment_content_summary`: row counts, self/non-self counts, strict-pass
   count and observed minimum/maximum identity and coverage.
 - `workflow_key_metrics`: compact count summary for review and comparison.
+
+## Version 0.1.13 sequence-level source fields
+
+The full inherited 1KP FASTA is one physical source file containing many
+biological samples and species. The following columns preserve both levels:
+
+| Column | Meaning |
+|---|---|
+| `source_file_sample_id` | Manifest identifier for the physical FASTA source, such as `onekp_dataset`. |
+| `source_file_species` | Manifest-level description of the physical source. |
+| `sample_id` | Biological sample identifier. For parsed 1KP records this is the four-letter sample code. |
+| `species` | Biological species derived from the sequence identifier or manifest. |
+| `onekp_sample_code` | Four-letter 1KP code when `header_parser=onekp_scaffold`. |
+| `header_parser` | Parser used to obtain biological metadata. |
+| `header_parse_status` | `parsed`, `not_requested` or `unparsed`. |
+
+The stable internal sequence identifier continues to use the physical source
+sample prefix. This avoids collisions without changing the biological sample
+and species fields used for summaries.

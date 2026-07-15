@@ -105,6 +105,23 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ConfigurationError):
             validate_config(config)
 
+    def test_validate_config_accepts_and_resolves_tmpdir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = valid_config()
+            config["diamond"]["tmpdir"] = "scratch"
+            validate_config(config)
+            resolved = resolve_paths(config, Path(tmp) / "config.yaml")
+            self.assertEqual(
+                resolved["diamond"]["tmpdir"],
+                str((Path(tmp) / "scratch").resolve()),
+            )
+
+    def test_validate_config_rejects_blank_tmpdir(self):
+        config = valid_config()
+        config["diamond"]["tmpdir"] = "   "
+        with self.assertRaises(ConfigurationError):
+            validate_config(config)
+
     def test_validate_config_rejects_non_list_cluster_steps(self):
         config = valid_config()
         config["diamond"]["cluster_steps"] = "fast"

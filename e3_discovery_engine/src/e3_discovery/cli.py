@@ -14,6 +14,7 @@ from e3_discovery.benchmarks import (
     summarise_benchmarks,
     write_benchmark_outputs,
 )
+from e3_discovery.cluster_config import create_full_onekp_cluster_files
 from e3_discovery.clusters import (
     cluster_tsv_to_parquet,
     realign_tsv_to_parquet,
@@ -112,6 +113,15 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--output-dir", required=True, type=Path)
     benchmark.add_argument("--resource-metrics-dir", type=Path)
 
+    cluster_config = subparsers.add_parser("create-full-cluster-config")
+    cluster_config.add_argument("--source-root", required=True, type=Path)
+    cluster_config.add_argument("--repository-root", required=True, type=Path)
+    cluster_config.add_argument("--results-root", required=True, type=Path)
+    cluster_config.add_argument("--output-dir", required=True, type=Path)
+    cluster_config.add_argument("--threads", required=True, type=int)
+    cluster_config.add_argument("--memory-limit", required=True)
+    cluster_config.add_argument("--tmpdir", required=True, type=Path)
+
     return parser
 
 
@@ -158,6 +168,11 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
     require_diamond_features(version, str(diamond["identity_mode"]))
     threads = int(resources["threads"])
     memory = str(diamond["memory_limit"])
+    configured_tmpdir = diamond.get("tmpdir")
+    tmpdir = None
+    if configured_tmpdir is not None:
+        tmpdir = Path(str(configured_tmpdir)).expanduser().resolve()
+        tmpdir.mkdir(parents=True, exist_ok=True)
     path_alias = prepare_external_tool_path_alias(
         real_root=paths.root,
         config_path=config_path,
@@ -197,6 +212,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
             comp_based_stats=int(diamond.get("comp_based_stats", 0)),
             cluster_steps=diamond.get("cluster_steps"),
             masking=diamond.get("masking"),
+            tmpdir=tmpdir,
             extra_args=diamond.get("extra_args"),
         )
         outputs = (paths.clusters_tsv,)
@@ -211,6 +227,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
             memory,
             comp_based_stats=int(diamond.get("comp_based_stats", 0)),
             masking=diamond.get("masking"),
+            tmpdir=tmpdir,
         )
         outputs = (paths.realignments_tsv,)
         log_name = "diamond_realign"
@@ -229,6 +246,7 @@ def _run_diamond_stage(command_name: str, config_path: Path) -> Dict[str, Any]:
         "outputs": [str(path) for path in outputs],
         "path_alias_created": path_alias.alias_created,
         "external_tool_root": str(path_alias.tool_root),
+        "diamond_tmpdir": str(tmpdir) if tmpdir is not None else None,
     }
 
 
@@ -312,6 +330,16 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
         return result
+    if args.command == "create-full-cluster-config":
+        return create_full_onekp_cluster_files(
+            source_root=args.source_root,
+            repository_root=args.repository_root,
+            results_root=args.results_root,
+            output_dir=args.output_dir,
+            threads=args.threads,
+            memory_limit=args.memory_limit,
+            tmpdir=args.tmpdir,
+        )
     if args.command == "write-provenance":
         config = load_config(args.config)
         paths = paths_from_config(config)

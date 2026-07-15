@@ -69,3 +69,15 @@
 - [ ] `realignment_content_summary.tsv` agrees with input and cluster counts.
 - [ ] All matched seed, strict seed and strict non-seed candidate outputs exist.
 - [ ] The provenance manifest records the Python DuckDB version and Git state.
+
+## Version 0.1.13 Slurm checks
+
+- [ ] `bash -n` passes for submission, worker and status scripts.
+- [ ] Static tests confirm `--account=barton --partition=general`.
+- [ ] Generated full-run manifest contains 15 inherited source files.
+- [ ] `onekp_dataset` uses `header_parser=onekp_scaffold` with strict parsing.
+- [ ] Job-local scratch is available and large enough for DIAMOND temporary data.
+- [ ] Slurm memory exceeds the configured DIAMOND memory limit.
+- [ ] The cluster `e3_discovery` environment contains DIAMOND 2.2.3 and Snakemake.
+- [ ] The full job creates scientific QC, resource summaries, Slurm accounting and a compact review bundle.
+- [ ] CPU time is checked against `sacct` before it is used in a formal report.

@@ -164,8 +164,13 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE sequence_seed_matches AS
         SELECT DISTINCT
             s.internal_id,
+            s.source_file_sample_id,
+            s.source_file_species,
             s.sample_id,
             s.species,
+            s.onekp_sample_code,
+            s.header_parser,
+            s.header_parse_status,
             s.original_id,
             s.entry,
             k.seed_id
@@ -215,10 +220,15 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         SELECT
             cs.representative_id,
             cs.sequence_id AS member_id,
+            s.source_file_sample_id,
+            s.source_file_species,
             s.sample_id,
             s.species,
             s.taxon_id,
             s.proteome_id,
+            s.onekp_sample_code,
+            s.header_parser,
+            s.header_parse_status,
             s.original_id,
             s.entry,
             s.sequence_length,
@@ -259,8 +269,13 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE all_matched_e3_seed_sequences AS
         SELECT DISTINCT
             sm.internal_id,
+            sm.source_file_sample_id,
+            sm.source_file_species,
             sm.sample_id,
             sm.species,
+            sm.onekp_sample_code,
+            sm.header_parser,
+            sm.header_parse_status,
             sm.original_id,
             sm.entry,
             sm.seed_id,
@@ -359,8 +374,10 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         """
         CREATE TABLE sample_e3_summary AS
         SELECT
+            s.source_file_sample_id,
             s.sample_id,
             MAX(s.species) AS species,
+            MAX(s.onekp_sample_code) AS onekp_sample_code,
             COUNT(DISTINCT s.internal_id) AS input_sequence_count,
             COUNT(DISTINCT a.internal_id) AS matched_e3_seed_count,
             COUNT(DISTINCT st.internal_id) AS strict_matched_e3_seed_count,
@@ -378,8 +395,8 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
             ON s.internal_id = c.member_id
         LEFT JOIN strict_e3_seeded_cluster_members AS m
             ON s.internal_id = m.member_id
-        GROUP BY s.sample_id
-        ORDER BY s.sample_id
+        GROUP BY s.source_file_sample_id, s.sample_id
+        ORDER BY s.source_file_sample_id, s.sample_id
         """
     )
     connection.execute(
@@ -415,8 +432,22 @@ def _create_curated_tables(connection: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE workflow_key_metrics AS
         SELECT 'input_proteins' AS metric, COUNT(*)::BIGINT AS value
         FROM sequence_records
-        UNION ALL SELECT 'input_proteomes', COUNT(DISTINCT sample_id)::BIGINT
-        FROM sequence_records
+        UNION ALL SELECT 'input_source_files',
+            COUNT(DISTINCT source_file_sample_id)::BIGINT FROM sequence_records
+        UNION ALL SELECT 'input_proteomes',
+            COUNT(DISTINCT source_file_sample_id)::BIGINT FROM sequence_records
+        UNION ALL SELECT 'input_biological_samples',
+            COUNT(DISTINCT sample_id)::BIGINT FROM sequence_records
+        UNION ALL SELECT 'input_species',
+            COUNT(DISTINCT NULLIF(species, ''))::BIGINT FROM sequence_records
+        UNION ALL SELECT 'onekp_parsed_sequences', COUNT(*)::BIGINT
+            FROM sequence_records
+            WHERE header_parser = 'onekp_scaffold'
+              AND header_parse_status = 'parsed'
+        UNION ALL SELECT 'onekp_unparsed_sequences', COUNT(*)::BIGINT
+            FROM sequence_records
+            WHERE header_parser = 'onekp_scaffold'
+              AND header_parse_status <> 'parsed'
         UNION ALL SELECT 'supplied_e3_seed_ids', COUNT(*)::BIGINT
         FROM known_e3_seeds
         UNION ALL SELECT 'matched_input_sequences',
@@ -695,6 +726,46 @@ def _validation_findings(
         candidate_violations,
         "Candidate-expansion rows must be strict-pass members absent from the "
         "inherited E3 seed list.",
+    )
+
+    onekp_sequence_count = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM sequence_records "
+            "WHERE header_parser = 'onekp_scaffold'"
+        ).fetchone()[0]
+    )
+    onekp_unparsed_count = int(
+        connection.execute(
+            "SELECT COUNT(*) FROM sequence_records "
+            "WHERE header_parser = 'onekp_scaffold' "
+            "AND header_parse_status <> 'parsed'"
+        ).fetchone()[0]
+    )
+    add(
+        "onekp_header_identifiers_parsed",
+        "pass" if onekp_unparsed_count == 0 else "fail",
+        onekp_unparsed_count,
+        "Every sequence using the 1KP scaffold parser must yield a sample "
+        f"code and species label ({onekp_sequence_count} parser rows).",
+    )
+
+    onekp_sample_count = int(
+        connection.execute(
+            "SELECT COUNT(DISTINCT sample_id) FROM sequence_records "
+            "WHERE header_parser = 'onekp_scaffold'"
+        ).fetchone()[0]
+    )
+    onekp_sample_status = (
+        "pass"
+        if onekp_sequence_count == 0 or onekp_sample_count > 0
+        else "fail"
+    )
+    add(
+        "onekp_biological_samples_present",
+        onekp_sample_status,
+        onekp_sample_count,
+        "1KP records must retain sequence-level biological sample codes when "
+        "the 1KP parser is used.",
     )
 
     return findings

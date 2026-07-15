@@ -1,0 +1,38 @@
+project:
+  name: e3_benchmark_60_proteomes_tantan
+  description: Production E3 Discovery Engine run for benchmark_60_proteomes. Identifies
+    sequence clusters containing at least one previously identified E3 candidate;
+    cluster membership is not functional proof.
+inputs:
+  samples_tsv: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/config/generated_runs/20260714_171829/benchmark_60_proteomes.samples.local.tsv
+  e3_seed_table: /Volumes/One Touch/SSD_back_up_July_2026/Erin_Butterfield_data/Other_things/Denbi/denbi_data/E3_discovery_engine/files/e3_ligases.csv
+  e3_seed_column: entry
+  identifier_mode: prefix_sample
+  compute_input_checksums: true
+outputs:
+  root: /Volumes/One Touch/E3_discovery_engine_results/benchmark_60_proteomes_tantan_20260714_171829
+software:
+  environment: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/workflow/envs/production.yml
+resources:
+  threads: 4
+  parquet_batch_size: 250000
+diamond:
+  executable: diamond
+  path_alias_root: /Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/.e3_path_aliases
+  identity_mode: exact
+  identity_percent: 50
+  mutual_cover_percent: 50
+  clustering_evalue: 0.1
+  comp_based_stats: 0
+  memory_limit: 16G
+  masking: tantan
+  cluster_steps: []
+  extra_args: []
+thresholds:
+  minimum_percent_identity: 50
+  minimum_representative_coverage: 50
+  minimum_member_coverage: 50
+  minimum_bitscore: 20
+  maximum_evalue: 1.0e-10
+benchmarking:
+  repeats: 1

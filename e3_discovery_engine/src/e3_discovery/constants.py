@@ -2,10 +2,15 @@
 
 SEQUENCE_COLUMNS = (
     "internal_id",
+    "source_file_sample_id",
+    "source_file_species",
     "sample_id",
     "species",
     "taxon_id",
     "proteome_id",
+    "onekp_sample_code",
+    "header_parser",
+    "header_parse_status",
     "original_id",
     "entry",
     "description",

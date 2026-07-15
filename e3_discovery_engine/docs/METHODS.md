@@ -203,3 +203,22 @@ was summed across the stage Python process and all recursively observed child
 processes. The maximum simultaneous sum was reported as peak RSS. User and
 system CPU times were accumulated from the maximum cumulative value observed
 for each process identity.
+
+## Sequence-level metadata for the combined 1KP input
+
+For the full inherited analysis, records in `onekp_dataset.fasta` are parsed
+from identifiers matching `scaffold-CODE-NUMBER-Genus_species`. The four-letter
+code is stored as the biological sample identifier and the suffix is converted
+to a readable species label. The combined source file remains recorded
+separately. Strict parsing is enabled: a record that does not match the
+expected inherited convention causes preparation to fail rather than silently
+assigning all 1KP sequences to one artificial sample.
+
+## Slurm execution
+
+The full analysis is submitted as a single Slurm job on the Dundee `general`
+partition under the `barton` account. The default request is one node, 32 CPUs,
+256 GiB RAM and seven days, with DIAMOND limited to 220 GiB. The request is a
+conservative starting allocation rather than a claim about observed use.
+DIAMOND temporary products and path aliases use job-local scratch; validated
+scientific products are written to persistent project storage.

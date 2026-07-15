@@ -1,66 +1,71 @@
-E3 Discovery Engine Milestone 1 v0.1.12
-Release validation date: 2026-07-14
+E3 Discovery Engine Milestone 1 v0.1.13 release checks
+Date: 15 July 2026
 
 Automated tests
 ---------------
 Command:
-  PYTHONPATH=src python -m unittest discover -s tests -v
+  ./run_tests.sh
 
 Result:
-  Ran 180 tests
-  Passed: 177
-  Skipped: 3
-  Failures: 0
-  Errors: 0
+  210 tests run
+  207 passed
+  3 skipped
+  0 failures
+  0 errors
 
-The three skipped tests require a real DIAMOND executable. The DIAMOND 2.2.3
-external end-to-end workflow had already passed on the user's macOS system for
-v0.1.6. Version 0.1.12 does not change DIAMOND command construction or the
-scientific thresholds, but it does change Snakemake outputs and resource
-monitoring. A fresh real five-proteome run is therefore required and is the
-next validation step.
+The three skipped tests require an installed DIAMOND executable and the
+RUN_DIAMOND_E2E=1 opt-in flag. The real DIAMOND 2.2.3 end-to-end workflow had
+already passed on macOS for the preceding production package. Version 0.1.13
+does not change the validated DeepClust or realignment option contract; its
+external validation will be the full Slurm production run.
 
 Coverage
 --------
-Command:
-  coverage run --source=src/e3_discovery \
-    -m unittest discover -s tests
-  coverage report --fail-under=98 -m
+  1,836 executable source statements
+  35 not executed by the ordinary suite
+  98% total source coverage
 
-Result:
-  1,605 executable source statements
-  39 statements not exercised
-  Reported total coverage: 98%
-  Required threshold: 98%
-  Threshold passed
+New v0.1.13 modules:
+  cluster_config.py       100%
+  sequence_metadata.py     98%
+  resource_monitor.py      99%
+  resource.py             100%
 
-Code quality
-------------
-- Python compilation passed.
-- pycodestyle passed with an explicit maximum line length of 88.
-- PEP 257/Google-style docstring contract passed.
-- Every defined source function and method is mapped to an existing test file.
-- Synthetic Python-managed end-to-end test passed.
-- DuckDB, Parquet, FASTA, summary and candidate-separation integration tests
-  passed.
-- Process-tree monitor tests passed, including observation of a child process
-  allocating memory.
-- macOS AppleDouble benchmark-sidecar regression test passed.
-- Static Snakemake safety and shell-quoting contracts passed.
+Style and documentation
+-----------------------
+  Python compilation passed.
+  pycodestyle passed with an 88-character maximum line length.
+  Detailed PEP 257-compatible function and method docstrings passed the
+  automated documentation contract.
+  Every source function and method is mapped in tests/FUNCTION_TEST_MATRIX.tsv.
+  bash -n passed for every repository shell script.
+  Static Slurm tests confirmed --account=barton, --partition=general,
+  defensive shell mode, failure-time scratch retention, result validation and
+  review-bundle creation.
 
-Packaging
----------
-- Wheel build passed:
-  e3_discovery_engine_m1-0.1.12-py3-none-any.whl
-- Clean target-directory installation smoke test passed.
-- Installed package version reported 0.1.12.
-- CLI parser and dependency imports passed from the installed wheel.
+Package build
+-------------
+  Source distribution built successfully.
+  Universal Python wheel built successfully.
+  The wheel installed into an isolated target without dependencies.
+  Isolated import reported package version 0.1.13.
+  The e3-discovery command parser loaded successfully.
 
-Limitations of build-environment validation
--------------------------------------------
-- DIAMOND is not installed in the release-build environment, so the three
-  external-DIAMOND tests remain deliberately skipped here.
-- Snakemake 9.23.1 could not be installed in the release-build environment due
-  to an unavailable dependency from the package mirror. The Snakefile passed
-  static contracts, but the fresh real five-proteome run on the user's macOS
-  system remains the definitive workflow validation for v0.1.12.
+Scientific and integration coverage
+-----------------------------------
+  Synthetic complete workflow passed.
+  DuckDB/Parquet/FASTA resource construction passed.
+  Header-only empty-realignment handling passed.
+  Per-sequence 1KP sample/species metadata propagated through DuckDB and
+  summary tables.
+  Strict 1KP header parsing, generated cluster manifests/configuration,
+  DIAMOND tmpdir propagation and POSIX child CPU accounting were tested.
+  Full-run QC preserves all inherited seeds and separates strict non-seed
+  candidates.
+
+External validation still required
+----------------------------------
+  Run the full Slurm analysis on the University of Dundee cluster and compare
+  workflow CPU accounting with Slurm sacct. The job records wall time, peak
+  process-tree RSS, Slurm MaxRSS, TotalCPU, commands, versions, Git state,
+  scientific QC and a compact review bundle.

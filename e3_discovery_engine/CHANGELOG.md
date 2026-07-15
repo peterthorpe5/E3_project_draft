@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.13 - 2026-07-15
+
+- Add sequence-level parsing of inherited 1KP scaffold identifiers, retaining
+  the combined source file while recovering the four-letter 1KP sample code
+  and source species for each protein record.
+- Add strict 1KP header validation so malformed records stop preparation rather
+  than being silently collapsed into one artificial combined sample.
+- Add generation of the 15-source full 1KP+ cluster manifest and YAML directly
+  from the inherited `samples.json` and verified cluster paths.
+- Extend sequence Parquet, DuckDB, QC and summary outputs with physical source
+  file, biological sample, biological species, 1KP code and parser-status
+  fields.
+- Add configurable DIAMOND temporary storage and path-alias roots for Slurm
+  jobs using fast job-local scratch.
+- Improve Linux CPU accounting with POSIX self-and-completed-child resource
+  counters and retain Slurm `sacct` output as an independent accounting source.
+- Add University of Dundee Slurm submission, worker and status scripts using
+  account `barton` and partition `general`.
+- Add completion/failure markers, restart-safe Snakemake execution, persistent
+  provenance, scientific QC validation and automatic compact review bundles.
+- Add preflight storage checks requiring configurable free space in persistent
+  results storage and job scratch before the full run begins.
+- Retain scratch after failure for diagnosis and remove job-created scratch
+  only after successful completion.
+- Retain the existing local macOS configurations and driver scripts.
+- Expand tests for 1KP metadata, generated cluster configs, Slurm contracts,
+  storage checks, scratch handling, DIAMOND tmpdir propagation and CPU
+  accounting.
+
 ## 0.1.12 - 2026-07-14
 
 - Add cross-platform process-tree resource monitoring with `psutil` for every
@@ -176,3 +205,4 @@ Initial production rewrite of the inherited Milestone 1 E3 discovery engine.
 - Added structured logging, defensive validation and atomic outputs.
 - Added unit, integration, synthetic end-to-end and optional external tests.
 - Preserved the inherited implementation under `legacy_reference/`.
+

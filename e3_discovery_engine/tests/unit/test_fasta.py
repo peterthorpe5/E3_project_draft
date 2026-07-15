@@ -60,6 +60,9 @@ class FastaTests(unittest.TestCase):
 
     def test_sequence_schema_has_expected_fields(self):
         self.assertIn("sample_metadata_json", sequence_schema().names)
+        self.assertIn("source_file_sample_id", sequence_schema().names)
+        self.assertIn("onekp_sample_code", sequence_schema().names)
+        self.assertIn("header_parse_status", sequence_schema().names)
 
     def test_prepare_combined_fasta_streams_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,6 +79,47 @@ class FastaTests(unittest.TestCase):
             self.assertEqual(result["sequence_count"], 1)
             self.assertEqual(table.column("entry")[0].as_py(), "P1")
             self.assertIn("s1@@sp|P1|ONE", (Path(tmp) / "combined.fasta").read_text())
+
+    def test_prepare_combined_fasta_parses_onekp_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fasta = Path(tmp) / "onekp.fasta"
+            fasta.write_text(
+                ">scaffold-AALA-2000001-Meliosma_cuneifolia\nMKTAA\n"
+                ">scaffold-BBBB-2000002-Other_species\nMKTAA\n",
+                encoding="utf-8",
+            )
+            sample = SampleRecord(
+                "onekp_dataset",
+                fasta,
+                species="1KP combined dataset",
+                metadata={
+                    "header_parser": "onekp_scaffold",
+                    "header_parser_strict": "true",
+                },
+            )
+            result = prepare_combined_fasta(
+                [sample],
+                Path(tmp) / "combined.fasta",
+                Path(tmp) / "sequences.parquet",
+                Path(tmp) / "summary.tsv",
+                batch_size=1,
+            )
+            table = pq.read_table(Path(tmp) / "sequences.parquet")
+            self.assertEqual(result["source_file_count"], 1)
+            self.assertEqual(result["biological_sample_count"], 2)
+            self.assertEqual(table.column("sample_id")[0].as_py(), "AALA")
+            self.assertEqual(
+                table.column("species")[0].as_py(),
+                "Meliosma cuneifolia",
+            )
+            self.assertEqual(
+                table.column("source_file_sample_id")[0].as_py(),
+                "onekp_dataset",
+            )
+            self.assertEqual(
+                table.column("header_parse_status")[0].as_py(),
+                "parsed",
+            )
 
     def test_prepare_combined_fasta_rejects_duplicates_in_preserve_mode(self):
         with tempfile.TemporaryDirectory() as tmp:

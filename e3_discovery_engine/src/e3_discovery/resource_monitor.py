@@ -7,6 +7,11 @@ import logging
 import os
 import platform
 import statistics
+
+try:
+    import resource as _resource
+except ImportError:  # pragma: no cover - unavailable on Windows.
+    _resource = None
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -29,6 +34,80 @@ _PROCESS_EXCEPTIONS = (
 
 
 @dataclass(frozen=True)
+class CpuUsageSnapshot:
+    """Store cumulative POSIX CPU counters at one point in time.
+
+    Attributes:
+        self_user_seconds: User CPU consumed by the current process.
+        self_system_seconds: System CPU consumed by the current process.
+        children_user_seconds: User CPU consumed by waited-for child processes.
+        children_system_seconds: System CPU consumed by waited-for children.
+    """
+
+    self_user_seconds: float
+    self_system_seconds: float
+    children_user_seconds: float
+    children_system_seconds: float
+
+
+def capture_cpu_usage_snapshot() -> CpuUsageSnapshot | None:
+    """Capture cumulative POSIX process and child CPU counters.
+
+    Returns:
+        A :class:`CpuUsageSnapshot` on POSIX platforms supporting
+        :func:`resource.getrusage`, otherwise ``None``.
+    """
+
+    if _resource is None:
+        return None
+    self_usage = _resource.getrusage(_resource.RUSAGE_SELF)
+    child_usage = _resource.getrusage(_resource.RUSAGE_CHILDREN)
+    return CpuUsageSnapshot(
+        self_user_seconds=float(self_usage.ru_utime),
+        self_system_seconds=float(self_usage.ru_stime),
+        children_user_seconds=float(child_usage.ru_utime),
+        children_system_seconds=float(child_usage.ru_stime),
+    )
+
+
+def cpu_usage_delta(
+    started: CpuUsageSnapshot | None,
+    finished: CpuUsageSnapshot | None,
+) -> tuple[float, float] | None:
+    """Calculate user and system CPU consumed between two snapshots.
+
+    The calculation combines the current Python process with waited-for child
+    processes. This captures DIAMOND CPU time after ``subprocess.run`` has
+    returned and avoids losing CPU consumed by child processes that terminate
+    between psutil sampling points.
+
+    Args:
+        started: Baseline cumulative CPU counters.
+        finished: Final cumulative CPU counters.
+
+    Returns:
+        ``(user_seconds, system_seconds)`` when both snapshots are available,
+        otherwise ``None``.
+    """
+
+    if started is None or finished is None:
+        return None
+    user_seconds = (
+        finished.self_user_seconds
+        + finished.children_user_seconds
+        - started.self_user_seconds
+        - started.children_user_seconds
+    )
+    system_seconds = (
+        finished.self_system_seconds
+        + finished.children_system_seconds
+        - started.self_system_seconds
+        - started.children_system_seconds
+    )
+    return max(0.0, user_seconds), max(0.0, system_seconds)
+
+
+@dataclass(frozen=True)
 class ResourceUsage:
     """Describe measured resource use for one workflow stage.
 
@@ -43,6 +122,7 @@ class ResourceUsage:
         user_cpu_seconds: Summed maximum user CPU time observed per process.
         system_cpu_seconds: Summed maximum system CPU time observed per process.
         total_cpu_seconds: User plus system CPU time in seconds.
+        cpu_accounting_method: Method used to calculate final CPU totals.
         peak_rss_bytes: Maximum aggregate resident memory observed across the
             process tree.
         peak_rss_mb: ``peak_rss_bytes`` converted to mebibytes.
@@ -63,6 +143,7 @@ class ResourceUsage:
     user_cpu_seconds: float
     system_cpu_seconds: float
     total_cpu_seconds: float
+    cpu_accounting_method: str
     peak_rss_bytes: int
     peak_rss_mb: float
     maximum_process_count: int
@@ -133,6 +214,7 @@ class ProcessTreeResourceMonitor:
         self._lock = threading.Lock()
         self._started_monotonic: float | None = None
         self._started_at_utc: str | None = None
+        self._cpu_snapshot_started: CpuUsageSnapshot | None = None
         self._peak_rss_bytes = 0
         self._maximum_process_count = 0
         self._sample_count = 0
@@ -154,6 +236,7 @@ class ProcessTreeResourceMonitor:
             raise RuntimeError("The resource monitor has already been started")
         self._started_monotonic = time.monotonic()
         self._started_at_utc = datetime.now(timezone.utc).isoformat()
+        self._cpu_snapshot_started = capture_cpu_usage_snapshot()
         self._sample_once()
         self._thread = threading.Thread(
             target=self._sampling_loop,
@@ -242,12 +325,28 @@ class ProcessTreeResourceMonitor:
         self._sample_once()
         finished_monotonic = time.monotonic()
         finished_at_utc = datetime.now(timezone.utc).isoformat()
+        finished_cpu_snapshot = capture_cpu_usage_snapshot()
         with self._lock:
-            user_cpu = sum(value[0] for value in self._cpu_by_process.values())
-            system_cpu = sum(value[1] for value in self._cpu_by_process.values())
+            sampled_user_cpu = sum(
+                value[0] for value in self._cpu_by_process.values()
+            )
+            sampled_system_cpu = sum(
+                value[1] for value in self._cpu_by_process.values()
+            )
             peak_rss = self._peak_rss_bytes
             maximum_process_count = self._maximum_process_count
             sample_count = self._sample_count
+        exact_cpu = cpu_usage_delta(
+            self._cpu_snapshot_started,
+            finished_cpu_snapshot,
+        )
+        if exact_cpu is None:
+            user_cpu = sampled_user_cpu
+            system_cpu = sampled_system_cpu
+            cpu_accounting_method = "psutil_sampled_process_tree"
+        else:
+            user_cpu, system_cpu = exact_cpu
+            cpu_accounting_method = "posix_rusage_self_and_children_delta"
         resolved_status = status or (
             "success" if int(return_code) == 0 else "failed"
         )
@@ -262,6 +361,7 @@ class ProcessTreeResourceMonitor:
             user_cpu_seconds=user_cpu,
             system_cpu_seconds=system_cpu,
             total_cpu_seconds=user_cpu + system_cpu,
+            cpu_accounting_method=cpu_accounting_method,
             peak_rss_bytes=peak_rss,
             peak_rss_mb=peak_rss / (1024.0 * 1024.0),
             maximum_process_count=maximum_process_count,
@@ -327,6 +427,10 @@ def read_resource_usage(input_path: Path) -> ResourceUsage:
             user_cpu_seconds=float(row["user_cpu_seconds"]),
             system_cpu_seconds=float(row["system_cpu_seconds"]),
             total_cpu_seconds=float(row["total_cpu_seconds"]),
+            cpu_accounting_method=row.get(
+                "cpu_accounting_method",
+                "legacy_psutil_sampled_process_tree",
+            ),
             peak_rss_bytes=int(row["peak_rss_bytes"]),
             peak_rss_mb=float(row["peak_rss_mb"]),
             maximum_process_count=int(row["maximum_process_count"]),
@@ -399,6 +503,14 @@ def summarise_resource_usage(
                 ),
                 "mean_total_cpu_seconds": statistics.fmean(
                     record.total_cpu_seconds for record in values
+                ),
+                "cpu_accounting_methods": ";".join(
+                    sorted(
+                        {
+                            record.cpu_accounting_method
+                            for record in values
+                        }
+                    )
                 ),
                 "mean_peak_rss_mb": statistics.fmean(
                     record.peak_rss_mb for record in values

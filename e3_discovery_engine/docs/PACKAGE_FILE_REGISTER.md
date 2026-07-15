@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.12.
+This register explains the role of the principal files in release 0.1.13.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration
@@ -73,3 +73,19 @@ Generated run outputs are deliberately excluded from the source package.
 Files below `legacy_reference/` are preserved unchanged or as recovered for
 traceability. They are not imported by the production package and must not be
 used as the execution path for formal results.
+
+
+## Version 0.1.13 cluster additions
+
+| Path | Purpose |
+|---|---|
+| `src/e3_discovery/sequence_metadata.py` | Parse biological sample and species metadata from inherited 1KP scaffold identifiers. |
+| `src/e3_discovery/cluster_config.py` | Generate the full 1KP+ cluster manifest and executable YAML configuration. |
+| `config/config.cluster.full_onekp.example.yaml` | Readable example of the generated Slurm configuration. |
+| `config/full_onekp_cluster.example.samples.tsv` | Readable example of the 15-source full-run manifest. |
+| `scripts/submit_full_onekp_slurm.sh` | Submit the production job with explicit Dundee account, partition and resources. |
+| `scripts/slurm_full_onekp_job.sh` | Generate inputs, run Snakemake, validate outputs and create the review bundle on a compute node. |
+| `scripts/check_full_onekp_slurm.sh` | Display queue, accounting, logs, completion markers and review-bundle path. |
+| `docs/SLURM_FULL_ONEKP_RUNBOOK.md` | Detailed cluster paths, submission, monitoring, restart and interpretation instructions. |
+| `scripts/run_e3_scaling_and_full.sh` | Retained local scaling/full driver, now using per-sequence 1KP metadata when full mode is selected. |
+| `scripts/run_five_proteome_masking_comparison.sh` | Retained local paired masking-comparison driver. |

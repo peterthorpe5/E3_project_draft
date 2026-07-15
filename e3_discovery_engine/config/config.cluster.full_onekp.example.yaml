@@ -1,0 +1,48 @@
+# Example only. The Slurm submission workflow generates an executable copy
+# under <RESULT_ROOT>/run_setup/full_onekp_plus.cluster.config.yaml.
+project:
+  name: e3_full_onekp_plus_cluster
+  description: >-
+    Full inherited 1KP+ E3 Discovery Engine production run on the University
+    of Dundee Slurm cluster using tantan masking.
+
+inputs:
+  samples_tsv: /path/to/generated/full_onekp_plus.cluster.samples.tsv
+  e3_seed_table: /home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Other_things/Denbi/denbi_data/E3_discovery_engine/files/e3_ligases.csv
+  e3_seed_column: entry
+  identifier_mode: prefix_sample
+  compute_input_checksums: true
+
+outputs:
+  root: /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_13_EXAMPLE
+
+software:
+  environment: /path/to/e3_discovery_engine/workflow/envs/production.yml
+
+resources:
+  threads: 32
+  parquet_batch_size: 250000
+
+diamond:
+  executable: diamond
+  path_alias_root: /path/to/job/scratch/path_aliases
+  tmpdir: /path/to/job/scratch/diamond_tmp
+  identity_mode: exact
+  identity_percent: 50
+  mutual_cover_percent: 50
+  clustering_evalue: 0.1
+  comp_based_stats: 0
+  memory_limit: 220G
+  masking: tantan
+  cluster_steps: []
+  extra_args: []
+
+thresholds:
+  minimum_percent_identity: 50
+  minimum_representative_coverage: 50
+  minimum_member_coverage: 50
+  minimum_bitscore: 20
+  maximum_evalue: 1.0e-10
+
+benchmarking:
+  repeats: 1

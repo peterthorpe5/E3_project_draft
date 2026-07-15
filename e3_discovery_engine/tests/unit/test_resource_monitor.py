@@ -7,11 +7,17 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
+import e3_discovery.resource_monitor as resource_monitor
+
 from e3_discovery.resource_monitor import (
+    CpuUsageSnapshot,
     ProcessTreeResourceMonitor,
     ResourceUsage,
+    capture_cpu_usage_snapshot,
+    cpu_usage_delta,
     aggregate_resource_usage_directory,
     plot_peak_ram_by_stage,
     read_resource_usage,
@@ -43,6 +49,7 @@ def usage(stage_name: str = "stage", peak_rss_mb: float = 12.5) -> ResourceUsage
         user_cpu_seconds=0.4,
         system_cpu_seconds=0.1,
         total_cpu_seconds=0.5,
+        cpu_accounting_method="test_method",
         peak_rss_bytes=int(peak_rss_mb * 1024 * 1024),
         peak_rss_mb=peak_rss_mb,
         maximum_process_count=2,
@@ -60,6 +67,61 @@ class ResourceMonitorTests(unittest.TestCase):
         self.assertEqual(record["stage_name"], "stage")
         self.assertEqual(record["peak_rss_mb"], 12.5)
 
+    def test_cpu_usage_delta(self) -> None:
+        started = CpuUsageSnapshot(1.0, 2.0, 3.0, 4.0)
+        finished = CpuUsageSnapshot(2.5, 3.0, 7.0, 6.0)
+        self.assertEqual(cpu_usage_delta(started, finished), (5.5, 3.0))
+        self.assertIsNone(cpu_usage_delta(None, finished))
+
+    def test_capture_cpu_usage_snapshot(self) -> None:
+        snapshot = capture_cpu_usage_snapshot()
+        if snapshot is not None:
+            self.assertGreaterEqual(snapshot.self_user_seconds, 0.0)
+            self.assertGreaterEqual(snapshot.children_system_seconds, 0.0)
+
+    def test_resource_monitor_fallback_and_sampling_errors(self) -> None:
+        """Cover POSIX fallback and best-effort process sampling branches."""
+
+        with mock.patch.object(resource_monitor, "_resource", None):
+            self.assertIsNone(capture_cpu_usage_snapshot())
+
+        with self.assertRaises(ValueError):
+            ProcessTreeResourceMonitor("x", root_pid=0)
+
+        monitor = ProcessTreeResourceMonitor("sampling-errors")
+        fake_root = mock.Mock()
+        fake_root.children.side_effect = resource_monitor.psutil.NoSuchProcess(1)
+        monitor._root_process = fake_root
+        monitor._sample_once()
+        self.assertEqual(monitor._maximum_process_count, 0)
+
+        bad_process = mock.Mock()
+        bad_process.pid = 123
+        bad_process.create_time.side_effect = resource_monitor.psutil.NoSuchProcess(123)
+        fake_root.children.side_effect = None
+        fake_root.children.return_value = [bad_process]
+        fake_root.pid = 1
+        fake_root.create_time.side_effect = resource_monitor.psutil.NoSuchProcess(1)
+        monitor._sample_once()
+        self.assertEqual(monitor._maximum_process_count, 0)
+
+        with mock.patch.object(
+            resource_monitor,
+            "capture_cpu_usage_snapshot",
+            return_value=None,
+        ):
+            fallback = ProcessTreeResourceMonitor(
+                "fallback",
+                sample_interval_seconds=0.01,
+            )
+            fallback.start()
+            time.sleep(0.02)
+            measurement = fallback.stop()
+        self.assertEqual(
+            measurement.cpu_accounting_method,
+            "psutil_sampled_process_tree",
+        )
+
     def test_process_tree_monitor_lifecycle(self) -> None:
         monitor = ProcessTreeResourceMonitor(
             "unit-test",
@@ -72,6 +134,7 @@ class ResourceMonitorTests(unittest.TestCase):
         self.assertGreaterEqual(measurement.sample_count, 2)
         self.assertGreater(measurement.peak_rss_bytes, 0)
         self.assertGreaterEqual(measurement.wall_seconds, 0.02)
+        self.assertTrue(measurement.cpu_accounting_method)
 
     def test_process_tree_monitor_includes_child_process(self) -> None:
         monitor = ProcessTreeResourceMonitor(

@@ -358,3 +358,46 @@ strict_nonseed_candidate_members
 seed list that pass every configured representative-alignment threshold inside
 an E3-seeded cluster. These are sequence-similarity candidates, not confirmed
 E3 ligases.
+
+## University of Dundee Slurm full 1KP+ run
+
+Version 0.1.13 adds a cluster-specific full-run route while retaining the
+existing local configurations and macOS driver scripts. The Slurm route uses:
+
+```text
+account:   barton
+partition: general
+```
+
+The default cluster source root is:
+
+```text
+/home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data
+```
+
+The 1KP scaffold identifiers are parsed per sequence. For example,
+`scaffold-AALA-2000001-Meliosma_cuneifolia` is recorded as 1KP sample `AALA`
+and species `Meliosma cuneifolia`; the source FASTA remains
+`onekp_dataset.fasta`.
+
+Submit from the cluster repository checkout:
+
+```bash
+./scripts/submit_full_onekp_slurm.sh
+```
+
+Check progress:
+
+```bash
+./scripts/check_full_onekp_slurm.sh --job-id <JOB_ID>
+```
+
+The submission defaults to 32 CPUs, 256 GiB Slurm memory, a 220 GiB DIAMOND
+limit and seven days. It also requires at least 150 GiB free in persistent
+results storage and 100 GiB free in the selected job-scratch filesystem before
+expensive work starts. All values can be overridden on the command line. Large
+persistent results are kept below
+`/home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results`; job-local
+scratch is used for DIAMOND temporary files. See
+`docs/SLURM_FULL_ONEKP_RUNBOOK.md` for the complete procedure and restart
+behaviour.

@@ -76,6 +76,26 @@ class CliTests(unittest.TestCase):
             ]
         )
         self.assertEqual(monitored.resource_metrics, Path("ram.tsv"))
+        cluster = parser.parse_args(
+            [
+                "create-full-cluster-config",
+                "--source-root",
+                "source",
+                "--repository-root",
+                "repo",
+                "--results-root",
+                "results",
+                "--output-dir",
+                "generated",
+                "--threads",
+                "32",
+                "--memory-limit",
+                "220G",
+                "--tmpdir",
+                "scratch",
+            ]
+        )
+        self.assertEqual(cluster.threads, 32)
 
     @mock.patch("builtins.print")
     def test_print_json(self, mocked_print):
@@ -169,6 +189,24 @@ class CliTests(unittest.TestCase):
         mocked_write.assert_called_once()
         mocked_plot.assert_called_once()
 
+    @mock.patch("e3_discovery.cli.create_full_onekp_cluster_files")
+    def test_run_command_create_full_cluster_config(self, mocked):
+        mocked.return_value = {"sample_count": 15}
+        result = run_command(
+            Namespace(
+                command="create-full-cluster-config",
+                source_root=Path("source"),
+                repository_root=Path("repo"),
+                results_root=Path("results"),
+                output_dir=Path("generated"),
+                threads=32,
+                memory_limit="220G",
+                tmpdir=Path("scratch"),
+            )
+        )
+        self.assertEqual(result["sample_count"], 15)
+        mocked.assert_called_once()
+
     @mock.patch("e3_discovery.cli.write_run_manifest")
     @mock.patch("e3_discovery.cli.paths_from_config")
     @mock.patch("e3_discovery.cli.load_config")
@@ -213,7 +251,9 @@ class CliTests(unittest.TestCase):
         mocked_validate,
     ):
         with tempfile.TemporaryDirectory() as tmp:
-            mocked_load.return_value = diamond_config()
+            config = diamond_config()
+            config["diamond"]["tmpdir"] = str(Path(tmp) / "scratch")
+            mocked_load.return_value = config
             mocked_paths.return_value = workflow_paths(Path(tmp))
             mocked_version.return_value = SemanticVersion(2, 2, 3)
             for stage, expected_token in (
@@ -225,6 +265,9 @@ class CliTests(unittest.TestCase):
                     result = _run_diamond_stage(stage, Path("config.yaml"))
                     self.assertIn(expected_token, result["command"])
                     self.assertEqual(result["diamond_version"], "2.2.3")
+                    if stage != "diamond-makedb":
+                        self.assertIn("--tmpdir", result["command"])
+                        self.assertTrue(result["diamond_tmpdir"])
         self.assertEqual(mocked_run.call_count, 3)
         self.assertEqual(mocked_validate.call_count, 3)
         self.assertEqual(mocked_require.call_count, 3)

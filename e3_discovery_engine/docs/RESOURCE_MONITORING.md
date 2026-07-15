@@ -48,3 +48,18 @@ samples may contribute incompletely to CPU time. DIAMOND stages last long
 enough for the measurements to be useful. Formal HPC benchmarks should also
 retain scheduler accounting such as Slurm `sacct` and compare it with the
 package monitor.
+
+## Linux and Slurm CPU accounting in version 0.1.13
+
+The process monitor now records a POSIX `getrusage` snapshot for the Python
+process and completed child processes before and after each stage. On Linux,
+this is used to retain child CPU time after DIAMOND exits. The output field
+`cpu_accounting_method` records the method used. Sampled `psutil` accounting is
+retained as a fallback on platforms where POSIX resource accounting is not
+available.
+
+Slurm `sacct` output is also retained for the full 1KP+ job. Formal CPU-time
+reporting should compare the workflow records with Slurm accounting before the
+figures are frozen. Peak RSS remains measured from the live Python/DIAMOND
+process tree, while Slurm `MaxRSS` supplies an independent scheduler-level
+check.

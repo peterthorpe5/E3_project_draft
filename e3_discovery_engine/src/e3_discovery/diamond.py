@@ -174,6 +174,7 @@ def build_deepclust_command(
     comp_based_stats: int = 0,
     cluster_steps: Optional[Sequence[str]] = None,
     masking: Optional[str] = None,
+    tmpdir: Optional[Path] = None,
     extra_args: Optional[Sequence[str]] = None,
 ) -> List[str]:
     """Construct a validated DIAMOND DeepClust argument vector.
@@ -196,6 +197,7 @@ def build_deepclust_command(
         comp_based_stats: DIAMOND composition-based statistics mode from 0 to 6.
         cluster_steps: Optional additional DeepClust step definitions.
         masking: Optional supported masking mode.
+        tmpdir: Optional directory for DIAMOND temporary clustering files.
         extra_args: Optional additional argument tokens appended verbatim.
 
     Returns:
@@ -261,6 +263,8 @@ def build_deepclust_command(
     command.append("--header")
     if masking:
         command.extend(["--masking", masking])
+    if tmpdir is not None:
+        command.extend(["--tmpdir", str(tmpdir)])
     if extra_args:
         command.extend(str(value) for value in extra_args)
     return command
@@ -275,6 +279,7 @@ def build_realign_command(
     memory_limit: str,
     comp_based_stats: int = 0,
     masking: Optional[str] = None,
+    tmpdir: Optional[Path] = None,
 ) -> List[str]:
     """Construct a validated DIAMOND ``realign`` argument vector.
 
@@ -291,6 +296,7 @@ def build_realign_command(
         memory_limit: DIAMOND memory-limit expression.
         comp_based_stats: Traceback-compatible mode ``0`` or ``1``.
         masking: Optional supported masking mode.
+        tmpdir: Optional directory for DIAMOND temporary realignment files.
 
     Returns:
         Validated command arguments suitable for ``subprocess.run``.
@@ -346,6 +352,8 @@ def build_realign_command(
     ]
     if masking:
         command.extend(["--masking", masking])
+    if tmpdir is not None:
+        command.extend(["--tmpdir", str(tmpdir)])
     return command
 
 

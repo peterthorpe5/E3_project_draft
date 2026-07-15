@@ -31,10 +31,13 @@ class ResourceUnitTests(unittest.TestCase):
             connection = duckdb.connect(":memory:")
             connection.execute(
                 "CREATE TABLE sequence_records "
-                "(internal_id VARCHAR, entry VARCHAR, original_id VARCHAR)"
+                "(internal_id VARCHAR, entry VARCHAR, original_id VARCHAR, "
+                "sample_id VARCHAR, header_parser VARCHAR, "
+                "header_parse_status VARCHAR)"
             )
             connection.execute(
-                "INSERT INTO sequence_records VALUES ('a', 'A', 'a')"
+                "INSERT INTO sequence_records VALUES "
+                "('a', 'A', 'a', 'sample_a', 'none', 'not_requested')"
             )
             connection.execute(
                 "CREATE TABLE raw_cluster_sequences "
