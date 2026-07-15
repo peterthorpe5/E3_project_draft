@@ -128,3 +128,9 @@ sequence_metadata	metadata_flag_is_true	tests/unit/test_sequence_metadata.py	uni
 sequence_metadata	normalise_species_label	tests/unit/test_sequence_metadata.py;tests/unit/test_fasta.py	unit/integration as listed
 sequence_metadata	parse_onekp_scaffold_identifier	tests/unit/test_sequence_metadata.py;tests/unit/test_fasta.py	unit/integration as listed
 sequence_metadata	sequence_biological_metadata	tests/unit/test_sequence_metadata.py;tests/unit/test_fasta.py;tests/integration/test_resource_build.py	unit/integration as listed
+fasta	SkippedFastaRecord.as_dict	tests/unit/test_fasta.py	unit
+fasta	_sample_empty_sequence_settings	tests/unit/test_fasta.py	unit/integration as listed
+fasta	_write_skipped_fasta_records	tests/unit/test_fasta.py	unit/integration as listed
+cluster_config	full_onekp_discovery_root	tests/unit/test_cluster_config.py	unit
+cluster_config	locate_inherited_samples_json	tests/unit/test_cluster_config.py	unit
+cluster_config	validate_full_onekp_source_inputs	tests/unit/test_cluster_config.py	unit

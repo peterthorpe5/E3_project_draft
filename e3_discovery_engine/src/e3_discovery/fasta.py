@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    MutableSequence,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -39,11 +50,61 @@ class FastaRecord:
         identifier: Normalised first token from the FASTA header.
         description: Remaining free-text FASTA header description.
         sequence: Uppercase validated amino-acid sequence.
+        source_record_index: One-based record number in the source FASTA.
+        header_line: One-based source line containing the FASTA header.
     """
 
     identifier: str
     description: str
     sequence: str
+    source_record_index: int = 0
+    header_line: int = 0
+
+
+@dataclass(frozen=True)
+class SkippedFastaRecord:
+    """Describe one deliberately excluded malformed FASTA record.
+
+    Attributes:
+        source_file_sample_id: Manifest sample identifier for the source file.
+        source_file_species: Manifest species label for the source file.
+        source_path: FASTA file containing the excluded record.
+        source_record_index: One-based record number in the source FASTA.
+        header_line: One-based line containing the FASTA header.
+        header: Complete source header without the leading ``>``.
+        identifier: Normalised first header token when available.
+        issue_type: Stable machine-readable reason for exclusion.
+        details: Human-readable explanation of the exclusion.
+    """
+
+    source_file_sample_id: str
+    source_file_species: str
+    source_path: str
+    source_record_index: int
+    header_line: int
+    header: str
+    identifier: str
+    issue_type: str
+    details: str
+
+    def as_dict(self) -> Dict[str, object]:
+        """Return the issue as a deterministic TSV-ready mapping.
+
+        Returns:
+            Mapping containing all source-location and issue fields.
+        """
+
+        return {
+            "source_file_sample_id": self.source_file_sample_id,
+            "source_file_species": self.source_file_species,
+            "source_path": self.source_path,
+            "source_record_index": self.source_record_index,
+            "header_line": self.header_line,
+            "header": self.header,
+            "identifier": self.identifier,
+            "issue_type": self.issue_type,
+            "details": self.details,
+        }
 
 
 def normalise_sequence_id(identifier: str) -> str:
@@ -120,30 +181,129 @@ def validate_protein_sequence(sequence: str) -> str:
     return clean
 
 
-def iter_fasta(path: Path) -> Iterator[FastaRecord]:
+def iter_fasta(
+    path: Path,
+    empty_sequence_policy: str = "error",
+    skipped_records: Optional[MutableSequence[SkippedFastaRecord]] = None,
+    maximum_skipped_empty_sequences: int = 0,
+) -> Iterator[FastaRecord]:
     """Stream validated records from a plain or gzip-compressed FASTA file.
+
+    Empty sequences remain fatal by default. A caller may explicitly request
+    ``empty_sequence_policy="skip"`` for a known source with a small number of
+    header-only records. Every skipped record is then captured with its source
+    record number, header line and identifier. The iterator stops if the number
+    skipped exceeds ``maximum_skipped_empty_sequences``.
 
     Args:
         path: Input FASTA or ``.gz``-compressed FASTA path.
+        empty_sequence_policy: ``error`` or ``skip``.
+        skipped_records: Optional mutable collection receiving skipped-record
+            audit entries.
+        maximum_skipped_empty_sequences: Maximum allowed empty records when the
+            policy is ``skip``. Zero retains strict behaviour.
 
     Yields:
         :class:`FastaRecord` objects in source-file order.
 
     Raises:
         FileNotFoundError: If ``path`` does not exist.
-        DataValidationError: If headers, record order or sequences are invalid.
+        ValueError: If the empty-sequence settings are invalid.
+        DataValidationError: If headers, record order, sequences or the skipped
+            record safeguard are invalid.
     """
 
+    if empty_sequence_policy not in {"error", "skip"}:
+        raise ValueError(
+            "empty_sequence_policy must be either 'error' or 'skip'"
+        )
+    if maximum_skipped_empty_sequences < 0:
+        raise ValueError("maximum_skipped_empty_sequences cannot be negative")
+    if empty_sequence_policy == "error" and maximum_skipped_empty_sequences:
+        raise ValueError(
+            "maximum_skipped_empty_sequences must be zero when policy is error"
+        )
+
     current_header: Optional[str] = None
+    current_header_line = 0
+    source_record_index = 0
     sequence_parts: List[str] = []
+    skipped_empty_count = 0
+
+    def finish_current_record() -> Optional[FastaRecord]:
+        """Validate the current record or capture an allowed empty record.
+
+        Returns:
+            Validated record, or ``None`` when no record exists or an allowed
+            empty record was skipped.
+
+        Raises:
+            DataValidationError: If the record is invalid or the configured
+                empty-record safeguard is exceeded.
+        """
+
+        nonlocal skipped_empty_count
+        if current_header is None:
+            return None
+        try:
+            return _record_from_parts(
+                current_header,
+                sequence_parts,
+                source_record_index=source_record_index,
+                header_line=current_header_line,
+            )
+        except DataValidationError as error:
+            if str(error) != "Protein sequence is empty":
+                raise DataValidationError(
+                    f"{error} at {path}:{current_header_line}; "
+                    f"record {source_record_index}; header={current_header!r}"
+                ) from error
+            message = (
+                f"Protein sequence is empty at {path}:{current_header_line}; "
+                f"record {source_record_index}; header={current_header!r}"
+            )
+            if empty_sequence_policy == "error":
+                raise DataValidationError(message) from error
+            skipped_empty_count += 1
+            issue = SkippedFastaRecord(
+                source_file_sample_id="",
+                source_file_species="",
+                source_path=str(Path(path).resolve()),
+                source_record_index=source_record_index,
+                header_line=current_header_line,
+                header=current_header,
+                identifier=normalise_sequence_id(current_header),
+                issue_type="empty_sequence",
+                details="Header-only FASTA record contained no amino-acid sequence",
+            )
+            if skipped_records is not None:
+                skipped_records.append(issue)
+            LOGGER.warning(
+                "Skipping empty FASTA record %d in %s at header line %d: %s",
+                source_record_index,
+                path,
+                current_header_line,
+                current_header,
+            )
+            if skipped_empty_count > maximum_skipped_empty_sequences:
+                raise DataValidationError(
+                    f"Skipped empty FASTA record safeguard exceeded for {path}: "
+                    f"{skipped_empty_count} found, maximum allowed is "
+                    f"{maximum_skipped_empty_sequences}"
+                ) from error
+            return None
+
     with open_text_auto(path) as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             line = raw_line.rstrip("\r\n")
             if not line:
                 continue
             if line.startswith(">"):
-                if current_header is not None:
-                    yield _record_from_parts(current_header, sequence_parts)
+                record = finish_current_record()
+                if record is not None:
+                    yield record
+                source_record_index += 1
+                current_header_line = line_number
                 current_header = line[1:].strip()
                 if not current_header:
                     raise DataValidationError(
@@ -156,16 +316,24 @@ def iter_fasta(path: Path) -> Iterator[FastaRecord]:
                         f"Sequence before first FASTA header at {path}:{line_number}"
                     )
                 sequence_parts.append(line)
-    if current_header is not None:
-        yield _record_from_parts(current_header, sequence_parts)
+    record = finish_current_record()
+    if record is not None:
+        yield record
 
 
-def _record_from_parts(header: str, sequence_parts: Sequence[str]) -> FastaRecord:
+def _record_from_parts(
+    header: str,
+    sequence_parts: Sequence[str],
+    source_record_index: int = 0,
+    header_line: int = 0,
+) -> FastaRecord:
     """Build a validated FASTA record from one header and sequence fragments.
 
     Args:
         header: FASTA header text without the leading ``>`` character.
         sequence_parts: Ordered sequence lines belonging to the record.
+        source_record_index: One-based source record number when known.
+        header_line: One-based source header line when known.
 
     Returns:
         A normalised and validated :class:`FastaRecord`.
@@ -173,10 +341,109 @@ def _record_from_parts(header: str, sequence_parts: Sequence[str]) -> FastaRecor
     Raises:
         DataValidationError: If the identifier or assembled sequence is invalid.
     """
+
     identifier = normalise_sequence_id(header)
     description = header[len(header.split()[0]):].strip()
     sequence = validate_protein_sequence("".join(sequence_parts))
-    return FastaRecord(identifier, description, sequence)
+    return FastaRecord(
+        identifier,
+        description,
+        sequence,
+        source_record_index=source_record_index,
+        header_line=header_line,
+    )
+
+
+def _sample_empty_sequence_settings(sample: SampleRecord) -> Tuple[str, int]:
+    """Resolve per-sample empty-record handling from manifest metadata.
+
+    Args:
+        sample: Source sample record with optional policy metadata.
+
+    Returns:
+        Pair of empty-sequence policy and maximum permitted skipped records.
+
+    Raises:
+        DataValidationError: If metadata values are unsupported or inconsistent.
+    """
+
+    policy = str(
+        sample.metadata.get("empty_sequence_policy", "error")
+    ).strip().lower()
+    if policy not in {"error", "skip"}:
+        raise DataValidationError(
+            f"Unsupported empty_sequence_policy {policy!r} for sample "
+            f"{sample.sample_id}"
+        )
+    raw_maximum = str(
+        sample.metadata.get("maximum_skipped_empty_sequences", "0")
+    ).strip()
+    try:
+        maximum = int(raw_maximum or "0")
+    except ValueError as error:
+        raise DataValidationError(
+            "maximum_skipped_empty_sequences must be an integer for sample "
+            f"{sample.sample_id}: {raw_maximum!r}"
+        ) from error
+    if maximum < 0:
+        raise DataValidationError(
+            "maximum_skipped_empty_sequences cannot be negative for sample "
+            f"{sample.sample_id}"
+        )
+    if policy == "error" and maximum:
+        raise DataValidationError(
+            "maximum_skipped_empty_sequences must be zero when policy is "
+            f"error for sample {sample.sample_id}"
+        )
+    if policy == "skip" and maximum < 1:
+        raise DataValidationError(
+            "empty_sequence_policy skip requires a positive "
+            f"maximum_skipped_empty_sequences for sample {sample.sample_id}"
+        )
+    return policy, maximum
+
+
+def _write_skipped_fasta_records(
+    records: Iterable[SkippedFastaRecord],
+    output_path: Path,
+) -> int:
+    """Write skipped FASTA records with a header even when there are no rows.
+
+    Args:
+        records: Skipped-record audit entries.
+        output_path: Destination QC TSV.
+
+    Returns:
+        Number of skipped-record data rows written.
+
+    Raises:
+        OSError: If the atomic output cannot be written.
+    """
+
+    materialised = list(records)
+    fields = [
+        "source_file_sample_id",
+        "source_file_species",
+        "source_path",
+        "source_record_index",
+        "header_line",
+        "header",
+        "identifier",
+        "issue_type",
+        "details",
+    ]
+    with atomic_text_writer(output_path, newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fields,
+            delimiter="\t",
+            lineterminator="\n",
+            extrasaction="raise",
+        )
+        writer.writeheader()
+        for record in materialised:
+            writer.writerow(record.as_dict())
+    return len(materialised)
 
 
 def make_internal_id(
@@ -280,6 +547,7 @@ def prepare_combined_fasta(
     combined_fasta: Path,
     sequence_parquet: Path,
     sample_summary_tsv: Path,
+    skipped_records_tsv: Optional[Path] = None,
     identifier_mode: str = "prefix_sample",
     batch_size: int = 100_000,
     compute_checksums: bool = True,
@@ -297,6 +565,8 @@ def prepare_combined_fasta(
         combined_fasta: Destination combined protein FASTA.
         sequence_parquet: Destination sequence-record Parquet table.
         sample_summary_tsv: Destination per-sample summary TSV.
+        skipped_records_tsv: Optional QC TSV for deliberately excluded FASTA
+            records. The file includes a header even when no records are skipped.
         identifier_mode: Internal identifier policy, normally ``prefix_sample``.
         batch_size: Maximum sequence records held before each Parquet write.
         compute_checksums: Whether to calculate SHA-256 for each source FASTA.
@@ -328,6 +598,8 @@ def prepare_combined_fasta(
     total_sequences = 0
     total_residues = 0
     total_header_parse_failures = 0
+    total_skipped_records = 0
+    all_skipped_records: List[SkippedFastaRecord] = []
     biological_sample_ids = set()
     biological_species = set()
 
@@ -356,10 +628,17 @@ def prepare_combined_fasta(
                     sample_biological_ids = set()
                     sample_biological_species = set()
                     metadata_json = json_dumps_sorted(dict(sample.metadata))
-                    for record_index, record in enumerate(
-                        iter_fasta(sample.fasta_path),
-                        start=1,
+                    empty_policy, maximum_skipped = (
+                        _sample_empty_sequence_settings(sample)
+                    )
+                    sample_skipped_records: List[SkippedFastaRecord] = []
+                    for record in iter_fasta(
+                        sample.fasta_path,
+                        empty_sequence_policy=empty_policy,
+                        skipped_records=sample_skipped_records,
+                        maximum_skipped_empty_sequences=maximum_skipped,
                     ):
+                        record_index = record.source_record_index
                         internal_id = make_internal_id(
                             sample.sample_id,
                             record.identifier,
@@ -447,6 +726,22 @@ def prepare_combined_fasta(
                             _flush_sequence_rows(writer, sequence_rows)
                         sample_count += 1
                         sample_residues += length
+                    enriched_skipped_records = [
+                        SkippedFastaRecord(
+                            source_file_sample_id=sample.sample_id,
+                            source_file_species=sample.species,
+                            source_path=issue.source_path,
+                            source_record_index=issue.source_record_index,
+                            header_line=issue.header_line,
+                            header=issue.header,
+                            identifier=issue.identifier,
+                            issue_type=issue.issue_type,
+                            details=issue.details,
+                        )
+                        for issue in sample_skipped_records
+                    ]
+                    all_skipped_records.extend(enriched_skipped_records)
+                    sample_skipped_count = len(enriched_skipped_records)
                     if sample_count == 0:
                         raise DataValidationError(
                             f"No FASTA records found for sample {sample.sample_id}"
@@ -477,7 +772,13 @@ def prepare_combined_fasta(
                             ),
                             "fasta_path": str(sample.fasta_path),
                             "source_sha256": source_checksum,
+                            "source_record_count": (
+                                sample_count + sample_skipped_count
+                            ),
                             "sequence_count": sample_count,
+                            "skipped_record_count": sample_skipped_count,
+                            "empty_sequence_policy": empty_policy,
+                            "maximum_skipped_empty_sequences": maximum_skipped,
                             "total_residues": sample_residues,
                         }
                     )
@@ -486,17 +787,25 @@ def prepare_combined_fasta(
                     total_header_parse_failures += (
                         header_parse_failure_count
                     )
+                    total_skipped_records += sample_skipped_count
                     LOGGER.info(
-                        "Prepared sample %s: %d sequences, %d residues",
+                        "Prepared sample %s: %d sequences, %d residues, "
+                        "%d skipped records",
                         sample.sample_id,
                         sample_count,
                         sample_residues,
+                        sample_skipped_count,
                     )
                 _flush_sequence_rows(writer, sequence_rows)
         finally:
             writer.close()
 
     write_tsv(summaries, sample_summary_tsv)
+    if skipped_records_tsv is not None:
+        _write_skipped_fasta_records(
+            all_skipped_records,
+            skipped_records_tsv,
+        )
     LOGGER.info(
         "Prepared combined FASTA: %d samples, %d sequences, %d residues",
         len(materialised),
@@ -509,6 +818,7 @@ def prepare_combined_fasta(
         "biological_sample_count": len(biological_sample_ids),
         "biological_species_count": len(biological_species),
         "header_parse_failure_count": total_header_parse_failures,
+        "skipped_record_count": total_skipped_records,
         "sequence_count": total_sequences,
         "total_residues": total_residues,
     }

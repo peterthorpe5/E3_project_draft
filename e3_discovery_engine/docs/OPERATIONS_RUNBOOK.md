@@ -219,3 +219,18 @@ run uses separately generated files and does not overwrite them.
 The agreed Dundee allocation is `--account=barton --partition=general`. The
 full procedure, generated paths, scratch handling, restart behaviour and review
 bundle contents are documented in `SLURM_FULL_ONEKP_RUNBOOK.md`.
+
+## Version 0.1.14 preflight and empty-record handling
+
+The submission script now refuses to call `sbatch` until it has:
+
+1. confirmed that the available Conda version is at least 24.7.1;
+2. loaded the `e3_discovery` environment through `conda run`;
+3. located either the source `samples.json` or the recovered repository copy;
+4. confirmed the seed table, production environment and every listed FASTA are
+   present and non-empty.
+
+The preflight report is stored as `run_setup/source_input_preflight.json`.
+During preparation, the two known empty 1KP records are skipped and recorded in
+`qc/skipped_fasta_records.tsv`. More than two empty 1KP records, or any empty
+record in a named proteome, stops the workflow.

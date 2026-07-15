@@ -33,6 +33,7 @@ BENCHMARK_REPEATS = int(config["benchmarking"].get("repeats", 1))
 COMBINED_FASTA = ROOT / "prepared_inputs" / "combined_proteomes.fasta"
 SEQUENCES_PARQUET = ROOT / "prepared_inputs" / "sequence_records.parquet"
 SAMPLE_SUMMARY = ROOT / "qc" / "sample_summary.tsv"
+SKIPPED_FASTA_RECORDS = ROOT / "qc" / "skipped_fasta_records.tsv"
 SEEDS_TSV = ROOT / "prepared_inputs" / "known_e3_seeds.tsv"
 SEEDS_PARQUET = ROOT / "prepared_inputs" / "known_e3_seeds.parquet"
 DIAMOND_DB = ROOT / "diamond" / "combined_proteomes.dmnd"
@@ -108,6 +109,7 @@ rule prepare_inputs:
         fasta=ensure(COMBINED_FASTA, non_empty=True),
         sequences=ensure(SEQUENCES_PARQUET, non_empty=True),
         sample_summary=ensure(SAMPLE_SUMMARY, non_empty=True),
+        skipped_records=ensure(SKIPPED_FASTA_RECORDS, non_empty=True),
         seeds_tsv=ensure(SEEDS_TSV, non_empty=True),
         seeds_parquet=ensure(SEEDS_PARQUET, non_empty=True),
         metrics=ensure(RESOURCE_METRIC_FILES["prepare"], non_empty=True),

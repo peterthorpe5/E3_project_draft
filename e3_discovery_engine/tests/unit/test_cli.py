@@ -21,6 +21,7 @@ def workflow_paths(root: Path) -> WorkflowPaths:
         combined_fasta=root / "combined.fasta",
         sequence_parquet=root / "sequences.parquet",
         sample_summary_tsv=root / "samples.tsv",
+        skipped_records_tsv=root / "skipped.tsv",
         seed_tsv=root / "seeds.tsv",
         seed_parquet=root / "seeds.parquet",
         diamond_database=root / "database.dmnd",

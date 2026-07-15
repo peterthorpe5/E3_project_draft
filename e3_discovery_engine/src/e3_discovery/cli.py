@@ -14,7 +14,10 @@ from e3_discovery.benchmarks import (
     summarise_benchmarks,
     write_benchmark_outputs,
 )
-from e3_discovery.cluster_config import create_full_onekp_cluster_files
+from e3_discovery.cluster_config import (
+    create_full_onekp_cluster_files,
+    validate_full_onekp_source_inputs,
+)
 from e3_discovery.clusters import (
     cluster_tsv_to_parquet,
     realign_tsv_to_parquet,
@@ -121,6 +124,16 @@ def build_parser() -> argparse.ArgumentParser:
     cluster_config.add_argument("--threads", required=True, type=int)
     cluster_config.add_argument("--memory-limit", required=True)
     cluster_config.add_argument("--tmpdir", required=True, type=Path)
+
+    cluster_preflight = subparsers.add_parser(
+        "validate-full-cluster-inputs"
+    )
+    cluster_preflight.add_argument("--source-root", required=True, type=Path)
+    cluster_preflight.add_argument(
+        "--repository-root",
+        required=True,
+        type=Path,
+    )
 
     return parser
 
@@ -330,6 +343,11 @@ def run_command(args: argparse.Namespace) -> Dict[str, Any]:
                 }
             )
         return result
+    if args.command == "validate-full-cluster-inputs":
+        return validate_full_onekp_source_inputs(
+            source_root=args.source_root,
+            repository_root=args.repository_root,
+        )
     if args.command == "create-full-cluster-config":
         return create_full_onekp_cluster_files(
             source_root=args.source_root,

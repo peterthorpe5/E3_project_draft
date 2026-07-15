@@ -188,3 +188,26 @@ biological samples and species. The following columns preserve both levels:
 The stable internal sequence identifier continues to use the physical source
 sample prefix. This avoids collisions without changing the biological sample
 and species fields used for summaries.
+
+## Version 0.1.14 malformed-record audit
+
+`qc/skipped_fasta_records.tsv` records every source FASTA record deliberately
+excluded before clustering. The table is always created with a header, even
+when no records are skipped.
+
+| Field | Meaning |
+|---|---|
+| `source_file_sample_id` | Manifest sample containing the source record. |
+| `source_file_species` | Manifest species label for the source file. |
+| `source_path` | Exact FASTA path read during preparation. |
+| `source_record_index` | One-based record number in the source FASTA. |
+| `header_line` | One-based line containing the FASTA header. |
+| `header` | Complete source header without the leading `>`. |
+| `identifier` | Normalised first FASTA header token. |
+| `issue_type` | Stable exclusion reason, currently `empty_sequence`. |
+| `details` | Human-readable explanation. |
+
+`qc/sample_summary.tsv` also includes `source_record_count`,
+`skipped_record_count`, `empty_sequence_policy` and
+`maximum_skipped_empty_sequences`. Accepted sequences retain their original
+source record indices, so records after an exclusion are not renumbered.

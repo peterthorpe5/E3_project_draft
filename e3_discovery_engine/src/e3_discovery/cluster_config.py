@@ -17,6 +17,120 @@ _OS_PATTERN = re.compile(r"(?:^|\s)OS=(.*?)(?=\sOX=|\s[A-Z]{2}=|$)")
 _OX_PATTERN = re.compile(r"(?:^|\s)OX=(\d+)")
 
 
+def full_onekp_discovery_root(source_root: Path) -> Path:
+    """Resolve the inherited E3 discovery directory below the source root.
+
+    Args:
+        source_root: Path to the inherited ``Erin_Butterfield_data`` directory.
+
+    Returns:
+        Resolved ``E3_discovery_engine`` input directory.
+    """
+
+    return (
+        Path(source_root).expanduser().resolve()
+        / "Other_things"
+        / "Denbi"
+        / "denbi_data"
+        / "E3_discovery_engine"
+    )
+
+
+def locate_inherited_samples_json(
+    discovery_root: Path,
+    repository_root: Path,
+) -> Path:
+    """Locate the inherited full-run sample list with a repository fallback.
+
+    Args:
+        discovery_root: Inherited E3 discovery input directory.
+        repository_root: Checked-out production repository.
+
+    Returns:
+        Existing non-empty source ``samples.json`` or the read-only recovered
+        copy under ``legacy_reference``.
+
+    Raises:
+        FileNotFoundError: If neither candidate exists and is non-empty.
+    """
+
+    candidates = (
+        Path(discovery_root) / "samples.json",
+        Path(repository_root).expanduser().resolve()
+        / "legacy_reference"
+        / "samples.inherited.json",
+    )
+    for candidate in candidates:
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return candidate.resolve()
+    raise FileNotFoundError(
+        "Inherited samples.json was not found in either location: "
+        + "; ".join(str(path) for path in candidates)
+    )
+
+
+def validate_full_onekp_source_inputs(
+    source_root: Path,
+    repository_root: Path,
+) -> Dict[str, object]:
+    """Validate every file required before a full 1KP+ Slurm submission.
+
+    The check reports all missing or empty FASTA files together rather than
+    stopping at the first absent input. It also permits the recovered repository
+    copy of ``samples.json`` when the source-tree copy was not backed up.
+
+    Args:
+        source_root: Path to inherited ``Erin_Butterfield_data``.
+        repository_root: Checked-out E3 Discovery Engine repository.
+
+    Returns:
+        Paths, ordered sample names, FASTA count and total source bytes.
+
+    Raises:
+        FileNotFoundError: If required metadata, environment or FASTA files are
+            missing or empty.
+        DataValidationError: If the inherited sample list is malformed.
+    """
+
+    repository = Path(repository_root).expanduser().resolve()
+    discovery = full_onekp_discovery_root(source_root)
+    samples_json = locate_inherited_samples_json(discovery, repository)
+    seed_table = discovery / "files" / "e3_ligases.csv"
+    environment = repository / "workflow" / "envs" / "production.yml"
+    required = {
+        "E3 seed table": seed_table,
+        "production environment": environment,
+    }
+    problems = [
+        f"{label}: {path}"
+        for label, path in required.items()
+        if not path.is_file() or path.stat().st_size == 0
+    ]
+    names = read_inherited_sample_names(samples_json)
+    fasta_dir = discovery / "files" / "fasta_files"
+    fasta_paths = [fasta_dir / f"{name}.fasta" for name in names]
+    problems.extend(
+        f"FASTA for {name}: {path}"
+        for name, path in zip(names, fasta_paths)
+        if not path.is_file() or path.stat().st_size == 0
+    )
+    if problems:
+        raise FileNotFoundError(
+            "Full 1KP+ source preflight failed. Missing or empty inputs:\n"
+            + "\n".join(problems)
+        )
+    return {
+        "discovery_root": str(discovery),
+        "samples_json": str(samples_json),
+        "seed_table": str(seed_table.resolve()),
+        "environment": str(environment.resolve()),
+        "fasta_dir": str(fasta_dir.resolve()),
+        "sample_names": names,
+        "sample_count": len(names),
+        "total_fasta_bytes": sum(path.stat().st_size for path in fasta_paths),
+    }
+
+
 def read_inherited_sample_names(samples_json: Path) -> List[str]:
     """Read the ordered inherited sample list from ``samples.json``.
 
@@ -103,6 +217,8 @@ def uniprot_header_metadata(
         "source_database": "inherited_project_FASTA",
         "header_parser": "manifest",
         "header_parser_strict": "false",
+        "empty_sequence_policy": "error",
+        "maximum_skipped_empty_sequences": "0",
     }
 
 
@@ -137,6 +253,8 @@ def build_full_onekp_manifest_rows(
                 "source_database": "1KP inherited combined dataset",
                 "header_parser": "onekp_scaffold",
                 "header_parser_strict": "true",
+                "empty_sequence_policy": "skip",
+                "maximum_skipped_empty_sequences": "2",
             }
         else:
             metadata = uniprot_header_metadata(
@@ -155,6 +273,10 @@ def build_full_onekp_manifest_rows(
                 "provenance_status": "source_release_to_be_confirmed",
                 "header_parser": metadata["header_parser"],
                 "header_parser_strict": metadata["header_parser_strict"],
+                "empty_sequence_policy": metadata["empty_sequence_policy"],
+                "maximum_skipped_empty_sequences": metadata[
+                    "maximum_skipped_empty_sequences"
+                ],
             }
         )
     return rows
@@ -192,6 +314,8 @@ def write_full_onekp_manifest(
         "provenance_status",
         "header_parser",
         "header_parser_strict",
+        "empty_sequence_policy",
+        "maximum_skipped_empty_sequences",
     ]
     with atomic_text_writer(output_path, newline="") as handle:
         writer = csv.DictWriter(
@@ -346,23 +470,14 @@ def create_full_onekp_cluster_files(
         ValueError: If resource settings are invalid.
     """
 
-    source = Path(source_root).expanduser().resolve()
-    repository = Path(repository_root).expanduser().resolve()
-    discovery_root = (
-        source
-        / "Other_things"
-        / "Denbi"
-        / "denbi_data"
-        / "E3_discovery_engine"
+    validation = validate_full_onekp_source_inputs(
+        source_root=source_root,
+        repository_root=repository_root,
     )
-    samples_json = discovery_root / "samples.json"
-    fasta_dir = discovery_root / "files" / "fasta_files"
-    seed_table = discovery_root / "files" / "e3_ligases.csv"
-    environment = repository / "workflow" / "envs" / "production.yml"
-    for path in (samples_json, seed_table, environment):
-        if not path.is_file() or path.stat().st_size == 0:
-            raise FileNotFoundError(path)
-    names = read_inherited_sample_names(samples_json)
+    seed_table = Path(str(validation["seed_table"]))
+    environment = Path(str(validation["environment"]))
+    fasta_dir = Path(str(validation["fasta_dir"]))
+    names = [str(value) for value in validation["sample_names"]]
     rows = build_full_onekp_manifest_rows(names, fasta_dir)
     destination = Path(output_dir).expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)

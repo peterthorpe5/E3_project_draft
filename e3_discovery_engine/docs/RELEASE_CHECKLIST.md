@@ -81,3 +81,15 @@
 - [ ] The cluster `e3_discovery` environment contains DIAMOND 2.2.3 and Snakemake.
 - [ ] The full job creates scientific QC, resource summaries, Slurm accounting and a compact review bundle.
 - [ ] CPU time is checked against `sacct` before it is used in a formal report.
+
+## Version 0.1.14 FASTA and submission checks
+
+- [ ] Confirm strict mode still rejects empty records with path, record and
+  header-line context.
+- [ ] Confirm 1KP skip mode records permitted exclusions and preserves original
+  source record indices.
+- [ ] Confirm the configured maximum skipped-empty-record safeguard is enforced.
+- [ ] Confirm `qc/skipped_fasta_records.tsv` is a declared Snakemake output.
+- [ ] Confirm the login-node preflight reports every missing input together.
+- [ ] Confirm Conda older than 24.7.1 is rejected before `sbatch`.
+- [ ] Confirm failed Snakemake dry runs print the complete dry-run log.

@@ -26,6 +26,7 @@ class WorkflowPaths:
         combined_fasta: Prepared combined-proteome FASTA.
         sequence_parquet: Prepared sequence metadata table.
         sample_summary_tsv: Per-sample input QC summary.
+        skipped_records_tsv: Audit table for deliberately skipped FASTA records.
         seed_tsv: Normalised known-E3 seed TSV.
         seed_parquet: Normalised known-E3 seed Parquet table.
         diamond_database: DIAMOND protein database.
@@ -48,6 +49,7 @@ class WorkflowPaths:
     combined_fasta: Path
     sequence_parquet: Path
     sample_summary_tsv: Path
+    skipped_records_tsv: Path
     seed_tsv: Path
     seed_parquet: Path
     diamond_database: Path
@@ -85,6 +87,7 @@ def paths_from_config(config: Mapping[str, Any]) -> WorkflowPaths:
         combined_fasta=root / "prepared_inputs" / "combined_proteomes.fasta",
         sequence_parquet=root / "prepared_inputs" / "sequence_records.parquet",
         sample_summary_tsv=root / "qc" / "sample_summary.tsv",
+        skipped_records_tsv=root / "qc" / "skipped_fasta_records.tsv",
         seed_tsv=root / "prepared_inputs" / "known_e3_seeds.tsv",
         seed_parquet=root / "prepared_inputs" / "known_e3_seeds.parquet",
         diamond_database=root / "diamond" / "combined_proteomes.dmnd",
@@ -133,6 +136,7 @@ def prepare_inputs_from_config(config_path: Path) -> Dict[str, object]:
         combined_fasta=paths.combined_fasta,
         sequence_parquet=paths.sequence_parquet,
         sample_summary_tsv=paths.sample_summary_tsv,
+        skipped_records_tsv=paths.skipped_records_tsv,
         identifier_mode=config["inputs"].get("identifier_mode", "prefix_sample"),
         batch_size=int(config["resources"]["parquet_batch_size"]),
         compute_checksums=bool(

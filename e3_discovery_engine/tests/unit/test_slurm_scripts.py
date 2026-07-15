@@ -44,6 +44,9 @@ class SlurmScriptContractTests(unittest.TestCase):
         self.assertIn('WALLTIME="7-00:00:00"', text)
         self.assertIn('MIN_RESULTS_FREE_GIB=150', text)
         self.assertIn('MIN_SCRATCH_FREE_GIB=100', text)
+        self.assertIn("validate-full-cluster-inputs", text)
+        self.assertIn("source_input_preflight.json", text)
+        self.assertIn("24.7.1", text)
 
     def test_worker_generates_onekp_metadata_configuration(self):
         """Require generated config, 1KP parser use and job-local scratch."""
@@ -57,6 +60,8 @@ class SlurmScriptContractTests(unittest.TestCase):
         self.assertIn("check_free_space_gib", text)
         self.assertIn("E3_MIN_RESULTS_FREE_GIB", text)
         self.assertIn("E3_MIN_SCRATCH_FREE_GIB", text)
+        self.assertIn("snakemake_dry_run.log", text)
+        self.assertIn("complete dry-run log follows", text)
 
     def test_scripts_use_defensive_shell_mode(self):
         """Require strict shell error handling in all new Slurm scripts."""

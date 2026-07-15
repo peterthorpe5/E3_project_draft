@@ -172,7 +172,7 @@ create_review_bundle() {
     local run_root="$1"
     local review_dir="$2"
     local run_tag="$3"
-    local bundle_root="${review_dir}/full_onekp_plus_v0_1_13_${run_tag}"
+    local bundle_root="${review_dir}/full_onekp_plus_v0_1_14_${run_tag}"
     local archive="${bundle_root}.tar.gz"
     local directory=""
 
@@ -325,13 +325,17 @@ CURRENT_STAGE="Snakemake dry run"
 export E3_DISCOVERY_CONFIG="${CONFIG_PATH}"
 SNAKEMAKE_CONDA_PREFIX="${E3_SNAKEMAKE_CONDA_PREFIX:-${HOME}/.cache/e3_discovery_snakemake_conda}"
 mkdir -p "${SNAKEMAKE_CONDA_PREFIX}"
-snakemake \
+if ! snakemake \
     --snakefile Snakefile \
     --cores "${E3_THREADS}" \
     --use-conda \
     --conda-prefix "${SNAKEMAKE_CONDA_PREFIX}" \
     --dry-run \
-    > "${E3_SETUP_DIR}/snakemake_dry_run.log" 2>&1
+    > "${E3_SETUP_DIR}/snakemake_dry_run.log" 2>&1; then
+    error "Snakemake dry run failed; complete dry-run log follows."
+    cat "${E3_SETUP_DIR}/snakemake_dry_run.log" >&2
+    false
+fi
 
 CURRENT_STAGE="full 1KP+ Snakemake workflow"
 snakemake \

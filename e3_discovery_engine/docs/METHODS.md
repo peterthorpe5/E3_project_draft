@@ -222,3 +222,23 @@ partition under the `barton` account. The default request is one node, 32 CPUs,
 conservative starting allocation rather than a claim about observed use.
 DIAMOND temporary products and path aliases use job-local scratch; validated
 scientific products are written to persistent project storage.
+
+## Handling the two empty inherited 1KP records
+
+A streaming audit of `onekp_dataset.fasta` examined all 25,241,940 FASTA
+headers. The inherited report stated 25,821,204 sequences, 579,264 more than
+the observed header count; this remains an unresolved provenance discrepancy.
+Two records contained headers but no amino-acid sequence:
+
+- record 8,246,200, header line 16,492,399:
+  `scaffold-IHWO-2001393-Marchantia_paleacea-mycorrizal`;
+- record 20,925,945, header line 41,851,889:
+  `scaffold-VRGZ-2004363-Petalonia_fascia`.
+
+These records cannot contribute sequence similarity evidence and are excluded
+from the prepared combined FASTA. Exclusion is restricted to the generated
+`onekp_dataset` manifest row and capped at the two records found by the complete audit. Finding any
+additional empty record stops preparation for review. All other input
+samples retain strict empty-record rejection. The exact excluded records are
+written to `qc/skipped_fasta_records.tsv` and counted in
+`qc/sample_summary.tsv` and run provenance outputs.

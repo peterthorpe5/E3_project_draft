@@ -1,6 +1,6 @@
 # Package file register
 
-This register explains the role of the principal files in release 0.1.13.
+This register explains the role of the principal files in release 0.1.14.
 Generated run outputs are deliberately excluded from the source package.
 
 ## Workflow and configuration
@@ -89,3 +89,14 @@ used as the execution path for formal results.
 | `docs/SLURM_FULL_ONEKP_RUNBOOK.md` | Detailed cluster paths, submission, monitoring, restart and interpretation instructions. |
 | `scripts/run_e3_scaling_and_full.sh` | Retained local scaling/full driver, now using per-sequence 1KP metadata when full mode is selected. |
 | `scripts/run_five_proteome_masking_comparison.sh` | Retained local paired masking-comparison driver. |
+
+## Version 0.1.14 additions
+
+- `qc/skipped_fasta_records.tsv`: complete audit of deliberately excluded
+  malformed FASTA records.
+- `run_setup/source_input_preflight.json`: login-node validation of all source
+  inputs before a Slurm job is submitted.
+- `src/e3_discovery/fasta.py`: strict-by-default, audited empty-record handling
+  with source record and header-line provenance.
+- `src/e3_discovery/cluster_config.py`: aggregate source preflight and recovered
+  `samples.json` fallback.

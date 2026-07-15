@@ -361,7 +361,7 @@ E3 ligases.
 
 ## University of Dundee Slurm full 1KP+ run
 
-Version 0.1.13 adds a cluster-specific full-run route while retaining the
+Version 0.1.14 provides the cluster-specific full-run route while retaining the
 existing local configurations and macOS driver scripts. The Slurm route uses:
 
 ```text
@@ -379,6 +379,21 @@ The 1KP scaffold identifiers are parsed per sequence. For example,
 `scaffold-AALA-2000001-Meliosma_cuneifolia` is recorded as 1KP sample `AALA`
 and species `Meliosma cuneifolia`; the source FASTA remains
 `onekp_dataset.fasta`.
+
+The inherited 1KP FASTA contains 25,241,940 headers and exactly two confirmed
+header-only records with no amino-acid sequence. The inherited report stated
+25,821,204 sequences, which is 579,264 more than the observed FASTA header
+count. The production run uses the actual file count and retains this difference
+as an unresolved provenance discrepancy. Version 0.1.14 excludes only
+those empty records under an explicit 1KP-specific policy, writes them to
+`qc/skipped_fasta_records.tsv`, and stops if more than two empty records are
+encountered. All named proteomes and ordinary runs remain strict: an empty
+protein record is an error.
+
+Before `sbatch`, the submission script checks Conda compatibility and validates
+all required metadata, seed and FASTA inputs together. A missing source-tree
+`samples.json` can be replaced by the recovered read-only copy under
+`legacy_reference/samples.inherited.json`.
 
 Submit from the cluster repository checkout:
 

@@ -14,7 +14,7 @@ inputs:
   compute_input_checksums: true
 
 outputs:
-  root: /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_13_EXAMPLE
+  root: /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_14_EXAMPLE
 
 software:
   environment: /path/to/e3_discovery_engine/workflow/envs/production.yml

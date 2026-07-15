@@ -13,9 +13,12 @@ from e3_discovery.cluster_config import (
     build_full_onekp_cluster_config,
     build_full_onekp_manifest_rows,
     create_full_onekp_cluster_files,
+    full_onekp_discovery_root,
+    locate_inherited_samples_json,
     read_first_fasta_header,
     read_inherited_sample_names,
     uniprot_header_metadata,
+    validate_full_onekp_source_inputs,
     write_cluster_config,
     write_full_onekp_manifest,
 )
@@ -115,6 +118,12 @@ class ClusterConfigTests(unittest.TestCase):
         self.assertEqual(rows[0]["header_parser"], "manifest")
         self.assertEqual(rows[1]["header_parser"], "onekp_scaffold")
         self.assertEqual(rows[1]["header_parser_strict"], "true")
+        self.assertEqual(rows[0]["empty_sequence_policy"], "error")
+        self.assertEqual(rows[1]["empty_sequence_policy"], "skip")
+        self.assertEqual(
+            rows[1]["maximum_skipped_empty_sequences"],
+            "2",
+        )
 
     def test_write_manifest_and_config(self) -> None:
         """Write deterministic TSV and YAML outputs."""
@@ -134,6 +143,8 @@ class ClusterConfigTests(unittest.TestCase):
                 "provenance_status": "known",
                 "header_parser": "manifest",
                 "header_parser_strict": "false",
+                "empty_sequence_policy": "error",
+                "maximum_skipped_empty_sequences": "0",
             }
             manifest = root / "manifest.tsv"
             self.assertEqual(write_full_onekp_manifest([row], manifest), 1)
@@ -167,6 +178,45 @@ class ClusterConfigTests(unittest.TestCase):
             build_full_onekp_cluster_config(
                 Path("m"), Path("s"), Path("r"), Path("e"), 1, "", Path("t")
             )
+
+    def test_source_preflight_uses_repository_sample_fallback(self) -> None:
+        """Preflight reports all inputs and accepts recovered sample metadata."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "Erin_Butterfield_data"
+            discovery = full_onekp_discovery_root(source)
+            fasta_dir = discovery / "files" / "fasta_files"
+            fasta_dir.mkdir(parents=True)
+            (discovery / "files" / "e3_ligases.csv").write_text(
+                "entry\nP1\n",
+                encoding="utf-8",
+            )
+            (fasta_dir / "Named.fasta").write_text(
+                ">a\nMKT\n",
+                encoding="utf-8",
+            )
+            repository = root / "repo"
+            legacy = repository / "legacy_reference"
+            environment = repository / "workflow" / "envs"
+            legacy.mkdir(parents=True)
+            environment.mkdir(parents=True)
+            recovered = legacy / "samples.inherited.json"
+            recovered.write_text(
+                json.dumps({"Samples": ["Named"]}),
+                encoding="utf-8",
+            )
+            (environment / "production.yml").write_text(
+                "name: test\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                locate_inherited_samples_json(discovery, repository),
+                recovered.resolve(),
+            )
+            result = validate_full_onekp_source_inputs(source, repository)
+            self.assertEqual(result["sample_count"], 1)
+            self.assertEqual(result["sample_names"], ["Named"])
 
     def test_create_full_onekp_cluster_files(self) -> None:
         """Create complete cluster files from the inherited directory layout."""

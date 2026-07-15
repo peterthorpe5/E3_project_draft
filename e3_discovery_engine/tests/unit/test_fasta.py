@@ -1,3 +1,4 @@
+import csv
 import gzip
 import tempfile
 import unittest
@@ -51,6 +52,125 @@ class FastaTests(unittest.TestCase):
             path.write_text("MKT\n", encoding="utf-8")
             with self.assertRaises(DataValidationError):
                 list(iter_fasta(path))
+
+    def test_iter_fasta_reports_empty_record_context(self):
+        """Strict parsing reports the exact empty record and header line."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty_record.fasta"
+            path.write_text(
+                ">good\nMKT\n>empty_record\n>next\nAAA\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                DataValidationError,
+                r"record 2; header='empty_record'",
+            ):
+                list(iter_fasta(path))
+
+    def test_iter_fasta_skips_audited_empty_records(self):
+        """Explicit skip mode excludes empty records and preserves indices."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "audited.fasta"
+            path.write_text(
+                ">first\nMKT\n>empty_record\n>third\nAAA\n",
+                encoding="utf-8",
+            )
+            skipped = []
+            records = list(
+                iter_fasta(
+                    path,
+                    empty_sequence_policy="skip",
+                    skipped_records=skipped,
+                    maximum_skipped_empty_sequences=1,
+                )
+            )
+            self.assertEqual(
+                [record.identifier for record in records],
+                ["first", "third"],
+            )
+            self.assertEqual(
+                [record.source_record_index for record in records],
+                [1, 3],
+            )
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0].header_line, 3)
+            self.assertEqual(skipped[0].issue_type, "empty_sequence")
+
+    def test_iter_fasta_enforces_empty_record_safeguard(self):
+        """Skip mode stops when empty records exceed the configured maximum."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "too_many_empty.fasta"
+            path.write_text(
+                ">empty_one\n>empty_two\n>valid\nAAA\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                DataValidationError,
+                "safeguard exceeded",
+            ):
+                list(
+                    iter_fasta(
+                        path,
+                        empty_sequence_policy="skip",
+                        maximum_skipped_empty_sequences=1,
+                    )
+                )
+
+    def test_prepare_combined_fasta_records_skipped_onekp_rows(self):
+        """Preparation records permitted 1KP exclusions in both QC tables."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fasta = root / "onekp.fasta"
+            fasta.write_text(
+                ">scaffold-AALA-1-Species_one\nMKT\n"
+                ">scaffold-AALA-2-Species_one\n"
+                ">scaffold-BBBB-3-Species_two\nAAA\n",
+                encoding="utf-8",
+            )
+            sample = SampleRecord(
+                "onekp_dataset",
+                fasta,
+                species="1KP combined dataset",
+                metadata={
+                    "header_parser": "onekp_scaffold",
+                    "header_parser_strict": "true",
+                    "empty_sequence_policy": "skip",
+                    "maximum_skipped_empty_sequences": "10",
+                },
+            )
+            skipped_tsv = root / "skipped.tsv"
+            summary_tsv = root / "summary.tsv"
+            result = prepare_combined_fasta(
+                [sample],
+                root / "combined.fasta",
+                root / "sequences.parquet",
+                summary_tsv,
+                skipped_records_tsv=skipped_tsv,
+                batch_size=1,
+                compute_checksums=False,
+            )
+            with summary_tsv.open(
+                "r", encoding="utf-8", newline=""
+            ) as handle:
+                summary = next(csv.DictReader(handle, delimiter="\t"))
+            with skipped_tsv.open(
+                "r", encoding="utf-8", newline=""
+            ) as handle:
+                skipped = list(csv.DictReader(handle, delimiter="\t"))
+            table = pq.read_table(root / "sequences.parquet")
+            self.assertEqual(result["sequence_count"], 2)
+            self.assertEqual(result["skipped_record_count"], 1)
+            self.assertEqual(summary["source_record_count"], "3")
+            self.assertEqual(summary["skipped_record_count"], "1")
+            self.assertEqual(skipped[0]["source_record_index"], "2")
+            self.assertEqual(
+                table.column("record_index").to_pylist(),
+                [1, 3],
+            )
 
     def test_make_internal_id_modes(self):
         self.assertEqual(make_internal_id("s1", "abc", "preserve"), "abc")

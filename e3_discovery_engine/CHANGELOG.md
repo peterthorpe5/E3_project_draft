@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.14 - 2026-07-15
+
+- Audit the inherited 25,241,940-record 1KP protein FASTA and document the two
+  header-only records with no amino-acid sequence:
+  `scaffold-IHWO-2001393-Marchantia_paleacea-mycorrizal` and
+  `scaffold-VRGZ-2004363-Petalonia_fascia`.
+- Keep empty protein records fatal by default for every ordinary and named
+  proteome input.
+- Permit the generated `onekp_dataset` manifest row to skip at most ten empty
+  records, preserving a deliberately conservative safeguard above the two
+  observed records.
+- Write every skipped record to `qc/skipped_fasta_records.tsv` with source
+  sample, record index, header line, header, identifier and reason.
+- Add source-record and skipped-record counts to `qc/sample_summary.tsv` and
+  the preparation result summary while retaining original source record
+  indices for all accepted sequences.
+- Improve FASTA validation errors so they include the source path, source
+  record number, header line and complete offending header.
+- Add a login-node preflight before `sbatch` that validates the usable Conda
+  version, the inherited sample list, seed table, production environment and
+  every required FASTA together.
+- Fall back to `legacy_reference/samples.inherited.json` when the source-tree
+  `samples.json` was not included in the cluster backup.
+- Print the complete Snakemake dry-run log automatically when a dry run fails.
+- Move the full cluster run and review-bundle naming to `v0_1_14`; existing
+  local configurations and all earlier result folders remain unchanged.
+- Expand the automated suite to 215 tests, with 212 passing and three optional
+  external-DIAMOND tests skipped; total source coverage remains 98%.
+
 ## 0.1.13 - 2026-07-15
 
 - Add sequence-level parsing of inherited 1KP scaffold identifiers, retaining

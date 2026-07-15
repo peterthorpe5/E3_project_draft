@@ -83,14 +83,15 @@ done
 [[ -f "${REPO_ROOT}/Snakefile" ]] || die "Snakefile not found in ${REPO_ROOT}"
 [[ -d "${SOURCE_ROOT}" ]] || die "Source root not found: ${SOURCE_ROOT}"
 command -v sbatch >/dev/null 2>&1 || die "sbatch is not available"
+command -v conda >/dev/null 2>&1 || die "conda is not available"
 
 RESULTS_BASE="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${RESULTS_BASE}")"
 SOURCE_ROOT="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "${SOURCE_ROOT}")"
 REPO_ROOT="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve())' "${REPO_ROOT}")"
 
-RUN_ROOT="${RESULTS_BASE}/full_onekp_plus_v0_1_13_${RUN_TAG}"
+RUN_ROOT="${RESULTS_BASE}/full_onekp_plus_v0_1_14_${RUN_TAG}"
 SETUP_DIR="${RUN_ROOT}/run_setup"
-SLURM_LOG_DIR="${RESULTS_BASE}/slurm_logs/full_onekp_plus_v0_1_13_${RUN_TAG}"
+SLURM_LOG_DIR="${RESULTS_BASE}/slurm_logs/full_onekp_plus_v0_1_14_${RUN_TAG}"
 REVIEW_DIR="${RESULTS_BASE}/review_bundles"
 
 if [[ -e "${RUN_ROOT}/workflow_complete.ok" ]]; then
@@ -98,6 +99,34 @@ if [[ -e "${RUN_ROOT}/workflow_complete.ok" ]]; then
 fi
 
 mkdir -p "${SETUP_DIR}" "${SLURM_LOG_DIR}" "${REVIEW_DIR}"
+
+CONDA_VERSION="$(conda --version | awk '{print $2}')"
+python - "${CONDA_VERSION}" <<'PY'
+"""Require the Conda version needed by the installed Snakemake release."""
+
+import re
+import sys
+
+value = sys.argv[1]
+match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value)
+if not match:
+    raise SystemExit(f"Could not parse Conda version: {value!r}")
+version = tuple(int(part) for part in match.groups())
+minimum = (24, 7, 1)
+if version < minimum:
+    raise SystemExit(
+        f"Conda {value} is too old; Snakemake requires at least 24.7.1"
+    )
+print(f"Conda preflight passed: {value}")
+PY
+
+printf 'Validating all full 1KP+ source inputs before sbatch...\n'
+PYTHONPATH="${REPO_ROOT}/src" conda run -n "${CONDA_ENV}" \
+    python -m e3_discovery.cli validate-full-cluster-inputs \
+    --source-root "${SOURCE_ROOT}" \
+    --repository-root "${REPO_ROOT}" \
+    > "${SETUP_DIR}/source_input_preflight.json"
+cat "${SETUP_DIR}/source_input_preflight.json"
 
 EXPORTS="ALL"
 EXPORTS+=",E3_REPO_ROOT=${REPO_ROOT}"
