@@ -48,6 +48,7 @@ def parse_fasta_file(
     record_number = 0
 
     def emit_record() -> None:
+        """Append the current FASTA record to the parsed output list."""
         nonlocal record_number, header, sequence_parts
         if header is None:
             return

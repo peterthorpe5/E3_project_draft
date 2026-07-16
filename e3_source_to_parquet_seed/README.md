@@ -572,3 +572,27 @@ All new Python code should remain:
 - careful not to treat inherited SQLite as ground truth.
 
 The same standards should be used for any future R code.
+## Version 0.4.0: cluster candidate evidence integration
+
+Version 0.4.0 adds a production-quality, read-only integration layer for the
+completed full 1KP+ E3 Discovery Engine result. It creates one row per E3-seeded
+cluster in TSV, Zstandard-compressed Parquet and DuckDB formats, with formal QC,
+logs and provenance.
+
+The central scientific wording remains:
+
+> The workflow identifies sequence clusters containing at least one previously
+> identified E3 candidate. It does not establish that every member is an E3
+> ligase.
+
+Run the new layer with:
+
+```bash
+./run_e3_candidate_evidence.sh \
+  /path/to/e3_discovery_resource.duckdb \
+  /path/to/derived_v0_4_0 \
+  --conda-env e3_discovery
+```
+
+See `docs/CANDIDATE_EVIDENCE_RESOURCE.md` for the complete purpose, output
+layout, validation contract, cluster command and scientific limitations.

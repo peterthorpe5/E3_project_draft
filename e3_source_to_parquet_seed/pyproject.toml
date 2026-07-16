@@ -1,18 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "e3-source-to-parquet-seed"
-version = "0.3.1"
-description = "Source-first E3 PROTAC inherited data audit and Parquet conversion utilities"
-requires-python = ">=3.9"
+version = "0.4.0"
+description = "Source-first E3 PROTAC audit, Parquet conversion and candidate evidence integration"
+requires-python = ">=3.10"
 dependencies = [
+  "duckdb>=1.5,<2.0",
+  "openpyxl>=3.1",
   "pandas>=2.0",
   "pyarrow>=14.0",
-  "openpyxl>=3.1",
-  "duckdb>=1.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "coverage>=7.0",
+  "pycodestyle>=2.11",
+  "pydocstyle>=6.3",
 ]
 
 [tool.black]
-line-length = 79
+line-length = 88
 
 [tool.ruff]
-line-length = 79
+line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I"]
+
+[tool.pydocstyle]
+convention = "google"
+
+[tool.setuptools.packages.find]
+include = ["e3parquet*"]

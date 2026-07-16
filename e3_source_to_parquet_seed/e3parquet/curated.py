@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -478,6 +479,7 @@ def create_protein_sequences_view(
     )
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
+        """Return a standardised projection for one sequence source view."""
         accession_sql = coalesce_columns_sql("t", columns, ACCESSION_CANDIDATES)
         sequence_sql = coalesce_columns_sql("t", columns, SEQUENCE_CANDIDATES)
         sequence_md5_sql = coalesce_columns_sql("t", columns, SEQUENCE_MD5_CANDIDATES)
@@ -554,6 +556,7 @@ def create_literature_evidence_view(
     )
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
+        """Return a standardised projection for one literature source view."""
         accession_sql = coalesce_columns_sql("t", columns, ACCESSION_CANDIDATES)
         paper_sql = coalesce_columns_sql("t", columns, PAPER_ID_CANDIDATES)
         return f"""
@@ -598,6 +601,7 @@ def create_go_term_evidence_view(
     views = sorted(set(views))
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
+        """Return a standardised projection for one GO evidence source view."""
         accession_sql = coalesce_columns_sql("t", columns, ACCESSION_CANDIDATES)
         go_sql = coalesce_columns_sql("t", columns, GO_ID_CANDIDATES)
         ubiq_sql = coalesce_columns_sql("t", columns, ("ubiquitin_go_term", "ubiquitin", "Ubiquitin"))
@@ -654,6 +658,7 @@ def create_ligandability_pocket_scores_view(
     )
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
+        """Return a standardised projection for one ligandability source view."""
         accession_sql = coalesce_columns_sql("t", columns, ACCESSION_CANDIDATES)
         pocket_sql = coalesce_columns_sql("t", columns, POCKET_NAME_CANDIDATES)
         drug_sql = coalesce_columns_sql("t", columns, DRUGGABILITY_CANDIDATES)
@@ -705,6 +710,7 @@ def create_deepclust_views(
     )
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
+        """Return a standardised projection for one DeepClust source view."""
         accession_sql = coalesce_columns_sql("t", columns, ACCESSION_CANDIDATES)
         cluster_sql = coalesce_columns_sql("t", columns, HOG_CANDIDATES)
         return f"""
@@ -938,7 +944,7 @@ def run_sqlite_regression_queries(
     queries = extract_select_queries_from_files(sql_files, raw_root)
     results: List[Dict[str, Any]] = []
     executed_at = dt.datetime.now(dt.timezone.utc).isoformat()
-    with sqlite3.connect(str(sqlite_db)) as connection:
+    with closing(sqlite3.connect(str(sqlite_db))) as connection:
         for query in queries:
             record: Dict[str, Any] = {
                 **query,

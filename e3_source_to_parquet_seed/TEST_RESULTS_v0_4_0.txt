@@ -1,0 +1,163 @@
+Python: /opt/pyvenv/bin/python
+Python 3.13.5
+Compiling Python modules
+Running the complete unittest regression suite
+test_check_records_use_explicit_status (test_candidate_evidence.TestEvidenceAndValidation.test_check_records_use_explicit_status)
+Validation exports should use explicit PASS and FAIL labels. ... ok
+test_create_evidence_table_contains_expected_cluster_values (test_candidate_evidence.TestEvidenceAndValidation.test_create_evidence_table_contains_expected_cluster_values)
+The table should contain one row per cluster and correct breadth. ... ok
+test_scalar_and_equality_check (test_candidate_evidence.TestEvidenceAndValidation.test_scalar_and_equality_check)
+Scalar and equality helpers should reject null and mark status. ... ok
+test_validate_evidence_passes_and_detects_corruption (test_candidate_evidence.TestEvidenceAndValidation.test_validate_evidence_passes_and_detects_corruption)
+Consistent data should pass; changed counts should fail. ... ok
+test_cleanup_logs_operating_system_errors (test_candidate_evidence.TestOutputsAndBuild.test_cleanup_logs_operating_system_errors)
+Cleanup should log and continue when a staged path cannot be removed. ... ok
+test_complete_build_and_overwrite_contract (test_candidate_evidence.TestOutputsAndBuild.test_complete_build_and_overwrite_contract)
+A complete build should publish validated formal outputs. ... ok
+test_export_manifest_and_internal_tables (test_candidate_evidence.TestOutputsAndBuild.test_export_manifest_and_internal_tables)
+Exports and embedded metadata should be readable. ... ok
+test_export_validation_checks_rows_schema_and_missing_files (test_candidate_evidence.TestOutputsAndBuild.test_export_validation_checks_rows_schema_and_missing_files)
+Staged exports should match table rows and schema exactly. ... ok
+test_failed_build_cleans_staged_files (test_candidate_evidence.TestOutputsAndBuild.test_failed_build_cleans_staged_files)
+Malformed source JSON should not leave formal or staged outputs. ... ok
+test_missing_duckdb_dependency_has_clear_error (test_candidate_evidence.TestOutputsAndBuild.test_missing_duckdb_dependency_has_clear_error)
+A missing DuckDB dependency should raise a package-level error. ... ok
+test_relation_and_export_validation_failure_branches (test_candidate_evidence.TestOutputsAndBuild.test_relation_and_export_validation_failure_branches)
+Unresolvable relations, empty files and altered schemas should fail. ... ok
+test_result_dict_serialises_paths (test_candidate_evidence.TestOutputsAndBuild.test_result_dict_serialises_paths)
+Result reporting should convert pathlib paths to strings. ... ok
+test_temporary_write_publish_cleanup_helpers (test_candidate_evidence.TestOutputsAndBuild.test_temporary_write_publish_cleanup_helpers)
+Staging helpers should write, publish and clean safely. ... ok
+test_validate_paths_rejects_missing_existing_and_aliases (test_candidate_evidence.TestOutputsAndBuild.test_validate_paths_rejects_missing_existing_and_aliases)
+Path validation should protect source and existing outputs. ... ok
+test_breadth_and_evidence_sql_include_core_sources (test_candidate_evidence.TestSqlAndSchema.test_breadth_and_evidence_sql_include_core_sources)
+Generated SQL should include breadth, seed and member layers. ... ok
+test_quote_literal_and_identifier (test_candidate_evidence.TestSqlAndSchema.test_quote_literal_and_identifier)
+SQL quoting should escape values and reject unsafe identifiers. ... ok
+test_schema_validation_reports_missing_table_and_column (test_candidate_evidence.TestSqlAndSchema.test_schema_validation_reports_missing_table_and_column)
+Missing source objects should produce explicit schema errors. ... ok
+test_sql_values_and_named_group (test_candidate_evidence.TestSqlAndSchema.test_sql_values_and_named_group)
+SQL list and group helpers should reject unsupported inputs. ... ok
+test_table_columns_and_schema_validation (test_candidate_evidence.TestSqlAndSchema.test_table_columns_and_schema_validation)
+The complete synthetic schema should pass validation. ... ok
+test_main_failure_returns_nonzero (test_candidate_evidence_cli.TestCandidateEvidenceCli.test_main_failure_returns_nonzero)
+A build exception should be logged and returned as status one. ... ok
+test_main_success_prints_machine_readable_result (test_candidate_evidence_cli.TestCandidateEvidenceCli.test_main_success_prints_machine_readable_result)
+A successful command should return zero and print JSON paths. ... ok
+test_parse_args_and_config_layout (test_candidate_evidence_cli.TestCandidateEvidenceCli.test_parse_args_and_config_layout)
+Arguments should resolve to the documented formal output paths. ... ok
+test_shell_wrapper_contains_required_batch_safeguards (test_candidate_evidence_cli.TestCandidateEvidenceCli.test_shell_wrapper_contains_required_batch_safeguards)
+The wrapper should activate Conda explicitly and retain logs. ... ok
+test_clean_macos_sidecar_files_dry_run_and_delete (test_cleanup.TestCleanupHelpers.test_clean_macos_sidecar_files_dry_run_and_delete)
+Dry-run should not delete; delete mode should remove the sidecar. ... ok
+test_find_macos_sidecar_files (test_cleanup.TestCleanupHelpers.test_find_macos_sidecar_files)
+Only sidecar files should be returned. ... ok
+test_debug_recorder_writes_tsv_and_markdown (test_curated_debug.TestDebugRecorder.test_debug_recorder_writes_tsv_and_markdown) ... ok
+test_inspect_expression_duckdb_missing_file (test_curated_debug.TestDebugRecorder.test_inspect_expression_duckdb_missing_file) ... ok
+test_inspect_expression_duckdb_not_provided (test_curated_debug.TestDebugRecorder.test_inspect_expression_duckdb_not_provided) ... ok
+test_locate_sqlite_db_prefers_main_database (test_curated_debug.TestDebugRecorder.test_locate_sqlite_db_prefers_main_database) ... ok
+test_source_sql_files_finds_only_sql_query_files (test_curated_debug.TestDebugRecorder.test_source_sql_files_finds_only_sql_query_files) ... ok
+test_coalesce_columns_sql_uses_available_columns_once (test_curated_helpers.TestCuratedHelpers.test_coalesce_columns_sql_uses_available_columns_once) ... ok
+test_find_column_is_case_and_punctuation_insensitive (test_curated_helpers.TestCuratedHelpers.test_find_column_is_case_and_punctuation_insensitive) ... ok
+test_normalise_column_name_removes_case_and_punctuation (test_curated_helpers.TestCuratedHelpers.test_normalise_column_name_removes_case_and_punctuation) ... ok
+test_quote_identifier_escapes_double_quotes (test_curated_helpers.TestCuratedHelpers.test_quote_identifier_escapes_double_quotes) ... ok
+test_quote_literal_escapes_single_quotes (test_curated_helpers.TestCuratedHelpers.test_quote_literal_escapes_single_quotes) ... ok
+test_score_catalog_record_prefers_curated_e3_database (test_curated_helpers.TestCuratedHelpers.test_score_catalog_record_prefers_curated_e3_database) ... ok
+test_select_best_catalog_view_ignores_failed_status (test_curated_helpers.TestCuratedHelpers.test_select_best_catalog_view_ignores_failed_status) ... ok
+test_select_best_catalog_view_returns_none_when_no_match (test_curated_helpers.TestCuratedHelpers.test_select_best_catalog_view_returns_none_when_no_match) ... ok
+test_select_views_by_terms_excludes_terms (test_curated_helpers.TestCuratedHelpers.test_select_views_by_terms_excludes_terms) ... ok
+test_split_sql_statements_handles_semicolon_inside_string (test_curated_helpers.TestCuratedHelpers.test_split_sql_statements_handles_semicolon_inside_string) ... ok
+test_strip_sql_comments_removes_whole_line_comments (test_curated_helpers.TestCuratedHelpers.test_strip_sql_comments_removes_whole_line_comments) ... ok
+test_normalise_records_for_parquet_turns_mixed_types_into_strings (test_curated_helpers.TestParquetNormalisation.test_normalise_records_for_parquet_turns_mixed_types_into_strings)
+Mixed success/failure regression rows should be Arrow-friendly. ... ok
+test_raw_source_projection_renames_source_sequence_column (test_curated_helpers.TestParquetNormalisation.test_raw_source_projection_renames_source_sequence_column)
+Source columns must not collide with curated aliases like sequence. ... ok
+test_extract_select_queries_only_keeps_select_and_with (test_curated_helpers.TestSqliteRegressionHelpers.test_extract_select_queries_only_keeps_select_and_with) ... ok
+test_run_sqlite_regression_queries_records_success_and_failure (test_curated_helpers.TestSqliteRegressionHelpers.test_run_sqlite_regression_queries_records_success_and_failure) ... ok
+test_coalesce_columns_sql_returns_coalesce_for_multiple_columns (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_coalesce_for_multiple_columns) ... ok
+test_coalesce_columns_sql_returns_null_when_no_candidates (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_null_when_no_candidates) ... ok
+test_coalesce_columns_sql_returns_single_expression_without_coalesce (test_curated_sql_generation.TestCuratedSqlGeneration.test_coalesce_columns_sql_returns_single_expression_without_coalesce) ... ok
+test_safe_view_suffix_removes_common_prefixes (test_curated_sql_generation.TestCuratedSqlGeneration.test_safe_view_suffix_removes_common_prefixes) ... ok
+test_try_cast_numeric_sql_wraps_expression (test_curated_sql_generation.TestCuratedSqlGeneration.test_try_cast_numeric_sql_wraps_expression) ... ok
+test_parquet_paths_can_skip_magic_validation (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_can_skip_magic_validation)
+Magic validation can be disabled, but sidecars still stay excluded. ... Skipping hidden/macOS sidecar file: /tmp/tmpxjms_wyn/._invalid.parquet
+ok
+test_parquet_paths_skip_invalid_and_sidecar_files (test_duckdb_views.TestDuckdbViewHelpers.test_parquet_paths_skip_invalid_and_sidecar_files)
+Only valid Parquet files should be passed to DuckDB by default. ... Skipping hidden/macOS sidecar file: /tmp/tmpy5hc9cqp/nested/._good.parquet
+Skipping invalid Parquet-like file: /tmp/tmpy5hc9cqp/nested/invalid.parquet
+ok
+test_view_name_for_parquet_is_stable (test_duckdb_views.TestDuckdbViewHelpers.test_view_name_for_parquet_is_stable)
+A nested parquet path should become a stable view name. ... ok
+test_copy_existing_parquets_skips_sidecars_and_invalid_files (test_existing_parquet_copy.TestCopyExistingParquets.test_copy_existing_parquets_skips_sidecars_and_invalid_files)
+AppleDouble files and invalid Parquet-like files should not be copied. ... Skipping macOS sidecar Parquet: Other_things/Denbi/._realigned_clusters.parquet
+Skipping invalid Parquet-like file: Other_things/Denbi/bad.parquet
+ok
+test_infer_accession_from_uniprot_header (test_fasta.TestFastaParsing.test_infer_accession_from_uniprot_header)
+UniProt-style headers should expose the accession token. ... ok
+test_parse_fasta_preserves_header_and_metadata (test_fasta.TestFastaParsing.test_parse_fasta_preserves_header_and_metadata)
+FASTA parsing should preserve sequence, header and source metadata. ... ok
+test_derived_output_path_preserves_nested_meaning (test_io_utils.TestCanonicalPaths.test_derived_output_path_preserves_nested_meaning)
+Derived Parquet outputs should live in explicit nested folders. ... ok
+test_main_folder_e3_database_is_renamed_in_derived_path (test_io_utils.TestCanonicalPaths.test_main_folder_e3_database_is_renamed_in_derived_path)
+Inherited vague folders should become explicit derived folders. ... ok
+test_other_things_deepclust_is_renamed_in_derived_path (test_io_utils.TestCanonicalPaths.test_other_things_deepclust_is_renamed_in_derived_path)
+DeepClust outputs should get a clear derived prefix. ... ok
+test_safe_path_from_relative_removes_spaces (test_io_utils.TestCanonicalPaths.test_safe_path_from_relative_removes_spaces)
+Safe nested paths should keep hierarchy while removing bad chars. ... ok
+test_table_name_uses_canonical_path (test_io_utils.TestCanonicalPaths.test_table_name_uses_canonical_path)
+Derived table names should avoid the inherited Main_folder wording. ... ok
+test_iter_source_files_skips_nested_sidecar_files (test_io_utils.TestHiddenAndParquetDetection.test_iter_source_files_skips_nested_sidecar_files)
+Source iteration should not include macOS sidecar files. ... ok
+test_nested_macos_sidecar_part_is_detected (test_io_utils.TestHiddenAndParquetDetection.test_nested_macos_sidecar_part_is_detected)
+Any AppleDouble path component should be treated as hidden. ... ok
+test_probable_parquet_requires_magic_bytes (test_io_utils.TestHiddenAndParquetDetection.test_probable_parquet_requires_magic_bytes)
+Real Parquet-like files should have PAR1 header and footer. ... ok
+test_manifest_contains_source_metadata (test_manifest.TestBuildFileManifest.test_manifest_contains_source_metadata)
+A small source tree should produce deterministic manifest records. ... ok
+test_file_format_guess (test_manifest.TestManifestUtilities.test_file_format_guess)
+Common inherited file suffixes should be classified. ... ok
+test_hidden_macos_sidecar_detection (test_manifest.TestManifestUtilities.test_hidden_macos_sidecar_detection)
+macOS resource-fork files should be recognised. ... ok
+test_logical_role_guess (test_manifest.TestManifestUtilities.test_logical_role_guess)
+Path keywords should provide useful role guesses. ... ok
+test_safe_name_removes_problem_characters (test_manifest.TestManifestUtilities.test_safe_name_removes_problem_characters)
+Safe names should be stable and filesystem friendly. ... ok
+test_manifest_step_uses_out_dir_argument (test_pipeline_wrapper.TestPipelineWrapper.test_manifest_step_uses_out_dir_argument)
+The manifest script requires --out-dir, not --out-tsv. ... ok
+test_optional_derived_dir_argument_is_supported (test_pipeline_wrapper.TestPipelineWrapper.test_optional_derived_dir_argument_is_supported)
+The wrapper should allow a custom output directory as argument 3. ... ok
+test_wrapper_reports_key_outputs (test_pipeline_wrapper.TestPipelineWrapper.test_wrapper_reports_key_outputs)
+The wrapper should print the important output locations. ... ok
+test_all_python_functions_have_docstrings (test_release_contract.TestReleaseContract.test_all_python_functions_have_docstrings)
+Every function in package and command modules should be documented. ... ok
+test_documentation_records_scientific_limit_and_read_only_source (test_release_contract.TestReleaseContract.test_documentation_records_scientific_limit_and_read_only_source)
+The guide should retain the core interpretation and data safety rule. ... ok
+test_every_new_function_has_test_traceability (test_release_contract.TestReleaseContract.test_every_new_function_has_test_traceability)
+Every top-level new function should map to one or more named tests. ... ok
+test_required_columns_match_inspected_production_schema (test_release_contract.TestReleaseContract.test_required_columns_match_inspected_production_schema)
+Required fields should exist in the real 16 July production schema. ... ok
+test_version_is_consistent_across_release_files (test_release_contract.TestReleaseContract.test_version_is_consistent_across_release_files)
+Package, project metadata and README should report one version. ... ok
+test_count_by_counts_blank_values (test_reports.TestReportHelpers.test_count_by_counts_blank_values) ... ok
+test_markdown_table_handles_empty_records (test_reports.TestReportHelpers.test_markdown_table_handles_empty_records) ... ok
+test_markdown_table_limits_rows (test_reports.TestReportHelpers.test_markdown_table_limits_rows) ... ok
+test_read_tsv_returns_empty_for_missing_file (test_reports.TestReportHelpers.test_read_tsv_returns_empty_for_missing_file) ... ok
+test_write_files_used_report_creates_markdown (test_reports.TestReportHelpers.test_write_files_used_report_creates_markdown) ... ok
+test_add_source_columns (test_tabular.TestTabularUtilities.test_add_source_columns)
+Source metadata should be added to every tabular record. ... ok
+test_detect_delimiter_prefers_tabs (test_tabular.TestTabularUtilities.test_detect_delimiter_prefers_tabs)
+Delimiter detection should handle TSV files. ... ok
+test_output_table_name_includes_sheet (test_tabular.TestTabularUtilities.test_output_table_name_includes_sheet)
+Excel sheet names should be reflected in output table names. ... ok
+test_read_csv_preserves_values_as_strings (test_tabular.TestTabularUtilities.test_read_csv_preserves_values_as_strings)
+CSV reading should preserve input values as strings. ... ok
+test_text_line_ingestion (test_tabular.TestTabularUtilities.test_text_line_ingestion)
+Text files should be preserved line by line. ... ok
+
+----------------------------------------------------------------------
+Ran 87 tests in 20.219s
+
+OK
+Checking PEP 8 for the new integration layer
+Checking shell syntax
+All release checks passed

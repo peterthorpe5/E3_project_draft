@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -112,9 +113,10 @@ class TestSqliteRegressionHelpers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             db_path = root / "e3_ligase_sqlite_db.db"
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection:
                 connection.execute("CREATE TABLE e3_ligases(entry TEXT)")
                 connection.execute("INSERT INTO e3_ligases VALUES ('Q1')")
+                connection.commit()
             sql_dir = root / "Main_folder" / "E3_database" / "sql_queries"
             sql_dir.mkdir(parents=True)
             sql_file = sql_dir / "queries.sql"
