@@ -1,0 +1,5 @@
+duckdb>=1.4,<2
+gemmi>=0.7,<1
+pyarrow>=18,<25
+PyYAML>=6,<7
+requests>=2.32,<3

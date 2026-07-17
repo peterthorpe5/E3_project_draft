@@ -1,0 +1,17 @@
+include README.md
+include RELEASE_NOTES_v0_1_0.md
+include TEST_RESULTS_v0_1_0.txt
+include COVERAGE_RESULTS_v0_1_0.txt
+include requirements.txt
+include requirements-dev.txt
+include environment.cluster.yml
+include run_e3_ligandability.sh
+include run_legacy_regression.sh
+include run_tests.sh
+include run_coverage.sh
+recursive-include config *.yaml
+recursive-include docs *.md *.tsv
+recursive-include examples *.tsv
+recursive-include legacy_reference *.py *.sh *.md *.tsv *.yaml
+recursive-include scripts *.py *.sh
+recursive-include tests *.py *.cif

@@ -1,0 +1,14 @@
+Installed version: 0.1.0
+No broken requirements found.
+usage: e3-ligandability [-h] {run,validate-legacy,inspect-tools} ...
+
+Validated AlphaFold, FPocket and P2Rank ligandability workflow for shortlisted
+plant E3 candidates.
+
+positional arguments:
+  {run,validate-legacy,inspect-tools}
+    run                 Run the production ligandability workflow.
+    validate-legacy     Compare retained inherited models with inherited pLDDT
+                        metadata.
+    inspect-tools       Resolve FPocket/P2Rank and report their version
+                        output.

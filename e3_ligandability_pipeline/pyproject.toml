@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3-ligandability-pipeline"
+version = "0.1.0"
+description = "Auditable AlphaFold, FPocket and P2Rank ligandability workflow for the ARIA plant E3 project"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "LicenseRef-Internal-Research-Use"
+authors = [
+  {name = "Peter Thorpe and collaborators"}
+]
+dependencies = [
+  "duckdb>=1.4,<2",
+  "gemmi>=0.7,<1",
+  "pyarrow>=18,<25",
+  "PyYAML>=6,<7",
+  "requests>=2.32,<3"
+]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7.6,<8",
+  "pycodestyle>=2.12,<3"
+]
+
+[project.scripts]
+e3-ligandability = "e3ligandability.cli:main"
+
+[tool.setuptools]
+packages = ["e3ligandability"]
+
+[tool.coverage.run]
+branch = true
+source = ["e3ligandability"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+
+[tool.pycodestyle]
+max-line-length = 88
+exclude = ".git,__pycache__,build,dist,legacy_reference"
