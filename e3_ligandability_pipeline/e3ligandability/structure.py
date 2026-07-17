@@ -26,6 +26,17 @@ _ATOM_SITE_TAGS = [
 ]
 
 
+_POCKET_COLUMN_ALIASES = {
+    "group_pdb": ("group_PDB",),
+    "residue_name": ("label_comp_id", "auth_comp_id"),
+    "label_chain": ("label_asym_id",),
+    "label_seq_id": ("label_seq_id",),
+    "auth_chain": ("auth_asym_id",),
+    "auth_seq_id": ("auth_seq_id",),
+    "insertion_code": ("pdbx_PDB_ins_code",),
+}
+
+
 def _optional_int(value: str) -> int | None:
     """Parse an mmCIF integer, treating missing markers as ``None``.
 
@@ -54,6 +65,171 @@ def _normalise_missing(value: str) -> str:
 
     stripped = value.strip()
     return "" if stripped in {".", "?"} else stripped
+
+
+def _get_first_category_column(
+    category: dict[str, list[str]],
+    aliases: tuple[str, ...],
+) -> list[str] | None:
+    """Return the first available mmCIF category column.
+
+    Args:
+        category: Category mapping returned by Gemmi.
+        aliases: Column names in priority order, without category prefix.
+
+    Returns:
+        The first matching column or ``None`` when all aliases are absent.
+    """
+
+    for alias in aliases:
+        column = category.get(alias)
+        if column is not None:
+            return column
+    return None
+
+
+def _category_value(
+    column: list[str] | None,
+    row_index: int,
+    default: str,
+) -> str:
+    """Read one optional category value with a safe default.
+
+    Args:
+        column: Optional category column.
+        row_index: Zero-based row index.
+        default: Value returned when the column is absent.
+
+    Returns:
+        Raw category value or the supplied default.
+
+    Raises:
+        ValueError: If a present column has an inconsistent row count.
+    """
+
+    if column is None:
+        return default
+    if row_index >= len(column):
+        raise ValueError(
+            "Inconsistent _atom_site column lengths in pocket mmCIF."
+        )
+    value = column[row_index]
+    return default if value is None else str(value)
+
+
+def read_pocket_atom_site_rows(path: Path) -> list[dict[str, Any]]:
+    """Read residue identifiers from a reduced FPocket pocket mmCIF.
+
+    FPocket pocket files are derivative structures and may omit AlphaFold
+    model columns such as ``B_iso_or_equiv``, author numbering or insertion
+    codes. This parser therefore requires only a residue name and at least one
+    usable sequence-numbering scheme. Missing optional label/author chain
+    fields are filled from their counterpart only when that does not invent a
+    residue number. Hetero atoms are excluded because the scientific output is
+    the set of protein residues lining a predicted pocket.
+
+    Args:
+        path: FPocket ``pocket*_atm.cif`` file.
+
+    Returns:
+        Protein atom rows containing available label and author identifiers.
+
+    Raises:
+        FileNotFoundError: If the file is absent.
+        ValueError: If the atom-site category or usable residue identifiers are
+            unavailable.
+    """
+
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"mmCIF file does not exist: {source}")
+
+    document = gemmi.cif.read_file(str(source))
+    block = document.sole_block()
+    category = block.get_mmcif_category("_atom_site.")
+    if not category:
+        raise ValueError(f"No _atom_site category found in {source}")
+
+    columns = {
+        field: _get_first_category_column(category, aliases)
+        for field, aliases in _POCKET_COLUMN_ALIASES.items()
+    }
+    residue_name_column = columns["residue_name"]
+    if residue_name_column is None or len(residue_name_column) == 0:
+        raise ValueError(
+            f"No residue-name column found in _atom_site category: {source}"
+        )
+
+    row_count = len(residue_name_column)
+    records: list[dict[str, Any]] = []
+    for row_index in range(row_count):
+        group = _normalise_missing(
+            _category_value(columns["group_pdb"], row_index, "ATOM")
+        ).upper()
+        if group and group != "ATOM":
+            continue
+
+        label_chain = _normalise_missing(
+            _category_value(columns["label_chain"], row_index, "")
+        )
+        auth_chain = _normalise_missing(
+            _category_value(columns["auth_chain"], row_index, "")
+        )
+        if not label_chain and auth_chain:
+            label_chain = auth_chain
+        if not auth_chain and label_chain:
+            auth_chain = label_chain
+
+        label_seq_id = _optional_int(
+            _category_value(columns["label_seq_id"], row_index, "?")
+        )
+        auth_seq_id = _optional_int(
+            _category_value(columns["auth_seq_id"], row_index, "?")
+        )
+        if label_seq_id is None and auth_seq_id is None:
+            raise ValueError(
+                "Pocket ATOM row has neither label_seq_id nor auth_seq_id in "
+                f"{source} at zero-based row {row_index}."
+            )
+        if label_seq_id is not None and not label_chain:
+            raise ValueError(
+                "Pocket ATOM row has label_seq_id but no chain identifier in "
+                f"{source} at zero-based row {row_index}."
+            )
+        if auth_seq_id is not None and not auth_chain:
+            raise ValueError(
+                "Pocket ATOM row has auth_seq_id but no chain identifier in "
+                f"{source} at zero-based row {row_index}."
+            )
+
+        residue_name = _normalise_missing(
+            _category_value(residue_name_column, row_index, "")
+        )
+        if not residue_name:
+            raise ValueError(
+                f"Pocket ATOM row has no residue name in {source} at "
+                f"zero-based row {row_index}."
+            )
+
+        records.append(
+            {
+                "group_pdb": "ATOM",
+                "residue_name": residue_name,
+                "label_chain": label_chain,
+                "label_seq_id": label_seq_id,
+                "auth_chain": auth_chain,
+                "auth_seq_id": auth_seq_id,
+                "insertion_code": _normalise_missing(
+                    _category_value(
+                        columns["insertion_code"], row_index, ""
+                    )
+                ),
+            }
+        )
+
+    if not records:
+        raise ValueError(f"No protein ATOM residues found in {source}")
+    return records
 
 
 def read_atom_site_rows(path: Path) -> list[dict[str, Any]]:

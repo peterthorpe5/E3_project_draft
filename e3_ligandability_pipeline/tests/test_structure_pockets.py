@@ -37,6 +37,7 @@ from e3ligandability.structure import (
     compute_model_quality,
     parse_model_residues,
     read_atom_site_rows,
+    read_pocket_atom_site_rows,
 )
 
 
@@ -66,6 +67,24 @@ class StructureTests(unittest.TestCase):
             compute_model_quality("TEST", [], 70, 90)
         with self.assertRaises(ValueError):
             compute_model_quality("TEST", residues, 90, 70)
+
+    def test_sparse_fpocket_mmcif_uses_optional_columns(self) -> None:
+        rows = read_pocket_atom_site_rows(
+            FIXTURE_ROOT / "pocket_sparse_fpocket_4_2_2.cif"
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["label_chain"], "A")
+        self.assertEqual(rows[0]["auth_chain"], "A")
+        self.assertEqual(rows[0]["label_seq_id"], 1)
+        self.assertIsNone(rows[0]["auth_seq_id"])
+
+        residues = parse_pocket_cif_residues(
+            FIXTURE_ROOT / "pocket_sparse_fpocket_4_2_2.cif",
+            "TEST",
+            1,
+        )
+        self.assertEqual(len(residues), 2)
+        self.assertEqual(residues[1].residue_name, "SER")
 
     def test_compare_api_quality(self) -> None:
         comparison = compare_api_quality(

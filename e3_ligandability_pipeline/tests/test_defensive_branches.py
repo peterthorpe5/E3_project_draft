@@ -79,6 +79,7 @@ from e3ligandability.structure import (
     collapse_atoms_to_residues,
     compute_model_quality,
     read_atom_site_rows,
+    read_pocket_atom_site_rows,
 )
 from e3ligandability.tools import (
     ExternalToolError,
@@ -297,6 +298,26 @@ class ParserDefensiveTests(unittest.TestCase):
                 ),
                 4,
             )
+
+    def test_sparse_pocket_parser_rejects_unmappable_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing_category = root / "missing_category.cif"
+            missing_category.write_text("data_x\n#\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                read_pocket_atom_site_rows(missing_category)
+
+            missing_number = root / "missing_number.cif"
+            missing_number.write_text(
+                "data_x\n#\nloop_\n"
+                "_atom_site.group_PDB\n"
+                "_atom_site.label_comp_id\n"
+                "_atom_site.label_asym_id\n"
+                "ATOM ALA A\n#\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                read_pocket_atom_site_rows(missing_number)
 
     def test_structure_invalid_rows_and_no_polymer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

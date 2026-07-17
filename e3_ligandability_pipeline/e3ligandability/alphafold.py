@@ -60,7 +60,7 @@ def build_retry_session(
     session.headers.update(
         {
             "User-Agent": (
-                "e3-ligandability-pipeline/0.1.0 "
+                "e3-ligandability-pipeline/0.1.1 "
                 "(ARIA plant E3 research workflow)"
             )
         }

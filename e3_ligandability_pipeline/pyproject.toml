@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-ligandability-pipeline"
-version = "0.1.0"
+version = "0.1.1"
 description = "Auditable AlphaFold, FPocket and P2Rank ligandability workflow for the ARIA plant E3 project"
 readme = "README.md"
 requires-python = ">=3.11"

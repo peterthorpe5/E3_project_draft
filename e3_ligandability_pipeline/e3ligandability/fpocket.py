@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import PocketResidueRecord
-from .structure import read_atom_site_rows
+from .structure import read_pocket_atom_site_rows
 
 
 _POCKET_HEADER = re.compile(r"^\s*Pocket\s+(\d+)\s*:?\s*$", re.IGNORECASE)
@@ -158,7 +158,7 @@ def parse_pocket_cif_residues(
     """
 
     source = Path(path).expanduser().resolve()
-    atom_rows = read_atom_site_rows(source)
+    atom_rows = read_pocket_atom_site_rows(source)
     unique: dict[
         tuple[str, int | None, str, int | None, str, str],
         PocketResidueRecord,

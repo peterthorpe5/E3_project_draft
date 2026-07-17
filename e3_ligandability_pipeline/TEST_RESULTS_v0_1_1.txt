@@ -1,0 +1,189 @@
+test_canonical_monomer_fallback_and_missing_optional_urls (test_additional_coverage.AlphaFoldCoverageTests.test_canonical_monomer_fallback_and_missing_optional_urls)
+Prefer a canonical monomer and tolerate absent optional URLs. ... Optional AlphaFold asset URL missing for Q1: pae_url
+Optional AlphaFold asset URL missing for Q1: msa_url
+Optional AlphaFold asset URL missing for Q1: plddt_url
+ok
+test_author_duplicates_and_mapping_methods (test_additional_coverage.MappingCoverageTests.test_author_duplicates_and_mapping_methods)
+Detect author duplicates and expose label/auth/unmapped methods. ... ok
+test_join_skips_unresolved_and_rejects_duplicates (test_additional_coverage.MappingCoverageTests.test_join_skips_unresolved_and_rejects_duplicates)
+Skip unresolved P2Rank rows and reject duplicate pocket matches. ... ok
+test_fpocket_and_p2rank_missing_paths_and_pdb_rejection (test_additional_coverage.ParserCoverageTests.test_fpocket_and_p2rank_missing_paths_and_pdb_rejection)
+Reject absent inputs and unsupported PDB pocket atom files. ... ok
+test_structure_rejects_missing_invalid_and_nonfinite_values (test_additional_coverage.ParserCoverageTests.test_structure_rejects_missing_invalid_and_nonfinite_values)
+Reject empty, invalid and non-finite atom-site tables. ... ok
+test_fpocket_rescore_requires_outputs_and_replaces_old_result (test_additional_coverage.ToolCoverageTests.test_fpocket_rescore_requires_outputs_and_replaces_old_result)
+Require output contracts and replace a prior result atomically. ... ok
+test_resolution_version_environment_and_missing_inputs (test_additional_coverage.ToolCoverageTests.test_resolution_version_environment_and_missing_inputs)
+Reject missing tools and exercise optional environment handling. ... ok
+test_build_retry_session (test_alphafold.AlphaFoldTests.test_build_retry_session) ... ok
+test_download_copy_and_reuse (test_alphafold.AlphaFoldTests.test_download_copy_and_reuse) ... ok
+test_materialise_local_model_assets (test_alphafold.AlphaFoldTests.test_materialise_local_model_assets) ... ok
+test_query_prediction_metadata_success_and_not_found (test_alphafold.AlphaFoldTests.test_query_prediction_metadata_success_and_not_found) ... ok
+test_select_and_normalise_prediction (test_alphafold.AlphaFoldTests.test_select_and_normalise_prediction) ... ok
+test_url_filename (test_alphafold.AlphaFoldTests.test_url_filename) ... ok
+test_validators (test_alphafold.AlphaFoldTests.test_validators) ... ok
+test_deep_merge_does_not_mutate_inputs (test_config_io.ConfigTests.test_deep_merge_does_not_mutate_inputs) ... ok
+test_load_config_defaults_and_override (test_config_io.ConfigTests.test_load_config_defaults_and_override) ... ok
+test_load_config_errors (test_config_io.ConfigTests.test_load_config_errors) ... ok
+test_numeric_validators (test_config_io.ConfigTests.test_numeric_validators) ... ok
+test_strict_scalar_validators (test_config_io.ConfigTests.test_strict_scalar_validators) ... ok
+test_validate_config_rejects_invalid_values (test_config_io.ConfigTests.test_validate_config_rejects_invalid_values) ... ok
+test_detect_and_read_inputs (test_config_io.IoTests.test_detect_and_read_inputs) ... ok
+test_directory_atomic_text_json_and_hash (test_config_io.IoTests.test_directory_atomic_text_json_and_hash) ... ok
+test_logging_writes_file_and_console_handler (test_config_io.IoTests.test_logging_writes_file_and_console_handler) ... 2026-07-17 14:52:54,699 | DEBUG | e3ligandability | Logging configured: /tmp/tmp1x2vgji3/run.log
+2026-07-17 14:52:54,699 | INFO | e3ligandability | hello
+ok
+test_normalisation_and_table_writes (test_config_io.IoTests.test_normalisation_and_table_writes) ... ok
+test_validate_accession (test_config_io.IoTests.test_validate_accession) ... ok
+test_all_validator_failure_modes (test_defensive_branches.AlphaFoldDefensiveTests.test_all_validator_failure_modes) ... ok
+test_download_and_copy_failures_remove_temporary_files (test_defensive_branches.AlphaFoldDefensiveTests.test_download_and_copy_failures_remove_temporary_files) ... ok
+test_invalid_payload_item_and_nonmatching_selection (test_defensive_branches.AlphaFoldDefensiveTests.test_invalid_payload_item_and_nonmatching_selection) ... ok
+test_materialise_url_optional_assets_and_no_model (test_defensive_branches.AlphaFoldDefensiveTests.test_materialise_url_optional_assets_and_no_model) ... ok
+test_capture_git_success_and_failure (test_defensive_branches.IoToolProvenanceDefensiveTests.test_capture_git_success_and_failure) ... ok
+test_input_and_output_errors (test_defensive_branches.IoToolProvenanceDefensiveTests.test_input_and_output_errors) ... ok
+test_tool_errors_timeout_and_path_lookup (test_defensive_branches.IoToolProvenanceDefensiveTests.test_tool_errors_timeout_and_path_lookup) ... 2026-07-17 14:52:54,893 | INFO | e3ligandability.tools | Running external command: /tmp/tmpnlx4bgrf/sleep.sh
+ok
+test_duplicate_indexes_and_ambiguous_mapping (test_defensive_branches.MappingAndQcDefensiveTests.test_duplicate_indexes_and_ambiguous_mapping) ... ok
+test_empty_and_invalid_pocket_quality (test_defensive_branches.MappingAndQcDefensiveTests.test_empty_and_invalid_pocket_quality) ... ok
+test_qc_failure_branches (test_defensive_branches.MappingAndQcDefensiveTests.test_qc_failure_branches) ... ok
+test_fpocket_missing_and_malformed (test_defensive_branches.ParserDefensiveTests.test_fpocket_missing_and_malformed) ... ok
+test_p2rank_missing_empty_and_fallback (test_defensive_branches.ParserDefensiveTests.test_p2rank_missing_empty_and_fallback) ... ok
+test_sparse_pocket_parser_rejects_unmappable_rows (test_defensive_branches.ParserDefensiveTests.test_sparse_pocket_parser_rejects_unmappable_rows) ... ok
+test_structure_invalid_rows_and_no_polymer (test_defensive_branches.ParserDefensiveTests.test_structure_invalid_rows_and_no_polymer) ... ok
+test_invalid_config_boolean_and_legacy_csv (test_defensive_branches.PipelineDefensiveTests.test_invalid_config_boolean_and_legacy_csv) ... ok
+test_missing_model_result_and_failed_run (test_defensive_branches.PipelineDefensiveTests.test_missing_model_result_and_failed_run) ... 2026-07-17 14:52:54,918 | ERROR | e3ligandability.pipeline | Accession Q1 failed during stage model_materialisation
+Traceback (most recent call last):
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/pipeline.py", line 303, in process_accession
+    model_path, asset_manifests = materialise_model_assets(
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~^
+        accession=accession,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/alphafold.py", line 506, in materialise_model_assets
+    else copy_atomic(source_model, model_path, validate_cif_file)
+         ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/alphafold.py", line 399, in copy_atomic
+    raise FileNotFoundError(f"Source file does not exist: {source_path}")
+FileNotFoundError: Source file does not exist: /missing/model.cif
+2026-07-17 14:52:54,920 | ERROR | e3ligandability.pipeline | Accession Q1 failed during stage model_materialisation
+Traceback (most recent call last):
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/pipeline.py", line 303, in process_accession
+    model_path, asset_manifests = materialise_model_assets(
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~^
+        accession=accession,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/alphafold.py", line 506, in materialise_model_assets
+    else copy_atomic(source_model, model_path, validate_cif_file)
+         ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_1/e3ligandability/alphafold.py", line 399, in copy_atomic
+    raise FileNotFoundError(f"Source file does not exist: {source_path}")
+FileNotFoundError: Source file does not exist: /missing/model.cif
+2026-07-17 14:52:54,926 | INFO | e3ligandability.outputs | Dataset asset_manifest is empty; no table file written.
+2026-07-17 14:52:54,926 | INFO | e3ligandability.outputs | Dataset model_quality is empty; no table file written.
+2026-07-17 14:52:54,926 | INFO | e3ligandability.outputs | Dataset fpocket_pockets is empty; no table file written.
+2026-07-17 14:52:54,927 | INFO | e3ligandability.outputs | Dataset p2rank_pockets is empty; no table file written.
+2026-07-17 14:52:54,927 | INFO | e3ligandability.outputs | Dataset joined_pockets is empty; no table file written.
+2026-07-17 14:52:54,927 | INFO | e3ligandability.outputs | Dataset pocket_residue_mappings is empty; no table file written.
+2026-07-17 14:52:54,927 | INFO | e3ligandability.outputs | Dataset pocket_quality is empty; no table file written.
+2026-07-17 14:52:54,927 | INFO | e3ligandability.outputs | Dataset external_commands is empty; no table file written.
+ok
+test_resolve_metadata_api_and_cli_error (test_defensive_branches.PipelineDefensiveTests.test_resolve_metadata_api_and_cli_error) ... ERROR: FileNotFoundError: Accession input does not exist: /missing
+ok
+test_cli_run_and_validate_legacy (test_pipeline_cli_regression.EndToEndTests.test_cli_run_and_validate_legacy) ... 2026-07-17 14:52:55,037 | INFO | e3ligandability | Accessions accepted: 1
+2026-07-17 14:52:55,068 | INFO | e3ligandability.tools | Running external command: /tmp/tmpoge_u60h/prank fpocket-rescore /tmp/tmpoge_u60h/cli_output/tool_outputs/.TEST.running.wp1ucmpr/TEST.ds -c rescore_2024 -o /tmp/tmpoge_u60h/cli_output/tool_outputs/.TEST.running.wp1ucmpr -threads 1 -fpocket_command /tmp/tmpoge_u60h/fpocket -fpocket_keep_output 1
+2026-07-17 14:52:55,344 | INFO | e3ligandability | Run manifest: /tmp/tmpoge_u60h/cli_output/provenance/run_manifest.json
+2026-07-17 14:52:55,344 | INFO | e3ligandability | Failed accessions: []
+2026-07-17 14:52:55,344 | INFO | e3ligandability | Failed checks: []
+2026-07-17 14:52:55,349 | INFO | e3ligandability | Regression rows: 1
+2026-07-17 14:52:55,350 | INFO | e3ligandability | Non-passing accessions: []
+ok
+test_parser_has_commands (test_pipeline_cli_regression.EndToEndTests.test_parser_has_commands) ... ok
+test_process_accession_and_run_pipeline (test_pipeline_cli_regression.EndToEndTests.test_process_accession_and_run_pipeline) ... 2026-07-17 14:52:55,386 | INFO | e3ligandability.tools | Running external command: /tmp/tmp9cl4tn99/prank fpocket-rescore /tmp/tmp9cl4tn99/output/tool_outputs/.TEST.running.q8is8wk7/TEST.ds -c rescore_2024 -o /tmp/tmp9cl4tn99/output/tool_outputs/.TEST.running.q8is8wk7 -threads 1 -fpocket_command /tmp/tmp9cl4tn99/fpocket -fpocket_keep_output 1
+2026-07-17 14:52:55,672 | INFO | e3ligandability.tools | Running external command: /tmp/tmp9cl4tn99/prank fpocket-rescore /tmp/tmp9cl4tn99/direct/tool_outputs/.TEST.running.ua_qjnms/TEST.ds -c rescore_2024 -o /tmp/tmp9cl4tn99/direct/tool_outputs/.TEST.running.ua_qjnms -threads 1 -fpocket_command /tmp/tmp9cl4tn99/fpocket -fpocket_keep_output 1
+ok
+test_optional_float_and_input_metadata (test_pipeline_cli_regression.PipelineHelperTests.test_optional_float_and_input_metadata) ... ok
+test_parse_tool_outputs (test_pipeline_cli_regression.PipelineHelperTests.test_parse_tool_outputs) ... ok
+test_resolve_metadata_local_and_preflight_disabled (test_pipeline_cli_regression.PipelineHelperTests.test_resolve_metadata_local_and_preflight_disabled) ... ok
+test_results_to_datasets (test_pipeline_cli_regression.PipelineHelperTests.test_results_to_datasets) ... ok
+test_legacy_read_parse_find_compare_and_run (test_pipeline_cli_regression.RegressionTests.test_legacy_read_parse_find_compare_and_run) ... ok
+test_cluster_shell_contracts (test_release_contract.ReleaseContractTests.test_cluster_shell_contracts)
+Cluster wrappers must retain defensive and Dundee Slurm contracts. ... ok
+test_every_production_function_has_a_docstring (test_release_contract.ReleaseContractTests.test_every_production_function_has_a_docstring)
+Every production function must carry a non-empty docstring. ... ok
+test_legacy_reference_files_are_unchanged (test_release_contract.ReleaseContractTests.test_legacy_reference_files_are_unchanged)
+Legacy evidence files must match their frozen SHA-256 manifest. ... ok
+test_package_versions_are_consistent (test_release_contract.ReleaseContractTests.test_package_versions_are_consistent)
+Runtime and project metadata versions must agree. ... ok
+test_production_shell_scripts_pass_bash_syntax (test_release_contract.ReleaseContractTests.test_production_shell_scripts_pass_bash_syntax)
+Every non-legacy Bash script must pass ``bash -n``. ... ok
+test_traceability_covers_every_production_function (test_release_contract.ReleaseContractTests.test_traceability_covers_every_production_function)
+Every production function must map to a real named test. ... ok
+test_inspect_tools_default_output_and_direct_function (test_release_coverage.CliReleaseTests.test_inspect_tools_default_output_and_direct_function)
+The inspect helper should resolve its documented default output. ... 2026-07-17 14:52:55,914 | INFO | e3ligandability | Tool inspection written: /tmp/tmptyf9mzxc/tool_versions.json
+ok
+test_inspect_tools_disabled_writes_self_contained_json (test_release_coverage.CliReleaseTests.test_inspect_tools_disabled_writes_self_contained_json)
+Inspect-tools should support a configuration with tools disabled. ... 2026-07-17 14:52:55,916 | INFO | e3ligandability | Tool inspection written: /tmp/tmpc38d_u2k/versions.json
+ok
+test_legacy_command_returns_two_for_nonpassing_row (test_release_coverage.CliReleaseTests.test_legacy_command_returns_two_for_nonpassing_row)
+Legacy regression should propagate a non-passing status as exit two. ... 2026-07-17 14:52:55,919 | INFO | e3ligandability | Regression rows: 1
+2026-07-17 14:52:55,919 | INFO | e3ligandability | Non-passing accessions: ['Q1']
+ok
+test_run_command_returns_two_for_unsuccessful_outcome (test_release_coverage.CliReleaseTests.test_run_command_returns_two_for_unsuccessful_outcome)
+The run helper should return two after a validated failed run. ... 2026-07-17 14:52:55,920 | INFO | e3ligandability | Accessions accepted: 1
+2026-07-17 14:52:55,921 | INFO | e3ligandability | Run manifest: manifest.json
+2026-07-17 14:52:55,921 | INFO | e3ligandability | Failed accessions: ['Q1']
+2026-07-17 14:52:55,921 | INFO | e3ligandability | Failed checks: []
+ok
+test_atomic_and_parquet_failures_remove_temporary_files (test_release_coverage.IoReleaseTests.test_atomic_and_parquet_failures_remove_temporary_files)
+Atomic writers must remove incomplete siblings on publication failure. ... ok
+test_empty_yaml_and_delimiter_fallback (test_release_coverage.IoReleaseTests.test_empty_yaml_and_delimiter_fallback)
+Empty YAML and unrecognised text delimiters should remain usable. ... ok
+test_explicit_tsv_fields_and_type_normalisation (test_release_coverage.IoReleaseTests.test_explicit_tsv_fields_and_type_normalisation)
+Explicit output fields and mixed scalar families should be stable. ... ok
+test_indexes_and_one_residue_mapping (test_structure_pockets.MappingTests.test_indexes_and_one_residue_mapping) ... ok
+test_join_fpocket_and_p2rank (test_structure_pockets.MappingTests.test_join_fpocket_and_p2rank) ... ok
+test_mapping_and_quality_uses_full_denominator (test_structure_pockets.MappingTests.test_mapping_and_quality_uses_full_denominator) ... ok
+test_model_dataclass_serialisation (test_structure_pockets.MappingTests.test_model_dataclass_serialisation) ... ok
+test_fpocket_discovery_and_parsing (test_structure_pockets.PocketParsingTests.test_fpocket_discovery_and_parsing) ... ok
+test_p2rank_discovery_parsing_and_inference (test_structure_pockets.PocketParsingTests.test_p2rank_discovery_parsing_and_inference) ... ok
+test_scalar_and_metric_normalisation (test_structure_pockets.PocketParsingTests.test_scalar_and_metric_normalisation) ... ok
+test_compare_api_quality (test_structure_pockets.StructureTests.test_compare_api_quality) ... ok
+test_low_level_mmcif_helpers (test_structure_pockets.StructureTests.test_low_level_mmcif_helpers) ... ok
+test_read_collapse_parse_and_quality (test_structure_pockets.StructureTests.test_read_collapse_parse_and_quality) ... ok
+test_sparse_fpocket_mmcif_uses_optional_columns (test_structure_pockets.StructureTests.test_sparse_fpocket_mmcif_uses_optional_columns) ... ok
+test_accession_result_status_record (test_tools_outputs_qc.OutputAndQcTests.test_accession_result_status_record) ... ok
+test_complete_validation_contract (test_tools_outputs_qc.OutputAndQcTests.test_complete_validation_contract) ... ok
+test_individual_qc_functions (test_tools_outputs_qc.OutputAndQcTests.test_individual_qc_functions) ... ok
+test_publish_and_duckdb (test_tools_outputs_qc.OutputAndQcTests.test_publish_and_duckdb) ... 2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset alphafold_metadata is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset asset_manifest is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset model_quality is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset fpocket_pockets is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset p2rank_pockets is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset joined_pockets is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset pocket_residue_mappings is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset pocket_quality is empty; no table file written.
+2026-07-17 14:52:55,936 | INFO | e3ligandability.outputs | Dataset external_commands is empty; no table file written.
+2026-07-17 14:52:56,046 | INFO | e3ligandability.outputs | Dataset empty is empty; no table file written.
+ok
+test_build_and_write_manifest (test_tools_outputs_qc.ProvenanceTests.test_build_and_write_manifest) ... ok
+test_time_packages_and_git_state (test_tools_outputs_qc.ProvenanceTests.test_time_packages_and_git_state) ... ok
+test_resolve_capture_and_version_check (test_tools_outputs_qc.ToolTests.test_resolve_capture_and_version_check) ... ok
+test_run_command_success_failure_and_dataset (test_tools_outputs_qc.ToolTests.test_run_command_success_failure_and_dataset) ... 2026-07-17 14:52:56,068 | INFO | e3ligandability.tools | Running external command: /tmp/tmpoiqk4b1r/success
+2026-07-17 14:52:56,086 | INFO | e3ligandability.tools | Running external command: /tmp/tmpoiqk4b1r/failure
+ok
+test_run_fpocket_rescore_builds_expected_command (test_tools_outputs_qc.ToolTests.test_run_fpocket_rescore_builds_expected_command) ... 2026-07-17 14:52:56,106 | INFO | e3ligandability.tools | Running external command: /tmp/tmp6bqubxm5/prank fpocket-rescore /tmp/tmp6bqubxm5/.out.running.7w9xjcfk/TEST.ds -c rescore_2024 -o /tmp/tmp6bqubxm5/.out.running.7w9xjcfk -threads 2 -fpocket_command /tmp/tmp6bqubxm5/fpocket -fpocket_keep_output 1
+ok
+
+----------------------------------------------------------------------
+Ran 83 tests in 1.533s
+
+OK

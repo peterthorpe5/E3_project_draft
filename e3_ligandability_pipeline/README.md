@@ -1,6 +1,6 @@
 # E3 Ligandability Pipeline
 
-Version 0.1.0
+Version 0.1.1
 
 A defensive, auditable replacement for the inherited AlphaFold, FPocket,
 P2Rank and pocket-pLDDT scripts used in the ARIA plant E3/PROTAC project.
@@ -8,6 +8,18 @@ P2Rank and pocket-pLDDT scripts used in the ARIA plant E3/PROTAC project.
 The workflow is intended for a **small, biologically curated candidate set**.
 It is not intended to run blindly across every member of the 1KP-expanded
 sequence resource.
+
+## v0.1.1 pocket-mmCIF compatibility fix
+
+Version 0.1.1 separates strict AlphaFold model parsing from tolerant
+FPocket pocket-file parsing. FPocket derivative mmCIF files may omit
+model-only `_atom_site` columns such as `B_iso_or_equiv`, author numbering
+or insertion codes. The pocket parser now requires only a residue name and
+at least one usable residue-numbering scheme, excludes hetero atoms from the
+protein pocket-residue denominator, and retains explicit label/author mapping
+where present. This fixes the Q9SA03 production smoke-test failure observed
+with FPocket 4.2.2 output while preserving the strict model pLDDT parser.
+
 
 ## Scientific position
 
@@ -245,20 +257,25 @@ See:
 
 ## Release validation
 
-Version 0.1.0 includes:
+Version 0.1.1 includes:
 
-- 81 passing automated tests;
+- 83 passing automated tests;
 - 97% branch-aware source coverage;
-- named test traceability for all 104 production functions;
-- synthetic mmCIF fixtures;
+- named test traceability for all 107 production functions;
+- full and reduced FPocket-style synthetic mmCIF fixtures;
+- malformed reduced-pocket mmCIF rejection tests;
 - fake-executable FPocket/P2Rank command tests;
 - command-line end-to-end tests;
 - inherited-script checksum protection;
 - branch-aware coverage with a 95% release threshold;
 - PEP 8 checking at 88 characters;
 - PEP 257-compatible Google-style docstrings;
-- `bash -n` validation for every production shell script.
+- `bash -n` validation for every production shell script;
+- isolated wheel installation and dependency validation;
+- source distribution and wheel metadata validation with Twine.
 
-External FPocket and P2Rank executables were not run in the package-build
-environment. Scientific production validation therefore still requires the
-cluster regression and smoke tests described above.
+The real Q9SA03 FPocket/P2Rank command completed under v0.1.0, but output
+parsing stopped safely on a reduced FPocket mmCIF before any pocket tables
+were published. Version 0.1.1 fixes that parser defect. Scientific
+pocket-level validation still requires rerunning the Q9SA03 smoke test and
+reviewing residue mapping and agreement with the inherited outputs.

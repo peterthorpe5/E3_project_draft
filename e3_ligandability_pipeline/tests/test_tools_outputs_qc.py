@@ -281,7 +281,7 @@ class ProvenanceTests(unittest.TestCase):
             write_run_manifest(output, manifest)
             self.assertEqual(
                 json.loads(output.read_text())["resource_version"],
-                "0.1.0",
+                "0.1.1",
             )
 
 

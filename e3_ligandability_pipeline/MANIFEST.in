@@ -1,7 +1,9 @@
 include README.md
 include RELEASE_NOTES_v0_1_0.md
-include TEST_RESULTS_v0_1_0.txt
-include COVERAGE_RESULTS_v0_1_0.txt
+include RELEASE_NOTES_v0_1_1.md
+include TEST_RESULTS_v0_1_1.txt
+include COVERAGE_RESULTS_v0_1_1.txt
+include RELEASE_VALIDATION_SUMMARY_v0_1_1.txt
 include requirements.txt
 include requirements-dev.txt
 include environment.cluster.yml

@@ -1,0 +1,21 @@
+Name                               Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------
+e3ligandability/__init__.py            1      0      0      0   100%
+e3ligandability/alphafold.py         188      2     58      0    99%   279-280
+e3ligandability/cli.py                82      3      8      2    94%   192-193, 197
+e3ligandability/config.py            110      1     60      1    99%   290
+e3ligandability/fpocket.py            83      0     36      1    99%   110->96
+e3ligandability/io_utils.py          165      5     62      3    96%   157, 210, 295->294, 299->298, 343-345
+e3ligandability/logging_utils.py      24      0      2      0   100%
+e3ligandability/mapping.py           105      0     46      2    99%   33->38, 38->32
+e3ligandability/models.py             46      0      0      0   100%
+e3ligandability/outputs.py            63      1     18      3    95%   58->71, 71->84, 147
+e3ligandability/p2rank.py             57      0     24      1    99%   32->31
+e3ligandability/pipeline.py          155      6     28      6    93%   231, 355->394, 357, 398-400, 435->442, 510, 527->537
+e3ligandability/provenance.py         39      2      6      0    96%   82-83
+e3ligandability/qc.py                 55      0     14      0   100%
+e3ligandability/regression.py         53      2     14      2    94%   28, 90
+e3ligandability/structure.py         141      8     62      8    92%   113, 145, 159, 179, 195, 200, 209, 231
+e3ligandability/tools.py             105      4     30      0    96%   306-309
+------------------------------------------------------------------------------
+TOTAL                               1472     34    468     29    97%
