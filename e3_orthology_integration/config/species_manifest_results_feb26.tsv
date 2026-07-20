@@ -1,0 +1,14 @@
+canonical_species_name	source_species_name	taxon_id	required	role	aliases
+Arabidopsis thaliana	Arabidopsis_thaliana	3702	true	target_plant	UP000006548_3702
+Brachypodium distachyon	Brachypodium_distachyon	15368	true	target_plant	
+Glycine max	Glycine_max	3847	true	target_plant	
+Hordeum vulgare	Hordeum_vulgare	4513	true	target_plant	
+Medicago truncatula	Medicago_truncatula	3880	true	target_plant	
+Oryza sativa	Oryza_sativa	4530	true	target_plant	
+Populus trichocarpa	Populus_trichocarpa	3694	true	target_plant	
+Solanum lycopersicum	Lycopersicon_esculentum	4081	true	target_plant	Solanum_lycopersicum
+Solanum tuberosum	Solanum_tuberosum	4113	true	target_plant	
+Sorghum bicolor	Sorghum_bicolor	4558	true	target_plant	
+Triticum aestivum	Triticum_aestivum	4565	true	target_plant	
+Zea mays	Zea_mays	4577	true	target_plant	
+Homo sapiens	Homo_sapiens	9606	true	reference_species	UP000005640_9606
