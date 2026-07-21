@@ -161,7 +161,7 @@ class ShellWrapperTests(unittest.TestCase):
                 submitted_arguments[batch_script_index + 1],
                 str(package_root / "run_e3_orthology_integration.sh"),
             )
-            self.assertIn("--conda-env", submitted_arguments[batch_script_index + 2 :])
+            self.assertIn("--conda-env", submitted_arguments[batch_script_index + 2:])
             threads_index = submitted_arguments.index("--threads")
             self.assertEqual(submitted_arguments[threads_index + 1], "4")
             repository_logs_after = (
