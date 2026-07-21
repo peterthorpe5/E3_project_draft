@@ -39,6 +39,8 @@ rule run_stage:
         config=str(CONFIG_PATH)
     log:
         str(RUN_ROOT / "workflow_logs" / "{stage}.snakemake.log")
+    conda:
+        "../environment.yml"
     wildcard_constraints:
         stage=STAGE_PATTERN
     shell:
@@ -46,4 +48,3 @@ rule run_stage:
         e3-workflow run-stage --config {params.config:q} --stage {wildcards.stage:q} \
             > {log:q} 2>&1
         """
-

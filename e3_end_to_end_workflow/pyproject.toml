@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-end-to-end-workflow"
-version = "0.1.0"
+version = "0.2.0"
 description = "Restartable Snakemake orchestration for the ARIA plant E3 discovery resource"
 readme = "README.md"
 requires-python = ">=3.11"

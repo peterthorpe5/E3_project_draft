@@ -10,6 +10,7 @@ import pytest
 
 from e3workflow.config import STAGE_NAMES, load_config
 from e3workflow.errors import StageError
+from e3workflow.io_utils import read_tsv
 from e3workflow.runner import (
     execute_stage,
     format_command,
@@ -44,9 +45,8 @@ def test_synthetic_end_to_end_and_lineage(synthetic_config: Path) -> None:
     assert payload["status"] == "complete"
     assert [row["stage"] for row in payload["lineage"]] == list(STAGE_NAMES)
     assert payload["mode"] == "synthetic"
-    assert "production_eligible\tfalse" in (
-        config.run_root / "11_app_ready" / "app_handoff.tsv"
-    ).read_text()
+    handoff = read_tsv(config.run_root / "11_app_ready" / "app_handoff.tsv")[1]
+    assert handoff[0]["production_eligible"] == "false"
     execute_stage(config, STAGE_NAMES[-1])
     assert any((config.run_root / "superseded").iterdir())
 

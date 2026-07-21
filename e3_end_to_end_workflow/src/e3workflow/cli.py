@@ -10,13 +10,13 @@ from typing import Sequence
 
 from e3workflow.config import STAGE_NAMES, load_config
 from e3workflow.errors import WorkflowError
-from e3workflow.manifests import validate_accessions, validate_proteomes, validate_shortlist
+from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 from e3workflow.runner import execute_stage
+from e3workflow.seed_evidence import build_seed_evidence
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the complete named-option CLI parser."""
-
     parser = argparse.ArgumentParser(prog="e3-workflow")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ("validate", "plan"):
@@ -26,15 +26,23 @@ def build_parser() -> argparse.ArgumentParser:
     stage.add_argument("--config", type=Path, required=True)
     stage.add_argument("--stage", choices=STAGE_NAMES, required=True)
     stage.add_argument("--verbose", action="store_true")
+    evidence = subparsers.add_parser("build-seed-evidence")
+    evidence.add_argument("--source", type=Path, required=True)
+    evidence.add_argument(
+        "--output",
+        type=Path,
+        default=Path("data/known_e3_seed_evidence.tsv.gz"),
+    )
+    evidence.add_argument("--provenance-output", type=Path)
+    evidence.add_argument("--force", action="store_true")
     return parser
 
 
 def validate_command(config_path: Path) -> dict[str, object]:
     """Validate configuration and all controlled input manifests."""
-
     config = load_config(config_path)
     proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
-    seeds = validate_accessions(config.seeds_manifest, {"evidence_type", "source"})
+    seeds = validate_seed_evidence(config.seeds_manifest)
     shortlist = validate_shortlist(config.shortlist_manifest)
     return {
         "status": "valid",
@@ -49,7 +57,6 @@ def validate_command(config_path: Path) -> dict[str, object]:
 
 def plan_command(config_path: Path) -> dict[str, object]:
     """Return an execution plan without creating workflow outputs."""
-
     config = load_config(config_path)
     return {
         "mode": config.mode,
@@ -69,16 +76,22 @@ def plan_command(config_path: Path) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and convert expected failures to concise error messages."""
-
     args = build_parser().parse_args(argv)
     try:
         if args.command == "validate":
             payload = validate_command(args.config)
         elif args.command == "plan":
             payload = plan_command(args.config)
-        else:
+        elif args.command == "run-stage":
             manifest = execute_stage(load_config(args.config), args.stage, args.verbose)
             payload = {"stage_manifest": str(manifest)}
+        else:
+            payload = build_seed_evidence(
+                source=args.source,
+                output=args.output,
+                provenance_output=args.provenance_output,
+                force=args.force,
+            )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     except WorkflowError as exc:

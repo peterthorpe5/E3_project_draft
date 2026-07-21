@@ -35,7 +35,10 @@ Publication uses an atomic rename on the output filesystem.
 
 - `species_id` is unique and stable across releases.
 - Every included FASTA is a regular file with a verified SHA-256.
-- Seed accessions are unique and retain evidence type and source.
+- Seed accessions are unique and retain evidence type, source, E3 category, GO flags, organism,
+  taxon, sequence checksum and inherited source-row provenance.
+- The seed evidence authority is a deterministic gzip-compressed TSV derived from the full
+  discovery-engine seed table; the sequence-bearing source table remains outside Git.
 - Ligandability accessions require a human decision, reviewer, UTC time and rationale.
 - A shortlist without at least one explicit `approve` decision is invalid.
 
@@ -56,4 +59,3 @@ This is preferable to silently embedding legacy paths or pretending a placeholde
 A new species is a new row and FASTA checksum in `proteomes.tsv`, followed by a new immutable run
 name. New evidence types should become new tables/views rather than columns injected into unrelated
 authorities. DeepClust and OrthoFinder labels are always qualified by their source run identifiers.
-

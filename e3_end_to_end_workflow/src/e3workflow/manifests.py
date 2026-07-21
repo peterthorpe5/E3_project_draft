@@ -8,6 +8,7 @@ from typing import Iterable
 
 from e3workflow.errors import ManifestError
 from e3workflow.io_utils import read_tsv, sha256_file
+from e3workflow.seed_evidence import EVIDENCE_COLUMNS
 
 TRUE_VALUES = frozenset({"1", "true", "yes"})
 FALSE_VALUES = frozenset({"0", "false", "no"})
@@ -16,7 +17,6 @@ SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 def parse_boolean(value: str, label: str) -> bool:
     """Parse a strict human-readable Boolean field."""
-
     normalised = value.strip().lower()
     if normalised in TRUE_VALUES:
         return True
@@ -27,7 +27,6 @@ def parse_boolean(value: str, label: str) -> bool:
 
 def _require_columns(fields: Iterable[str], required: set[str], path: Path) -> None:
     """Require a complete manifest header."""
-
     missing = required.difference(fields)
     if missing:
         raise ManifestError(f"Missing columns in {path}: {', '.join(sorted(missing))}")
@@ -35,7 +34,6 @@ def _require_columns(fields: Iterable[str], required: set[str], path: Path) -> N
 
 def validate_proteomes(path: Path, verify_checksums: bool) -> list[dict[str, str]]:
     """Validate species/proteome rows and optionally their file checksums."""
-
     fields, rows = read_tsv(path)
     _require_columns(
         fields,
@@ -78,7 +76,6 @@ def validate_proteomes(path: Path, verify_checksums: bool) -> list[dict[str, str
 
 def validate_accessions(path: Path, required_columns: set[str]) -> list[dict[str, str]]:
     """Validate a non-empty accession table with no duplicate accessions."""
-
     fields, rows = read_tsv(path)
     _require_columns(fields, required_columns | {"accession"}, path)
     if not rows:
@@ -95,9 +92,14 @@ def validate_accessions(path: Path, required_columns: set[str]) -> list[dict[str
     return rows
 
 
+def validate_seed_evidence(path: Path) -> list[dict[str, str]]:
+    """Validate the complete known-E3 evidence contract."""
+    required = set(EVIDENCE_COLUMNS).difference({"exclusion_go_term"})
+    return validate_accessions(path, required)
+
+
 def validate_shortlist(path: Path) -> list[dict[str, str]]:
     """Validate the human-reviewed ligandability gate."""
-
     required = {"decision", "approved_by", "approved_at_utc", "rationale"}
     rows = validate_accessions(path, required)
     allowed = {"approve", "defer", "reject"}

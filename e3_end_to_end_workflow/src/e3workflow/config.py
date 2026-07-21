@@ -58,12 +58,10 @@ class WorkflowConfig:
     @property
     def run_root(self) -> Path:
         """Return the isolated root for this run."""
-
         return self.output_root / self.run_name
 
     def stage(self, name: str) -> StageConfig:
         """Return a configured stage by its stable name."""
-
         for stage in self.stages:
             if stage.name == name:
                 return stage
@@ -72,7 +70,6 @@ class WorkflowConfig:
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
     """Validate and return one mapping-like configuration section."""
-
     if not isinstance(value, dict):
         raise ConfigurationError(f"{label} must be a YAML mapping")
     return value
@@ -80,7 +77,6 @@ def _mapping(value: Any, label: str) -> Mapping[str, Any]:
 
 def _resolve_path(value: Any, base: Path, label: str) -> Path:
     """Resolve a required path relative to the configuration directory."""
-
     if not isinstance(value, str) or not value.strip():
         raise ConfigurationError(f"{label} must be a non-empty path string")
     path = Path(value).expanduser()
@@ -89,7 +85,6 @@ def _resolve_path(value: Any, base: Path, label: str) -> Path:
 
 def _strings(value: Any, label: str) -> tuple[str, ...]:
     """Validate a YAML sequence containing only non-empty strings."""
-
     if value is None:
         return ()
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
@@ -106,7 +101,6 @@ def load_config(path: Path) -> WorkflowConfig:
     Returns:
         Immutable resolved configuration.
     """
-
     source = path.expanduser().resolve()
     if not source.is_file():
         raise ConfigurationError(f"Configuration file does not exist: {source}")
@@ -177,7 +171,6 @@ def load_config(path: Path) -> WorkflowConfig:
 
 def previous_stage(name: str) -> str | None:
     """Return the immediately preceding stage, if one exists."""
-
     try:
         index = STAGE_NAMES.index(name)
     except ValueError as exc:

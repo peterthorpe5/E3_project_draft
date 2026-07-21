@@ -4,10 +4,10 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.1.0` is an intentionally honest foundation. The complete twelve-stage DAG, manifests,
-atomic stage publication, local/Slurm profiles and synthetic end-to-end test are implemented. The
-production template fails closed until the remaining package adapters are explicitly configured.
-`CHANGE_ME` values are never treated as defaults.
+Version `0.2.0` corrects the Python quality gates and formalises the known-E3 evidence input. The
+complete twelve-stage DAG, manifests, atomic stage publication, local/Slurm profiles and synthetic
+end-to-end test are implemented. The production template still fails closed until the remaining
+package adapters are explicitly configured. `CHANGE_ME` values are never treated as defaults.
 
 ## DAG and package ownership
 
@@ -45,7 +45,8 @@ Its outputs contain `TEST DATA ONLY` and are never production eligible.
 ## Production preparation
 
 1. Copy `config/production.cluster.template.yaml` to a run-specific immutable YAML.
-2. Create `proteomes.tsv`, `known_e3_seeds.tsv` and the signed shortlist with the documented headers.
+2. Create `proteomes.tsv`, `data/known_e3_seed_evidence.tsv.gz` and the signed shortlist with the
+   documented headers.
 3. Replace every `CHANGE_ME` argv with a tested adapter command. Commands are YAML argv lists, not
    shell strings; this prevents accidental quoting and injection errors.
 4. Set each `expected_outputs` entry to a non-empty file the component publishes only after success.
@@ -69,3 +70,20 @@ restart boundary. To rerun one stage, remove or move that stage and its downstre
 request the final target. Existing stage directories are moved under `superseded` if publication
 would otherwise replace them. Failed staging directories are retained under `failed`.
 
+## Known-E3 evidence resource
+
+The production seed evidence is a deterministic derivative of the discovery engine's authoritative
+`prepared_inputs/known_e3_seeds.tsv`. It retains the accession, E3 category, GO evidence flags,
+organism, taxon, sequence MD5 and source-row provenance without storing the full sequence-bearing
+51 MB table in Git.
+
+Build it on the cluster from the workflow package root:
+
+```bash
+e3-workflow build-seed-evidence \
+    --source /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_14_20260715_100551/prepared_inputs/known_e3_seeds.tsv \
+    --output data/known_e3_seed_evidence.tsv.gz
+```
+
+The command also writes `data/known_e3_seed_evidence.provenance.tsv`. Existing outputs are protected;
+use `--force` only when intentionally rebuilding them from a reviewed source.

@@ -11,6 +11,7 @@ from e3workflow.manifests import (
     parse_boolean,
     validate_accessions,
     validate_proteomes,
+    validate_seed_evidence,
     validate_shortlist,
 )
 
@@ -32,6 +33,7 @@ def test_committed_manifests_are_valid(package_root: Path) -> None:
     assert len(
         validate_accessions(config / "synthetic_seeds.tsv", {"evidence_type", "source"})
     ) == 2
+    assert len(validate_seed_evidence(config / "synthetic_seeds.tsv")) == 2
     assert validate_shortlist(config / "synthetic_shortlist.tsv")[0]["accession"] == "Q9SA03"
 
 
@@ -92,6 +94,8 @@ def test_accession_and_shortlist_errors(tmp_path: Path) -> None:
     seeds.write_text("accession\tsource\nQ\t\n", encoding="utf-8")
     with pytest.raises(ManifestError, match="Missing source"):
         validate_accessions(seeds, {"source"})
+    with pytest.raises(ManifestError, match="Missing columns"):
+        validate_seed_evidence(seeds)
     shortlist = tmp_path / "shortlist.tsv"
     header = "accession\tdecision\tapproved_by\tapproved_at_utc\trationale\n"
     shortlist.write_text(header + "Q\tmaybe\tme\tnow\tbecause\n", encoding="utf-8")

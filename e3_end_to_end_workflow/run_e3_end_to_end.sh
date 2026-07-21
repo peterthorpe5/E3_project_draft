@@ -61,6 +61,8 @@ if [[ "${PROFILE}" != /* ]]; then
 fi
 [[ -d "${PROFILE}" ]] || { printf 'ERROR: profile not found: %s\n' "${PROFILE}" >&2; exit 2; }
 
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}/e3_workflow_cache_${UID}}"
+mkdir -p -- "${XDG_CACHE_HOME}"
 mkdir -p "${SCRIPT_DIR}/logs"
 LOG="${SCRIPT_DIR}/logs/master_$(date -u '+%Y%m%dT%H%M%SZ').log"
 exec > >(tee -a "${LOG}") 2>&1
@@ -78,4 +80,3 @@ COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile" --configfile "
 COMMAND+=("${EXTRA_ARGS[@]}")
 printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'
 "${COMMAND[@]}"
-

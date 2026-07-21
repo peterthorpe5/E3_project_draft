@@ -17,7 +17,7 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     config = load_config(synthetic_config)
     assert config.mode == "synthetic"
     assert config.stage("00_inputs").required
-    assert config.run_root.name == "synthetic_e2e_v0_1_0"
+    assert config.run_root.name == "synthetic_e2e_v0_2_0"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"

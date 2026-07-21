@@ -7,7 +7,7 @@ run:
   output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
 inputs:
   proteomes_manifest: /CHANGE_ME/proteomes.tsv
-  seeds_manifest: /CHANGE_ME/known_e3_seeds.tsv
+  seeds_manifest: ../data/known_e3_seed_evidence.tsv.gz
   shortlist_manifest: /CHANGE_ME/approved_ligandability_shortlist.tsv
 stages:
   00_inputs:

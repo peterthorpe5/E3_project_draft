@@ -1,3 +1,3 @@
 """Production orchestration for the ARIA plant E3 resource."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

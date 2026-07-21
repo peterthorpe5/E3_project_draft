@@ -23,12 +23,11 @@ from e3workflow.io_utils import (
     utc_now,
     write_tsv,
 )
-from e3workflow.manifests import validate_accessions, validate_proteomes, validate_shortlist
+from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 
 
 def format_command(command: tuple[str, ...], values: dict[str, str]) -> list[str]:
     """Substitute only documented placeholders in an argv sequence."""
-
     rendered = []
     for token in command:
         try:
@@ -40,7 +39,6 @@ def format_command(command: tuple[str, ...], values: dict[str, str]) -> list[str
 
 def validate_upstream(config: WorkflowConfig, stage_name: str) -> list[dict[str, Any]]:
     """Validate the predecessor manifest and return its complete lineage."""
-
     predecessor = previous_stage(stage_name)
     if predecessor is None:
         return []
@@ -74,7 +72,6 @@ def validate_upstream(config: WorkflowConfig, stage_name: str) -> list[dict[str,
 
 def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> None:
     """Require every declared stage output to exist and be non-empty."""
-
     missing = []
     for relative in outputs:
         path = stage_root / relative
@@ -86,9 +83,8 @@ def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> Non
 
 def _run_internal_inputs(config: WorkflowConfig, stage_root: Path) -> None:
     """Validate all controlled input manifests and publish a compact inventory."""
-
     proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
-    seeds = validate_accessions(config.seeds_manifest, {"evidence_type", "source"})
+    seeds = validate_seed_evidence(config.seeds_manifest)
     shortlist = validate_shortlist(config.shortlist_manifest)
     rows = [
         {"manifest": "proteomes", "path": config.proteomes_manifest, "row_count": len(proteomes)},
@@ -100,7 +96,6 @@ def _run_internal_inputs(config: WorkflowConfig, stage_root: Path) -> None:
 
 def _run_internal_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
     """Publish only accessions explicitly approved at the human review gate."""
-
     rows = validate_shortlist(config.shortlist_manifest)
     approved = [row for row in rows if row["decision"].strip().lower() == "approve"]
     write_tsv(stage_root / "approved_accessions.tsv", approved, tuple(rows[0]))
@@ -108,7 +103,6 @@ def _run_internal_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
 
 def _run_internal_app_ready(config: WorkflowConfig, stage_root: Path) -> None:
     """Write an application handoff that never overstates production readiness."""
-
     write_tsv(
         stage_root / "app_handoff.tsv",
         [
@@ -125,7 +119,6 @@ def _run_internal_app_ready(config: WorkflowConfig, stage_root: Path) -> None:
 
 def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path) -> None:
     """Run a safe built-in stage or a clearly labelled synthetic stage."""
-
     if stage_name == "00_inputs":
         _run_internal_inputs(config, stage_root)
     elif stage_name == "08_shortlist_gate":
@@ -153,7 +146,6 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
     Returns:
         Formal stage-manifest path.
     """
-
     stage = config.stage(stage_name)
     lineage = validate_upstream(config, stage_name)
     run_root = config.run_root

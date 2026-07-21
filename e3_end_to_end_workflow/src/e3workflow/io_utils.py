@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import io
 import json
@@ -18,7 +19,6 @@ from e3workflow.errors import WorkflowError
 
 def utc_now() -> str:
     """Return the current UTC time in a stable ISO-8601 representation."""
-
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -35,7 +35,6 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     Raises:
         WorkflowError: If the input or chunk size is invalid.
     """
-
     if chunk_size < 1:
         raise WorkflowError("chunk_size must be a positive integer")
     if not path.is_file():
@@ -54,7 +53,6 @@ def atomic_write_text(path: Path, text: str) -> None:
         path: Formal output path.
         text: UTF-8 content.
     """
-
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
@@ -71,13 +69,11 @@ def atomic_write_text(path: Path, text: str) -> None:
 
 def atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     """Serialise a mapping as deterministic, atomically published JSON."""
-
     atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def read_json(path: Path) -> dict[str, Any]:
     """Read one JSON object from an existing file."""
-
     if not path.is_file():
         raise WorkflowError(f"JSON file does not exist: {path}")
     try:
@@ -90,8 +86,7 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def write_tsv(path: Path, rows: Iterable[Mapping[str, Any]], columns: Sequence[str]) -> None:
-    """Write dictionaries to a stable tab-separated table."""
-
+    """Write dictionaries to a stable plain or gzip-compressed tab-separated table."""
     if not columns or len(set(columns)) != len(columns):
         raise WorkflowError("TSV columns must be a non-empty unique sequence")
     buffer = io.StringIO(newline="")
@@ -105,20 +100,42 @@ def write_tsv(path: Path, rows: Iterable[Mapping[str, Any]], columns: Sequence[s
     writer.writeheader()
     for row in rows:
         writer.writerow({column: row.get(column, "") for column in columns})
-    atomic_write_text(path, buffer.getvalue())
+    text = buffer.getvalue()
+    if path.suffix == ".gz":
+        compressed = gzip.compress(text.encode("utf-8"), compresslevel=9, mtime=0)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(compressed)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+        return
+    atomic_write_text(path, text)
 
 
 def read_tsv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
-    """Read a UTF-8 TSV with a unique, non-empty header."""
-
+    """Read a plain or gzip-compressed UTF-8 TSV with a valid header."""
     if not path.is_file():
         raise WorkflowError(f"TSV file does not exist: {path}")
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        fields = list(reader.fieldnames or [])
-        if not fields or any(not field for field in fields) or len(set(fields)) != len(fields):
-            raise WorkflowError(f"TSV header is empty or contains duplicate fields: {path}")
-        rows = [dict(row) for row in reader]
+    try:
+        if path.suffix == ".gz":
+            handle = gzip.open(path, "rt", encoding="utf-8", newline="")
+        else:
+            handle = path.open("r", encoding="utf-8", newline="")
+        with handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            fields = list(reader.fieldnames or [])
+            if not fields or any(not field for field in fields) or len(set(fields)) != len(fields):
+                raise WorkflowError(f"TSV header is empty or contains duplicate fields: {path}")
+            rows = [dict(row) for row in reader]
+    except (OSError, UnicodeError) as exc:
+        raise WorkflowError(f"Could not read TSV file {path}: {exc}") from exc
     if any(None in row or any(value is None for value in row.values()) for row in rows):
         raise WorkflowError(f"TSV contains malformed rows: {path}")
     return fields, rows
@@ -126,7 +143,6 @@ def read_tsv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
 
 def configure_logging(log_path: Path, verbose: bool = False) -> logging.Logger:
     """Configure isolated console and file logging for one command."""
-
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("e3workflow")
     close_logger(logger)
@@ -146,7 +162,6 @@ def configure_logging(log_path: Path, verbose: bool = False) -> logging.Logger:
 
 def close_logger(logger: logging.Logger) -> None:
     """Flush, close, and remove every handler from one logger."""
-
     for handler in list(logger.handlers):
         handler.flush()
         handler.close()
@@ -158,7 +173,6 @@ def inventory_files(
     excluded_names: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Return checksums and sizes for regular files below a directory."""
-
     if not root.is_dir():
         raise WorkflowError(f"Cannot inventory missing directory: {root}")
     records = []

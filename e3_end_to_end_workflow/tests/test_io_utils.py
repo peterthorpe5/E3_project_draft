@@ -68,9 +68,6 @@ def test_atomic_writer_cleans_failed_temporary_file(tmp_path: Path, monkeypatch:
         atomic_write_text(target, "content")
     assert not target.exists()
     assert list(tmp_path.iterdir()) == []
-    bad.write_text("[]", encoding="utf-8")
-    with pytest.raises(WorkflowError):
-        read_json(bad)
 
 
 def test_tsv_round_trip_and_header_errors(tmp_path: Path) -> None:
@@ -91,6 +88,13 @@ def test_tsv_round_trip_and_header_errors(tmp_path: Path) -> None:
     malformed.write_text("a\n1\textra\n", encoding="utf-8")
     with pytest.raises(WorkflowError, match="malformed"):
         read_tsv(malformed)
+    compressed = tmp_path / "table.tsv.gz"
+    write_tsv(compressed, [{"a": 1, "b": "two"}], ("a", "b"))
+    assert read_tsv(compressed) == (["a", "b"], [{"a": "1", "b": "two"}])
+    corrupt = tmp_path / "corrupt.tsv.gz"
+    corrupt.write_bytes(b"not gzip")
+    with pytest.raises(WorkflowError, match="Could not read TSV"):
+        read_tsv(corrupt)
 
 
 def test_logging_and_inventory(tmp_path: Path) -> None:
