@@ -1,0 +1,6 @@
+module	function	tests
+e3workflow.config	load_config; previous_stage	test_config.py
+e3workflow.io_utils	utc_now; sha256_file; atomic_write_text; atomic_write_json; read_json; write_tsv; read_tsv; configure_logging; close_logger; inventory_files	test_io_utils.py
+e3workflow.manifests	parse_boolean; validate_proteomes; validate_accessions; validate_shortlist	test_manifests.py
+e3workflow.runner	format_command; validate_upstream; validate_expected_outputs; run_internal_stage; execute_stage	test_runner_e2e.py
+e3workflow.cli	build_parser; validate_command; plan_command; main	test_cli.py; test_runner_e2e.py

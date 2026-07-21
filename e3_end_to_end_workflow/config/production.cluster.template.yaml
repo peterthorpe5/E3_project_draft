@@ -1,0 +1,69 @@
+# Copy this file for each immutable production run and replace every CHANGE_ME value.
+schema_version: 1
+run:
+  name: CHANGE_ME_run_id
+  mode: production
+  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+inputs:
+  proteomes_manifest: /CHANGE_ME/proteomes.tsv
+  seeds_manifest: /CHANGE_ME/known_e3_seeds.tsv
+  shortlist_manifest: /CHANGE_ME/approved_ligandability_shortlist.tsv
+stages:
+  00_inputs:
+    enabled: true
+    required: true
+    expected_outputs: [input_validation.tsv]
+  01_prepared_proteomes:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_PREPARATION_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["prepared_proteomes.tsv"]
+  02_discovery:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_DISCOVERY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["duckdb/e3_discovery_resource.duckdb"]
+  03_candidate_evidence:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_CANDIDATE_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["candidate_evidence/e3_cluster_candidate_evidence.parquet"]
+  04_orthofinder:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_ORTHOFINDER_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["Results/Orthogroups/Orthogroups.tsv"]
+  05_orthology:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_ORTHOLOGY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["tables/orthogroup_membership.parquet"]
+  06_domains:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_DOMAIN_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["tables/domain_evidence.parquet"]
+  07_expression:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_EXPRESSION_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["e3_expression.duckdb"]
+  08_shortlist_gate:
+    enabled: true
+    required: true
+    expected_outputs: ["approved_accessions.tsv"]
+  09_ligandability:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_LIGANDABILITY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["duckdb/e3_ligandability.duckdb"]
+  10_integrated_resource:
+    enabled: true
+    required: true
+    command: ["CHANGE_ME_INTEGRATION_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    expected_outputs: ["duckdb/e3_integrated_resource.duckdb"]
+  11_app_ready:
+    enabled: true
+    required: true
+    expected_outputs: ["app_handoff.tsv"]

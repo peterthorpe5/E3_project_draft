@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3-python-app"
+version = "0.1.0"
+description = "Testable Streamlit and DuckDB browser for the ARIA plant E3 resource"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Internal research use"}
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = [
+  "duckdb>=1.4,<2",
+  "pandas>=2.2,<3",
+  "pyarrow>=18,<26",
+  "streamlit>=1.42,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7.6,<8",
+  "pycodestyle>=2.12,<3",
+  "pydocstyle>=6.3,<7",
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+e3-python-app = "e3app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+e3app = ["*.toml"]
+
+[tool.coverage.run]
+branch = true
+source = ["e3app"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+
+[tool.pycodestyle]
+max-line-length = 100
+exclude = ".git,__pycache__,build,dist"
+
+[tool.pydocstyle]
+convention = "google"
+add-ignore = ["D105", "D107"]

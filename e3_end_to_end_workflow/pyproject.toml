@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3-end-to-end-workflow"
+version = "0.1.0"
+description = "Restartable Snakemake orchestration for the ARIA plant E3 discovery resource"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Internal research use"}
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = ["PyYAML>=6,<7"]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7.6,<8",
+  "pycodestyle>=2.12,<3",
+  "pydocstyle>=6.3,<7",
+  "pytest>=8,<9",
+  "snakemake>=9,<10",
+]
+
+[project.scripts]
+e3-workflow = "e3workflow.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["e3workflow"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+
+[tool.pycodestyle]
+max-line-length = 100
+exclude = ".git,.snakemake,__pycache__,build,dist"
+
+[tool.pydocstyle]
+convention = "google"
+add-ignore = ["D105", "D107"]

@@ -1,0 +1,9 @@
+/.snakemake/
+/build/
+/dist/
+/logs/
+/test_runs/
+*.egg-info/
+__pycache__/
+.coverage
+.pytest_cache/

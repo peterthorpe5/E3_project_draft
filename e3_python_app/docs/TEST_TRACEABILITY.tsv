@@ -1,0 +1,5 @@
+module	function	tests
+e3app.config	parse_positive_integer; config_from_environment; validate_config	test_config.py
+e3app.data	quote_identifier; open_read_only; list_relations; relation_columns; relation_count; preview_relation; resource_overview; infer_capability; search_accession	test_data.py
+e3app.cli	build_parser; streamlit_command; main	test_cli.py
+e3app.streamlit_app	render_app	test_streamlit_app.py

@@ -1,0 +1,4 @@
+duckdb>=1.4,<2
+pandas>=2.2,<3
+pyarrow>=18,<26
+streamlit>=1.42,<2

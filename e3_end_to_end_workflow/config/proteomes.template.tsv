@@ -1,0 +1,2 @@
+species_id	scientific_name	fasta_path	fasta_sha256	include
+arabidopsis_thaliana	Arabidopsis thaliana	/CHANGE_ME/Arabidopsis_thaliana.fasta	CHANGE_ME_SHA256	true

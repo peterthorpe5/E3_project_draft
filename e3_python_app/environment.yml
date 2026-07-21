@@ -1,0 +1,14 @@
+name: e3_python_app
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.11,<3.14
+  - pip
+  - duckdb>=1.4,<2
+  - pandas>=2.2,<3
+  - pyarrow>=18,<26
+  - streamlit>=1.42,<2
+  - coverage>=7.6,<8
+  - pycodestyle>=2.12,<3
+  - pydocstyle>=6.3,<7
+  - pytest>=8,<9
