@@ -23,6 +23,7 @@ from e3orthology.io_utils import (
     atomic_write_json,
     atomic_write_text,
     canonical_digest,
+    configure_arrow_threads,
     ensure_readable_file,
     file_record,
     link_or_copy,
@@ -61,6 +62,20 @@ class FileUtilityTests(unittest.TestCase):
             empty.touch()
             with self.assertRaises(InputValidationError):
                 ensure_readable_file(path=empty)
+
+    def test_arrow_thread_limits_are_explicit_and_validated(self) -> None:
+        """The execution thread setting configures both PyArrow thread pools."""
+
+        with (
+            patch("e3orthology.io_utils.pa.set_cpu_count") as set_cpu_count,
+            patch("e3orthology.io_utils.pa.set_io_thread_count") as set_io_thread_count,
+        ):
+            configure_arrow_threads(threads=4)
+        set_cpu_count.assert_called_once_with(4)
+        set_io_thread_count.assert_called_once_with(4)
+        for invalid in (True, 0, -1, 1.5):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                configure_arrow_threads(threads=invalid)  # type: ignore[arg-type]
 
     def test_atomic_text_json_tsv_and_parquet(self) -> None:
         """Atomic portable outputs contain the expected rows and schema."""

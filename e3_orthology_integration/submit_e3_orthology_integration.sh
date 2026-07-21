@@ -24,12 +24,13 @@ Scheduler options:
   --partition NAME        Slurm partition (default: general).
   --memory SIZE           Requested memory (default: 64G).
   --time HH:MM:SS         Walltime (default: 24:00:00).
-  --cpus-per-task INTEGER CPUs for the task (default: 4).
+  --cpus-per-task INTEGER CPUs for the task (default: 4; must match --threads).
   --job-name NAME         Slurm job name (default: e3_orthology).
   --log-dir PATH          Slurm stdout/stderr directory (default: RUN_ROOT/slurm_logs).
   --help                  Show this help.
 
-Everything after -- is passed unchanged to run_e3_orthology_integration.sh.
+Everything after -- is passed to run_e3_orthology_integration.sh. If pipeline --threads is
+omitted, it is set to --cpus-per-task. An explicit --threads value must match the CPU request.
 
 Example:
   ./submit_e3_orthology_integration.sh -- \
@@ -56,6 +57,44 @@ done
     printf 'ERROR: --cpus-per-task must be a positive integer.\n' >&2
     exit 2
 }
+declare -a PIPELINE_ARGS=("$@")
+PIPELINE_THREADS=""
+THREAD_OPTION_COUNT=0
+for ((index = 0; index < ${#PIPELINE_ARGS[@]}; index++)); do
+    argument="${PIPELINE_ARGS[index]}"
+    case "${argument}" in
+        --threads)
+            ((index + 1 < ${#PIPELINE_ARGS[@]})) || {
+                printf 'ERROR: pipeline --threads requires a value.\n' >&2
+                exit 2
+            }
+            PIPELINE_THREADS="${PIPELINE_ARGS[index + 1]}"
+            ((THREAD_OPTION_COUNT += 1))
+            ((index += 1))
+            ;;
+        --threads=*)
+            PIPELINE_THREADS="${argument#--threads=}"
+            ((THREAD_OPTION_COUNT += 1))
+            ;;
+    esac
+done
+if ((THREAD_OPTION_COUNT > 1)); then
+    printf 'ERROR: pipeline --threads may be supplied only once.\n' >&2
+    exit 2
+fi
+if [[ -z "${PIPELINE_THREADS}" ]]; then
+    PIPELINE_THREADS="${CPUS}"
+    PIPELINE_ARGS+=(--threads "${PIPELINE_THREADS}")
+fi
+if [[ ! "${PIPELINE_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ERROR: pipeline --threads must be a positive integer.\n' >&2
+    exit 2
+fi
+if [[ "${PIPELINE_THREADS}" != "${CPUS}" ]]; then
+    printf 'ERROR: --cpus-per-task (%s) must equal pipeline --threads (%s).\n' \
+        "${CPUS}" "${PIPELINE_THREADS}" >&2
+    exit 2
+fi
 [[ "${WALLTIME}" =~ ^([0-9]{1,2}):([0-5][0-9]):([0-5][0-9])$ ]] || {
     printf 'ERROR: --time must use HH:MM:SS with valid minute and second fields.\n' >&2
     exit 2
@@ -72,7 +111,7 @@ command -v sbatch >/dev/null 2>&1 || { printf 'ERROR: sbatch is unavailable.\n' 
 [[ -x "${SBATCH_SCRIPT}" ]] || { printf 'ERROR: missing %s\n' "${SBATCH_SCRIPT}" >&2; exit 2; }
 [[ -x "${RUNNER}" ]] || { printf 'ERROR: missing %s\n' "${RUNNER}" >&2; exit 2; }
 
-if ! RUN_ROOT="$("${RUNNER}" --resolve-run-root "$@")"; then
+if ! RUN_ROOT="$("${RUNNER}" --resolve-run-root "${PIPELINE_ARGS[@]}")"; then
     printf 'ERROR: submission preflight could not resolve the run directory.\n' >&2
     exit 2
 fi
@@ -81,17 +120,18 @@ if [[ -z "${LOG_DIR}" ]]; then
 fi
 mkdir -p -- "${LOG_DIR}"
 
-SBATCH_RESULT="$(sbatch \
+SBATCH_RESULT="$(env -u SLURM_CPUS_PER_TASK sbatch \
     --parsable \
     --account="${ACCOUNT}" \
     --partition="${PARTITION}" \
     --mem="${MEMORY}" \
     --time="${WALLTIME}" \
     --cpus-per-task="${CPUS}" \
+    --export="ALL,E3_REQUESTED_CPUS=${CPUS}" \
     --job-name="${JOB_NAME}" \
     --output="${LOG_DIR}/%x_%j.out" \
     --error="${LOG_DIR}/%x_%j.err" \
-    "${SBATCH_SCRIPT}" "${RUNNER}" "$@")"
+    "${SBATCH_SCRIPT}" "${RUNNER}" "${PIPELINE_ARGS[@]}")"
 
 JOB_ID="${SBATCH_RESULT%%;*}"
 [[ "${JOB_ID}" =~ ^[0-9]+$ ]] || {

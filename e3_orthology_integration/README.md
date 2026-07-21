@@ -100,6 +100,17 @@ prints the job ID, absolute run directory, exact Slurm log paths and an `squeue`
 command. The default walltime is 24 hours; the submitter rejects requests above the Dundee
 cluster maximum of 72 hours.
 
+The submitter keeps scheduler and application resources consistent. If `--threads` is omitted,
+it is set from `--cpus-per-task`; if both are supplied, their values must match. Before invoking
+`sbatch`, the wrapper removes any inherited `SLURM_CPUS_PER_TASK` value from a parent interactive
+allocation. The batch job independently verifies that Slurm's value matches the request before
+starting Python. This prevents a nine-CPU interactive shell, for example, from being misreported
+as the allocation of a child job that requested four CPUs.
+
+Within Python, `--threads` explicitly caps PyArrow's compute and I/O thread pools. The large
+identifier and membership expansions remain memory-bounded streaming loops and are primarily
+single-process; the option does not claim that every stage will keep every allocated CPU busy.
+
 The submitter passes the preflight-validated absolute runner path into the batch job explicitly.
 This is required because Slurm executes a copied batch script under `/var/spool/slurmd`; a batch
 script must not try to locate the package relative to its temporary spool path.
@@ -180,3 +191,10 @@ passes only when the final summary reports `OK` and the quality-gate script exit
 The test runner executes unit, integration and end-to-end tests, branch coverage, PEP 8 checks,
 Google-style docstring checks, Python compilation and shell syntax validation. The package targets
 100 characters per normal Python line and at least 95% branch-aware statement coverage.
+
+## Version 0.1.3
+
+This maintenance release fixes progress logging for grouped record counts, prevents inherited
+Slurm CPU metadata from contaminating child jobs, enforces agreement between requested CPUs and
+pipeline threads, and applies the thread limit to PyArrow's compute and I/O pools. These changes do
+not alter the scientific mapping or validation rules.

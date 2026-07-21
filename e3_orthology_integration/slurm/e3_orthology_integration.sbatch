@@ -20,10 +20,28 @@ if [[ ! -f "${RUNNER}" || ! -x "${RUNNER}" ]]; then
     exit 2
 fi
 
+REQUESTED_CPUS="${E3_REQUESTED_CPUS:-}"
+ALLOCATED_CPUS="${SLURM_CPUS_PER_TASK:-}"
+if [[ ! "${REQUESTED_CPUS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ERROR: E3_REQUESTED_CPUS is missing or invalid: %s\n' \
+        "${REQUESTED_CPUS:-unset}" >&2
+    exit 2
+fi
+if [[ ! "${ALLOCATED_CPUS}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ERROR: SLURM_CPUS_PER_TASK is missing or invalid: %s\n' \
+        "${ALLOCATED_CPUS:-unset}" >&2
+    exit 2
+fi
+if [[ "${ALLOCATED_CPUS}" != "${REQUESTED_CPUS}" ]]; then
+    printf 'ERROR: Slurm CPU mismatch: requested %s but allocated %s per task.\n' \
+        "${REQUESTED_CPUS}" "${ALLOCATED_CPUS}" >&2
+    exit 2
+fi
+
 printf '%s\tINFO\tSlurm job %s started on %s.\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${SLURM_JOB_ID:-unknown}" "$(hostname)"
-printf '%s\tINFO\tAllocated CPUs: %s\n' \
-    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${SLURM_CPUS_PER_TASK:-unknown}"
+printf '%s\tINFO\tRequested and allocated CPUs per task: %s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${ALLOCATED_CPUS}"
 printf '%s\tINFO\tPipeline runner: %s\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${RUNNER}"
 

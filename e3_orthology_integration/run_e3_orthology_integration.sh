@@ -36,7 +36,7 @@ Core pipeline options:
   --expected-orthogroup IDENTIFIER
   --expected-hierarchical-orthogroup IDENTIFIER
   --skip-sqlite-regression
-  --threads INTEGER
+  --threads INTEGER          Limit PyArrow CPU and I/O thread pools.
   --resume
   --start-at STAGE
   --stop-after STAGE

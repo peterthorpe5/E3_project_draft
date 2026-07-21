@@ -19,6 +19,22 @@ import pyarrow.parquet as pq
 from .errors import InputValidationError
 
 
+def configure_arrow_threads(*, threads: int) -> None:
+    """Set explicit limits for the PyArrow compute and I/O thread pools.
+
+    Args:
+        threads: Positive number of threads available to Arrow-backed operations.
+
+    Raises:
+        ValueError: If ``threads`` is a Boolean or is not positive.
+    """
+
+    if isinstance(threads, bool) or not isinstance(threads, int) or threads <= 0:
+        raise ValueError("threads must be a positive integer.")
+    pa.set_cpu_count(threads)
+    pa.set_io_thread_count(threads)
+
+
 def utc_now_iso() -> str:
     """Return the current UTC time in ISO-8601 form.
 

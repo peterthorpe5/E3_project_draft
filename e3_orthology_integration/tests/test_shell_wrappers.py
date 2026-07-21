@@ -88,6 +88,7 @@ class ShellWrapperTests(unittest.TestCase):
             fake_bin.mkdir()
             run_root = root / "external_analysis" / "fixture_run"
             sbatch_arguments = root / "sbatch_arguments.txt"
+            sbatch_environment = root / "sbatch_environment.txt"
             fake_conda = fake_bin / "conda"
             fake_conda.write_text(
                 "#!/usr/bin/env bash\n"
@@ -109,6 +110,8 @@ class ShellWrapperTests(unittest.TestCase):
                 "#!/usr/bin/env bash\n"
                 "set -Eeuo pipefail\n"
                 "printf '%s\\n' \"$@\" > \"${FAKE_SBATCH_ARGUMENTS}\"\n"
+                "printf '%s\\n' \"${SLURM_CPUS_PER_TASK-unset}\" > "
+                "\"${FAKE_SBATCH_ENVIRONMENT}\"\n"
                 "printf '4242;test-cluster\\n'\n",
                 encoding="utf-8",
             )
@@ -117,7 +120,9 @@ class ShellWrapperTests(unittest.TestCase):
                 **os.environ,
                 "FAKE_RUN_ROOT": str(run_root),
                 "FAKE_SBATCH_ARGUMENTS": str(sbatch_arguments),
+                "FAKE_SBATCH_ENVIRONMENT": str(sbatch_environment),
                 "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                "SLURM_CPUS_PER_TASK": "9",
             }
             completed = subprocess.run(
                 args=[
@@ -143,8 +148,11 @@ class ShellWrapperTests(unittest.TestCase):
             self.assertIn("Monitor: squeue --job 4242", completed.stdout)
             recorded = sbatch_arguments.read_text(encoding="utf-8")
             self.assertIn("--parsable", recorded)
+            self.assertIn("--cpus-per-task=4", recorded)
+            self.assertIn("--export=ALL,E3_REQUESTED_CPUS=4", recorded)
             self.assertIn(f"--output={run_root}/slurm_logs/%x_%j.out", recorded)
             self.assertIn(f"--error={run_root}/slurm_logs/%x_%j.err", recorded)
+            self.assertEqual(sbatch_environment.read_text(encoding="utf-8").strip(), "unset")
             submitted_arguments = recorded.splitlines()
             batch_script_index = submitted_arguments.index(
                 str(package_root / "slurm" / "e3_orthology_integration.sbatch")
@@ -154,6 +162,8 @@ class ShellWrapperTests(unittest.TestCase):
                 str(package_root / "run_e3_orthology_integration.sh"),
             )
             self.assertIn("--conda-env", submitted_arguments[batch_script_index + 2 :])
+            threads_index = submitted_arguments.index("--threads")
+            self.assertEqual(submitted_arguments[threads_index + 1], "4")
             repository_logs_after = (
                 set(repository_log_root.rglob("*")) if repository_log_root.exists() else set()
             )
@@ -184,6 +194,7 @@ class ShellWrapperTests(unittest.TestCase):
             environment = {
                 **os.environ,
                 "FAKE_RUNNER_ARGUMENTS": str(captured_arguments),
+                "E3_REQUESTED_CPUS": "4",
                 "SLURM_JOB_ID": "4242",
                 "SLURM_CPUS_PER_TASK": "4",
             }
@@ -203,6 +214,7 @@ class ShellWrapperTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn(f"Pipeline runner: {runner}", completed.stdout)
+            self.assertIn("Requested and allocated CPUs per task: 4", completed.stdout)
             self.assertEqual(
                 captured_arguments.read_text(encoding="utf-8").splitlines(),
                 ["--conda-env", "e3_orthology", "--resume"],
@@ -221,6 +233,53 @@ class ShellWrapperTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 2)
         self.assertIn("absolute pipeline runner path was not supplied", completed.stderr)
+
+    def test_batch_script_rejects_cpu_mismatch(self) -> None:
+        """The compute-node guard rejects stale or inconsistent CPU metadata."""
+
+        package_root = Path(__file__).resolve().parents[1]
+        runner = package_root / "run_e3_orthology_integration.sh"
+        environment = {
+            **os.environ,
+            "E3_REQUESTED_CPUS": "4",
+            "SLURM_CPUS_PER_TASK": "9",
+        }
+        completed = subprocess.run(
+            args=[
+                str(package_root / "slurm" / "e3_orthology_integration.sbatch"),
+                str(runner),
+            ],
+            cwd=package_root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("requested 4 but allocated 9", completed.stderr)
+
+    def test_submitter_rejects_mismatched_pipeline_threads(self) -> None:
+        """Scheduler CPUs and pipeline threads cannot silently diverge."""
+
+        package_root = Path(__file__).resolve().parents[1]
+        completed = subprocess.run(
+            args=[
+                str(package_root / "submit_e3_orthology_integration.sh"),
+                "--cpus-per-task",
+                "4",
+                "--",
+                "--conda-env",
+                "e3_orthology",
+                "--threads",
+                "2",
+            ],
+            cwd=package_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("must equal pipeline --threads", completed.stderr)
 
     def test_submitter_rejects_walltime_above_three_days(self) -> None:
         """A request beyond the Dundee Slurm limit fails before submission."""

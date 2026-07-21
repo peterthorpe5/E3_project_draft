@@ -67,6 +67,13 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(config["regression"]["accession"], "ACCESSION")
         self.assertEqual(config["regression"]["expected_raw_identifier"], "raw-accession")
         self.assertEqual(config["execution"]["threads"], 8)
+        configured_default = load_config(path=None)
+        configured_default["execution"]["threads"] = 6
+        without_override = apply_cli_config(
+            config=configured_default,
+            args=parser.parse_args([]),
+        )
+        self.assertEqual(without_override["execution"]["threads"], 6)
 
     def test_module_entry_point_returns_main_exit_code(self) -> None:
         """The module entry point propagates the CLI return code."""

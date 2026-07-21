@@ -6,11 +6,13 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pyarrow.parquet as pq
 
 from e3orthology.errors import InputValidationError, ScientificValidationError
 from e3orthology.pipeline import (
+    _log_record_count,
     _mapping_tier,
     _read_tsv,
     build_stage_specs,
@@ -92,15 +94,17 @@ class PipelineEndToEndTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             paths, config = create_fixture(Path(temporary))
-            planned = run_pipeline(
-                paths=paths,
-                config=config,
-                resume=False,
-                start_at=None,
-                stop_after=None,
-                force_stages=set(),
-                dry_run=True,
-            )
+            with patch("e3orthology.pipeline.configure_arrow_threads") as configure_threads:
+                planned = run_pipeline(
+                    paths=paths,
+                    config=config,
+                    resume=False,
+                    start_at=None,
+                    stop_after=None,
+                    force_stages=set(),
+                    dry_run=True,
+                )
+            configure_threads.assert_called_once_with(threads=config["execution"]["threads"])
             self.assertEqual(len(planned), 6)
             self.assertFalse(paths.run_root.exists())
             bounded = run_pipeline(
@@ -157,6 +161,9 @@ class PipelineEndToEndTests(unittest.TestCase):
     def test_small_pipeline_helpers_and_contract(self) -> None:
         """Helper records, tiers, stage paths and specs remain stable."""
 
+        with self.assertLogs("e3orthology.pipeline", level="INFO") as captured:
+            _log_record_count(label="Identifier map: parsed", count=1_250_000)
+        self.assertIn("Identifier map: parsed: 1,250,000 records.", captured.output[0])
         with tempfile.TemporaryDirectory() as temporary:
             paths, config = create_fixture(Path(temporary))
             runtime = serialisable_runtime(paths=paths, config=config)

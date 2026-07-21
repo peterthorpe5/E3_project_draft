@@ -19,6 +19,7 @@ from .io_utils import (
     atomic_write_json,
     atomic_write_text,
     canonical_digest,
+    configure_arrow_threads,
     file_record,
     link_or_copy,
     tsv_to_parquet,
@@ -35,6 +36,18 @@ from .sqlite_audit import lookup_inherited_groups
 from .stages import StageSpec, run_stage_plan, stage_directory
 
 _LOGGER = logging.getLogger("e3orthology.pipeline")
+
+
+def _log_record_count(*, label: str, count: int) -> None:
+    """Log a progress count with explicit thousands separators.
+
+    Args:
+        label: Description placed before the record count.
+        count: Non-negative number of records processed.
+    """
+
+    _LOGGER.info("%s: %s records.", label, f"{count:,}")
+
 
 SEQUENCE_FIELDS = (
     "internal_id",
@@ -491,7 +504,10 @@ def run_identifier_stage(
         ):
             metrics["record_count"] += 1
             if metrics["record_count"] % 250_000 == 0:
-                _LOGGER.info("Identifier map: parsed %,d records.", metrics["record_count"])
+                _log_record_count(
+                    label="Identifier map: parsed",
+                    count=metrics["record_count"],
+                )
             accession = record.parsed.parsed_accession
             if accession is None:
                 metrics["unparsed_count"] += 1
@@ -595,7 +611,10 @@ def run_membership_stage(
         ):
             metrics[metric_name] += 1
             if metrics[metric_name] % 250_000 == 0:
-                _LOGGER.info("Membership %s: %,d records.", record_type, metrics[metric_name])
+                _log_record_count(
+                    label=f"Membership {record_type}",
+                    count=metrics[metric_name],
+                )
             if record.parsed.parsed_accession is None:
                 metrics["unparsed_count"] += 1
             else:
@@ -1521,6 +1540,9 @@ def run_pipeline(
         Ordered stage decision records.
     """
 
+    threads = int(config["execution"]["threads"])
+    configure_arrow_threads(threads=threads)
+    _LOGGER.info("Execution threads: %d (PyArrow CPU and I/O pools).", threads)
     runtime = serialisable_runtime(paths=paths, config=config)
     config_digest = canonical_digest(value=runtime)
     specs = build_stage_specs(paths=paths, config=config)

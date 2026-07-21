@@ -120,7 +120,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable comparison to inherited SQLite for a deliberate new-data run.",
     )
-    parser.add_argument("--threads", type=positive_integer, default=1)
+    parser.add_argument(
+        "--threads",
+        type=positive_integer,
+        help="Override the configured PyArrow CPU and I/O thread-pool limit.",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--start-at", choices=STAGE_NAMES)
     parser.add_argument("--stop-after", choices=STAGE_NAMES)
@@ -169,7 +173,8 @@ def apply_cli_config(*, config: dict[str, Any], args: argparse.Namespace) -> dic
         )
     if args.skip_sqlite_regression:
         config["input"]["require_sqlite_regression"] = False
-    config["execution"]["threads"] = args.threads
+    if args.threads is not None:
+        config["execution"]["threads"] = args.threads
     validate_config(config=config)
     return config
 
