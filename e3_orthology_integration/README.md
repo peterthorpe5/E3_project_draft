@@ -100,6 +100,10 @@ prints the job ID, absolute run directory, exact Slurm log paths and an `squeue`
 command. The default walltime is 24 hours; the submitter rejects requests above the Dundee
 cluster maximum of 72 hours.
 
+The submitter passes the preflight-validated absolute runner path into the batch job explicitly.
+This is required because Slurm executes a copied batch script under `/var/spool/slurmd`; a batch
+script must not try to locate the package relative to its temporary spool path.
+
 From the package directory, the default run can be inspected with:
 
 ```bash

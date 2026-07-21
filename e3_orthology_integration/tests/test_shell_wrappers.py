@@ -145,10 +145,82 @@ class ShellWrapperTests(unittest.TestCase):
             self.assertIn("--parsable", recorded)
             self.assertIn(f"--output={run_root}/slurm_logs/%x_%j.out", recorded)
             self.assertIn(f"--error={run_root}/slurm_logs/%x_%j.err", recorded)
+            submitted_arguments = recorded.splitlines()
+            batch_script_index = submitted_arguments.index(
+                str(package_root / "slurm" / "e3_orthology_integration.sbatch")
+            )
+            self.assertEqual(
+                submitted_arguments[batch_script_index + 1],
+                str(package_root / "run_e3_orthology_integration.sh"),
+            )
+            self.assertIn("--conda-env", submitted_arguments[batch_script_index + 2 :])
             repository_logs_after = (
                 set(repository_log_root.rglob("*")) if repository_log_root.exists() else set()
             )
             self.assertEqual(repository_logs_after, repository_logs_before)
+
+    def test_batch_script_uses_supplied_absolute_runner_from_spool_copy(self) -> None:
+        """The Slurm script must not resolve the runner relative to its spool copy."""
+
+        package_root = Path(__file__).resolve().parents[1]
+        batch_script = package_root / "slurm" / "e3_orthology_integration.sbatch"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            spool_directory = root / "var" / "spool" / "slurmd" / "job4242"
+            spool_directory.mkdir(parents=True)
+            spool_copy = spool_directory / "slurm_script"
+            spool_copy.write_bytes(batch_script.read_bytes())
+            spool_copy.chmod(0o755)
+            runner = root / "shared" / "run_e3_orthology_integration.sh"
+            runner.parent.mkdir()
+            captured_arguments = root / "runner_arguments.txt"
+            runner.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -Eeuo pipefail\n"
+                "printf '%s\\n' \"$@\" > \"${FAKE_RUNNER_ARGUMENTS}\"\n",
+                encoding="utf-8",
+            )
+            runner.chmod(0o755)
+            environment = {
+                **os.environ,
+                "FAKE_RUNNER_ARGUMENTS": str(captured_arguments),
+                "SLURM_JOB_ID": "4242",
+                "SLURM_CPUS_PER_TASK": "4",
+            }
+            completed = subprocess.run(
+                args=[
+                    str(spool_copy),
+                    str(runner),
+                    "--conda-env",
+                    "e3_orthology",
+                    "--resume",
+                ],
+                cwd=spool_directory,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn(f"Pipeline runner: {runner}", completed.stdout)
+            self.assertEqual(
+                captured_arguments.read_text(encoding="utf-8").splitlines(),
+                ["--conda-env", "e3_orthology", "--resume"],
+            )
+
+    def test_batch_script_rejects_missing_runner_argument(self) -> None:
+        """A malformed direct batch submission fails with an actionable error."""
+
+        package_root = Path(__file__).resolve().parents[1]
+        completed = subprocess.run(
+            args=[str(package_root / "slurm" / "e3_orthology_integration.sbatch")],
+            cwd=package_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("absolute pipeline runner path was not supplied", completed.stderr)
 
     def test_submitter_rejects_walltime_above_three_days(self) -> None:
         """A request beyond the Dundee Slurm limit fails before submission."""

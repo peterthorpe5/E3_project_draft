@@ -91,7 +91,7 @@ SBATCH_RESULT="$(sbatch \
     --job-name="${JOB_NAME}" \
     --output="${LOG_DIR}/%x_%j.out" \
     --error="${LOG_DIR}/%x_%j.err" \
-    "${SBATCH_SCRIPT}" "$@")"
+    "${SBATCH_SCRIPT}" "${RUNNER}" "$@")"
 
 JOB_ID="${SBATCH_RESULT%%;*}"
 [[ "${JOB_ID}" =~ ^[0-9]+$ ]] || {
