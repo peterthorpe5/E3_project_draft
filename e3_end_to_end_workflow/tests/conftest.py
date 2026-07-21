@@ -34,4 +34,3 @@ def synthetic_config(tmp_path: Path, package_root: Path) -> Path:
     path = config_dir / "workflow.yaml"
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     return path
-

@@ -34,4 +34,3 @@ def test_cli_stage_and_error(synthetic_config: Path, tmp_path: Path) -> None:
         == 0
     )
     assert main(["validate", "--config", str(tmp_path / "missing")]) == 2
-

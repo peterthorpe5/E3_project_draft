@@ -15,4 +15,3 @@ class ManifestError(WorkflowError):
 
 class StageError(WorkflowError):
     """Raised when a stage fails or publishes invalid output."""
-

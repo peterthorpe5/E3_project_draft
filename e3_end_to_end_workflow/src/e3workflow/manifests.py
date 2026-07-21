@@ -108,4 +108,3 @@ def validate_shortlist(path: Path) -> list[dict[str, str]]:
     if "approve" not in decisions:
         raise ManifestError("Shortlist contains no approved accessions")
     return rows
-
