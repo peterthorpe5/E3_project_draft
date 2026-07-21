@@ -6,6 +6,8 @@ import argparse
 import runpy
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -103,6 +105,38 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(paths.results_directory, fixture_paths.results_directory)
             self.assertEqual(paths.output_root, Path(temporary).resolve() / "new_output")
             self.assertEqual(paths.run_name, "new_run")
+
+    def test_print_run_root_exits_without_running_pipeline(self) -> None:
+        """The shell-wrapper resolver prints one absolute path without starting stages."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            paths, _ = create_fixture(Path(temporary))
+            arguments = [
+                "--project-root",
+                temporary,
+                "--orthofinder-results-dir",
+                str(paths.results_directory),
+                "--candidate-evidence",
+                str(paths.candidate_evidence),
+                "--sqlite-database",
+                str(paths.sqlite_database),
+                "--species-manifest",
+                str(paths.species_manifest),
+                "--output-root",
+                str(paths.output_root),
+                "--run-name",
+                paths.run_name,
+                "--print-run-root",
+            ]
+            standard_output = StringIO()
+            with (
+                patch("e3orthology.cli.run_pipeline") as run_pipeline,
+                redirect_stdout(standard_output),
+            ):
+                exit_code = main(arguments)
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(standard_output.getvalue().strip(), str(paths.run_root))
+            run_pipeline.assert_not_called()
 
     def test_main_end_to_end_expected_and_unexpected_exit_codes(self) -> None:
         """CLI success, expected input failure and unexpected defect codes differ."""

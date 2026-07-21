@@ -94,6 +94,19 @@ The default formal output is:
     └── superseded/
 ```
 
+The wrapper log and Slurm stdout/stderr are also stored under this run directory. No runtime
+results or logs are written inside the Git checkout by default. After submission, the wrapper
+prints the job ID, absolute run directory, exact Slurm log paths and an `squeue` monitoring
+command. The default walltime is 24 hours; the submitter rejects requests above the Dundee
+cluster maximum of 72 hours.
+
+From the package directory, the default run can be inspected with:
+
+```bash
+ls -lrth \
+    ../../analysis/e3_orthology_integration/results_feb26_identifier_reconciliation_v0_1_0
+```
+
 The final publication stage contains `tables`, `qc`, and `provenance` directories. TSV is the
 human-auditable authority and Parquet is the efficient analytical authority.
 
@@ -133,6 +146,26 @@ the new run.
 - `--dry-run` reports decisions without creating analysis outputs.
 
 Run `./run_e3_orthology_integration.sh --help` for the complete named-option interface.
+
+## Generated files in a checkout
+
+Editable installation and quality checks can create disposable local files. They are ignored by
+Git and may be removed when no process is using the checkout:
+
+```text
+build/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+.coverage
+__pycache__/
+logs/
+slurm_logs/
+```
+
+The failure tracebacks emitted by `test_scientific_and_structural_failures` and
+`test_failed_stage_is_retained_and_not_published` are deliberate negative-path tests. The suite
+passes only when the final summary reports `OK` and the quality-gate script exits successfully.
 
 ## Tests and quality gates
 

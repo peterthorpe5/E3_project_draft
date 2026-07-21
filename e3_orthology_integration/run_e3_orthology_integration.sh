@@ -6,6 +6,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 CONDA_ENV="e3_orthology"
 WRAPPER_LOG=""
+RESOLVE_RUN_ROOT_ONLY="false"
 declare -a CLI_ARGS=()
 
 usage() {
@@ -15,7 +16,7 @@ Usage:
 
 Wrapper options:
   --conda-env NAME       Conda environment containing the installed package.
-  --wrapper-log PATH     Shell-level log; default: ./logs/run_<timestamp>.log.
+  --wrapper-log PATH     Shell-level log; default: RUN_ROOT/logs/wrapper_<timestamp>.log.
   --help                 Show this help and the Python pipeline help.
 
 Core pipeline options:
@@ -60,6 +61,10 @@ while (($#)); do
             WRAPPER_LOG="$2"
             shift 2
             ;;
+        --resolve-run-root)
+            RESOLVE_RUN_ROOT_ONLY="true"
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -71,9 +76,38 @@ while (($#)); do
     esac
 done
 
+command -v conda >/dev/null 2>&1 || {
+    printf 'ERROR: conda is not available on PATH.\n' >&2
+    exit 2
+}
+
+resolve_run_root() {
+    local run_root
+
+    if ! run_root="$(
+        conda run --no-capture-output -n "${CONDA_ENV}" \
+            python -m e3orthology --print-run-root "${CLI_ARGS[@]}"
+    )"; then
+        printf 'ERROR: could not resolve the pipeline run directory.\n' >&2
+        return 2
+    fi
+    if [[ -z "${run_root}" || "${run_root}" != /* || "${run_root}" == *$'\n'* ]]; then
+        printf 'ERROR: resolved run directory is not one absolute path: %q\n' \
+            "${run_root}" >&2
+        return 2
+    fi
+    printf '%s\n' "${run_root}"
+}
+
+RUN_ROOT="$(resolve_run_root)"
+if [[ "${RESOLVE_RUN_ROOT_ONLY}" == "true" ]]; then
+    printf '%s\n' "${RUN_ROOT}"
+    exit 0
+fi
+
 if [[ -z "${WRAPPER_LOG}" ]]; then
     TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
-    WRAPPER_LOG="${SCRIPT_DIR}/logs/run_e3_orthology_integration_${TIMESTAMP}.log"
+    WRAPPER_LOG="${RUN_ROOT}/logs/wrapper_${TIMESTAMP}.log"
 fi
 mkdir -p -- "$(dirname -- "${WRAPPER_LOG}")"
 exec > >(tee -a -- "${WRAPPER_LOG}") 2>&1
@@ -89,12 +123,8 @@ trap on_error ERR
 printf '%s\tINFO\tWrapper started.\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 printf '%s\tINFO\tPackage directory: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${SCRIPT_DIR}"
 printf '%s\tINFO\tConda environment: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${CONDA_ENV}"
+printf '%s\tINFO\tRun directory: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${RUN_ROOT}"
 printf '%s\tINFO\tWrapper log: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${WRAPPER_LOG}"
-
-command -v conda >/dev/null 2>&1 || {
-    printf 'ERROR: conda is not available on PATH.\n' >&2
-    exit 2
-}
 conda env list | awk 'NF && $1 !~ /^#/{print $1}' | grep -Fx -- "${CONDA_ENV}" >/dev/null || {
     printf 'ERROR: conda environment does not exist: %s\n' "${CONDA_ENV}" >&2
     exit 2

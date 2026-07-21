@@ -132,6 +132,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stage to rerun; may be supplied multiple times.",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--print-run-root",
+        action="store_true",
+        help="Resolve and print the absolute run directory, then exit without writing files.",
+    )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--version", action="version", version=__version__)
     return parser
@@ -234,6 +239,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = apply_cli_config(config=load_config(path=args.config), args=args)
         paths = runtime_from_args(args=args, config=config)
+        if args.print_run_root:
+            print(paths.run_root)
+            return 0
         configure_logging(
             log_path=None if args.dry_run else paths.run_root / "logs" / "pipeline.log",
             verbose=args.verbose,
