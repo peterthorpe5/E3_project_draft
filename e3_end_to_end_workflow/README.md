@@ -4,12 +4,13 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.4.1` upgrades this existing orchestration without replacing any component package. The
+Version `0.5.0` upgrades this existing orchestration without replacing any component package. The
 shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
 start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
 OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
 declarations allow Snakemake and Slurm to schedule that concurrency safely. Detailed resource
-measurements and run-level benchmark summaries are produced automatically.
+measurements, per-stage HTML reports and a consolidated full-run HTML report are produced
+automatically.
 
 The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
 prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
@@ -142,6 +143,55 @@ an unavailable or delayed `sacct` service is recorded in `slurm_accounting_statu
 invalidate successful process-tree measurements. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md)
 for field definitions and interpretation limits.
 
+## Verbose HTML reports
+
+Every successfully published stage contains:
+
+```text
+<run_root>/<stage>/report/stage_report.html
+```
+
+The report is generated after declared outputs validate and before atomic stage publication. It is
+then included in the stage manifest's checksum inventory. Each stage report contains:
+
+- what the stage did, why it was needed, the supported interpretation and an explicit scientific
+  limitation;
+- direct input paths, byte sizes and SHA-256 checksums;
+- the exact external argument vector, or the named internal implementation;
+- start/finish state, declared output validation and links to stage/tool logs;
+- measured wall time, CPU, peak RSS/VMS, I/O, processes, threads, scheduler context and embedded
+  CPU/RAM time-series graphics;
+- declared-output sizes, checksums and evidence-based summaries; and
+- bounded result previews for TSV/TSV.GZ, FASTA, Parquet, DuckDB, SQLite, JSON and text outputs.
+
+Large data authorities are never embedded into HTML. TSV and FASTA files are inspected by streaming;
+Parquet and database files are queried read-only. Preview rows and columns are bounded by the YAML:
+
+```yaml
+reporting:
+  preview_rows: 10
+  max_table_columns: 12
+  max_chart_items: 20
+```
+
+After all twelve stages and the benchmark aggregate complete, Snakemake publishes:
+
+```text
+<run_root>/reports/e3_workflow_summary.html
+<run_root>/reports/report_manifest.json
+<run_root>/reports/report_complete.tsv
+```
+
+The consolidated report includes the controlled inputs, full shell-to-Snakemake invocation history,
+per-stage commands and summaries, workflow metrics, inline stage-comparison graphics and links to
+every detailed stage report. It is self-contained HTML5 with embedded CSS/SVG and therefore remains
+readable when copied away from the cluster, although links to the original result files naturally
+require the run directory to remain together. A partial `--stop-after` run has reports for every
+completed stage but does not claim a complete-run report.
+
+See [docs/REPORTING.md](docs/REPORTING.md) for the complete reporting contract and interpretation
+rules.
+
 ## Restart behaviour
 
 Normal Snakemake targets, `--rerun-incomplete`, checksum-bearing stage manifests and persistent stage
@@ -151,9 +201,12 @@ configuration digest, control tokens and checksummed manifests are the workflow'
 restart records; an interrupted job remains marked incomplete.
 
 The profiles set `drop-metadata: true`, so Snakemake does not retain completed-job metadata after
-successful jobs. The wrapper deliberately does not call `--cleanup-metadata` afterwards: there is
-then no metadata to remove, and recent Snakemake 9 releases correctly return an error when asked to
-clean absent records. Checksummed manifests and control tokens remain the restart authority.
+successful jobs. After the complete default target succeeds, the wrapper also clears incomplete
+markers for every declared, successfully published output. This narrow compatibility step addresses
+a Snakemake 9 multi-output timing edge case; it runs only after the full DAG succeeds and tolerates
+the expected "metadata was not present" return because completed metadata has already been dropped.
+It never runs after a partial target or a failed/interrupted DAG. Checksummed manifests and control
+tokens remain the restart authority.
 
 Use named controls rather than deleting outputs:
 

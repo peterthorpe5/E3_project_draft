@@ -14,6 +14,7 @@ def test_environment_pins_workflow_and_orthology_engines(package_root: Path) -> 
     assert environment["name"] == "e3_end_to_end_workflow"
     assert environment["channels"] == ["conda-forge", "bioconda", "nodefaults"]
     dependencies = environment["dependencies"]
+    assert "duckdb>=1.4,<2" in dependencies
     assert "psutil>=6,<8" in dependencies
     assert "snakemake>=9,<10" in dependencies
     assert "snakemake-executor-plugin-slurm" in dependencies
@@ -30,8 +31,14 @@ def test_profiles_drop_completed_job_metadata(package_root: Path) -> None:
         assert profile["drop-metadata"] is True
 
 
-def test_wrapper_does_not_reclean_dropped_metadata(package_root: Path) -> None:
-    """The wrapper must not clean metadata that profiles have already dropped."""
+def test_wrapper_safely_clears_completed_output_markers(package_root: Path) -> None:
+    """A complete run must clear declared output markers after DAG success."""
 
     wrapper = (package_root / "run_e3_end_to_end.sh").read_text(encoding="utf-8")
-    assert "--cleanup-metadata" not in wrapper
+    assert "--cleanup-metadata" in wrapper
+    assert '[[ -z "${TARGET}" ]] || FULL_DAG_COMPLETION="false"' in wrapper
+    assert '--nolock|--keep-going)' in wrapper
+    assert "POSTPROCESSING_OUTPUTS" in wrapper
+    assert "metadata was not present" in wrapper
+    assert '"${RUN_ROOT}/${stage_name}/stage_manifest.json"' in wrapper
+    assert '"${RUN_ROOT}/${stage_name}/report/stage_report.html"' in wrapper

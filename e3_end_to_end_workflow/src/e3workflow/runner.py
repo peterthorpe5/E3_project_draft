@@ -18,7 +18,13 @@ from e3workflow.benchmarking import (
     StageResourceUsage,
     write_stage_resource_outputs,
 )
-from e3workflow.config import STAGE_NAMES, WorkflowConfig, stage_dependencies, stage_purpose
+from e3workflow.config import (
+    STAGE_NAMES,
+    WorkflowConfig,
+    stage_dependencies,
+    stage_interpretation,
+    stage_purpose,
+)
 from e3workflow.control import stage_token_path
 from e3workflow.errors import StageError
 from e3workflow.io_utils import (
@@ -32,6 +38,7 @@ from e3workflow.io_utils import (
     write_tsv,
 )
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
+from e3workflow.reporting import summarise_declared_outputs, write_stage_report
 
 
 def format_command(command: tuple[str, ...], values: dict[str, str]) -> list[str]:
@@ -260,8 +267,27 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "the run summary also records broader runner timing and optional Slurm accounting.",
             config.benchmarking.sample_interval_seconds,
         )
+        logger.info(
+            "Reporting: after output validation, create a checksum-bound HTML summary with "
+            "scientific interpretation, command provenance, resource graphics and bounded result "
+            "previews. A complete-run report is created only after the full DAG finishes."
+        )
+        execution: dict[str, Any] = {
+            "implementation": "internal",
+            "working_directory": str(config.project_root),
+            "argv": [],
+            "display_command": (
+                f"e3workflow.runner.run_internal_stage(stage_name={stage_name!r})"
+            ),
+        }
         if not stage.enabled:
             status = "skipped_optional"
+            execution.update(
+                {
+                    "implementation": "disabled_optional",
+                    "display_command": "No command: stage disabled in configuration.",
+                }
+            )
             logger.info("Stage is disabled and optional; publishing an explicit skipped record.")
             write_tsv(
                 staging / "SKIPPED.tsv",
@@ -279,6 +305,13 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "threads": str(stage.threads),
             }
             argv = format_command(stage.command, values)
+            execution.update(
+                {
+                    "implementation": "external_argv",
+                    "argv": argv,
+                    "display_command": shlex.join(argv),
+                }
+            )
             logger.info("Command argv: %s", shlex.join(argv))
             environment = os.environ.copy()
             environment.update({f"E3_{key.upper()}": value for key, value in values.items()})
@@ -322,8 +355,17 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         )
         logger.info("Freezing the stage log before calculating the checksum inventory.")
         close_logger(logger)
-        outputs = inventory_files(staging, frozenset({"stage_manifest.json"}))
+        result_summaries = summarise_declared_outputs(
+            config=config,
+            stage_name=stage_name,
+            stage_root=staging,
+        )
+        outputs_before_report = inventory_files(
+            staging,
+            frozenset({"stage_manifest.json", "stage_report.html"}),
+        )
         runner_wall_seconds = max(0.0, time.monotonic() - started_monotonic)
+        interpretation, limitation = stage_interpretation(stage_name)
         summary = {
             "stage": stage_name,
             "status": status,
@@ -337,6 +379,8 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "package_version": __version__,
             "purpose": purpose,
             "rationale": rationale,
+            "supported_interpretation": interpretation,
+            "scientific_limitation": limitation,
             "dependencies": list(dependencies),
             "control_token": {
                 "path": str(control_token),
@@ -348,11 +392,30 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "runtime_minutes": stage.runtime_minutes,
             },
             "benchmark": resource_usage.as_record(),
-            "outputs": outputs,
+            "execution": execution,
+            "validation": {
+                "declared_output_count": len(stage.expected_outputs),
+                "declared_outputs_validated": True,
+                "upstream_manifests_validated": len(dependencies),
+            },
+            "result_summaries": result_summaries,
+            "report": {"path": "report/stage_report.html", "format": "self-contained HTML5"},
+            "outputs": outputs_before_report,
         }
         summary["lineage"] = lineage + [
             {key: summary[key] for key in ("stage", "status", "required", "mode")}
         ]
+        write_stage_report(
+            config=config,
+            stage_name=stage_name,
+            stage_root=staging,
+            stage_summary=summary,
+            result_summaries=result_summaries,
+            output_inventory=outputs_before_report,
+        )
+        summary["finished_at_utc"] = utc_now()
+        summary["runner_wall_seconds"] = max(0.0, time.monotonic() - started_monotonic)
+        summary["outputs"] = inventory_files(staging, frozenset({"stage_manifest.json"}))
         atomic_write_json(staging / "stage_manifest.json", summary)
         formal = run_root / stage_name
         if formal.exists():

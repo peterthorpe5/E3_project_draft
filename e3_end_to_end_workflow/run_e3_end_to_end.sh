@@ -54,7 +54,7 @@ while (($#)); do
         --target) TARGET="$2"; shift 2 ;;
         --dry-run) DRY_RUN="true"; shift ;;
         --unlock) UNLOCK="true"; shift ;;
-        --version) printf 'e3-end-to-end-workflow 0.4.1\n'; exit 0 ;;
+        --version) printf 'e3-end-to-end-workflow 0.5.0\n'; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -174,11 +174,60 @@ COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile" --configfile "
 [[ -n "${TARGET}" ]] && COMMAND+=("${TARGET}")
 COMMAND+=("${EXTRA_ARGS[@]}")
 printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'
+if [[ "${UNLOCK}" == "false" ]]; then
+    e3-workflow record-invocation --config "${CONFIG}" -- "${COMMAND[@]}" >/dev/null
+    printf '%s INFO Recorded the exact shell-to-Snakemake command for HTML provenance.\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+fi
 "${COMMAND[@]}"
 
 if [[ "${DRY_RUN}" == "false" && "${UNLOCK}" == "false" ]]; then
     printf '%s INFO Workflow command completed successfully.\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    FULL_DAG_COMPLETION="true"
+    [[ -z "${TARGET}" ]] || FULL_DAG_COMPLETION="false"
+    for extra_argument in "${EXTRA_ARGS[@]}"; do
+        case "${extra_argument}" in
+            --nolock|--keep-going) ;;
+            *) FULL_DAG_COMPLETION="false" ;;
+        esac
+    done
+    if [[ "${FULL_DAG_COMPLETION}" == "true" ]]; then
+        POSTPROCESSING_OUTPUTS=(
+            "${RUN_ROOT}/benchmark_summary/benchmark_manifest.json"
+            "${RUN_ROOT}/benchmark_summary/stage_resource_summary.tsv"
+            "${RUN_ROOT}/benchmark_summary/workflow_resource_summary.tsv"
+            "${RUN_ROOT}/benchmark_summary/slurm_accounting_status.tsv"
+            "${RUN_ROOT}/benchmark_summary/slurm_accounting.tsv"
+            "${RUN_ROOT}/benchmark_summary/benchmark_complete.tsv"
+            "${RUN_ROOT}/reports/e3_workflow_summary.html"
+            "${RUN_ROOT}/reports/report_manifest.json"
+            "${RUN_ROOT}/reports/report_complete.tsv"
+        )
+        for stage_name in "${STAGES[@]}"; do
+            POSTPROCESSING_OUTPUTS+=(
+                "${RUN_ROOT}/${stage_name}/stage_manifest.json"
+                "${RUN_ROOT}/${stage_name}/report/stage_report.html"
+            )
+        done
+        CLEANUP_LOG="$(mktemp "${TMPDIR:-/tmp}/e3_workflow_metadata.XXXXXX.log")"
+        CLEANUP_COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile"
+            --configfile "${CONFIG}" --cleanup-metadata "${POSTPROCESSING_OUTPUTS[@]}")
+        if "${CLEANUP_COMMAND[@]}" >"${CLEANUP_LOG}" 2>&1; then
+            printf '%s INFO Cleared completed-output metadata.\n' \
+                "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        elif grep -Fq "metadata was not present" "${CLEANUP_LOG}" && \
+                ! grep -Eq "Traceback|OSError|PermissionError" "${CLEANUP_LOG}"; then
+            printf '%s INFO Cleared completed-output incomplete markers; completed-job '\
+'metadata was already absent as required.\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        else
+            printf 'ERROR: completed-output metadata cleanup failed.\n' >&2
+            cat "${CLEANUP_LOG}" >&2
+            rm -f -- "${CLEANUP_LOG}"
+            exit 1
+        fi
+        rm -f -- "${CLEANUP_LOG}"
+    fi
     printf '%s INFO Successful-job metadata was dropped by the Snakemake profile; checksummed '\
 'stage manifests and control tokens remain the restart authority.\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"

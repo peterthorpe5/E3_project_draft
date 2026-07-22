@@ -14,8 +14,15 @@ STAGE_MANIFESTS = [
     str(RUN_ROOT / stage_name / "stage_manifest.json")
     for stage_name in STAGE_NAMES
 ]
+STAGE_REPORTS = [
+    str(RUN_ROOT / stage_name / "report" / "stage_report.html")
+    for stage_name in STAGE_NAMES
+]
 BENCHMARK_ROOT = RUN_ROOT / "benchmark_summary"
 BENCHMARK_MANIFEST = BENCHMARK_ROOT / "benchmark_manifest.json"
+REPORT_ROOT = RUN_ROOT / "reports"
+RUN_REPORT = REPORT_ROOT / "e3_workflow_summary.html"
+REPORT_MANIFEST = REPORT_ROOT / "report_manifest.json"
 
 
 def stage_inputs(wildcards):
@@ -42,7 +49,41 @@ rule all:
         final_stage=str(RUN_ROOT / STAGE_NAMES[-1] / "stage_manifest.json"),
         benchmark_manifest=str(BENCHMARK_MANIFEST),
         stage_resources=str(BENCHMARK_ROOT / "stage_resource_summary.tsv"),
+        workflow_resources=str(BENCHMARK_ROOT / "workflow_resource_summary.tsv"),
+        stage_reports=STAGE_REPORTS,
+        run_report=str(RUN_REPORT),
+        report_manifest=str(REPORT_MANIFEST)
+
+
+rule generate_run_report:
+    input:
+        manifests=STAGE_MANIFESTS,
+        stage_reports=STAGE_REPORTS,
+        benchmark_manifest=str(BENCHMARK_MANIFEST),
+        stage_resources=str(BENCHMARK_ROOT / "stage_resource_summary.tsv"),
         workflow_resources=str(BENCHMARK_ROOT / "workflow_resource_summary.tsv")
+    output:
+        html=str(RUN_REPORT),
+        manifest=str(REPORT_MANIFEST),
+        complete=str(REPORT_ROOT / "report_complete.tsv")
+    params:
+        config=str(CONFIG_PATH),
+        output_dir=lambda wildcards, output: str(Path(output.html).parent)
+    threads:
+        1
+    resources:
+        mem_mb=4000,
+        runtime=30
+    log:
+        str(RUN_ROOT / "workflow_logs" / "generate_report.snakemake.log")
+    conda:
+        "../environment.yml"
+    shell:
+        """
+        set -o pipefail
+        e3-workflow generate-report --config {params.config:q} \
+            --output-dir {params.output_dir:q} 2>&1 | tee {log:q}
+        """
 
 
 rule aggregate_benchmarks:
@@ -79,7 +120,8 @@ rule run_stage:
     input:
         stage_inputs
     output:
-        str(RUN_ROOT / "{stage}" / "stage_manifest.json")
+        manifest=str(RUN_ROOT / "{stage}" / "stage_manifest.json"),
+        report=str(RUN_ROOT / "{stage}" / "report" / "stage_report.html")
     params:
         config=str(CONFIG_PATH)
     threads:

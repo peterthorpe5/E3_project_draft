@@ -20,6 +20,7 @@ from e3workflow.config import (
 from e3workflow.control import initialise_stage_tokens, stage_manifest_target
 from e3workflow.errors import WorkflowError
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
+from e3workflow.reporting import generate_run_report, record_workflow_invocation
 from e3workflow.runner import execute_stage
 from e3workflow.seed_evidence import build_seed_evidence
 
@@ -50,6 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
     benchmarks = subparsers.add_parser("aggregate-benchmarks")
     benchmarks.add_argument("--config", type=Path, required=True)
     benchmarks.add_argument("--output-dir", type=Path)
+    report = subparsers.add_parser("generate-report")
+    report.add_argument("--config", type=Path, required=True)
+    report.add_argument("--output-dir", type=Path)
+    invocation = subparsers.add_parser("record-invocation")
+    invocation.add_argument("--config", type=Path, required=True)
+    invocation.add_argument("workflow_argv", nargs=argparse.REMAINDER)
     evidence = subparsers.add_parser("build-seed-evidence")
     evidence.add_argument("--source", type=Path, required=True)
     evidence.add_argument(
@@ -86,6 +93,13 @@ def plan_command(config_path: Path) -> dict[str, object]:
         "mode": config.mode,
         "run_root": str(config.run_root),
         "production_eligible": config.mode == "production",
+        "reporting": {
+            "stage_reports": True,
+            "complete_run_report": True,
+            "preview_rows": config.reporting.preview_rows,
+            "max_table_columns": config.reporting.max_table_columns,
+            "max_chart_items": config.reporting.max_chart_items,
+        },
         "stages": [
             {
                 "name": stage.name,
@@ -119,6 +133,10 @@ def render_plan(payload: dict[str, object]) -> str:
         f"Mode: {payload['mode']}",
         f"Run root: {payload['run_root']}",
         "Independent branches are submitted concurrently when their dependencies are complete.",
+        (
+            "HTML reports: one checksummed report per completed stage and one consolidated "
+            "report after the complete DAG."
+        ),
         "",
     ]
     stages = payload.get("stages")
@@ -196,13 +214,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config=config,
                 output_dir=args.output_dir or config.run_root / "benchmark_summary",
             )
-        else:
+        elif args.command == "generate-report":
+            config = load_config(path=args.config)
+            payload = generate_run_report(
+                config=config,
+                output_dir=args.output_dir or config.run_root / "reports",
+            )
+        elif args.command == "record-invocation":
+            payload = record_workflow_invocation(
+                config=load_config(path=args.config),
+                argv=args.workflow_argv,
+            )
+        elif args.command == "build-seed-evidence":
             payload = build_seed_evidence(
                 source=args.source,
                 output=args.output,
                 provenance_output=args.provenance_output,
                 force=args.force,
             )
+        else:
+            raise WorkflowError(f"Unsupported command: {args.command}")
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     except WorkflowError as exc:

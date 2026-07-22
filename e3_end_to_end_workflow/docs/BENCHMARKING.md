@@ -90,3 +90,11 @@ child process is not sampled.
   The status file makes this explicit. Missing accounting never invents zero-valued measurements.
 - Failed attempts keep their benchmark files inside the corresponding `failed/` directory, but
   the final run-level summary describes the successfully published twelve-stage DAG.
+
+## HTML presentation
+
+The benchmark TSV/JSON files remain authoritative. Stage HTML reports present bounded CPU and RSS
+time-series graphics plus key allocation and I/O fields. The consolidated HTML compares stage wall
+time, CPU time, peak RSS and checksummed output size. It deliberately labels maximum stage RSS as an
+individual-stage maximum rather than simultaneous workflow memory, and it keeps observed workflow
+span separate from summed stage wall time when branches overlap.

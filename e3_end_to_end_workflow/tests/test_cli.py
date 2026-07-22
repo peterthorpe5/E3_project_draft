@@ -25,7 +25,12 @@ def test_parser_plan_and_validate(synthetic_config: Path) -> None:
         build_parser().parse_args(["--version"])
     assert plan_command(synthetic_config)["production_eligible"] is False
     assert "Independent branches" in render_plan(plan_command(synthetic_config))
+    assert "HTML reports" in render_plan(plan_command(synthetic_config))
     assert validate_command(synthetic_config)["proteomes"] == 2
+    parsed = build_parser().parse_args(
+        ["record-invocation", "--config", str(synthetic_config), "--", "snakemake", "--cores", "4"]
+    )
+    assert parsed.workflow_argv[-3:] == ["snakemake", "--cores", "4"]
     assert main(["plan", "--config", str(synthetic_config)]) == 0
     assert main(["plan", "--config", str(synthetic_config), "--human"]) == 0
     assert main(["validate", "--config", str(synthetic_config)]) == 0
@@ -77,3 +82,17 @@ def test_cli_stage_and_error(synthetic_config: Path, tmp_path: Path) -> None:
         == 0
     )
     assert main(["validate", "--config", str(tmp_path / "missing")]) == 2
+    assert (
+        main(
+            [
+                "record-invocation",
+                "--config",
+                str(synthetic_config),
+                "--",
+                "snakemake",
+                "--cores",
+                "4",
+            ]
+        )
+        == 0
+    )

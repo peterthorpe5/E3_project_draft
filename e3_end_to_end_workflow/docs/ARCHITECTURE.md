@@ -23,19 +23,27 @@ component logs and checksums identify exactly which implementation produced each
 ├── 10_integrated_resource/
 ├── 11_app_ready/
 ├── benchmark_summary/
+├── reports/
 ├── failed/
 ├── superseded/
 ├── workflow_control/
 └── workflow_logs/
 ```
 
-Every stage directory contains `stage_manifest.json`, `logs/stage.log` and a `benchmark/` directory
-with one-row TSV/JSON resource summaries plus a compressed process-tree time series. External tools
-receive the temporary stage directory in both the `{stage_dir}` argv placeholder and
-`E3_STAGE_DIR`. Publication uses an atomic rename on the output filesystem.
+Every stage directory contains `stage_manifest.json`, `logs/stage.log`,
+`report/stage_report.html` and a `benchmark/` directory with one-row TSV/JSON resource summaries
+plus a compressed process-tree time series. External tools receive the temporary stage directory in
+both the `{stage_dir}` argv placeholder and `E3_STAGE_DIR`. Publication uses an atomic rename on the
+output filesystem. The report is generated inside the temporary directory and is itself included in
+the manifest checksum inventory.
 
 `benchmark_summary/` joins stage-monitor records to broader runner timestamps, output inventory and
 optional Slurm accounting. It is created only after all twelve stage manifests exist.
+
+`reports/` contains the self-contained full-run HTML, completion TSV and checksum manifest. Its
+Snakemake rule requires all twelve stage reports and the completed benchmark aggregate. Report
+publication uses a temporary run directory and atomic rename; a previous report is retained under
+`superseded/` when regenerated.
 
 `workflow_control/stage_tokens` contains persistent, configuration-digest-bound inputs to the
 Snakemake rules. Refreshing one token is the controlled mechanism used by `--start-at` and
@@ -44,10 +52,12 @@ affected downstream work.
 
 Profiles use Snakemake's `drop-metadata` setting after successful jobs. This avoids stale
 implementation metadata competing with the configuration-bound tokens and checksummed manifests.
-An interrupted job's incomplete marker is still retained and is handled by `--rerun-incomplete`.
-The shell wrapper does not call `--cleanup-metadata` after success because the profiles have already
-dropped completed-job metadata. This avoids treating the expected absence of metadata as a failure
-on Snakemake 9.
+An interrupted stage's incomplete marker is still retained and is handled by
+`--rerun-incomplete`. After the complete default target succeeds, the shell wrapper calls
+`--cleanup-metadata` for all declared, successfully published outputs. Snakemake 9 can retain a
+multi-output rule's incomplete markers even after successful atomic publication; the wrapper
+tolerates only the expected absent-metadata response and treats any traceback, filesystem or
+permission failure as fatal. Partial targets and failed or interrupted DAGs never reach this step.
 
 ## Dependency graph and concurrency
 
@@ -81,6 +91,11 @@ Resource monitoring begins before upstream checksum validation and stops after t
 and expected-output checks. The runner timestamps also cover the subsequent checksum inventory, so
 the two wall times deliberately have different scopes. Slurm accounting can provide an independent
 scheduled-job observation. Benchmark aggregation never edits a scientific stage or its manifest.
+
+Reporting follows the same boundary. It reads component authorities but does not alter them. TSV and
+FASTA inspection is streaming, while Parquet, DuckDB and SQLite inspection is read-only and bounded.
+The stage manifest retains the extracted result summary, so the final report can reuse validated
+evidence without reparsing every large result.
 
 The production template deliberately contains `CHANGE_ME` commands because package-specific
 adapters still need to be finalised against the exact cluster installations and run-specific paths.

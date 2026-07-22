@@ -1,6 +1,6 @@
 schema_version: 1
 run:
-  name: synthetic_e2e_v0_4_0
+  name: synthetic_e2e_v0_5_0
   mode: synthetic
   project_root: ../..
   output_root: ../test_runs
@@ -11,6 +11,10 @@ inputs:
 benchmarking:
   sample_interval_seconds: 0.01
   collect_slurm_accounting: false
+reporting:
+  preview_rows: 10
+  max_table_columns: 12
+  max_chart_items: 20
 stages:
   00_inputs:
     enabled: true

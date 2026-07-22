@@ -13,6 +13,7 @@ from e3workflow.config import (
     previous_stage,
     stage_ancestors,
     stage_dependencies,
+    stage_interpretation,
     stage_purpose,
 )
 from e3workflow.errors import ConfigurationError
@@ -26,7 +27,10 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     assert config.stage("00_inputs").required
     assert config.benchmarking.sample_interval_seconds == 0.01
     assert config.benchmarking.collect_slurm_accounting is False
-    assert config.run_root.name == "synthetic_e2e_v0_4_0"
+    assert config.reporting.preview_rows == 10
+    assert config.reporting.max_table_columns == 12
+    assert config.reporting.max_chart_items == 20
+    assert config.run_root.name == "synthetic_e2e_v0_5_0"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"
@@ -41,6 +45,7 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     assert "02_discovery" not in stage_ancestors("05_orthology")
     assert "complete proteomes" in stage_purpose("04_orthofinder")[0]
     assert "project-reviewed phylogeny was preferred" in stage_purpose("04_orthofinder")[1]
+    assert "does not prove" in stage_interpretation("02_discovery")[1]
     with pytest.raises(ConfigurationError):
         config.stage("missing")
     with pytest.raises(ConfigurationError):
@@ -49,6 +54,8 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         stage_dependencies("missing")
     with pytest.raises(ConfigurationError):
         stage_purpose("missing")
+    with pytest.raises(ConfigurationError):
+        stage_interpretation("missing")
     with pytest.raises(ConfigurationError):
         stage_ancestors("missing")
 
@@ -111,6 +118,18 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         (
             lambda data: data.update(benchmarking=[]),
             "benchmarking must be a YAML mapping",
+        ),
+        (
+            lambda data: data["reporting"].update(preview_rows=0),
+            "reporting.preview_rows must be a positive integer",
+        ),
+        (
+            lambda data: data["reporting"].update(max_table_columns=True),
+            "reporting.max_table_columns must be a positive integer",
+        ),
+        (
+            lambda data: data.update(reporting=[]),
+            "reporting must be a YAML mapping",
         ),
     ],
 )

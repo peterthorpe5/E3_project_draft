@@ -6,6 +6,7 @@ channels:
 dependencies:
   - python>=3.11,<3.14
   - pip
+  - duckdb>=1.4,<2
   - pyyaml>=6,<7
   - psutil>=6,<8
   - snakemake>=9,<10

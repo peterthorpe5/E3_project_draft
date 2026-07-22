@@ -14,6 +14,11 @@ benchmarking:
   # detailed without creating excessively large monitoring tables.
   sample_interval_seconds: 5.0
   collect_slurm_accounting: true
+reporting:
+  # HTML previews are bounded. Complete TSV/Parquet/database authorities remain separate outputs.
+  preview_rows: 10
+  max_table_columns: 12
+  max_chart_items: 20
 stages:
   00_inputs:
     enabled: true

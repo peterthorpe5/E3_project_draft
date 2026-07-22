@@ -57,6 +57,7 @@ def test_synthetic_end_to_end_and_lineage(synthetic_config: Path) -> None:
     assert (
         config.run_root / STAGE_NAMES[-1] / "benchmark" / "stage_resource_timeseries.tsv.gz"
     ).is_file()
+    assert (config.run_root / STAGE_NAMES[-1] / "report" / "stage_report.html").is_file()
     assert [row["stage"] for row in payload["lineage"]] == list(STAGE_NAMES)
     assert payload["mode"] == "synthetic"
     handoff = read_tsv(config.run_root / "11_app_ready" / "app_handoff.tsv")[1]
@@ -139,6 +140,7 @@ def test_disabled_optional_stage(synthetic_config: Path) -> None:
     execute_stage(config, "00_inputs")
     manifest = execute_stage(config, "01_prepared_proteomes")
     assert json.loads(manifest.read_text())["status"] == "skipped_optional"
+    assert (manifest.parent / "report" / "stage_report.html").is_file()
 
 
 def test_external_command_success_and_failure(synthetic_config: Path) -> None:

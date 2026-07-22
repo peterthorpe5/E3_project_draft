@@ -114,6 +114,78 @@ STAGE_PURPOSES = {
     ),
 }
 
+STAGE_INTERPRETATIONS = {
+    "00_inputs": (
+        "The configured manifests were readable and satisfied their declared validation rules.",
+        (
+            "Input validation establishes provenance and format; it does not assess biological "
+            "quality."
+        ),
+    ),
+    "01_prepared_proteomes": (
+        (
+            "The selected complete proteomes were prepared under a shared naming and validation "
+            "contract."
+        ),
+        "Preparation does not establish completeness beyond the supplied source proteomes.",
+    ),
+    "02_discovery": (
+        "Sequence clustering identifies candidates connected to known-E3 seed evidence.",
+        "Cluster membership is similarity evidence and does not prove that every member is an E3.",
+    ),
+    "03_candidate_evidence": (
+        "Validated cluster, representative and seed-accounting evidence is available for review.",
+        "Candidate evidence prioritises sequences; it is not functional validation.",
+    ),
+    "04_orthofinder": (
+        "The configured proteomes have a fresh, run-specific OrthoFinder 2.5.5 analysis.",
+        (
+            "Orthogroup membership alone does not prove a one-to-one orthologue relationship or "
+            "function."
+        ),
+    ),
+    "05_orthology": (
+        "Candidate identifiers were reconciled with run-specific OrthoFinder evidence.",
+        (
+            "Predicted orthologue relationships remain computational evidence and require careful "
+            "scope."
+        ),
+    ),
+    "06_domains": (
+        (
+            "Protein-family and domain annotations provide independent support for candidate "
+            "assessment."
+        ),
+        "A domain match does not by itself establish complete architecture or E3 activity.",
+    ),
+    "07_expression": (
+        "Configured expression datasets provide biological-context evidence for the candidate set.",
+        "Expression supports prioritisation but does not establish protein abundance or activity.",
+    ),
+    "08_shortlist_gate": (
+        (
+            "Only explicitly approved accessions pass to computationally expensive structural "
+            "analysis."
+        ),
+        "Approval records a review decision; it is not experimental confirmation of ligandability.",
+    ),
+    "09_ligandability": (
+        "Structure confidence and predicted-pocket evidence are available for approved proteins.",
+        "AlphaFold confidence, FPocket and P2Rank predictions do not prove compound binding.",
+    ),
+    "10_integrated_resource": (
+        "Validated evidence authorities have been joined into one traceable release resource.",
+        (
+            "Integrated evidence supports comparison and ranking, not a claim of experimental "
+            "efficacy."
+        ),
+    ),
+    "11_app_ready": (
+        "The completed integrated release has an explicit application hand-off record.",
+        "Application readiness describes data and interface checks, not biological validation.",
+    ),
+}
+
 
 @dataclass(frozen=True)
 class StageConfig:
@@ -143,6 +215,21 @@ class BenchmarkConfig:
 
 
 @dataclass(frozen=True)
+class ReportingConfig:
+    """Validated HTML-report settings.
+
+    Attributes:
+        preview_rows: Maximum result-table rows shown in a report.
+        max_table_columns: Maximum columns shown in a result preview.
+        max_chart_items: Maximum categories drawn in one embedded chart.
+    """
+
+    preview_rows: int
+    max_table_columns: int
+    max_chart_items: int
+
+
+@dataclass(frozen=True)
 class WorkflowConfig:
     """Fully resolved top-level workflow configuration."""
 
@@ -155,6 +242,7 @@ class WorkflowConfig:
     seeds_manifest: Path
     shortlist_manifest: Path
     benchmarking: BenchmarkConfig
+    reporting: ReportingConfig
     stages: tuple[StageConfig, ...]
     digest: str
 
@@ -227,6 +315,7 @@ def load_config(path: Path) -> WorkflowConfig:
     output_root = _resolve_path(run.get("output_root"), base, "run.output_root")
     raw_stages = _mapping(root.get("stages"), "stages")
     raw_benchmarking = _mapping(root.get("benchmarking", {}), "benchmarking")
+    raw_reporting = _mapping(root.get("reporting", {}), "reporting")
     sample_interval = raw_benchmarking.get("sample_interval_seconds", 5.0)
     collect_slurm = raw_benchmarking.get("collect_slurm_accounting", True)
     if (
@@ -239,6 +328,14 @@ def load_config(path: Path) -> WorkflowConfig:
         )
     if not isinstance(collect_slurm, bool):
         raise ConfigurationError("benchmarking.collect_slurm_accounting must be a boolean")
+    reporting_values = {
+        "preview_rows": raw_reporting.get("preview_rows", 10),
+        "max_table_columns": raw_reporting.get("max_table_columns", 12),
+        "max_chart_items": raw_reporting.get("max_chart_items", 20),
+    }
+    for label, value in reporting_values.items():
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise ConfigurationError(f"reporting.{label} must be a positive integer")
     unknown = set(raw_stages).difference(STAGE_NAMES)
     if unknown:
         raise ConfigurationError(f"Unknown stage configuration: {', '.join(sorted(unknown))}")
@@ -305,6 +402,7 @@ def load_config(path: Path) -> WorkflowConfig:
             sample_interval_seconds=float(sample_interval),
             collect_slurm_accounting=collect_slurm,
         ),
+        reporting=ReportingConfig(**reporting_values),
         stages=tuple(stages),
         digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
     )
@@ -351,6 +449,24 @@ def stage_purpose(name: str) -> tuple[str, str]:
     """
     try:
         return STAGE_PURPOSES[name]
+    except KeyError as exc:
+        raise ConfigurationError(f"Unknown stage: {name}") from exc
+
+
+def stage_interpretation(name: str) -> tuple[str, str]:
+    """Return the supported interpretation and scientific limitation for a stage.
+
+    Args:
+        name: Stable stage identifier.
+
+    Returns:
+        Two strings describing what the result supports and what it does not establish.
+
+    Raises:
+        ConfigurationError: If the stage name is unknown.
+    """
+    try:
+        return STAGE_INTERPRETATIONS[name]
     except KeyError as exc:
         raise ConfigurationError(f"Unknown stage: {name}") from exc
 

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-end-to-end-workflow"
-version = "0.4.1"
+version = "0.5.0"
 description = "Restartable Snakemake orchestration for the ARIA plant E3 discovery resource"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Internal research use"}
 authors = [{name = "Peter Thorpe and collaborators"}]
-dependencies = ["PyYAML>=6,<7", "psutil>=6,<8"]
+dependencies = ["duckdb>=1.4,<2", "PyYAML>=6,<7", "psutil>=6,<8"]
 
 [project.optional-dependencies]
 dev = [
