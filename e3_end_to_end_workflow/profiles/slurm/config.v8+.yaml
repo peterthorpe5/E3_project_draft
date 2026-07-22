@@ -3,6 +3,7 @@ jobs: 50
 printshellcmds: true
 rerun-incomplete: true
 show-failed-logs: true
+drop-metadata: true
 keep-going: false
 latency-wait: 120
 default-resources:
@@ -10,4 +11,3 @@ default-resources:
   - slurm_partition=general
   - mem_mb=8000
   - runtime=60
-

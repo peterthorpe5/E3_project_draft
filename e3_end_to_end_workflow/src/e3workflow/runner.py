@@ -7,11 +7,17 @@ import os
 import shlex
 import shutil
 import subprocess
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 from e3workflow import __version__
+from e3workflow.benchmarking import (
+    ProcessTreeResourceMonitor,
+    StageResourceUsage,
+    write_stage_resource_outputs,
+)
 from e3workflow.config import STAGE_NAMES, WorkflowConfig, stage_dependencies, stage_purpose
 from e3workflow.control import stage_token_path
 from e3workflow.errors import StageError
@@ -205,15 +211,27 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         Formal stage-manifest path.
     """
     stage = config.stage(stage_name)
-    lineage = validate_upstream(config, stage_name)
     run_root = config.run_root
     run_root.mkdir(parents=True, exist_ok=True)
     staging = run_root / ".staging" / f"{stage_name}.{uuid.uuid4().hex}"
     staging.mkdir(parents=True)
     logger = configure_logging(staging / "logs" / "stage.log", verbose)
     started = utc_now()
+    started_monotonic = time.monotonic()
     status = "complete"
+    stage_return_code = 0
+    resource_usage: StageResourceUsage | None = None
+    monitor_stopped = False
+    monitor = ProcessTreeResourceMonitor(
+        stage_name=stage_name,
+        requested_threads=stage.threads,
+        requested_memory_mb=stage.memory_mb,
+        requested_runtime_minutes=stage.runtime_minutes,
+        sample_interval_seconds=config.benchmarking.sample_interval_seconds,
+    )
     try:
+        monitor.start()
+        lineage = validate_upstream(config=config, stage_name=stage_name)
         control_token = stage_token_path(config, stage_name)
         if not control_token.is_file():
             raise StageError(
@@ -236,6 +254,11 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         logger.info(
             "Expected outputs: %s",
             ", ".join(stage.expected_outputs) or "explicit skipped-stage record",
+        )
+        logger.info(
+            "Benchmarking: process-tree CPU, memory, I/O, processes and threads every %.3f s; "
+            "the run summary also records broader runner timing and optional Slurm accounting.",
+            config.benchmarking.sample_interval_seconds,
         )
         if not stage.enabled:
             status = "skipped_optional"
@@ -267,6 +290,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 logger=logger,
             )
             if return_code:
+                stage_return_code = return_code
                 raise StageError(
                     f"Stage command returned {return_code}; see logs/command.log"
                 )
@@ -276,9 +300,30 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         if stage.enabled:
             validate_expected_outputs(staging, stage.expected_outputs)
         logger.info("Validated %d declared outputs.", len(stage.expected_outputs))
+        resource_usage, resource_samples = monitor.stop(
+            return_code=stage_return_code,
+            status=status,
+        )
+        monitor_stopped = True
+        write_stage_resource_outputs(
+            stage_root=staging,
+            usage=resource_usage,
+            samples=resource_samples,
+        )
+        logger.info(
+            "Measured resources: wall=%.3f s, cpu=%.3f s, mean_cpu_cores=%.3f, "
+            "peak_rss=%.3f MiB, read=%.3f MiB, write=%.3f MiB.",
+            resource_usage.wall_seconds,
+            resource_usage.total_cpu_seconds,
+            resource_usage.mean_cpu_cores,
+            resource_usage.peak_rss_mb,
+            resource_usage.read_bytes / (1024.0**2),
+            resource_usage.write_bytes / (1024.0**2),
+        )
         logger.info("Freezing the stage log before calculating the checksum inventory.")
         close_logger(logger)
         outputs = inventory_files(staging, frozenset({"stage_manifest.json"}))
+        runner_wall_seconds = max(0.0, time.monotonic() - started_monotonic)
         summary = {
             "stage": stage_name,
             "status": status,
@@ -286,6 +331,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "mode": config.mode,
             "started_at_utc": started,
             "finished_at_utc": utc_now(),
+            "runner_wall_seconds": runner_wall_seconds,
             "configuration": str(config.source_path),
             "configuration_digest": config.digest,
             "package_version": __version__,
@@ -301,6 +347,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "memory_mb": stage.memory_mb,
                 "runtime_minutes": stage.runtime_minutes,
             },
+            "benchmark": resource_usage.as_record(),
             "outputs": outputs,
         }
         summary["lineage"] = lineage + [
@@ -315,6 +362,26 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         os.replace(staging, formal)
         return formal / "stage_manifest.json"
     except BaseException:
+        if not monitor_stopped:
+            try:
+                resource_usage, resource_samples = monitor.stop(
+                    return_code=stage_return_code or 1,
+                    status="failed",
+                )
+                write_stage_resource_outputs(
+                    stage_root=staging,
+                    usage=resource_usage,
+                    samples=resource_samples,
+                )
+                logger.error(
+                    "Failed-stage resources retained: wall=%.3f s, cpu=%.3f s, "
+                    "peak_rss=%.3f MiB.",
+                    resource_usage.wall_seconds,
+                    resource_usage.total_cpu_seconds,
+                    resource_usage.peak_rss_mb,
+                )
+            except BaseException:
+                logger.exception("Could not finalise failed-stage resource measurements.")
         close_logger(logger)
         failed = run_root / "failed" / staging.name
         failed.parent.mkdir(parents=True, exist_ok=True)

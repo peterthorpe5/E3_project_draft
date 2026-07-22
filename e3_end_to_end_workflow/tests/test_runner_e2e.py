@@ -52,6 +52,11 @@ def test_synthetic_end_to_end_and_lineage(synthetic_config: Path) -> None:
         assert manifest_path.is_file()
     payload = json.loads(manifest_path.read_text())
     assert payload["status"] == "complete"
+    assert payload["runner_wall_seconds"] > 0.0
+    assert payload["benchmark"]["peak_rss_mb"] > 0
+    assert (
+        config.run_root / STAGE_NAMES[-1] / "benchmark" / "stage_resource_timeseries.tsv.gz"
+    ).is_file()
     assert [row["stage"] for row in payload["lineage"]] == list(STAGE_NAMES)
     assert payload["mode"] == "synthetic"
     handoff = read_tsv(config.run_root / "11_app_ready" / "app_handoff.tsv")[1]
@@ -167,4 +172,8 @@ def test_external_command_success_and_failure(synthetic_config: Path) -> None:
     execute_stage(config, "00_inputs")
     with pytest.raises(StageError, match="returned 7"):
         execute_stage(config, "01_prepared_proteomes")
-    assert any((config.run_root / "failed").iterdir())
+    failed_directories = list((config.run_root / "failed").iterdir())
+    assert failed_directories
+    failed_usage = failed_directories[0] / "benchmark" / "stage_resource_usage.tsv"
+    assert failed_usage.is_file()
+    assert read_tsv(failed_usage)[1][0]["return_code"] == "7"

@@ -1,4 +1,5 @@
 module	function	tests
+e3workflow.benchmarking	capture_cpu_usage_snapshot; cpu_usage_delta; rusage_peak_rss_bytes; ProcessTreeResourceMonitor; write_stage_resource_outputs; read_stage_resource_usage; collect_slurm_accounting; aggregate_run_benchmarks	test_benchmarking.py; test_runner_e2e.py
 e3workflow.config	load_config; previous_stage; stage_dependencies; stage_purpose; stage_ancestors	test_config.py
 e3workflow.control	stage_token_path; initialise_stage_tokens; stage_manifest_target	test_control.py; test_cli.py
 e3workflow.io_utils	utc_now; sha256_file; atomic_write_text; atomic_write_json; read_json; write_tsv; read_tsv; configure_logging; close_logger; inventory_files	test_io_utils.py; test_seed_evidence.py

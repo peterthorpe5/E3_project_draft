@@ -24,7 +24,9 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     config = load_config(synthetic_config)
     assert config.mode == "synthetic"
     assert config.stage("00_inputs").required
-    assert config.run_root.name == "synthetic_e2e_v0_3_0"
+    assert config.benchmarking.sample_interval_seconds == 0.01
+    assert config.benchmarking.collect_slurm_accounting is False
+    assert config.run_root.name == "synthetic_e2e_v0_4_0"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"
@@ -38,6 +40,7 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     assert "04_orthofinder" in stage_ancestors("05_orthology")
     assert "02_discovery" not in stage_ancestors("05_orthology")
     assert "complete proteomes" in stage_purpose("04_orthofinder")[0]
+    assert "project-reviewed phylogeny was preferred" in stage_purpose("04_orthofinder")[1]
     with pytest.raises(ConfigurationError):
         config.stage("missing")
     with pytest.raises(ConfigurationError):
@@ -96,6 +99,18 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         (
             lambda data: data["stages"]["02_discovery"].update(runtime_minutes="60"),
             "runtime_minutes must be a positive integer",
+        ),
+        (
+            lambda data: data["benchmarking"].update(sample_interval_seconds=0),
+            "sample_interval_seconds must be a positive number",
+        ),
+        (
+            lambda data: data["benchmarking"].update(collect_slurm_accounting="yes"),
+            "collect_slurm_accounting must be a boolean",
+        ),
+        (
+            lambda data: data.update(benchmarking=[]),
+            "benchmarking must be a YAML mapping",
         ),
     ],
 )

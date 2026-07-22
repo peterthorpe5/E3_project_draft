@@ -9,6 +9,11 @@ inputs:
   proteomes_manifest: /CHANGE_ME/proteomes.tsv
   seeds_manifest: ../data/known_e3_seed_evidence.tsv.gz
   shortlist_manifest: /CHANGE_ME/approved_ligandability_shortlist.tsv
+benchmarking:
+  # Process-tree samples are retained as gzip-compressed TSV. Five seconds keeps multi-day runs
+  # detailed without creating excessively large monitoring tables.
+  sample_interval_seconds: 5.0
+  collect_slurm_accounting: true
 stages:
   00_inputs:
     enabled: true
@@ -44,8 +49,25 @@ stages:
   04_orthofinder:
     enabled: true
     required: true
-    command: ["CHANGE_ME_ORTHOFINDER_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
-    expected_outputs: ["Results/Orthogroups/Orthogroups.tsv"]
+    # The preparation adapter must publish one complete, primary-protein FASTA per species under
+    # 01_prepared_proteomes/proteomes. OrthoFinder 2.5.5 is installed by environment.yml.
+    command:
+      - "orthofinder"
+      - "-f"
+      - "{run_root}/01_prepared_proteomes/proteomes"
+      - "-o"
+      - "{stage_dir}/Results"
+      - "-t"
+      - "{threads}"
+      - "-a"
+      - "{threads}"
+    expected_outputs:
+      - "Results/Log.txt"
+      - "Results/WorkingDirectory/SpeciesIDs.txt"
+      - "Results/WorkingDirectory/SequenceIDs.txt"
+      - "Results/Orthogroups/Orthogroups.tsv"
+      - "Results/Phylogenetic_Hierarchical_Orthogroups/N0.tsv"
+      - "Results/Species_Tree/SpeciesTree_rooted_node_labels.txt"
     threads: 4
     memory_mb: 64000
     runtime_minutes: 1440

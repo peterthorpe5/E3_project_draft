@@ -4,11 +4,15 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.3.0` upgrades this existing orchestration without replacing any component package. The
+Version `0.4.0` upgrades this existing orchestration without replacing any component package. The
 shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
 start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
 OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
-declarations allow Snakemake and Slurm to schedule that concurrency safely.
+declarations allow Snakemake and Slurm to schedule that concurrency safely. Detailed resource
+measurements and run-level benchmark summaries are produced automatically.
+
+The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
+prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
 
 The complete twelve-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
 end-to-end test remain in place. The production template still fails closed until the remaining
@@ -50,10 +54,33 @@ multithreading within its own stage.
 
 ```bash
 cd e3_end_to_end_workflow
-python -m pip install -e '.[dev]'
+conda env create --file environment.yml
+conda activate e3_end_to_end_workflow
+python -m pip install --no-deps --editable .
 ./run_tests.sh
 ./run_e3_end_to_end.sh --dry-run
 ```
+
+The environment pins OrthoFinder exactly because its output contract is part of the scientific
+provenance. Recreate the environment from `environment.yml`; do not borrow `orthofinder` from a
+different activated environment.
+
+## OrthoFinder version policy
+
+The OrthoFinder version is fixed across the inherited reference and new workflow runs:
+
+- The inherited `Results_Feb26` result remains a frozen OrthoFinder 2.5.5 reference. It is never
+  overwritten or extended.
+- New isolated end-to-end runs use exactly OrthoFinder 2.5.5 from this package environment. This
+  matches the boss-approved version, preserves the project-reviewed phylogeny that was preferred
+  over the version-3 result, and follows the input contract already validated by
+  `e3_orthology_integration`. This is a dataset-specific project decision rather than a claim that
+  version 2 is universally more accurate than version 3.
+
+Stage 04 requires both `Orthogroups/Orthogroups.tsv` and the version-2 root hierarchical grouping at
+`Phylogenetic_Hierarchical_Orthogroups/N0.tsv`. Run-specific identifiers must not be merged with
+identifiers from `Results_Feb26` merely because their labels look similar. Adding species creates a
+new, separately versioned complete-proteome analysis rather than modifying the inherited result.
 
 The committed synthetic configuration uses two tiny, visibly synthetic FASTAs and runs all stages.
 Its outputs contain `TEST DATA ONLY` and are never production eligible.
@@ -85,11 +112,46 @@ without an explicit command is rejected at configuration load time. Every stage 
 `.staging`, records file and console logs plus SHA-256 checksums, and is moved to its formal
 directory only after its declared output contract passes.
 
+## Benchmarking and resource provenance
+
+Benchmarking is automatic for every full run; no separate profiling command is required. Multiple
+scopes are retained:
+
+- the stage monitor samples the stage process tree while its scientific command and output
+  validation run;
+- runner timestamps cover the broader stage orchestration through checksum inventory; and
+- Slurm accounting, when available, independently describes the complete scheduled job.
+
+Each stage publishes `benchmark/stage_resource_usage.tsv`, a matching JSON record and a compressed
+`stage_resource_timeseries.tsv.gz`. The final aggregation rule writes run-wide outputs under
+`benchmark_summary/`, including a 12-row stage comparison, whole-workflow metrics and optional raw
+Slurm accounting records. CPU time, wall time, allocation efficiency, peak RSS/VMS, process and
+thread counts, I/O counters, context switches, requested resources, output sizes and execution
+context are retained where the operating system exposes them.
+
+Set the sampling and accounting policy in the run YAML:
+
+```yaml
+benchmarking:
+  sample_interval_seconds: 5.0
+  collect_slurm_accounting: true
+```
+
+Measurements from a failed stage are retained under `failed/`. Slurm accounting is best-effort:
+an unavailable or delayed `sacct` service is recorded in `slurm_accounting_status.tsv` but does not
+invalidate successful process-tree measurements. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md)
+for field definitions and interpretation limits.
+
 ## Restart behaviour
 
 Normal Snakemake targets, `--rerun-incomplete`, checksum-bearing stage manifests and persistent stage
 control tokens provide the restart boundary. Completed work is reused only when the configured
-inputs and outputs remain valid.
+inputs and outputs remain valid. Completed-job metadata is dropped after success because the
+configuration digest, control tokens and checksummed manifests are the workflow's authoritative
+restart records; an interrupted job remains marked incomplete.
+
+After a successful wrapper run, transient metadata is explicitly cleared for all completed stage
+and benchmark outputs. This cleanup occurs only after Snakemake returns success.
 
 Use named controls rather than deleting outputs:
 
@@ -122,3 +184,6 @@ e3-workflow build-seed-evidence \
 
 The command also writes `data/known_e3_seed_evidence.provenance.tsv`. Existing outputs are protected;
 use `--force` only when intentionally rebuilding them from a reviewed source.
+
+The seed archives and provenance sidecars committed in `data/` are controlled inputs. Workflow
+upgrades must preserve them byte-for-byte; a run stages and checksums them but never rewrites them.

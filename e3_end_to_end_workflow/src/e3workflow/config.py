@@ -73,7 +73,10 @@ STAGE_PURPOSES = {
     ),
     "04_orthofinder": (
         "Run a fresh, isolated OrthoFinder analysis on the complete proteomes.",
-        "Run-specific orthogroups provide evidence distinct from DeepClust sequence clusters.",
+        (
+            "Run-specific orthogroups provide evidence distinct from DeepClust sequence clusters; "
+            "OrthoFinder 2.5.5 is retained because its project-reviewed phylogeny was preferred."
+        ),
     ),
     "05_orthology": (
         "Reconcile candidate identifiers with the fresh OrthoFinder outputs.",
@@ -127,6 +130,19 @@ class StageConfig:
 
 
 @dataclass(frozen=True)
+class BenchmarkConfig:
+    """Validated resource-monitoring settings.
+
+    Attributes:
+        sample_interval_seconds: Delay between process-tree samples.
+        collect_slurm_accounting: Whether the final aggregation should query ``sacct``.
+    """
+
+    sample_interval_seconds: float
+    collect_slurm_accounting: bool
+
+
+@dataclass(frozen=True)
 class WorkflowConfig:
     """Fully resolved top-level workflow configuration."""
 
@@ -138,6 +154,7 @@ class WorkflowConfig:
     proteomes_manifest: Path
     seeds_manifest: Path
     shortlist_manifest: Path
+    benchmarking: BenchmarkConfig
     stages: tuple[StageConfig, ...]
     digest: str
 
@@ -209,6 +226,19 @@ def load_config(path: Path) -> WorkflowConfig:
     project_root = _resolve_path(run.get("project_root"), base, "run.project_root")
     output_root = _resolve_path(run.get("output_root"), base, "run.output_root")
     raw_stages = _mapping(root.get("stages"), "stages")
+    raw_benchmarking = _mapping(root.get("benchmarking", {}), "benchmarking")
+    sample_interval = raw_benchmarking.get("sample_interval_seconds", 5.0)
+    collect_slurm = raw_benchmarking.get("collect_slurm_accounting", True)
+    if (
+        not isinstance(sample_interval, (int, float))
+        or isinstance(sample_interval, bool)
+        or sample_interval <= 0
+    ):
+        raise ConfigurationError(
+            "benchmarking.sample_interval_seconds must be a positive number"
+        )
+    if not isinstance(collect_slurm, bool):
+        raise ConfigurationError("benchmarking.collect_slurm_accounting must be a boolean")
     unknown = set(raw_stages).difference(STAGE_NAMES)
     if unknown:
         raise ConfigurationError(f"Unknown stage configuration: {', '.join(sorted(unknown))}")
@@ -270,6 +300,10 @@ def load_config(path: Path) -> WorkflowConfig:
         seeds_manifest=_resolve_path(inputs.get("seeds_manifest"), base, "inputs.seeds_manifest"),
         shortlist_manifest=_resolve_path(
             inputs.get("shortlist_manifest"), base, "inputs.shortlist_manifest"
+        ),
+        benchmarking=BenchmarkConfig(
+            sample_interval_seconds=float(sample_interval),
+            collect_slurm_accounting=collect_slurm,
         ),
         stages=tuple(stages),
         digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),

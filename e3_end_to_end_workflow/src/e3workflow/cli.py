@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from e3workflow import __version__
+from e3workflow.benchmarking import aggregate_run_benchmarks
 from e3workflow.config import (
     STAGE_NAMES,
     load_config,
@@ -46,6 +47,9 @@ def build_parser() -> argparse.ArgumentParser:
     stage.add_argument("--config", type=Path, required=True)
     stage.add_argument("--stage", choices=STAGE_NAMES, required=True)
     stage.add_argument("--verbose", action="store_true")
+    benchmarks = subparsers.add_parser("aggregate-benchmarks")
+    benchmarks.add_argument("--config", type=Path, required=True)
+    benchmarks.add_argument("--output-dir", type=Path)
     evidence = subparsers.add_parser("build-seed-evidence")
     evidence.add_argument("--source", type=Path, required=True)
     evidence.add_argument(
@@ -186,6 +190,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "run-stage":
             manifest = execute_stage(load_config(args.config), args.stage, args.verbose)
             payload = {"stage_manifest": str(manifest)}
+        elif args.command == "aggregate-benchmarks":
+            config = load_config(path=args.config)
+            payload = aggregate_run_benchmarks(
+                config=config,
+                output_dir=args.output_dir or config.run_root / "benchmark_summary",
+            )
         else:
             payload = build_seed_evidence(
                 source=args.source,

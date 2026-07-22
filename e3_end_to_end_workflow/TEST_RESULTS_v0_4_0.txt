@@ -1,0 +1,42 @@
+E3 end-to-end workflow v0.4.0 verification
+Date: 2026-07-22
+
+Static and unit quality gates
+-----------------------------
+PASS  Python byte-code compilation: src and tests
+PASS  pycodestyle: 100-character line limit
+PASS  pydocstyle: Google convention for src/e3workflow
+PASS  shell syntax: run_e3_end_to_end.sh and run_tests.sh
+PASS  pytest: 63 tests
+PASS  branch-aware coverage: 96% total (required minimum: 95%)
+PASS  Snakemake lint
+
+Synthetic Snakemake integration
+-------------------------------
+PASS  Shell wrapper invoked the package Snakefile
+PASS  Full DAG: 12 stages + benchmark aggregation + all = 14/14 jobs
+PASS  Independent branches executed concurrently under a four-core local budget
+PASS  Controlled 04_orthofinder through 05_orthology rerun
+PASS  Downstream resume and benchmark refresh
+PASS  Post-success metadata cleanup
+PASS  Final dry-run: all requested files present and up to date
+
+Benchmark evidence
+------------------
+PASS  One TSV, JSON and gzip-compressed time series for each of 12 formal stages
+PASS  12-row stage_resource_summary.tsv plus header
+PASS  16-metric workflow_resource_summary.tsv plus header
+PASS  Checksummed benchmark manifest and completion record
+PASS  Disabled synthetic Slurm accounting recorded explicitly rather than as zero usage
+PASS  Failed-stage resource-retention behaviour covered by tests
+
+Dependency and data contracts
+-----------------------------
+PASS  environment.yml statically pins orthofinder=2.5.5
+PASS  environment.yml includes Snakemake 9, Slurm executor plugin and psutil
+PASS  local and Slurm profiles retain rerun-incomplete and drop completed metadata
+PASS  data documentation protects all four GitHub-tracked seed archives/provenance files
+
+The synthetic test does not run OrthoFinder or solve the Conda environment. The exact Bioconda
+OrthoFinder 2.5.5 solve and `orthofinder --version` check must be performed on the target cluster
+when creating the self-contained production environment.

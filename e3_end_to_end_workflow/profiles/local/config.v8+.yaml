@@ -2,6 +2,6 @@ cores: 4
 printshellcmds: true
 rerun-incomplete: true
 show-failed-logs: true
+drop-metadata: true
 keep-going: false
 latency-wait: 60
-

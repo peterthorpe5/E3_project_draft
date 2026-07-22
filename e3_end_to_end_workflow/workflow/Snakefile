@@ -10,6 +10,12 @@ CONFIG_PATH = Path(workflow.configfiles[0]).resolve()
 E3_CONFIG = load_config(CONFIG_PATH)
 RUN_ROOT = E3_CONFIG.run_root
 STAGE_PATTERN = "|".join(STAGE_NAMES)
+STAGE_MANIFESTS = [
+    str(RUN_ROOT / stage_name / "stage_manifest.json")
+    for stage_name in STAGE_NAMES
+]
+BENCHMARK_ROOT = RUN_ROOT / "benchmark_summary"
+BENCHMARK_MANIFEST = BENCHMARK_ROOT / "benchmark_manifest.json"
 
 
 def stage_inputs(wildcards):
@@ -33,7 +39,40 @@ def stage_inputs(wildcards):
 
 rule all:
     input:
-        str(RUN_ROOT / STAGE_NAMES[-1] / "stage_manifest.json")
+        final_stage=str(RUN_ROOT / STAGE_NAMES[-1] / "stage_manifest.json"),
+        benchmark_manifest=str(BENCHMARK_MANIFEST),
+        stage_resources=str(BENCHMARK_ROOT / "stage_resource_summary.tsv"),
+        workflow_resources=str(BENCHMARK_ROOT / "workflow_resource_summary.tsv")
+
+
+rule aggregate_benchmarks:
+    input:
+        STAGE_MANIFESTS
+    output:
+        manifest=str(BENCHMARK_MANIFEST),
+        stage_resources=str(BENCHMARK_ROOT / "stage_resource_summary.tsv"),
+        workflow_resources=str(BENCHMARK_ROOT / "workflow_resource_summary.tsv"),
+        slurm_status=str(BENCHMARK_ROOT / "slurm_accounting_status.tsv"),
+        slurm_records=str(BENCHMARK_ROOT / "slurm_accounting.tsv"),
+        complete=str(BENCHMARK_ROOT / "benchmark_complete.tsv")
+    params:
+        config=str(CONFIG_PATH),
+        output_dir=lambda wildcards, output: str(Path(output.manifest).parent)
+    threads:
+        1
+    resources:
+        mem_mb=4000,
+        runtime=30
+    log:
+        str(RUN_ROOT / "workflow_logs" / "aggregate_benchmarks.snakemake.log")
+    conda:
+        "../environment.yml"
+    shell:
+        """
+        set -o pipefail
+        e3-workflow aggregate-benchmarks --config {params.config:q} \
+            --output-dir {params.output_dir:q} 2>&1 | tee {log:q}
+        """
 
 
 rule run_stage:
