@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from e3workflow.config import STAGE_NAMES, load_config, previous_stage
+from e3workflow.config import STAGE_NAMES, load_config, stage_dependencies
+from e3workflow.control import stage_token_path
 
 
 CONFIG_PATH = Path(workflow.configfiles[0]).resolve()
@@ -11,18 +12,23 @@ RUN_ROOT = E3_CONFIG.run_root
 STAGE_PATTERN = "|".join(STAGE_NAMES)
 
 
-def upstream_manifest(wildcards):
-    """Resolve the controlled predecessor and first-stage source manifests."""
+def stage_inputs(wildcards):
+    """Resolve scientific prerequisites, controlled inputs and the rerun token."""
 
-    predecessor = previous_stage(wildcards.stage)
-    if predecessor is None:
-        return [
+    inputs = [str(stage_token_path(E3_CONFIG, wildcards.stage))]
+    dependencies = stage_dependencies(wildcards.stage)
+    if not dependencies:
+        inputs.extend([
             str(CONFIG_PATH),
             str(E3_CONFIG.proteomes_manifest),
             str(E3_CONFIG.seeds_manifest),
             str(E3_CONFIG.shortlist_manifest),
-        ]
-    return str(RUN_ROOT / predecessor / "stage_manifest.json")
+        ])
+    inputs.extend(
+        str(RUN_ROOT / dependency / "stage_manifest.json")
+        for dependency in dependencies
+    )
+    return inputs
 
 
 rule all:
@@ -32,11 +38,16 @@ rule all:
 
 rule run_stage:
     input:
-        upstream_manifest
+        stage_inputs
     output:
         str(RUN_ROOT / "{stage}" / "stage_manifest.json")
     params:
         config=str(CONFIG_PATH)
+    threads:
+        lambda wildcards: E3_CONFIG.stage(wildcards.stage).threads
+    resources:
+        mem_mb=lambda wildcards: E3_CONFIG.stage(wildcards.stage).memory_mb,
+        runtime=lambda wildcards: E3_CONFIG.stage(wildcards.stage).runtime_minutes
     log:
         str(RUN_ROOT / "workflow_logs" / "{stage}.snakemake.log")
     conda:
@@ -45,6 +56,7 @@ rule run_stage:
         stage=STAGE_PATTERN
     shell:
         """
+        set -o pipefail
         e3-workflow run-stage --config {params.config:q} --stage {wildcards.stage:q} \
-            > {log:q} 2>&1
+            --verbose 2>&1 | tee {log:q}
         """

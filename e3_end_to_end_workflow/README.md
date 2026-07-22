@@ -4,9 +4,14 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.2.0` corrects the Python quality gates and formalises the known-E3 evidence input. The
-complete twelve-stage DAG, manifests, atomic stage publication, local/Slurm profiles and synthetic
-end-to-end test are implemented. The production template still fails closed until the remaining
+Version `0.3.0` upgrades this existing orchestration without replacing any component package. The
+shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
+start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
+OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
+declarations allow Snakemake and Slurm to schedule that concurrency safely.
+
+The complete twelve-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
+end-to-end test remain in place. The production template still fails closed until the remaining
 package adapters are explicitly configured. `CHANGE_ME` values are never treated as defaults.
 
 ## DAG and package ownership
@@ -29,6 +34,17 @@ package adapters are explicitly configured. `CHANGE_ME` values are never treated
 DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
 to a run. Ligandability is intentionally downstream of a signed shortlist rather than applied to
 every cluster member.
+
+## Concurrent execution model
+
+After controlled input preparation, Snakemake can submit the Discovery Engine and fresh OrthoFinder
+branches together; expression evidence can also run independently. Candidate evidence waits for
+Discovery Engine, and orthology integration waits for OrthoFinder. Domain evidence, orthology and
+expression join at the shortlist gate. Snakemake therefore runs every scientifically independent
+job it can, up to `--max-jobs` on Slurm or the `--threads` CPU budget locally.
+
+This is concurrency between stages. Each component package remains responsible for safe
+multithreading within its own stage.
 
 ## Install and prove the installation
 
@@ -56,19 +72,38 @@ Its outputs contain `TEST DATA ONLY` and are never production eligible.
 e3-workflow validate --config /path/to/run.yaml
 e3-workflow plan --config /path/to/run.yaml
 ./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm --dry-run
+./run_e3_end_to_end.sh \
+    --config /path/to/run.yaml \
+    --profile slurm \
+    --max-jobs 50 \
+    --resume
 ```
 
-The Slurm profile defaults to account `barton`, partition `general`; resource values can be
-overridden with normal Snakemake options. A production stage without an explicit command is rejected
-at configuration load time. Every stage runs under `.staging`, records logs and SHA-256 checksums,
-and is moved to its formal directory only after its declared output contract passes.
+The Slurm profile defaults to account `barton`, partition `general`. Stage-specific threads, memory
+and runtime are declared in the YAML, with profile values used only as fallbacks. A production stage
+without an explicit command is rejected at configuration load time. Every stage runs under
+`.staging`, records file and console logs plus SHA-256 checksums, and is moved to its formal
+directory only after its declared output contract passes.
 
 ## Restart behaviour
 
-Normal Snakemake targets, `--rerun-incomplete`, and checksum-bearing stage manifests provide the
-restart boundary. To rerun one stage, remove or move that stage and its downstream directories, then
-request the final target. Existing stage directories are moved under `superseded` if publication
-would otherwise replace them. Failed staging directories are retained under `failed`.
+Normal Snakemake targets, `--rerun-incomplete`, checksum-bearing stage manifests and persistent stage
+control tokens provide the restart boundary. Completed work is reused only when the configured
+inputs and outputs remain valid.
+
+Use named controls rather than deleting outputs:
+
+```bash
+./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm --resume
+./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm \
+    --start-at 04_orthofinder --stop-after 05_orthology
+./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm \
+    --force-stage 07_expression
+```
+
+`--start-at` refreshes the selected stage control token and propagates the rerun through the DAG. It
+does not bypass missing or invalid prerequisites. Existing stage directories are moved under
+`superseded` when a rerun is published. Failed staging directories are retained under `failed`.
 
 ## Known-E3 evidence resource
 

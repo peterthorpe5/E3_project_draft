@@ -1,0 +1,22 @@
+E3 end-to-end workflow v0.3.0 verification
+Date: 2026-07-22
+
+PASS  Python byte-code compilation
+PASS  pycodestyle with 100-character maximum
+PASS  Google-style pydocstyle checks
+PASS  50 pytest unit and integration tests
+PASS  98% branch-aware Python coverage (required minimum: 95%)
+PASS  Bash syntax checks for user-facing wrappers
+PASS  Snakemake 9.23.1 lint
+PASS  Snakemake dry-run of all 12 stages plus final target
+PASS  Synthetic end-to-end execution: 13/13 jobs completed
+PASS  Concurrent branch execution observed after validated inputs
+PASS  Controlled 04_orthofinder to 05_orthology rerun: exactly 2 stage jobs
+PASS  Unrelated 02_discovery manifest unchanged during the controlled rerun
+PASS  Full downstream propagation after the controlled rerun
+PASS  Clean --resume dry-run: all requested files present and up to date
+PASS  Non-ancestral --start-at/--stop-after range rejected
+PASS  Mutating --dry-run plus --force-stage combination rejected
+
+No production scientific analysis was executed by these tests. Synthetic outputs are explicitly
+labelled TEST DATA ONLY and are excluded from version control.

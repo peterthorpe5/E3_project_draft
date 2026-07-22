@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import shutil
@@ -11,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from e3workflow import __version__
-from e3workflow.config import WorkflowConfig, previous_stage
+from e3workflow.config import STAGE_NAMES, WorkflowConfig, stage_dependencies, stage_purpose
+from e3workflow.control import stage_token_path
 from e3workflow.errors import StageError
 from e3workflow.io_utils import (
     atomic_write_json,
@@ -37,12 +39,8 @@ def format_command(command: tuple[str, ...], values: dict[str, str]) -> list[str
     return rendered
 
 
-def validate_upstream(config: WorkflowConfig, stage_name: str) -> list[dict[str, Any]]:
-    """Validate the predecessor manifest and return its complete lineage."""
-    predecessor = previous_stage(stage_name)
-    if predecessor is None:
-        return []
-    path = config.run_root / predecessor / "stage_manifest.json"
+def _validate_upstream_manifest(path: Path, config: WorkflowConfig) -> list[dict[str, Any]]:
+    """Validate one prerequisite manifest and return its lineage."""
     payload = read_json(path)
     if payload.get("configuration_digest") != config.digest:
         raise StageError(f"Upstream configuration digest differs: {path}")
@@ -68,6 +66,27 @@ def validate_upstream(config: WorkflowConfig, stage_name: str) -> list[dict[str,
         if sha256_file(output) != record.get("sha256"):
             raise StageError(f"Upstream output checksum changed: {output}")
     return list(lineage)
+
+
+def validate_upstream(config: WorkflowConfig, stage_name: str) -> list[dict[str, Any]]:
+    """Validate all scientific prerequisites and return de-duplicated lineage.
+
+    Args:
+        config: Validated workflow configuration.
+        stage_name: Stable stage identifier.
+
+    Returns:
+        Ordered lineage records across every prerequisite branch.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for dependency in stage_dependencies(stage_name):
+        path = config.run_root / dependency / "stage_manifest.json"
+        for record in _validate_upstream_manifest(path, config):
+            lineage_stage = str(record.get("stage", ""))
+            if not lineage_stage:
+                raise StageError(f"Upstream lineage record has no stage name: {path}")
+            merged[lineage_stage] = record
+    return [merged[name] for name in STAGE_NAMES if name in merged]
 
 
 def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> None:
@@ -135,6 +154,45 @@ def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path
         raise StageError(f"No internal production implementation exists for {stage_name}")
 
 
+def run_external_command(
+    argv: list[str],
+    working_directory: Path,
+    environment: dict[str, str],
+    command_log: Path,
+    logger: logging.Logger,
+) -> int:
+    """Run an external command while streaming output to file and console logs.
+
+    Args:
+        argv: Fully rendered command argument vector.
+        working_directory: Existing command working directory.
+        environment: Complete subprocess environment.
+        command_log: Plain-text destination for unmodified tool output.
+        logger: Configured stage logger.
+
+    Returns:
+        Process return code.
+    """
+    command_log.parent.mkdir(parents=True, exist_ok=True)
+    with command_log.open("w", encoding="utf-8") as handle:
+        process = subprocess.Popen(
+            argv,
+            cwd=working_directory,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        if process.stdout is None:
+            raise StageError("External command did not provide a readable output stream")
+        for line in process.stdout:
+            handle.write(line)
+            handle.flush()
+            logger.info("tool | %s", line.rstrip("\n"))
+        return process.wait()
+
+
 def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False) -> Path:
     """Execute one stage in a temporary directory and atomically publish it.
 
@@ -156,9 +214,32 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
     started = utc_now()
     status = "complete"
     try:
-        logger.info("Starting stage %s in %s mode", stage_name, config.mode)
+        control_token = stage_token_path(config, stage_name)
+        if not control_token.is_file():
+            raise StageError(
+                f"Workflow control token is missing: {control_token}. Run the shell wrapper."
+            )
+        purpose, rationale = stage_purpose(stage_name)
+        dependencies = stage_dependencies(stage_name)
+        logger.info("Stage: %s", stage_name)
+        logger.info("What this stage does: %s", purpose)
+        logger.info("Why this stage is required: %s", rationale)
+        logger.info("Run mode: %s", config.mode)
+        logger.info("Prerequisite stages: %s", ", ".join(dependencies) or "controlled inputs")
+        logger.info("Temporary stage directory: %s", staging)
+        logger.info(
+            "Requested resources: threads=%d, memory_mb=%d, runtime_minutes=%d",
+            stage.threads,
+            stage.memory_mb,
+            stage.runtime_minutes,
+        )
+        logger.info(
+            "Expected outputs: %s",
+            ", ".join(stage.expected_outputs) or "explicit skipped-stage record",
+        )
         if not stage.enabled:
             status = "skipped_optional"
+            logger.info("Stage is disabled and optional; publishing an explicit skipped record.")
             write_tsv(
                 staging / "SKIPPED.tsv",
                 [{"stage": stage_name, "reason": "disabled in configuration"}],
@@ -172,30 +253,30 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "proteomes_manifest": str(config.proteomes_manifest),
                 "seeds_manifest": str(config.seeds_manifest),
                 "shortlist_manifest": str(config.shortlist_manifest),
+                "threads": str(stage.threads),
             }
             argv = format_command(stage.command, values)
             logger.info("Command argv: %s", shlex.join(argv))
             environment = os.environ.copy()
             environment.update({f"E3_{key.upper()}": value for key, value in values.items()})
-            with (staging / "logs" / "command.log").open("w", encoding="utf-8") as handle:
-                completed = subprocess.run(
-                    argv,
-                    cwd=config.project_root,
-                    env=environment,
-                    stdout=handle,
-                    stderr=subprocess.STDOUT,
-                    check=False,
-                    text=True,
-                )
-            if completed.returncode:
+            return_code = run_external_command(
+                argv=argv,
+                working_directory=config.project_root,
+                environment=environment,
+                command_log=staging / "logs" / "command.log",
+                logger=logger,
+            )
+            if return_code:
                 raise StageError(
-                    f"Stage command returned {completed.returncode}; see logs/command.log"
+                    f"Stage command returned {return_code}; see logs/command.log"
                 )
         else:
+            logger.info("Using the package's validated internal implementation for this stage.")
             run_internal_stage(config, stage_name, staging)
         if stage.enabled:
             validate_expected_outputs(staging, stage.expected_outputs)
-        logger.info("Stage outputs validated; freezing log before checksum inventory.")
+        logger.info("Validated %d declared outputs.", len(stage.expected_outputs))
+        logger.info("Freezing the stage log before calculating the checksum inventory.")
         close_logger(logger)
         outputs = inventory_files(staging, frozenset({"stage_manifest.json"}))
         summary = {
@@ -208,6 +289,18 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "configuration": str(config.source_path),
             "configuration_digest": config.digest,
             "package_version": __version__,
+            "purpose": purpose,
+            "rationale": rationale,
+            "dependencies": list(dependencies),
+            "control_token": {
+                "path": str(control_token),
+                "sha256": sha256_file(control_token),
+            },
+            "resources": {
+                "threads": stage.threads,
+                "memory_mb": stage.memory_mb,
+                "runtime_minutes": stage.runtime_minutes,
+            },
             "outputs": outputs,
         }
         summary["lineage"] = lineage + [

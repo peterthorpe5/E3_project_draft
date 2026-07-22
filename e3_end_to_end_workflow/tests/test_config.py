@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from e3workflow.config import STAGE_NAMES, load_config, previous_stage
+from e3workflow.config import (
+    STAGE_NAMES,
+    load_config,
+    previous_stage,
+    stage_ancestors,
+    stage_dependencies,
+    stage_purpose,
+)
 from e3workflow.errors import ConfigurationError
 
 
@@ -17,14 +24,30 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     config = load_config(synthetic_config)
     assert config.mode == "synthetic"
     assert config.stage("00_inputs").required
-    assert config.run_root.name == "synthetic_e2e_v0_2_0"
+    assert config.run_root.name == "synthetic_e2e_v0_3_0"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"
+    assert stage_dependencies("04_orthofinder") == ("01_prepared_proteomes",)
+    assert set(stage_dependencies("08_shortlist_gate")) == {
+        "03_candidate_evidence",
+        "05_orthology",
+        "06_domains",
+        "07_expression",
+    }
+    assert "04_orthofinder" in stage_ancestors("05_orthology")
+    assert "02_discovery" not in stage_ancestors("05_orthology")
+    assert "complete proteomes" in stage_purpose("04_orthofinder")[0]
     with pytest.raises(ConfigurationError):
         config.stage("missing")
     with pytest.raises(ConfigurationError):
         previous_stage("missing")
+    with pytest.raises(ConfigurationError):
+        stage_dependencies("missing")
+    with pytest.raises(ConfigurationError):
+        stage_purpose("missing")
+    with pytest.raises(ConfigurationError):
+        stage_ancestors("missing")
 
 
 @pytest.mark.parametrize(
@@ -61,6 +84,18 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
                 expected_outputs=["/absolute"]
             ),
             "Unsafe expected output",
+        ),
+        (
+            lambda data: data["stages"]["02_discovery"].update(threads=0),
+            "threads must be a positive integer",
+        ),
+        (
+            lambda data: data["stages"]["02_discovery"].update(memory_mb=True),
+            "memory_mb must be a positive integer",
+        ),
+        (
+            lambda data: data["stages"]["02_discovery"].update(runtime_minutes="60"),
+            "runtime_minutes must be a positive integer",
         ),
     ],
 )

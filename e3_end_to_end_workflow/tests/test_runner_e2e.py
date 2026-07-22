@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from e3workflow.config import STAGE_NAMES, load_config
+from e3workflow.control import initialise_stage_tokens
 from e3workflow.errors import StageError
 from e3workflow.io_utils import read_tsv
 from e3workflow.runner import (
@@ -33,10 +34,18 @@ def test_format_command_and_expected_outputs(tmp_path: Path) -> None:
         validate_expected_outputs(tmp_path, ("missing",))
 
 
+def test_stage_requires_wrapper_control_token(synthetic_config: Path) -> None:
+    """Direct stage execution fails clearly when wrapper control was not initialised."""
+
+    with pytest.raises(StageError, match="control token is missing"):
+        execute_stage(load_config(synthetic_config), "00_inputs")
+
+
 def test_synthetic_end_to_end_and_lineage(synthetic_config: Path) -> None:
     """All stages publish atomically and carry complete ordered lineage."""
 
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     assert validate_upstream(config, "00_inputs") == []
     for stage in STAGE_NAMES:
         manifest_path = execute_stage(config, stage)
@@ -55,6 +64,7 @@ def test_internal_unknown_and_bad_upstream(synthetic_config: Path, tmp_path: Pat
     """Unknown production internals and tampered lineage fail closed."""
 
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     run_internal_stage(config, "02_discovery", tmp_path / "synthetic")
     execute_stage(config, "00_inputs")
     upstream = config.run_root / "00_inputs" / "stage_manifest.json"
@@ -99,6 +109,7 @@ def test_upstream_manifest_tampering(
     """Every upstream status, path, size and checksum is revalidated."""
 
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     manifest = execute_stage(config, "00_inputs")
     original = manifest.read_text(encoding="utf-8")
     payload = json.loads(original)
@@ -119,6 +130,7 @@ def test_disabled_optional_stage(synthetic_config: Path) -> None:
     )
     synthetic_config.write_text(yaml.safe_dump(raw), encoding="utf-8")
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     execute_stage(config, "00_inputs")
     manifest = execute_stage(config, "01_prepared_proteomes")
     assert json.loads(manifest.read_text())["status"] == "skipped_optional"
@@ -141,6 +153,7 @@ def test_external_command_success_and_failure(synthetic_config: Path) -> None:
     )
     synthetic_config.write_text(yaml.safe_dump(raw), encoding="utf-8")
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     execute_stage(config, "00_inputs")
     assert execute_stage(config, "01_prepared_proteomes").is_file()
 
@@ -150,6 +163,7 @@ def test_external_command_success_and_failure(synthetic_config: Path) -> None:
     )
     synthetic_config.write_text(yaml.safe_dump(raw), encoding="utf-8")
     config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
     execute_stage(config, "00_inputs")
     with pytest.raises(StageError, match="returned 7"):
         execute_stage(config, "01_prepared_proteomes")

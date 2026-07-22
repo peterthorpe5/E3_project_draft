@@ -14,56 +14,92 @@ stages:
     enabled: true
     required: true
     expected_outputs: [input_validation.tsv]
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
   01_prepared_proteomes:
     enabled: true
     required: true
     command: ["CHANGE_ME_PREPARATION_EXECUTABLE", "--output-dir", "{stage_dir}"]
     expected_outputs: ["prepared_proteomes.tsv"]
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 60
   02_discovery:
     enabled: true
     required: true
-    command: ["CHANGE_ME_DISCOVERY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_DISCOVERY_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["duckdb/e3_discovery_resource.duckdb"]
+    threads: 4
+    memory_mb: 64000
+    runtime_minutes: 1440
   03_candidate_evidence:
     enabled: true
     required: true
     command: ["CHANGE_ME_CANDIDATE_EXECUTABLE", "--output-dir", "{stage_dir}"]
     expected_outputs: ["candidate_evidence/e3_cluster_candidate_evidence.parquet"]
+    threads: 1
+    memory_mb: 16000
+    runtime_minutes: 120
   04_orthofinder:
     enabled: true
     required: true
-    command: ["CHANGE_ME_ORTHOFINDER_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_ORTHOFINDER_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["Results/Orthogroups/Orthogroups.tsv"]
+    threads: 4
+    memory_mb: 64000
+    runtime_minutes: 1440
   05_orthology:
     enabled: true
     required: true
-    command: ["CHANGE_ME_ORTHOLOGY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_ORTHOLOGY_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["tables/orthogroup_membership.parquet"]
+    threads: 4
+    memory_mb: 16000
+    runtime_minutes: 240
   06_domains:
     enabled: true
     required: true
-    command: ["CHANGE_ME_DOMAIN_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_DOMAIN_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["tables/domain_evidence.parquet"]
+    threads: 4
+    memory_mb: 32000
+    runtime_minutes: 720
   07_expression:
     enabled: true
     required: true
-    command: ["CHANGE_ME_EXPRESSION_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_EXPRESSION_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["e3_expression.duckdb"]
+    threads: 4
+    memory_mb: 16000
+    runtime_minutes: 720
   08_shortlist_gate:
     enabled: true
     required: true
     expected_outputs: ["approved_accessions.tsv"]
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
   09_ligandability:
     enabled: true
     required: true
-    command: ["CHANGE_ME_LIGANDABILITY_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_LIGANDABILITY_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["duckdb/e3_ligandability.duckdb"]
+    threads: 4
+    memory_mb: 64000
+    runtime_minutes: 2880
   10_integrated_resource:
     enabled: true
     required: true
-    command: ["CHANGE_ME_INTEGRATION_EXECUTABLE", "--output-dir", "{stage_dir}"]
+    command: ["CHANGE_ME_INTEGRATION_EXECUTABLE", "--output-dir", "{stage_dir}", "--threads", "{threads}"]
     expected_outputs: ["duckdb/e3_integrated_resource.duckdb"]
+    threads: 4
+    memory_mb: 32000
+    runtime_minutes: 240
   11_app_ready:
     enabled: true
     required: true
     expected_outputs: ["app_handoff.tsv"]
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30

@@ -24,12 +24,26 @@ component logs and checksums identify exactly which implementation produced each
 ├── 11_app_ready/
 ├── failed/
 ├── superseded/
+├── workflow_control/
 └── workflow_logs/
 ```
 
 Every stage directory contains `stage_manifest.json` and `logs/stage.log`. External tools receive
 the temporary stage directory in both the `{stage_dir}` argv placeholder and `E3_STAGE_DIR`.
 Publication uses an atomic rename on the output filesystem.
+
+`workflow_control/stage_tokens` contains persistent, configuration-digest-bound inputs to the
+Snakemake rules. Refreshing one token is the controlled mechanism used by `--start-at` and
+`--force-stage`; the changed input invalidates that stage and the DAG propagates the rerun to
+affected downstream work.
+
+## Dependency graph and concurrency
+
+The workflow is not a serial list. After `01_prepared_proteomes`, `02_discovery` and
+`04_orthofinder` are independent. `07_expression` depends only on validated controlled inputs.
+Candidate evidence follows Discovery Engine, while orthology integration follows OrthoFinder. The
+shortlist gate waits for candidate, orthology, domain and expression authorities. This makes safe
+stage-level concurrency explicit while preserving every scientific join.
 
 ## Input manifest invariants
 
@@ -47,8 +61,9 @@ Publication uses an atomic rename on the output filesystem.
 `run.mode: production` changes validation behaviour. Every scientific stage other than controlled
 input validation, the human shortlist gate and application handoff must provide a command as a YAML
 argv list. Required stages cannot be disabled. A command's exit status and every declared non-empty
-output are checked before publication. Before a downstream stage starts, every file in the upstream
-manifest is checked again for size and SHA-256.
+output is checked before publication. Before a downstream stage starts, every file in every
+prerequisite manifest is checked again for size and SHA-256. Logs state the stage purpose, rationale,
+dependencies, resources, expected outputs and external command output.
 
 The production template deliberately contains `CHANGE_ME` commands because package-specific
 adapters still need to be finalised against the exact cluster installations and run-specific paths.

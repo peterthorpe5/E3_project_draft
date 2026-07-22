@@ -15,5 +15,12 @@ bash -n run_e3_end_to_end.sh run_tests.sh
 if command -v snakemake >/dev/null 2>&1; then
     snakemake --snakefile workflow/Snakefile --configfile config/synthetic.yaml --lint
     ./run_e3_end_to_end.sh --dry-run -- --nolock
+    ./run_e3_end_to_end.sh --force-stage 00_inputs --threads 4 -- --nolock
+    ./run_e3_end_to_end.sh \
+        --start-at 04_orthofinder \
+        --stop-after 05_orthology \
+        --threads 4 \
+        -- --nolock
+    ./run_e3_end_to_end.sh --resume --threads 4 -- --nolock
 fi
 printf 'All e3_end_to_end_workflow quality gates passed.\n'

@@ -28,6 +28,89 @@ STAGE_NAMES = (
 )
 INTERNAL_PRODUCTION_STAGES = frozenset({"00_inputs", "08_shortlist_gate", "11_app_ready"})
 
+STAGE_DEPENDENCIES = {
+    "00_inputs": (),
+    "01_prepared_proteomes": ("00_inputs",),
+    "02_discovery": ("01_prepared_proteomes",),
+    "03_candidate_evidence": ("02_discovery",),
+    "04_orthofinder": ("01_prepared_proteomes",),
+    "05_orthology": ("04_orthofinder",),
+    "06_domains": ("03_candidate_evidence",),
+    "07_expression": ("00_inputs",),
+    "08_shortlist_gate": (
+        "03_candidate_evidence",
+        "05_orthology",
+        "06_domains",
+        "07_expression",
+    ),
+    "09_ligandability": ("08_shortlist_gate",),
+    "10_integrated_resource": (
+        "03_candidate_evidence",
+        "05_orthology",
+        "06_domains",
+        "07_expression",
+        "09_ligandability",
+    ),
+    "11_app_ready": ("10_integrated_resource",),
+}
+
+STAGE_PURPOSES = {
+    "00_inputs": (
+        "Validate the controlled input manifests and their checksums.",
+        "All later evidence must be traceable to an explicit, unchanged input set.",
+    ),
+    "01_prepared_proteomes": (
+        "Prepare consistently named, validated proteomes for sequence analyses.",
+        "Discovery and OrthoFinder must analyse the same complete species inputs.",
+    ),
+    "02_discovery": (
+        "Build sequence-similarity clusters and identify clusters containing known E3 seeds.",
+        "This expands the evidence set without claiming that every cluster member is an E3 ligase.",
+    ),
+    "03_candidate_evidence": (
+        "Build the candidate-evidence resource from the validated Discovery Engine database.",
+        "Downstream analyses need reconciled counts, identifiers and seed evidence per cluster.",
+    ),
+    "04_orthofinder": (
+        "Run a fresh, isolated OrthoFinder analysis on the complete proteomes.",
+        "Run-specific orthogroups provide evidence distinct from DeepClust sequence clusters.",
+    ),
+    "05_orthology": (
+        "Reconcile candidate identifiers with the fresh OrthoFinder outputs.",
+        (
+            "Orthogroup and predicted-orthologue evidence must be joined through validated "
+            "identifiers."
+        ),
+    ),
+    "06_domains": (
+        "Collect protein-family and domain evidence for the candidate set.",
+        "Domain architecture helps assess E3 plausibility independently of sequence clustering.",
+    ),
+    "07_expression": (
+        "Build the expression evidence resource for the configured species and datasets.",
+        "Expression context is supporting evidence and can be prepared independently of orthology.",
+    ),
+    "08_shortlist_gate": (
+        "Validate and publish the explicitly approved shortlist.",
+        "Expensive structural work must follow a recorded human review decision.",
+    ),
+    "09_ligandability": (
+        "Run structure and pocket analyses for approved proteins.",
+        "Ligandability evidence is meaningful only for the controlled shortlist.",
+    ),
+    "10_integrated_resource": (
+        "Assemble validated evidence authorities into the release resource.",
+        (
+            "The application requires traceable joins across discovery, orthology, domains, "
+            "expression and pockets."
+        ),
+    ),
+    "11_app_ready": (
+        "Publish the application hand-off and production-readiness statement.",
+        "The viewer must open only a completed, validated integrated release.",
+    ),
+}
+
 
 @dataclass(frozen=True)
 class StageConfig:
@@ -38,6 +121,9 @@ class StageConfig:
     required: bool
     command: tuple[str, ...]
     expected_outputs: tuple[str, ...]
+    threads: int
+    memory_mb: int
+    runtime_minutes: int
 
 
 @dataclass(frozen=True)
@@ -135,8 +221,18 @@ def load_config(path: Path) -> WorkflowConfig:
             raise ConfigurationError(f"enabled and required must be booleans for {name}")
         command = _strings(item.get("command"), f"stages.{name}.command")
         expected = _strings(item.get("expected_outputs"), f"stages.{name}.expected_outputs")
+        threads = item.get("threads", 1)
+        memory_mb = item.get("memory_mb", 8_000)
+        runtime_minutes = item.get("runtime_minutes", 60)
         if required and not enabled:
             raise ConfigurationError(f"Required stage cannot be disabled: {name}")
+        for value, label in (
+            (threads, "threads"),
+            (memory_mb, "memory_mb"),
+            (runtime_minutes, "runtime_minutes"),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ConfigurationError(f"stages.{name}.{label} must be a positive integer")
         missing_production_command = (
             mode == "production"
             and enabled
@@ -149,7 +245,18 @@ def load_config(path: Path) -> WorkflowConfig:
             candidate = Path(relative)
             if candidate.is_absolute() or ".." in candidate.parts:
                 raise ConfigurationError(f"Unsafe expected output for {name}: {relative}")
-        stages.append(StageConfig(name, enabled, required, command, expected))
+        stages.append(
+            StageConfig(
+                name,
+                enabled,
+                required,
+                command,
+                expected,
+                threads,
+                memory_mb,
+                runtime_minutes,
+            )
+        )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return WorkflowConfig(
         source_path=source,
@@ -176,3 +283,61 @@ def previous_stage(name: str) -> str | None:
     except ValueError as exc:
         raise ConfigurationError(f"Unknown stage: {name}") from exc
     return None if index == 0 else STAGE_NAMES[index - 1]
+
+
+def stage_dependencies(name: str) -> tuple[str, ...]:
+    """Return the scientific prerequisites for a stage.
+
+    Args:
+        name: Stable stage identifier.
+
+    Returns:
+        Ordered prerequisite stage names.
+
+    Raises:
+        ConfigurationError: If the stage name is unknown.
+    """
+    try:
+        return STAGE_DEPENDENCIES[name]
+    except KeyError as exc:
+        raise ConfigurationError(f"Unknown stage: {name}") from exc
+
+
+def stage_purpose(name: str) -> tuple[str, str]:
+    """Return the action and scientific rationale for a stage.
+
+    Args:
+        name: Stable stage identifier.
+
+    Returns:
+        Two strings containing what the stage does and why it is required.
+
+    Raises:
+        ConfigurationError: If the stage name is unknown.
+    """
+    try:
+        return STAGE_PURPOSES[name]
+    except KeyError as exc:
+        raise ConfigurationError(f"Unknown stage: {name}") from exc
+
+
+def stage_ancestors(name: str) -> tuple[str, ...]:
+    """Return every direct and indirect prerequisite in stable stage order.
+
+    Args:
+        name: Stable stage identifier.
+
+    Returns:
+        De-duplicated prerequisite stage names.
+    """
+    discovered: set[str] = set()
+
+    def visit(stage_name: str) -> None:
+        """Recursively collect prerequisites for one known stage."""
+        for dependency in stage_dependencies(stage_name):
+            if dependency not in discovered:
+                discovered.add(dependency)
+                visit(dependency)
+
+    visit(name)
+    return tuple(stage_name for stage_name in STAGE_NAMES if stage_name in discovered)
