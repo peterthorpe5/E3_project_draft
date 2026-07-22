@@ -13,6 +13,7 @@ from e3workflow.seed_evidence import EVIDENCE_COLUMNS
 TRUE_VALUES = frozenset({"1", "true", "yes"})
 FALSE_VALUES = frozenset({"0", "false", "no"})
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+SPECIES_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def parse_boolean(value: str, label: str) -> bool:
@@ -48,6 +49,11 @@ def validate_proteomes(path: Path, verify_checksums: bool) -> list[dict[str, str
         species_id = row["species_id"].strip()
         if not species_id or species_id in seen:
             raise ManifestError(f"Empty or duplicate species_id at {path}:{line_number}")
+        if not SPECIES_ID_PATTERN.fullmatch(species_id):
+            raise ManifestError(
+                f"Unsafe species_id at {path}:{line_number}: {species_id!r}; use only letters, "
+                "numbers, dots, underscores and hyphens"
+            )
         seen.add(species_id)
         if not row["scientific_name"].strip():
             raise ManifestError(f"Missing scientific_name at {path}:{line_number}")

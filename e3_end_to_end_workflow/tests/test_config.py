@@ -9,6 +9,7 @@ import yaml
 
 from e3workflow.config import (
     STAGE_NAMES,
+    controlled_input_paths,
     load_config,
     previous_stage,
     stage_ancestors,
@@ -30,7 +31,7 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     assert config.reporting.preview_rows == 10
     assert config.reporting.max_table_columns == 12
     assert config.reporting.max_chart_items == 20
-    assert config.run_root.name == "synthetic_e2e_v0_5_0"
+    assert config.run_root.name == "synthetic_e2e_v0_5_1"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"
@@ -58,6 +59,21 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         stage_interpretation("missing")
     with pytest.raises(ConfigurationError):
         stage_ancestors("missing")
+
+
+def test_five_proteome_orthofinder_configuration(package_root: Path) -> None:
+    """The first real run enables only validated input preparation and OrthoFinder 2.5.5."""
+    path = package_root / "config" / "five_proteome_orthofinder.cluster.yaml"
+    config = load_config(path)
+    enabled = [stage.name for stage in config.stages if stage.enabled]
+    assert enabled == ["00_inputs", "01_prepared_proteomes", "04_orthofinder"]
+    assert config.run_name == "five_proteome_orthofinder_v0_1_0_20260722"
+    assert config.stage("01_prepared_proteomes").command == ()
+    assert config.stage("04_orthofinder").command[0] == "orthofinder"
+    assert config.stage("04_orthofinder").threads == 4
+    assert config.stage("04_orthofinder").memory_mb == 64000
+    assert config.stage("04_orthofinder").runtime_minutes == 1440
+    assert [label for label, _ in controlled_input_paths(config)] == ["proteomes"]
 
 
 @pytest.mark.parametrize(
@@ -163,5 +179,5 @@ def test_production_requires_external_commands(synthetic_config: Path) -> None:
     data = yaml.safe_load(synthetic_config.read_text())
     data["run"]["mode"] = "production"
     synthetic_config.write_text(yaml.safe_dump(data), encoding="utf-8")
-    with pytest.raises(ConfigurationError, match=STAGE_NAMES[1]):
+    with pytest.raises(ConfigurationError, match=STAGE_NAMES[2]):
         load_config(synthetic_config)

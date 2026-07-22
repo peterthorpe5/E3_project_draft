@@ -77,6 +77,11 @@ from report inspection.
 - one scientific and computational summary for each of the twelve stages; and
 - links to detailed stage reports and manifests.
 
+For a bounded production configuration, this is a complete report for the configured run. It lists
+every explicitly skipped stage and marks application-release eligibility as false. A bounded
+OrthoFinder analysis is therefore never presented as the completed integrated E3 application
+resource.
+
 All CSS and SVG are embedded. The report contains no remote script, font, image or stylesheet. Data
 previews are HTML-escaped, and commands are stored as argument vectors before being rendered with
 shell quoting.

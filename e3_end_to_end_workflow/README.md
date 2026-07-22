@@ -4,7 +4,7 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.5.0` upgrades this existing orchestration without replacing any component package. The
+Version `0.5.1` upgrades this existing orchestration without replacing any component package. The
 shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
 start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
 OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
@@ -24,7 +24,7 @@ package adapters are explicitly configured. `CHANGE_ME` values are never treated
 | Stage | Owner or planned owner | Publication contract |
 |---|---|---|
 | `00_inputs` | master workflow | checksummed proteome, seed and shortlist manifests |
-| `01_prepared_proteomes` | master adapter | validated species/FASTA inventory |
+| `01_prepared_proteomes` | native master adapter | validated, isolated species/FASTA inventory |
 | `02_discovery` | `e3_discovery_engine` | DIAMOND DeepClust resource |
 | `03_candidate_evidence` | `e3_source_to_parquet_seed` | candidate evidence TSV/Parquet/DuckDB |
 | `04_orthofinder` | fresh OrthoFinder execution | one isolated, versioned result directory |
@@ -88,11 +88,12 @@ Its outputs contain `TEST DATA ONLY` and are never production eligible.
 
 ## Production preparation
 
-1. Copy `config/production.cluster.template.yaml` to a run-specific immutable YAML.
+1. Copy `config/production.cluster.template.yaml` to a run-specific immutable YAML. The package's
+   native stage-01 adapter prepares checksum-bound FASTAs; it does not need a separate command.
 2. Create `proteomes.tsv`, `data/known_e3_seed_evidence.tsv.gz` and the signed shortlist with the
    documented headers.
-3. Replace every `CHANGE_ME` argv with a tested adapter command. Commands are YAML argv lists, not
-   shell strings; this prevents accidental quoting and injection errors.
+3. Replace every remaining `CHANGE_ME` argv with a tested adapter command. Commands are YAML argv
+   lists, not shell strings; this prevents accidental quoting and injection errors.
 4. Set each `expected_outputs` entry to a non-empty file the component publishes only after success.
 5. Validate and inspect the DAG before running:
 
@@ -109,9 +110,16 @@ e3-workflow plan --config /path/to/run.yaml
 
 The Slurm profile defaults to account `barton`, partition `general`. Stage-specific threads, memory
 and runtime are declared in the YAML, with profile values used only as fallbacks. A production stage
-without an explicit command is rejected at configuration load time. Every stage runs under
+without an explicit command or a documented native implementation is rejected at configuration
+load time. Every stage runs under
 `.staging`, records file and console logs plus SHA-256 checksums, and is moved to its formal
 directory only after its declared output contract passes.
+
+For the first bounded real analysis, `config/five_proteome_orthofinder.cluster.yaml` enables only
+input validation, native proteome preparation and OrthoFinder 2.5.5. The Discovery Engine, future
+shortlist and downstream integration branches remain explicitly disabled. A bounded branch
+validates only the controlled inputs it scientifically consumes; no placeholder shortlist is
+permitted or needed.
 
 ## Benchmarking and resource provenance
 

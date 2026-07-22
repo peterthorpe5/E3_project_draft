@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from e3workflow.cli import (
     build_parser,
@@ -96,3 +97,27 @@ def test_cli_stage_and_error(synthetic_config: Path, tmp_path: Path) -> None:
         )
         == 0
     )
+
+
+def test_validate_skips_inputs_for_disabled_branches(synthetic_config: Path) -> None:
+    """A bounded OrthoFinder run does not require future seed or shortlist authorities."""
+    raw = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    raw["run"]["mode"] = "production"
+    for stage_name, stage in raw["stages"].items():
+        stage["enabled"] = stage_name in {"00_inputs", "01_prepared_proteomes", "04_orthofinder"}
+        stage["required"] = stage["enabled"]
+        stage.pop("command", None)
+        if not stage["enabled"]:
+            stage["expected_outputs"] = []
+    raw["stages"]["01_prepared_proteomes"]["expected_outputs"] = ["prepared_proteomes.tsv"]
+    raw["stages"]["04_orthofinder"].update(
+        command=["orthofinder", "-f", "{run_root}/01_prepared_proteomes/proteomes"],
+        expected_outputs=["Results/Log.txt"],
+    )
+    raw["inputs"]["seeds_manifest"] = "does_not_exist_seeds.tsv"
+    raw["inputs"]["shortlist_manifest"] = "does_not_exist_shortlist.tsv"
+    synthetic_config.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    result = validate_command(synthetic_config)
+    assert result["controlled_inputs"] == ["proteomes"]
+    assert result["seeds"] == 0
+    assert result["shortlist_rows"] == 0

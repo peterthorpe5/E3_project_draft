@@ -76,6 +76,9 @@ def test_proteome_manifest_defensive_paths(tmp_path: Path) -> None:
     )
     with pytest.raises(ManifestError, match="duplicate species_id"):
         validate_proteomes(manifest, False)
+    manifest.write_text(header + "bad/id\tSpecies x\tone.faa\tbad\ttrue\n", encoding="utf-8")
+    with pytest.raises(ManifestError, match="Unsafe species_id"):
+        validate_proteomes(manifest, False)
 
 
 def test_accession_and_shortlist_errors(tmp_path: Path) -> None:

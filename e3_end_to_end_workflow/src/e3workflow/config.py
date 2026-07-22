@@ -26,7 +26,9 @@ STAGE_NAMES = (
     "10_integrated_resource",
     "11_app_ready",
 )
-INTERNAL_PRODUCTION_STAGES = frozenset({"00_inputs", "08_shortlist_gate", "11_app_ready"})
+INTERNAL_PRODUCTION_STAGES = frozenset(
+    {"00_inputs", "01_prepared_proteomes", "08_shortlist_gate", "11_app_ready"}
+)
 
 STAGE_DEPENDENCIES = {
     "00_inputs": (),
@@ -257,6 +259,28 @@ class WorkflowConfig:
             if stage.name == name:
                 return stage
         raise ConfigurationError(f"Unknown stage: {name}")
+
+
+def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ...]:
+    """Return controlled inputs required by the enabled scientific branches.
+
+    The proteome manifest is the common root input. Seed evidence is required only when the
+    Discovery Engine branch is enabled, while the signed shortlist is required only when the
+    human-review gate is enabled. This keeps bounded production runs scientifically honest: an
+    OrthoFinder-only run does not need a fabricated future shortlist.
+
+    Args:
+        config: Validated workflow configuration.
+
+    Returns:
+        Ordered ``(label, path)`` pairs for inputs that must exist for this configuration.
+    """
+    inputs = [("proteomes", config.proteomes_manifest)]
+    if config.stage("02_discovery").enabled:
+        inputs.append(("seeds", config.seeds_manifest))
+    if config.stage("08_shortlist_gate").enabled:
+        inputs.append(("shortlist", config.shortlist_manifest))
+    return tuple(inputs)
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:

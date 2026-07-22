@@ -114,16 +114,139 @@ def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> Non
 
 
 def _run_internal_inputs(config: WorkflowConfig, stage_root: Path) -> None:
-    """Validate all controlled input manifests and publish a compact inventory."""
+    """Validate controlled inputs required by enabled branches and publish an inventory."""
     proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
-    seeds = validate_seed_evidence(config.seeds_manifest)
-    shortlist = validate_shortlist(config.shortlist_manifest)
     rows = [
         {"manifest": "proteomes", "path": config.proteomes_manifest, "row_count": len(proteomes)},
-        {"manifest": "seeds", "path": config.seeds_manifest, "row_count": len(seeds)},
-        {"manifest": "shortlist", "path": config.shortlist_manifest, "row_count": len(shortlist)},
     ]
+    if config.stage("02_discovery").enabled:
+        seeds = validate_seed_evidence(config.seeds_manifest)
+        rows.append(
+            {"manifest": "seeds", "path": config.seeds_manifest, "row_count": len(seeds)}
+        )
+    if config.stage("08_shortlist_gate").enabled:
+        shortlist = validate_shortlist(config.shortlist_manifest)
+        rows.append(
+            {
+                "manifest": "shortlist",
+                "path": config.shortlist_manifest,
+                "row_count": len(shortlist),
+            }
+        )
     write_tsv(stage_root / "input_validation.tsv", rows, ("manifest", "path", "row_count"))
+
+
+def _summarise_protein_fasta(path: Path) -> tuple[int, int]:
+    """Validate one protein FASTA and return sequence and residue counts.
+
+    Args:
+        path: Existing uncompressed protein FASTA.
+
+    Returns:
+        Number of records and non-whitespace sequence characters.
+
+    Raises:
+        StageError: If records are malformed, empty or have duplicate primary identifiers.
+    """
+    sequence_count = 0
+    residue_count = 0
+    current_identifier = ""
+    current_residue_count = 0
+    identifiers: set[str] = set()
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line_number, raw_line in enumerate(handle, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    if current_identifier and current_residue_count == 0:
+                        raise StageError(
+                            f"FASTA record {current_identifier!r} has no residues at "
+                            f"{path}:{line_number}"
+                        )
+                    identifier = line[1:].split(maxsplit=1)[0]
+                    if not identifier:
+                        raise StageError(f"Empty FASTA identifier at {path}:{line_number}")
+                    if identifier in identifiers:
+                        raise StageError(
+                            f"Duplicate FASTA identifier {identifier!r} at {path}:{line_number}"
+                        )
+                    identifiers.add(identifier)
+                    current_identifier = identifier
+                    current_residue_count = 0
+                    sequence_count += 1
+                    continue
+                if not current_identifier:
+                    raise StageError(
+                        f"Sequence data precede the first header at {path}:{line_number}"
+                    )
+                line_residues = sum(not character.isspace() for character in raw_line)
+                current_residue_count += line_residues
+                residue_count += line_residues
+    except UnicodeError as exc:
+        raise StageError(f"Protein FASTA is not valid UTF-8 text: {path}") from exc
+    if sequence_count == 0:
+        raise StageError(f"Protein FASTA contains no records: {path}")
+    if current_residue_count == 0:
+        raise StageError(f"FASTA record {current_identifier!r} has no residues at end of {path}")
+    return sequence_count, residue_count
+
+
+def _run_internal_prepared_proteomes(config: WorkflowConfig, stage_root: Path) -> None:
+    """Copy checksum-validated proteomes into the isolated OrthoFinder input directory.
+
+    Args:
+        config: Validated workflow configuration.
+        stage_root: Temporary atomic-publication directory for stage 01.
+
+    Raises:
+        StageError: If a copied FASTA differs from its controlled source.
+    """
+    proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
+    output_directory = stage_root / "proteomes"
+    output_directory.mkdir(parents=True)
+    rows = []
+    for proteome in proteomes:
+        source = Path(proteome["resolved_fasta_path"])
+        sequence_count, residue_count = _summarise_protein_fasta(source)
+        relative_output = Path("proteomes") / f"{proteome['species_id']}.fasta"
+        destination = stage_root / relative_output
+        shutil.copyfile(source, destination)
+        prepared_sha256 = sha256_file(destination)
+        source_sha256 = proteome["fasta_sha256"].strip().lower()
+        if prepared_sha256 != source_sha256:
+            raise StageError(
+                f"Prepared FASTA checksum differs from its controlled source: {destination}"
+            )
+        rows.append(
+            {
+                "species_id": proteome["species_id"],
+                "scientific_name": proteome["scientific_name"],
+                "source_fasta_path": source,
+                "source_fasta_sha256": source_sha256,
+                "prepared_fasta_relative_path": relative_output,
+                "prepared_fasta_sha256": prepared_sha256,
+                "sequence_count": sequence_count,
+                "residue_count": residue_count,
+                "size_bytes": destination.stat().st_size,
+            }
+        )
+    write_tsv(
+        stage_root / "prepared_proteomes.tsv",
+        rows,
+        (
+            "species_id",
+            "scientific_name",
+            "source_fasta_path",
+            "source_fasta_sha256",
+            "prepared_fasta_relative_path",
+            "prepared_fasta_sha256",
+            "sequence_count",
+            "residue_count",
+            "size_bytes",
+        ),
+    )
 
 
 def _run_internal_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
@@ -153,6 +276,8 @@ def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path
     """Run a safe built-in stage or a clearly labelled synthetic stage."""
     if stage_name == "00_inputs":
         _run_internal_inputs(config, stage_root)
+    elif stage_name == "01_prepared_proteomes" and config.mode == "production":
+        _run_internal_prepared_proteomes(config, stage_root)
     elif stage_name == "08_shortlist_gate":
         _run_internal_shortlist(config, stage_root)
     elif stage_name == "11_app_ready":

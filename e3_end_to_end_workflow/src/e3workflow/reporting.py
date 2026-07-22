@@ -22,6 +22,7 @@ from e3workflow import __version__
 from e3workflow.config import (
     STAGE_NAMES,
     WorkflowConfig,
+    controlled_input_paths,
     stage_dependencies,
     stage_interpretation,
     stage_purpose,
@@ -640,13 +641,14 @@ def _input_records(config: WorkflowConfig, stage_name: str) -> list[tuple[object
             for dependency in dependencies
         )
     else:
+        input_labels = {
+            "proteomes": "proteome manifest",
+            "seeds": "known-E3 evidence manifest",
+            "shortlist": "shortlist manifest",
+        }
+        paths.append(("workflow configuration", config.source_path))
         paths.extend(
-            (
-                ("workflow configuration", config.source_path),
-                ("proteome manifest", config.proteomes_manifest),
-                ("known-E3 evidence manifest", config.seeds_manifest),
-                ("shortlist manifest", config.shortlist_manifest),
-            )
+            (input_labels[label], path) for label, path in controlled_input_paths(config)
         )
     return [
         (label, path, _human_bytes(path.stat().st_size), sha256_file(path))
@@ -1054,6 +1056,20 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
         Machine-readable report paths and stage count.
     """
     manifests = _load_stage_manifests(config)
+    skipped_stages = [
+        str(manifest["stage"])
+        for manifest in manifests
+        if manifest.get("status") == "skipped_optional"
+    ]
+    application_release_eligible = config.mode == "production" and not skipped_stages
+    scope_label = "complete configured run" if skipped_stages else "complete workflow"
+    skipped_noun = "stage was" if len(skipped_stages) == 1 else "stages were"
+    scope_description = (
+        f"{len(skipped_stages)} optional {skipped_noun} explicitly skipped: "
+        + ", ".join(skipped_stages)
+        if skipped_stages
+        else "All twelve scientific stages completed."
+    )
     metrics = _workflow_metric_map(config)
     benchmark_manifest_path = config.run_root / "benchmark_summary" / "benchmark_manifest.json"
     benchmark_manifest = read_json(benchmark_manifest_path)
@@ -1116,7 +1132,12 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
     )
     summary_cards = _cards(
         (
-            ("Stages", str(len(manifests)), "Complete or explicitly skipped."),
+            (
+                "Stages",
+                str(len(manifests)),
+                f"{len(manifests) - len(skipped_stages)} complete; "
+                f"{len(skipped_stages)} explicitly skipped.",
+            ),
             (
                 "Observed span",
                 f"{_number(_metric_value(metrics, 'workflow_observed_span_seconds')):,.2f} s",
@@ -1145,7 +1166,9 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
         (
             ("Run name", config.run_name),
             ("Mode", config.mode),
-            ("Production eligible", str(config.mode == "production").lower()),
+            ("Application release eligible", str(application_release_eligible).lower()),
+            ("Run scope", scope_label),
+            ("Scope detail", scope_description),
             ("Project root", config.project_root),
             ("Run root", config.run_root),
             ("Configuration", config.source_path),
@@ -1190,12 +1213,12 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
     )
     metrics_table = _table(("Metric", "Value", "Unit", "Interpretation"), metric_rows)
     body = f"""
-<p class="eyebrow">ARIA plant E3 workflow · complete run report</p>
+<p class="eyebrow">ARIA plant E3 workflow · {_escape(scope_label)} report</p>
 <h1>{_escape(config.run_name)}</h1>
 <p><span class="status">complete</span></p>{synthetic_warning}
 <p class="lede">This self-contained report joins scientific stage summaries, validated inputs and
 outputs, exact commands, computation metrics, resource measurements, provenance and interpretation
-limits for the complete twelve-stage workflow.</p>
+limits for the configured run. {_escape(scope_description)}</p>
 {summary_cards}
 <nav aria-label="Stage sections"><h2>Stage index</h2><ul>{navigation}</ul></nav>
 <section><h2>Run identity and controlled inputs</h2>
@@ -1246,11 +1269,20 @@ are supporting evidence. None alone proves E3 function, orthology, ligand bindin
                 {
                     "status": "complete",
                     "stage_count": len(manifests),
+                    "skipped_stage_count": len(skipped_stages),
+                    "application_release_eligible": str(application_release_eligible).lower(),
                     "configuration_digest": config.digest,
                     "finished_at_utc": utc_now(),
                 },
             ),
-            ("status", "stage_count", "configuration_digest", "finished_at_utc"),
+            (
+                "status",
+                "stage_count",
+                "skipped_stage_count",
+                "application_release_eligible",
+                "configuration_digest",
+                "finished_at_utc",
+            ),
         )
         outputs = inventory_files(staging, frozenset({manifest_path.name}))
         atomic_write_json(
@@ -1262,6 +1294,8 @@ are supporting evidence. None alone proves E3 function, orthology, ligand bindin
                 "configuration_digest": config.digest,
                 "run_root": str(config.run_root),
                 "stage_count": len(manifests),
+                "skipped_stages": skipped_stages,
+                "application_release_eligible": application_release_eligible,
                 "benchmark_manifest": str(benchmark_manifest_path),
                 "outputs": outputs,
             },
@@ -1281,6 +1315,8 @@ are supporting evidence. None alone proves E3 function, orthology, ligand bindin
     return {
         "status": "complete",
         "stage_count": len(manifests),
+        "skipped_stage_count": len(skipped_stages),
+        "application_release_eligible": application_release_eligible,
         "html_report": str(destination / RUN_REPORT_FILENAME),
         "manifest": str(destination / "report_manifest.json"),
     }

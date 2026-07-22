@@ -30,7 +30,6 @@ stages:
   01_prepared_proteomes:
     enabled: true
     required: true
-    command: ["CHANGE_ME_PREPARATION_EXECUTABLE", "--output-dir", "{stage_dir}"]
     expected_outputs: ["prepared_proteomes.tsv"]
     threads: 1
     memory_mb: 8000

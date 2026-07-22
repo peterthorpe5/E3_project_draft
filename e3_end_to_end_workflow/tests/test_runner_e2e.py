@@ -13,12 +13,33 @@ from e3workflow.control import initialise_stage_tokens
 from e3workflow.errors import StageError
 from e3workflow.io_utils import read_tsv
 from e3workflow.runner import (
+    _summarise_protein_fasta,
     execute_stage,
     format_command,
     run_internal_stage,
     validate_expected_outputs,
     validate_upstream,
 )
+
+
+def _write_partial_production_config(path: Path) -> None:
+    """Convert a synthetic fixture into an OrthoFinder-branch production configuration."""
+    import yaml
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw["run"]["mode"] = "production"
+    for stage_name, stage in raw["stages"].items():
+        stage["enabled"] = stage_name in {"00_inputs", "01_prepared_proteomes", "04_orthofinder"}
+        stage["required"] = stage["enabled"]
+        stage.pop("command", None)
+        if not stage["enabled"]:
+            stage["expected_outputs"] = []
+    raw["stages"]["01_prepared_proteomes"]["expected_outputs"] = ["prepared_proteomes.tsv"]
+    raw["stages"]["04_orthofinder"].update(
+        command=["orthofinder", "-f", "{run_root}/01_prepared_proteomes/proteomes"],
+        expected_outputs=["Results/Log.txt"],
+    )
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
 
 
 def test_format_command_and_expected_outputs(tmp_path: Path) -> None:
@@ -82,6 +103,48 @@ def test_internal_unknown_and_bad_upstream(synthetic_config: Path, tmp_path: Pat
     production = replace(config, mode="production")
     with pytest.raises(StageError, match="No internal production"):
         run_internal_stage(production, "02_discovery", tmp_path / "production")
+
+
+def test_production_prepares_checksum_bound_proteomes(synthetic_config: Path) -> None:
+    """The native production adapter validates and copies every selected protein FASTA."""
+    _write_partial_production_config(synthetic_config)
+    config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
+    execute_stage(config, "00_inputs")
+    manifest = execute_stage(config, "01_prepared_proteomes")
+    prepared_root = manifest.parent
+    fields, rows = read_tsv(prepared_root / "prepared_proteomes.tsv")
+    assert "prepared_fasta_sha256" in fields
+    assert [row["species_id"] for row in rows] == [
+        "arabidopsis_thaliana",
+        "homo_sapiens",
+    ]
+    assert all(int(row["sequence_count"]) > 0 for row in rows)
+    assert all(int(row["residue_count"]) > 0 for row in rows)
+    for row in rows:
+        prepared = prepared_root / row["prepared_fasta_relative_path"]
+        assert prepared.is_file()
+        assert row["prepared_fasta_sha256"] == row["source_fasta_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("", "no records"),
+        ("MPEPTIDE\n", "precede the first header"),
+        (">x\nM\n>x\nM\n", "Duplicate FASTA identifier"),
+        (">x\n>y\nM\n", "has no residues"),
+        (">x\n", "has no residues"),
+    ],
+)
+def test_protein_fasta_preparation_rejects_malformed_records(
+    tmp_path: Path, content: str, message: str
+) -> None:
+    """Malformed or ambiguous protein FASTA records fail before OrthoFinder execution."""
+    fasta = tmp_path / "bad.fasta"
+    fasta.write_text(content, encoding="utf-8")
+    with pytest.raises(StageError, match=message):
+        _summarise_protein_fasta(fasta)
 
 
 @pytest.mark.parametrize(

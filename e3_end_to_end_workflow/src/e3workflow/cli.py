@@ -12,6 +12,7 @@ from e3workflow import __version__
 from e3workflow.benchmarking import aggregate_run_benchmarks
 from e3workflow.config import (
     STAGE_NAMES,
+    controlled_input_paths,
     load_config,
     stage_ancestors,
     stage_dependencies,
@@ -73,8 +74,9 @@ def validate_command(config_path: Path) -> dict[str, object]:
     """Validate configuration and all controlled input manifests."""
     config = load_config(config_path)
     proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
-    seeds = validate_seed_evidence(config.seeds_manifest)
-    shortlist = validate_shortlist(config.shortlist_manifest)
+    input_paths = dict(controlled_input_paths(config))
+    seeds = validate_seed_evidence(config.seeds_manifest) if "seeds" in input_paths else []
+    shortlist = validate_shortlist(config.shortlist_manifest) if "shortlist" in input_paths else []
     return {
         "status": "valid",
         "mode": config.mode,
@@ -83,6 +85,7 @@ def validate_command(config_path: Path) -> dict[str, object]:
         "proteomes": len(proteomes),
         "seeds": len(seeds),
         "shortlist_rows": len(shortlist),
+        "controlled_inputs": list(input_paths),
     }
 
 

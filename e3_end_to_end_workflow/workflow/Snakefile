@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from e3workflow.config import STAGE_NAMES, load_config, stage_dependencies
+from e3workflow.config import STAGE_NAMES, controlled_input_paths, load_config, stage_dependencies
 from e3workflow.control import stage_token_path
 
 
@@ -31,12 +31,8 @@ def stage_inputs(wildcards):
     inputs = [str(stage_token_path(E3_CONFIG, wildcards.stage))]
     dependencies = stage_dependencies(wildcards.stage)
     if not dependencies:
-        inputs.extend([
-            str(CONFIG_PATH),
-            str(E3_CONFIG.proteomes_manifest),
-            str(E3_CONFIG.seeds_manifest),
-            str(E3_CONFIG.shortlist_manifest),
-        ])
+        inputs.append(str(CONFIG_PATH))
+        inputs.extend(str(path) for _, path in controlled_input_paths(E3_CONFIG))
     inputs.extend(
         str(RUN_ROOT / dependency / "stage_manifest.json")
         for dependency in dependencies

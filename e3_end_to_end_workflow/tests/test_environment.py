@@ -40,5 +40,7 @@ def test_wrapper_safely_clears_completed_output_markers(package_root: Path) -> N
     assert '--nolock|--keep-going)' in wrapper
     assert "POSTPROCESSING_OUTPUTS" in wrapper
     assert "metadata was not present" in wrapper
+    assert "for cleanup_attempt in 1 2 3" in wrapper
+    assert "filesystem-latency retry" in wrapper
     assert '"${RUN_ROOT}/${stage_name}/stage_manifest.json"' in wrapper
     assert '"${RUN_ROOT}/${stage_name}/report/stage_report.html"' in wrapper

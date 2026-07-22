@@ -54,7 +54,7 @@ while (($#)); do
         --target) TARGET="$2"; shift 2 ;;
         --dry-run) DRY_RUN="true"; shift ;;
         --unlock) UNLOCK="true"; shift ;;
-        --version) printf 'e3-end-to-end-workflow 0.5.0\n'; exit 0 ;;
+        --version) printf 'e3-end-to-end-workflow 0.5.1\n'; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -213,18 +213,33 @@ if [[ "${DRY_RUN}" == "false" && "${UNLOCK}" == "false" ]]; then
         CLEANUP_LOG="$(mktemp "${TMPDIR:-/tmp}/e3_workflow_metadata.XXXXXX.log")"
         CLEANUP_COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile"
             --configfile "${CONFIG}" --cleanup-metadata "${POSTPROCESSING_OUTPUTS[@]}")
-        if "${CLEANUP_COMMAND[@]}" >"${CLEANUP_LOG}" 2>&1; then
+        CLEANUP_RESULT=""
+        for cleanup_attempt in 1 2 3; do
+            if "${CLEANUP_COMMAND[@]}" >"${CLEANUP_LOG}" 2>&1; then
+                CLEANUP_RESULT="metadata_removed"
+                break
+            elif grep -Fq "metadata was not present" "${CLEANUP_LOG}" && \
+                    ! grep -Eq "Traceback|OSError|PermissionError" "${CLEANUP_LOG}"; then
+                CLEANUP_RESULT="markers_removed"
+                if [[ "${cleanup_attempt}" -lt 3 ]]; then
+                    sleep 1
+                    continue
+                fi
+                break
+            else
+                printf 'ERROR: completed-output metadata cleanup failed.\n' >&2
+                cat "${CLEANUP_LOG}" >&2
+                rm -f -- "${CLEANUP_LOG}"
+                exit 1
+            fi
+        done
+        if [[ "${CLEANUP_RESULT}" == "metadata_removed" ]]; then
             printf '%s INFO Cleared completed-output metadata.\n' \
                 "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-        elif grep -Fq "metadata was not present" "${CLEANUP_LOG}" && \
-                ! grep -Eq "Traceback|OSError|PermissionError" "${CLEANUP_LOG}"; then
-            printf '%s INFO Cleared completed-output incomplete markers; completed-job '\
-'metadata was already absent as required.\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         else
-            printf 'ERROR: completed-output metadata cleanup failed.\n' >&2
-            cat "${CLEANUP_LOG}" >&2
-            rm -f -- "${CLEANUP_LOG}"
-            exit 1
+            printf '%s INFO Cleared completed-output incomplete markers after a bounded '\
+'filesystem-latency retry; completed-job metadata was already absent as required.\n' \
+                "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
         fi
         rm -f -- "${CLEANUP_LOG}"
     fi

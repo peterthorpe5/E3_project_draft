@@ -70,7 +70,11 @@ stage-level concurrency explicit while preserving every scientific join.
 ## Input manifest invariants
 
 - `species_id` is unique and stable across releases.
+- `species_id` is safe for deterministic filenames and contains only letters, numbers, dots,
+  underscores and hyphens.
 - Every included FASTA is a regular file with a verified SHA-256.
+- Native stage 01 checks FASTA structure, non-empty records and unique primary identifiers, then
+  copies exact bytes into the isolated run and verifies the copied SHA-256.
 - Seed accessions are unique and retain evidence type, source, E3 category, GO flags, organism,
   taxon, sequence checksum and inherited source-row provenance.
 - The seed evidence authority is a deterministic gzip-compressed TSV derived from the full
@@ -81,8 +85,9 @@ stage-level concurrency explicit while preserving every scientific join.
 ## Production safety
 
 `run.mode: production` changes validation behaviour. Every scientific stage other than controlled
-input validation, the human shortlist gate and application handoff must provide a command as a YAML
-argv list. Required stages cannot be disabled. A command's exit status and every declared non-empty
+input validation, native proteome preparation, the human shortlist gate and application handoff
+must provide a command as a YAML argv list. Required stages cannot be disabled. A command's exit
+status and every declared non-empty
 output is checked before publication. Before a downstream stage starts, every file in every
 prerequisite manifest is checked again for size and SHA-256. Logs state the stage purpose, rationale,
 dependencies, resources, expected outputs and external command output.
@@ -100,6 +105,8 @@ evidence without reparsing every large result.
 The production template deliberately contains `CHANGE_ME` commands because package-specific
 adapters still need to be finalised against the exact cluster installations and run-specific paths.
 This is preferable to silently embedding legacy paths or pretending a placeholder ran an analysis.
+Controlled inputs are branch-aware: proteomes are always validated, seed evidence is required when
+Discovery is enabled, and the signed shortlist is required only when its review gate is enabled.
 
 ## Extension policy
 

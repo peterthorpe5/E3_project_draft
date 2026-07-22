@@ -8,6 +8,7 @@ from pathlib import Path
 
 import duckdb
 import pytest
+import yaml
 
 from e3workflow import reporting
 from e3workflow.benchmarking import aggregate_run_benchmarks
@@ -275,6 +276,8 @@ def test_complete_report_contains_all_stages_and_commands(synthetic_config: Path
 
     assert report_path.name == RUN_REPORT_FILENAME
     assert result["stage_count"] == len(STAGE_NAMES)
+    assert result["skipped_stage_count"] == 0
+    assert result["application_release_eligible"] is False
     assert all(f'id="{stage_name}"' in report for stage_name in STAGE_NAMES)
     assert "target with spaces" in report
     assert "Stage wall time" in report
@@ -287,6 +290,32 @@ def test_complete_report_contains_all_stages_and_commands(synthetic_config: Path
     second = generate_run_report(config=config, output_dir=config.run_root / "reports")
     assert Path(second["html_report"]).is_file()
     assert any((config.run_root / "superseded").glob("reports.*"))
+
+
+def test_complete_report_labels_bounded_runs(synthetic_config: Path) -> None:
+    """A completed configuration with skipped stages is not called application-release ready."""
+    raw = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    raw["run"]["name"] = "synthetic_bounded_report"
+    raw["stages"]["02_discovery"].update(
+        enabled=False,
+        required=False,
+        expected_outputs=[],
+    )
+    synthetic_config.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    config = load_config(path=synthetic_config)
+    initialise_stage_tokens(config=config)
+    for stage_name in STAGE_NAMES:
+        execute_stage(config=config, stage_name=stage_name)
+    aggregate_run_benchmarks(
+        config=config,
+        output_dir=config.run_root / "benchmark_summary",
+    )
+    result = generate_run_report(config=config, output_dir=config.run_root / "reports")
+    report = Path(result["html_report"]).read_text(encoding="utf-8")
+    assert result["skipped_stage_count"] == 1
+    assert result["application_release_eligible"] is False
+    assert "complete configured run" in report
+    assert "1 optional stage was explicitly skipped: 02_discovery" in report
 
 
 def test_report_rejects_incomplete_or_mismatched_evidence(synthetic_config: Path) -> None:
