@@ -28,3 +28,10 @@ def test_profiles_drop_completed_job_metadata(package_root: Path) -> None:
         profile = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert profile["rerun-incomplete"] is True
         assert profile["drop-metadata"] is True
+
+
+def test_wrapper_does_not_reclean_dropped_metadata(package_root: Path) -> None:
+    """The wrapper must not clean metadata that profiles have already dropped."""
+
+    wrapper = (package_root / "run_e3_end_to_end.sh").read_text(encoding="utf-8")
+    assert "--cleanup-metadata" not in wrapper

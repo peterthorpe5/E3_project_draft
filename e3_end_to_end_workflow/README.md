@@ -4,7 +4,7 @@ This package is the orchestration layer above the existing E3 project packages. 
 their scientific logic. Snakemake controls dependencies; each component package remains responsible
 for its own detailed validation, outputs and scientific interpretation.
 
-Version `0.4.0` upgrades this existing orchestration without replacing any component package. The
+Version `0.4.1` upgrades this existing orchestration without replacing any component package. The
 shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
 start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
 OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
@@ -150,8 +150,10 @@ inputs and outputs remain valid. Completed-job metadata is dropped after success
 configuration digest, control tokens and checksummed manifests are the workflow's authoritative
 restart records; an interrupted job remains marked incomplete.
 
-After a successful wrapper run, transient metadata is explicitly cleared for all completed stage
-and benchmark outputs. This cleanup occurs only after Snakemake returns success.
+The profiles set `drop-metadata: true`, so Snakemake does not retain completed-job metadata after
+successful jobs. The wrapper deliberately does not call `--cleanup-metadata` afterwards: there is
+then no metadata to remove, and recent Snakemake 9 releases correctly return an error when asked to
+clean absent records. Checksummed manifests and control tokens remain the restart authority.
 
 Use named controls rather than deleting outputs:
 

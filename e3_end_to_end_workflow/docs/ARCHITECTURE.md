@@ -45,8 +45,9 @@ affected downstream work.
 Profiles use Snakemake's `drop-metadata` setting after successful jobs. This avoids stale
 implementation metadata competing with the configuration-bound tokens and checksummed manifests.
 An interrupted job's incomplete marker is still retained and is handled by `--rerun-incomplete`.
-The shell wrapper also performs explicit completed-output metadata cleanup, but only after the
-requested Snakemake target exits successfully.
+The shell wrapper does not call `--cleanup-metadata` after success because the profiles have already
+dropped completed-job metadata. This avoids treating the expected absence of metadata as a failure
+on Snakemake 9.
 
 ## Dependency graph and concurrency
 

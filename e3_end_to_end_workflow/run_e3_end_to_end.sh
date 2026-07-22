@@ -54,7 +54,7 @@ while (($#)); do
         --target) TARGET="$2"; shift 2 ;;
         --dry-run) DRY_RUN="true"; shift ;;
         --unlock) UNLOCK="true"; shift ;;
-        --version) printf 'e3-end-to-end-workflow 0.4.0\n'; exit 0 ;;
+        --version) printf 'e3-end-to-end-workflow 0.4.1\n'; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -177,29 +177,9 @@ printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'
 "${COMMAND[@]}"
 
 if [[ "${DRY_RUN}" == "false" && "${UNLOCK}" == "false" ]]; then
-    declare -a COMPLETED_OUTPUTS=()
-    for stage_name in "${STAGES[@]}"; do
-        stage_manifest="${RUN_ROOT}/${stage_name}/stage_manifest.json"
-        [[ -f "${stage_manifest}" ]] && COMPLETED_OUTPUTS+=("${stage_manifest}")
-    done
-    for benchmark_name in \
-        benchmark_manifest.json \
-        stage_resource_summary.tsv \
-        workflow_resource_summary.tsv \
-        slurm_accounting_status.tsv \
-        slurm_accounting.tsv \
-        benchmark_complete.tsv; do
-        benchmark_output="${RUN_ROOT}/benchmark_summary/${benchmark_name}"
-        [[ -f "${benchmark_output}" ]] && COMPLETED_OUTPUTS+=("${benchmark_output}")
-    done
-    if ((${#COMPLETED_OUTPUTS[@]})); then
-        snakemake \
-            --snakefile "${SCRIPT_DIR}/workflow/Snakefile" \
-            --configfile "${CONFIG}" \
-            --nolock \
-            --cleanup-metadata "${COMPLETED_OUTPUTS[@]}" \
-            >/dev/null
-        printf '%s INFO Cleared transient Snakemake metadata for %d completed outputs.\n' \
-            "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${#COMPLETED_OUTPUTS[@]}"
-    fi
+    printf '%s INFO Workflow command completed successfully.\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf '%s INFO Successful-job metadata was dropped by the Snakemake profile; checksummed '\
+'stage manifests and control tokens remain the restart authority.\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 fi
