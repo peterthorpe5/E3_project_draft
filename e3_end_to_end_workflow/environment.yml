@@ -12,6 +12,7 @@ dependencies:
   - snakemake>=9,<10
   - snakemake-executor-plugin-slurm
   - orthofinder=2.5.5
+  - mafft>=7.5,<8
   - coverage>=7.6,<8
   - pycodestyle>=2.12,<3
   - pydocstyle>=6.3,<7

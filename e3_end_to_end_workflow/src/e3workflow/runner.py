@@ -21,10 +21,13 @@ from e3workflow.benchmarking import (
 from e3workflow.config import (
     STAGE_NAMES,
     WorkflowConfig,
+    controlled_input_paths,
     stage_dependencies,
     stage_interpretation,
     stage_purpose,
 )
+from e3workflow.integration import run_app_ready_stage, run_integrated_stage
+from e3workflow.ligandability import run_ligandability_stage
 from e3workflow.control import stage_token_path
 from e3workflow.errors import StageError
 from e3workflow.io_utils import (
@@ -39,6 +42,18 @@ from e3workflow.io_utils import (
 )
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 from e3workflow.reporting import summarise_declared_outputs, write_stage_report
+from e3workflow.prioritisation import run_prestructure_stage
+from e3workflow.production import (
+    run_candidate_evidence_stage,
+    run_domain_stage,
+    run_expression_stage,
+    run_reused_orthofinder_stage,
+    run_reused_discovery_stage,
+)
+from e3workflow.resources import (
+    EXPRESSION_RESOURCE_TYPES,
+    read_resource_manifest,
+)
 
 
 def format_command(command: tuple[str, ...], values: dict[str, str]) -> list[str]:
@@ -115,25 +130,80 @@ def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> Non
 
 def _run_internal_inputs(config: WorkflowConfig, stage_root: Path) -> None:
     """Validate controlled inputs required by enabled branches and publish an inventory."""
-    proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
-    rows = [
-        {"manifest": "proteomes", "path": config.proteomes_manifest, "row_count": len(proteomes)},
-    ]
-    if config.stage("02_discovery").enabled:
+    required_inputs = dict(controlled_input_paths(config))
+    rows: list[dict[str, Any]] = []
+    if "proteomes" in required_inputs:
+        proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
+        rows.append(
+            {
+                "manifest": "proteomes",
+                "path": config.proteomes_manifest,
+                "row_count": len(proteomes),
+                "size_bytes": config.proteomes_manifest.stat().st_size,
+                "sha256": sha256_file(config.proteomes_manifest),
+            }
+        )
+    if config.stage("02_discovery").enabled and (
+        config.stage("02_discovery").command or config.mode == "synthetic"
+    ):
         seeds = validate_seed_evidence(config.seeds_manifest)
         rows.append(
-            {"manifest": "seeds", "path": config.seeds_manifest, "row_count": len(seeds)}
+            {
+                "manifest": "seeds",
+                "path": config.seeds_manifest,
+                "row_count": len(seeds),
+                "size_bytes": config.seeds_manifest.stat().st_size,
+                "sha256": sha256_file(config.seeds_manifest),
+            }
         )
-    if config.stage("08_shortlist_gate").enabled:
+    if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         shortlist = validate_shortlist(config.shortlist_manifest)
         rows.append(
             {
                 "manifest": "shortlist",
                 "path": config.shortlist_manifest,
                 "row_count": len(shortlist),
+                "size_bytes": config.shortlist_manifest.stat().st_size,
+                "sha256": sha256_file(config.shortlist_manifest),
             }
         )
-    write_tsv(stage_root / "input_validation.tsv", rows, ("manifest", "path", "row_count"))
+    existing_labels = {str(row["manifest"]) for row in rows}
+    for label, path in required_inputs.items():
+        if label in existing_labels:
+            continue
+        if not path.is_file() or path.stat().st_size == 0:
+            raise StageError(f"Controlled input is missing or empty: {label}={path}")
+        row_count: int | str = ""
+        if label == "expression_manifest":
+            row_count = len(
+                read_resource_manifest(
+                    path=path,
+                    allowed_resource_types=EXPRESSION_RESOURCE_TYPES,
+                    verify_checksums=True,
+                )
+            )
+        elif label == "ligandability_manifest":
+            row_count = len(
+                read_resource_manifest(
+                    path=path,
+                    allowed_resource_types={"ligandability"},
+                    verify_checksums=True,
+                )
+            )
+        rows.append(
+            {
+                "manifest": label,
+                "path": path,
+                "row_count": row_count,
+                "size_bytes": path.stat().st_size,
+                "sha256": sha256_file(path),
+            }
+        )
+    write_tsv(
+        stage_root / "input_validation.tsv",
+        rows,
+        ("manifest", "path", "row_count", "size_bytes", "sha256"),
+    )
 
 
 def _summarise_protein_fasta(path: Path) -> tuple[int, int]:
@@ -249,27 +319,11 @@ def _run_internal_prepared_proteomes(config: WorkflowConfig, stage_root: Path) -
     )
 
 
-def _run_internal_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
-    """Publish only accessions explicitly approved at the human review gate."""
+def _run_synthetic_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
+    """Publish explicitly approved synthetic accessions for orchestration tests only."""
     rows = validate_shortlist(config.shortlist_manifest)
     approved = [row for row in rows if row["decision"].strip().lower() == "approve"]
     write_tsv(stage_root / "approved_accessions.tsv", approved, tuple(rows[0]))
-
-
-def _run_internal_app_ready(config: WorkflowConfig, stage_root: Path) -> None:
-    """Write an application handoff that never overstates production readiness."""
-    write_tsv(
-        stage_root / "app_handoff.tsv",
-        [
-            {
-                "run_name": config.run_name,
-                "mode": config.mode,
-                "production_eligible": str(config.mode == "production").lower(),
-                "integrated_stage": config.run_root / "10_integrated_resource",
-            }
-        ],
-        ("run_name", "mode", "production_eligible", "integrated_stage"),
-    )
 
 
 def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path) -> None:
@@ -278,10 +332,40 @@ def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path
         _run_internal_inputs(config, stage_root)
     elif stage_name == "01_prepared_proteomes" and config.mode == "production":
         _run_internal_prepared_proteomes(config, stage_root)
-    elif stage_name == "08_shortlist_gate":
-        _run_internal_shortlist(config, stage_root)
+    elif stage_name == "02_discovery" and config.mode == "production":
+        run_reused_discovery_stage(config=config, stage_root=stage_root)
+    elif stage_name == "03_candidate_evidence" and config.mode == "production":
+        run_candidate_evidence_stage(config=config, stage_root=stage_root)
+    elif stage_name == "04_orthofinder" and config.mode == "production":
+        run_reused_orthofinder_stage(config=config, stage_root=stage_root)
+    elif stage_name == "06_domains" and config.mode == "production":
+        run_domain_stage(config=config, stage_root=stage_root)
+    elif stage_name == "07_expression" and config.mode == "production":
+        run_expression_stage(config=config, stage_root=stage_root)
+    elif stage_name == "08_shortlist_gate" and config.mode == "production":
+        run_prestructure_stage(config=config, stage_root=stage_root)
+    elif stage_name == "08_shortlist_gate" and config.mode == "synthetic":
+        _run_synthetic_shortlist(config=config, stage_root=stage_root)
+    elif stage_name == "09_ligandability" and config.mode == "production":
+        run_ligandability_stage(config=config, stage_root=stage_root)
+    elif stage_name == "10_integrated_resource" and config.mode == "production":
+        run_integrated_stage(config=config, stage_root=stage_root)
     elif stage_name == "11_app_ready":
-        _run_internal_app_ready(config, stage_root)
+        if config.mode == "production":
+            run_app_ready_stage(config=config, stage_root=stage_root)
+        else:
+            write_tsv(
+                stage_root / "app_handoff.tsv",
+                [
+                    {
+                        "run_name": config.run_name,
+                        "mode": config.mode,
+                        "production_eligible": "false",
+                        "integrated_stage": config.run_root / "10_integrated_resource",
+                    }
+                ],
+                ("run_name", "mode", "production_eligible", "integrated_stage"),
+            )
     elif config.mode == "synthetic":
         write_tsv(
             stage_root / "synthetic_stage.tsv",
@@ -375,6 +459,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         logger.info("What this stage does: %s", purpose)
         logger.info("Why this stage is required: %s", rationale)
         logger.info("Run mode: %s", config.mode)
+        logger.info("Evidence mode: %s", stage.evidence_mode)
         logger.info("Prerequisite stages: %s", ", ".join(dependencies) or "controlled inputs")
         logger.info("Temporary stage directory: %s", staging)
         logger.info(
@@ -427,6 +512,23 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "proteomes_manifest": str(config.proteomes_manifest),
                 "seeds_manifest": str(config.seeds_manifest),
                 "shortlist_manifest": str(config.shortlist_manifest),
+                "candidate_evidence": str(config.resources.candidate_evidence or ""),
+                "candidate_evidence_manifest": str(
+                    config.resources.candidate_evidence_manifest or ""
+                ),
+                "orthology_species_manifest": str(
+                    config.resources.orthology_species_manifest or ""
+                ),
+                "inherited_sqlite": str(config.resources.inherited_sqlite or ""),
+                "expression_manifest": str(config.resources.expression_manifest or ""),
+                "ligandability_manifest": str(
+                    config.resources.ligandability_manifest or ""
+                ),
+                "domain_annotation_manifest": str(
+                    config.resources.domain_annotation_manifest or ""
+                ),
+                "domain_cache_root": str(config.resources.domain_cache_root or ""),
+                "e3_domain_catalogue": str(config.resources.e3_domain_catalogue or ""),
                 "threads": str(stage.threads),
             }
             argv = format_command(stage.command, values)
@@ -496,6 +598,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "status": status,
             "required": stage.required,
             "mode": config.mode,
+            "evidence_mode": stage.evidence_mode,
             "started_at_utc": started,
             "finished_at_utc": utc_now(),
             "runner_wall_seconds": runner_wall_seconds,
@@ -528,7 +631,10 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "outputs": outputs_before_report,
         }
         summary["lineage"] = lineage + [
-            {key: summary[key] for key in ("stage", "status", "required", "mode")}
+            {
+                key: summary[key]
+                for key in ("stage", "status", "required", "mode", "evidence_mode")
+            }
         ]
         write_stage_report(
             config=config,

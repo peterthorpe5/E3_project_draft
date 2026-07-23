@@ -22,6 +22,12 @@ from e3workflow.control import initialise_stage_tokens, stage_manifest_target
 from e3workflow.errors import WorkflowError
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 from e3workflow.reporting import generate_run_report, record_workflow_invocation
+from e3workflow.production import cache_domain_annotations
+from e3workflow.resources import (
+    build_domain_cache_manifest,
+    build_expression_manifest,
+    build_ligandability_manifest,
+)
 from e3workflow.runner import execute_stage
 from e3workflow.seed_evidence import build_seed_evidence
 
@@ -67,14 +73,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evidence.add_argument("--provenance-output", type=Path)
     evidence.add_argument("--force", action="store_true")
+    domain_cache = subparsers.add_parser("cache-domain-annotations")
+    domain_cache.add_argument("--config", type=Path, required=True)
+    domain_manifest = subparsers.add_parser("build-domain-cache-manifest")
+    domain_manifest.add_argument("--cache-root", type=Path, required=True)
+    domain_manifest.add_argument("--output", type=Path, required=True)
+    expression_manifest = subparsers.add_parser("build-expression-manifest")
+    expression_manifest.add_argument("--expression-root", type=Path, required=True)
+    expression_manifest.add_argument("--output", type=Path, required=True)
+    ligandability_manifest = subparsers.add_parser("build-ligandability-manifest")
+    ligandability_manifest.add_argument("--root", type=Path, action="append", required=True)
+    ligandability_manifest.add_argument("--output", type=Path, required=True)
     return parser
 
 
 def validate_command(config_path: Path) -> dict[str, object]:
     """Validate configuration and all controlled input manifests."""
     config = load_config(config_path)
-    proteomes = validate_proteomes(config.proteomes_manifest, verify_checksums=True)
     input_paths = dict(controlled_input_paths(config))
+    proteomes = (
+        validate_proteomes(config.proteomes_manifest, verify_checksums=True)
+        if "proteomes" in input_paths
+        else []
+    )
     seeds = validate_seed_evidence(config.seeds_manifest) if "seeds" in input_paths else []
     shortlist = validate_shortlist(config.shortlist_manifest) if "shortlist" in input_paths else []
     return {
@@ -112,6 +133,7 @@ def plan_command(config_path: Path) -> dict[str, object]:
                 "enabled": stage.enabled,
                 "required": stage.required,
                 "implementation": "external" if stage.command else "internal",
+                "evidence_mode": stage.evidence_mode,
                 "threads": stage.threads,
                 "memory_mb": stage.memory_mb,
                 "runtime_minutes": stage.runtime_minutes,
@@ -156,6 +178,7 @@ def render_plan(payload: dict[str, object]) -> str:
                 f"  Does: {stage['purpose']}",
                 f"  Why: {stage['rationale']}",
                 f"  Needs: {dependency_text}",
+                f"  Evidence mode: {stage['evidence_mode']}",
                 (
                     "  Resources: "
                     f"threads={stage['threads']}, memory_mb={stage['memory_mb']}, "
@@ -235,6 +258,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 provenance_output=args.provenance_output,
                 force=args.force,
             )
+        elif args.command == "cache-domain-annotations":
+            payload = cache_domain_annotations(config=load_config(args.config))
+        elif args.command == "build-domain-cache-manifest":
+            destination = build_domain_cache_manifest(
+                cache_root=args.cache_root,
+                output_path=args.output,
+            )
+            payload = {"status": "complete", "manifest": str(destination)}
+        elif args.command == "build-expression-manifest":
+            destination = build_expression_manifest(
+                expression_root=args.expression_root,
+                output_path=args.output,
+            )
+            payload = {"status": "complete", "manifest": str(destination)}
+        elif args.command == "build-ligandability-manifest":
+            destination = build_ligandability_manifest(
+                roots=args.root,
+                output_path=args.output,
+            )
+            payload = {"status": "complete", "manifest": str(destination)}
         else:
             raise WorkflowError(f"Unsupported command: {args.command}")
         print(json.dumps(payload, indent=2, sort_keys=True))

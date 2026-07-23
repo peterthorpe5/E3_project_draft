@@ -1,52 +1,79 @@
 # E3 end-to-end workflow
 
-This package is the orchestration layer above the existing E3 project packages. It does not copy
-their scientific logic. Snakemake controls dependencies; each component package remains responsible
-for its own detailed validation, outputs and scientific interpretation.
+This package is the orchestration and evidence-integration layer above the existing E3 project
+packages. Snakemake controls dependencies; each component package remains responsible for its
+detailed scientific analysis, while the master package enforces shared manifests, missing-data
+semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.5.1` upgrades this existing orchestration without replacing any component package. The
-shell entry point calls Snakemake, explains what each stage does and why, and exposes safe resume,
-start, stop and controlled-rerun options. The dependency graph permits independent Discovery Engine,
-OrthoFinder and expression branches to run concurrently. Per-stage threads, memory and runtime
-declarations allow Snakemake and Slurm to schedule that concurrency safely. Detailed resource
-measurements, per-stage HTML reports and a consolidated full-run HTML report are produced
-automatically.
+Version `0.6.0` supports two equally explicit production strategies:
+
+- **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
+  OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
+  conserved-pocket comparison, report and application resource; and
+- **fresh scalable execution** for a future, larger proteome panel: prepare an arbitrary manifest
+  of proteomes and run configured component adapters under the same output contracts.
+
+Every enabled stage declares an `evidence_mode` (`validate`, `prepare`, `reuse`, `download`,
+`derive` or `generate`). Reports and manifests therefore distinguish reused evidence from newly
+computed evidence. Per-stage threads, memory and runtime are configuration values rather than fixed
+species-count assumptions. Detailed resource measurements, stage HTML reports and the consolidated
+full-run HTML report are produced automatically.
 
 The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
 prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
 
 The complete twelve-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
-end-to-end test remain in place. The production template still fails closed until the remaining
-package adapters are explicitly configured. `CHANGE_ME` values are never treated as defaults.
+end-to-end test remain in place. The reusable current-study template contains the reviewed paths
+already known to the project and fails closed only for the ligandability resource manifest that
+must be built from the retained result roots. The future fresh template uses explicit
+`CHANGE_ME` adapter paths and never treats a placeholder as a default.
 
 ## DAG and package ownership
 
-| Stage | Owner or planned owner | Publication contract |
+| Stage | Owner | Publication contract |
 |---|---|---|
-| `00_inputs` | master workflow | checksummed proteome, seed and shortlist manifests |
+| `00_inputs` | master workflow | branch-aware, checksummed controlled-input inventory |
 | `01_prepared_proteomes` | native master adapter | validated, isolated species/FASTA inventory |
-| `02_discovery` | `e3_discovery_engine` | DIAMOND DeepClust resource |
-| `03_candidate_evidence` | `e3_source_to_parquet_seed` | candidate evidence TSV/Parquet/DuckDB |
-| `04_orthofinder` | fresh OrthoFinder execution | one isolated, versioned result directory |
+| `02_discovery` | `e3_discovery_engine` | reused authority or fresh DIAMOND/DeepClust resource |
+| `03_candidate_evidence` | `e3_source_to_parquet_seed` | reused or fresh candidate evidence authority |
+| `04_orthofinder` | OrthoFinder 2.5.5 | reviewed archive reuse or fresh isolated result |
 | `05_orthology` | `e3_orthology_integration` | parsed identifier and run-specific membership tables |
-| `06_domains` | planned domain-evidence component | family/domain evidence, separate from orthology |
-| `07_expression` | `expression_downloader` | Expression Atlas Parquet/DuckDB |
-| `08_shortlist_gate` | human review plus master validation | approved accession table with sign-off |
-| `09_ligandability` | `e3_ligandability_pipeline` | AlphaFold/FPocket/P2Rank resource |
-| `10_integrated_resource` | planned release assembler | shared DuckDB plus TSV/Parquet authorities |
-| `11_app_ready` | master workflow | Python/Shiny handoff and readiness statement |
+| `06_domains` | native download/cache adapter | InterPro/Pfam hits and tri-state domain evidence |
+| `07_expression` | native Expression Atlas adapter | full selected-group mapping and expression summary |
+| `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
+| `09_ligandability` | native reuse/conservation adapter | best pockets and aligned pocket-region conservation |
+| `10_integrated_resource` | native release assembler | DuckDB, final TSV/Parquet and scientific HTML |
+| `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
 
 DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
-to a run. Ligandability is intentionally downstream of a signed shortlist rather than applied to
-every cluster member.
+to a run. The computational shortlist controls expensive structural analysis; it is a transparent
+recommendation for human review, not a pre-existing signed approval falsely represented as evidence.
+
+## Missing evidence policy
+
+Missing coverage is allowed and is never silently converted to a biological failure.
+
+- Domain evidence is `SUPPORTED`, `ANNOTATED_NO_CATALOGUED_E3_DOMAIN`, or
+  `ANNOTATION_UNAVAILABLE`. Only the second state is a true annotated negative.
+- Expression evidence distinguishes mapped support, limited/zero measurements, mapping failure and
+  unavailable species resources.
+- Structural evidence distinguishes a completed prediction below threshold from a protein with no
+  available model or pocket result.
+- Fractions use only species for which the relevant evidence could actually be assessed; separate
+  completeness fields expose the missing denominator.
+
+Stage 06 does not require a local InterProScan or Pfam HMM installation. It retrieves bounded
+InterPro/Pfam annotation JSON for the accessions in the selected orthology groups, caches every
+terminal response and can later run entirely from a checksum manifest. This makes the current reuse
+analysis economical and lets a larger future run populate the same shared cache incrementally.
 
 ## Concurrent execution model
 
-After controlled input preparation, Snakemake can submit the Discovery Engine and fresh OrthoFinder
-branches together; expression evidence can also run independently. Candidate evidence waits for
-Discovery Engine, and orthology integration waits for OrthoFinder. Domain evidence, orthology and
-expression join at the shortlist gate. Snakemake therefore runs every scientifically independent
-job it can, up to `--max-jobs` on Slurm or the `--threads` CPU budget locally.
+After controlled input preparation, Snakemake can submit fresh Discovery Engine and OrthoFinder
+branches together. Candidate evidence waits for Discovery; orthology integration waits for both
+candidate evidence and OrthoFinder. Domain and expression mapping then interrogate the complete
+members of the selected run-specific groups before joining at prioritisation. Reuse stages can
+replace either fresh branch without changing the downstream contracts.
 
 This is concurrency between stages. Each component package remains responsible for safe
 multithreading within its own stage.
@@ -88,14 +115,14 @@ Its outputs contain `TEST DATA ONLY` and are never production eligible.
 
 ## Production preparation
 
-1. Copy `config/production.cluster.template.yaml` to a run-specific immutable YAML. The package's
-   native stage-01 adapter prepares checksum-bound FASTAs; it does not need a separate command.
-2. Create `proteomes.tsv`, `data/known_e3_seed_evidence.tsv.gz` and the signed shortlist with the
-   documented headers.
-3. Replace every remaining `CHANGE_ME` argv with a tested adapter command. Commands are YAML argv
-   lists, not shell strings; this prevents accidental quoting and injection errors.
-4. Set each `expected_outputs` entry to a non-empty file the component publishes only after success.
-5. Validate and inspect the DAG before running:
+For the current reviewed-results analysis, copy
+`config/grant_aligned_reuse.cluster.template.yaml` to an immutable run-specific YAML. Build the
+Expression Atlas and ligandability manifests with the supplied CLI commands, keep the existing
+OrthoFinder archive read-only, and validate the configuration. For a larger future analysis, copy
+`config/production.cluster.template.yaml`, add any number of proteome rows/species and configure the
+fresh component adapter argument vectors. Commands are YAML argv lists rather than shell strings.
+
+Both modes use the same validation and submission interface:
 
 ```bash
 e3-workflow validate --config /path/to/run.yaml
@@ -109,17 +136,19 @@ e3-workflow plan --config /path/to/run.yaml
 ```
 
 The Slurm profile defaults to account `barton`, partition `general`. Stage-specific threads, memory
-and runtime are declared in the YAML, with profile values used only as fallbacks. A production stage
-without an explicit command or a documented native implementation is rejected at configuration
-load time. Every stage runs under
+and runtime are declared in the YAML, with profile values used only as fallbacks. The fresh template
+permits up to 32 threads and 180 GB for expensive components, while the current reuse stages request
+substantially less. A production stage without an explicit command or a documented native
+implementation is rejected at configuration load time. Every stage runs under
 `.staging`, records file and console logs plus SHA-256 checksums, and is moved to its formal
 directory only after its declared output contract passes.
 
-For the first bounded real analysis, `config/five_proteome_orthofinder.cluster.yaml` enables only
-input validation, native proteome preparation and OrthoFinder 2.5.5. The Discovery Engine, future
-shortlist and downstream integration branches remain explicitly disabled. A bounded branch
-validates only the controlled inputs it scientifically consumes; no placeholder shortlist is
-permitted or needed.
+`config/five_proteome_orthofinder.cluster.yaml` remains a bounded fresh-OrthoFinder demonstration.
+It is not the current grant analysis and does not supersede the reviewed 60-proteome
+`Results_Feb26` authority.
+
+See [docs/EVIDENCE_MODES_AND_SCALING.md](docs/EVIDENCE_MODES_AND_SCALING.md) for the evidence-state,
+reuse and larger-panel contracts.
 
 ## Benchmarking and resource provenance
 

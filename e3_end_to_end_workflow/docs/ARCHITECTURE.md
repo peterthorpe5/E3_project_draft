@@ -38,7 +38,8 @@ output filesystem. The report is generated inside the temporary directory and is
 the manifest checksum inventory.
 
 `benchmark_summary/` joins stage-monitor records to broader runner timestamps, output inventory and
-optional Slurm accounting. It is created only after all twelve stage manifests exist.
+optional Slurm accounting. It is created after every stage in the configured DAG reaches a terminal
+completed or explicitly skipped state.
 
 `reports/` contains the self-contained full-run HTML, completion TSV and checksum manifest. Its
 Snakemake rule requires all twelve stage reports and the completed benchmark aggregate. Report
@@ -61,11 +62,12 @@ permission failure as fatal. Partial targets and failed or interrupted DAGs neve
 
 ## Dependency graph and concurrency
 
-The workflow is not a serial list. After `01_prepared_proteomes`, `02_discovery` and
-`04_orthofinder` are independent. `07_expression` depends only on validated controlled inputs.
-Candidate evidence follows Discovery Engine, while orthology integration follows OrthoFinder. The
-shortlist gate waits for candidate, orthology, domain and expression authorities. This makes safe
-stage-level concurrency explicit while preserving every scientific join.
+The workflow is not a fixed-size serial list. In fresh mode, Discovery and OrthoFinder can run
+concurrently after proteome preparation. Candidate evidence follows Discovery; orthology
+integration follows candidate evidence and OrthoFinder. Domain download and expression mapping both
+use the full membership of the selected run-specific groups. They converge at the computational
+prioritisation stage. A reviewed result can replace any generation branch through `evidence_mode:
+reuse` without changing the downstream table contract.
 
 ## Input manifest invariants
 
@@ -79,16 +81,19 @@ stage-level concurrency explicit while preserving every scientific join.
   taxon, sequence checksum and inherited source-row provenance.
 - The seed evidence authority is a deterministic gzip-compressed TSV derived from the full
   discovery-engine seed table; the sequence-bearing source table remains outside Git.
-- Ligandability accessions require a human decision, reviewer, UTC time and rationale.
-- A shortlist without at least one explicit `approve` decision is invalid.
+- Target and mandatory species panels are configuration lists, not compiled constants.
+- Missing domain, expression or structural resources retain explicit unavailable states and are
+  excluded from biological-negative denominators.
+- The stage-08 human-review TSV is an output template; the computational ranking does not claim
+  human approval.
 
 ## Production safety
 
-`run.mode: production` changes validation behaviour. Every scientific stage other than controlled
-input validation, native proteome preparation, the human shortlist gate and application handoff
-must provide a command as a YAML argv list. Required stages cannot be disabled. A command's exit
-status and every declared non-empty
-output is checked before publication. Before a downstream stage starts, every file in every
+`run.mode: production` changes validation behaviour. Every enabled stage must provide either a
+documented native implementation or a command as a YAML argv list. Required stages cannot be
+disabled. Every stage also declares whether it validates, prepares, reuses, downloads, derives or
+generates evidence. A command's exit status and every declared non-empty output is checked before
+publication. Before a downstream stage starts, every file in every
 prerequisite manifest is checked again for size and SHA-256. Logs state the stage purpose, rationale,
 dependencies, resources, expected outputs and external command output.
 
@@ -102,14 +107,18 @@ FASTA inspection is streaming, while Parquet, DuckDB and SQLite inspection is re
 The stage manifest retains the extracted result summary, so the final report can reuse validated
 evidence without reparsing every large result.
 
-The production template deliberately contains `CHANGE_ME` commands because package-specific
-adapters still need to be finalised against the exact cluster installations and run-specific paths.
-This is preferable to silently embedding legacy paths or pretending a placeholder ran an analysis.
-Controlled inputs are branch-aware: proteomes are always validated, seed evidence is required when
-Discovery is enabled, and the signed shortlist is required only when its review gate is enabled.
+The current reuse template supplies native implementations for downloaded domain evidence,
+Expression Atlas mapping, computational prioritisation, pocket conservation, integration and app
+hand-off. Its reviewed external authorities are immutable checksum-bound inputs. The future fresh
+template deliberately retains `CHANGE_ME` component adapter paths until the exact cluster
+installation is selected. Controlled inputs are branch-aware, so a reused branch does not require
+irrelevant fresh inputs and a disabled branch is not misrepresented in provenance.
 
 ## Extension policy
 
-A new species is a new row and FASTA checksum in `proteomes.tsv`, followed by a new immutable run
-name. New evidence types should become new tables/views rather than columns injected into unrelated
-authorities. DeepClust and OrthoFinder labels are always qualified by their source run identifiers.
+A new species is a new row and FASTA checksum in `proteomes.tsv`, an entry in the orthology species
+manifest, and normally a new immutable run name. Species thresholds are fractions so they remain
+meaningful as panels grow. Expression and domain resources may be absent for individual species;
+their unavailable states and completeness metrics survive into the final resource. New evidence
+types should become new tables/views rather than columns injected into unrelated authorities.
+DeepClust and OrthoFinder labels are always qualified by their source run identifiers.

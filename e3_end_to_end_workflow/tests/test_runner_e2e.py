@@ -102,7 +102,7 @@ def test_internal_unknown_and_bad_upstream(synthetic_config: Path, tmp_path: Pat
         validate_upstream(config, "01_prepared_proteomes")
     production = replace(config, mode="production")
     with pytest.raises(StageError, match="No internal production"):
-        run_internal_stage(production, "02_discovery", tmp_path / "production")
+        run_internal_stage(production, "05_orthology", tmp_path / "production")
 
 
 def test_production_prepares_checksum_bound_proteomes(synthetic_config: Path) -> None:

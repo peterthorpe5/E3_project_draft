@@ -26,8 +26,24 @@ STAGE_NAMES = (
     "10_integrated_resource",
     "11_app_ready",
 )
+
+EVIDENCE_MODES = frozenset(
+    {"validate", "prepare", "reuse", "generate", "download", "derive", "synthetic", "disabled"}
+)
 INTERNAL_PRODUCTION_STAGES = frozenset(
-    {"00_inputs", "01_prepared_proteomes", "08_shortlist_gate", "11_app_ready"}
+    {
+        "00_inputs",
+        "01_prepared_proteomes",
+        "02_discovery",
+        "03_candidate_evidence",
+        "04_orthofinder",
+        "06_domains",
+        "07_expression",
+        "08_shortlist_gate",
+        "09_ligandability",
+        "10_integrated_resource",
+        "11_app_ready",
+    }
 )
 
 STAGE_DEPENDENCIES = {
@@ -36,9 +52,9 @@ STAGE_DEPENDENCIES = {
     "02_discovery": ("01_prepared_proteomes",),
     "03_candidate_evidence": ("02_discovery",),
     "04_orthofinder": ("01_prepared_proteomes",),
-    "05_orthology": ("04_orthofinder",),
-    "06_domains": ("03_candidate_evidence",),
-    "07_expression": ("00_inputs",),
+    "05_orthology": ("03_candidate_evidence", "04_orthofinder"),
+    "06_domains": ("03_candidate_evidence", "05_orthology"),
+    "07_expression": ("03_candidate_evidence", "05_orthology"),
     "08_shortlist_gate": (
         "03_candidate_evidence",
         "05_orthology",
@@ -66,7 +82,7 @@ STAGE_PURPOSES = {
         "Discovery and OrthoFinder must analyse the same complete species inputs.",
     ),
     "02_discovery": (
-        "Build sequence-similarity clusters and identify clusters containing known E3 seeds.",
+        "Provide E3-seeded sequence clusters, reusing or freshly building the authority.",
         "This expands the evidence set without claiming that every cluster member is an E3 ligase.",
     ),
     "03_candidate_evidence": (
@@ -74,14 +90,14 @@ STAGE_PURPOSES = {
         "Downstream analyses need reconciled counts, identifiers and seed evidence per cluster.",
     ),
     "04_orthofinder": (
-        "Run a fresh, isolated OrthoFinder analysis on the complete proteomes.",
+        "Provide a complete OrthoFinder analysis by reviewed reuse or a fresh isolated run.",
         (
             "Run-specific orthogroups provide evidence distinct from DeepClust sequence clusters; "
             "OrthoFinder 2.5.5 is retained because its project-reviewed phylogeny was preferred."
         ),
     ),
     "05_orthology": (
-        "Reconcile candidate identifiers with the fresh OrthoFinder outputs.",
+        "Reconcile candidate identifiers with the selected OrthoFinder outputs.",
         (
             "Orthogroup and predicted-orthologue evidence must be joined through validated "
             "identifiers."
@@ -92,15 +108,21 @@ STAGE_PURPOSES = {
         "Domain architecture helps assess E3 plausibility independently of sequence clustering.",
     ),
     "07_expression": (
-        "Build the expression evidence resource for the configured species and datasets.",
-        "Expression context is supporting evidence and can be prepared independently of orthology.",
+        "Build expression evidence for all selected group members in configured datasets.",
+        (
+            "Expression context is supporting evidence; reusable Atlas resources are acquired "
+            "independently, then mapped to the selected run-specific orthology groups."
+        ),
     ),
     "08_shortlist_gate": (
-        "Validate and publish the explicitly approved shortlist.",
-        "Expensive structural work must follow a recorded human review decision.",
+        "Build a transparent pre-structure ranking and a computational analysis shortlist.",
+        (
+            "Orthology, domain and expression evidence must be reconciled before structural "
+            "evidence is assessed; the output remains a computational recommendation for review."
+        ),
     ),
     "09_ligandability": (
-        "Run structure and pocket analyses for approved proteins.",
+        "Reuse or run structure and pocket analyses for computationally selected proteins.",
         "Ligandability evidence is meaningful only for the controlled shortlist.",
     ),
     "10_integrated_resource": (
@@ -140,7 +162,7 @@ STAGE_INTERPRETATIONS = {
         "Candidate evidence prioritises sequences; it is not functional validation.",
     ),
     "04_orthofinder": (
-        "The configured proteomes have a fresh, run-specific OrthoFinder 2.5.5 analysis.",
+        "A validated OrthoFinder 2.5.5 authority is available for the configured analysis.",
         (
             "Orthogroup membership alone does not prove a one-to-one orthologue relationship or "
             "function."
@@ -166,10 +188,13 @@ STAGE_INTERPRETATIONS = {
     ),
     "08_shortlist_gate": (
         (
-            "Only explicitly approved accessions pass to computationally expensive structural "
-            "analysis."
+            "Candidates are ranked under a named, versioned scoring profile and selected for "
+            "structural evidence interrogation."
         ),
-        "Approval records a review decision; it is not experimental confirmation of ligandability.",
+        (
+            "A computational shortlist is not human approval and does not establish E3 activity, "
+            "ligandability or experimental suitability."
+        ),
     ),
     "09_ligandability": (
         "Structure confidence and predicted-pocket evidence are available for approved proteins.",
@@ -196,6 +221,7 @@ class StageConfig:
     name: str
     enabled: bool
     required: bool
+    evidence_mode: str
     command: tuple[str, ...]
     expected_outputs: tuple[str, ...]
     threads: int
@@ -232,6 +258,88 @@ class ReportingConfig:
 
 
 @dataclass(frozen=True)
+class ResourceConfig:
+    """Controlled reusable evidence resources for production integration."""
+
+    candidate_evidence: Path | None
+    candidate_evidence_manifest: Path | None
+    orthofinder_archive: Path | None
+    orthology_species_manifest: Path | None
+    inherited_sqlite: Path | None
+    expression_manifest: Path | None
+    ligandability_manifest: Path | None
+    domain_annotation_manifest: Path | None
+    domain_cache_root: Path | None
+    e3_domain_catalogue: Path | None
+
+
+@dataclass(frozen=True)
+class DomainAnalysisConfig:
+    """Domain-analysis settings for downloaded annotations and optional gap filling."""
+
+    mode: str
+    interpro_api_base_url: str
+    allow_network: bool
+    workers: int
+    request_timeout_seconds: float
+    max_retries: int
+    retry_delay_seconds: float
+
+
+@dataclass(frozen=True)
+class ExpressionAnalysisConfig:
+    """Expression mapping and breadth thresholds."""
+
+    minimum_expression_value: float
+    broad_positive_fraction: float
+
+
+@dataclass(frozen=True)
+class LigandabilityAnalysisConfig:
+    """Pocket selection and conserved-region analysis settings."""
+
+    mode: str
+    mafft_executable: str
+    minimum_druggability_score: float
+    minimum_mapping_fraction: float
+    minimum_pocket_plddt_fraction: float
+    minimum_region_overlap: float
+
+
+@dataclass(frozen=True)
+class PrioritisationConfig:
+    """Grant-aligned evidence integration and ranking configuration."""
+
+    profile_name: str
+    target_species: tuple[str, ...]
+    mandatory_species: tuple[str, ...]
+    minimum_target_species_fraction: float
+    minimum_expression_species_fraction: float
+    minimum_domain_species_fraction: float
+    structure_group_limit: int
+    final_candidate_limit: int
+    discovery_weight: float
+    orthology_weight: float
+    domain_weight: float
+    expression_weight: float
+    ligandability_weight: float
+    pocket_conservation_weight: float
+    prestructure_final_weight: float
+    structural_final_weight: float
+    minimum_structural_species_fraction: float
+
+
+@dataclass(frozen=True)
+class AnalysisConfig:
+    """Validated scientific settings for production evidence integration."""
+
+    domains: DomainAnalysisConfig
+    expression: ExpressionAnalysisConfig
+    ligandability: LigandabilityAnalysisConfig
+    prioritisation: PrioritisationConfig
+
+
+@dataclass(frozen=True)
 class WorkflowConfig:
     """Fully resolved top-level workflow configuration."""
 
@@ -245,6 +353,8 @@ class WorkflowConfig:
     shortlist_manifest: Path
     benchmarking: BenchmarkConfig
     reporting: ReportingConfig
+    resources: ResourceConfig
+    analysis: AnalysisConfig
     stages: tuple[StageConfig, ...]
     digest: str
 
@@ -264,10 +374,10 @@ class WorkflowConfig:
 def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ...]:
     """Return controlled inputs required by the enabled scientific branches.
 
-    The proteome manifest is the common root input. Seed evidence is required only when the
-    Discovery Engine branch is enabled, while the signed shortlist is required only when the
-    human-review gate is enabled. This keeps bounded production runs scientifically honest: an
-    OrthoFinder-only run does not need a fabricated future shortlist.
+    Proteomes and seed evidence are required only by fresh sequence-analysis branches. Reused
+    candidate, OrthoFinder, domain, expression and ligandability authorities are added only when
+    their corresponding internal branch consumes them. A real human-review file is retained when
+    supplied, but the computational gate does not require a fabricated approval document.
 
     Args:
         config: Validated workflow configuration.
@@ -275,12 +385,76 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
     Returns:
         Ordered ``(label, path)`` pairs for inputs that must exist for this configuration.
     """
-    inputs = [("proteomes", config.proteomes_manifest)]
-    if config.stage("02_discovery").enabled:
+    inputs: list[tuple[str, Path]] = []
+    if config.mode == "synthetic":
+        return (
+            ("proteomes", config.proteomes_manifest),
+            ("seeds", config.seeds_manifest),
+            ("shortlist", config.shortlist_manifest),
+        )
+    if (
+        config.stage("01_prepared_proteomes").enabled
+        or config.stage("02_discovery").command
+        or config.stage("04_orthofinder").command
+    ):
+        inputs.append(("proteomes", config.proteomes_manifest))
+    if config.stage("02_discovery").enabled and config.stage("02_discovery").command:
         inputs.append(("seeds", config.seeds_manifest))
-    if config.stage("08_shortlist_gate").enabled:
+    if (
+        config.stage("02_discovery").enabled
+        and not config.stage("02_discovery").command
+    ) or (
+        config.stage("03_candidate_evidence").enabled
+        and not config.stage("03_candidate_evidence").command
+    ):
+        _append_resource(inputs, "candidate_evidence", config.resources.candidate_evidence)
+        _append_resource(
+            inputs,
+            "candidate_evidence_manifest",
+            config.resources.candidate_evidence_manifest,
+        )
+    if config.stage("05_orthology").enabled:
+        _append_resource(
+            inputs,
+            "orthology_species_manifest",
+            config.resources.orthology_species_manifest,
+        )
+        _append_resource(inputs, "inherited_sqlite", config.resources.inherited_sqlite)
+    if config.stage("04_orthofinder").enabled and not config.stage("04_orthofinder").command:
+        _append_resource(
+            inputs, "orthofinder_archive", config.resources.orthofinder_archive
+        )
+    if config.stage("06_domains").enabled and not config.stage("06_domains").command:
+        _append_resource(inputs, "e3_domain_catalogue", config.resources.e3_domain_catalogue)
+        if config.analysis.domains.mode == "downloaded_manifest":
+            _append_resource(
+                inputs,
+                "domain_annotation_manifest",
+                config.resources.domain_annotation_manifest,
+            )
+    if config.stage("07_expression").enabled and not config.stage("07_expression").command:
+        _append_resource(inputs, "expression_manifest", config.resources.expression_manifest)
+        _append_resource(inputs, "inherited_sqlite", config.resources.inherited_sqlite)
+    if config.stage("09_ligandability").enabled and not config.stage(
+        "09_ligandability"
+    ).command:
+        _append_resource(
+            inputs,
+            "ligandability_manifest",
+            config.resources.ligandability_manifest,
+        )
+    if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         inputs.append(("shortlist", config.shortlist_manifest))
-    return tuple(inputs)
+    return tuple(dict(inputs).items())
+
+
+def _append_resource(
+    records: list[tuple[str, Path]], label: str, path: Path | None
+) -> None:
+    """Append a required configured resource or raise a precise error."""
+    if path is None:
+        raise ConfigurationError(f"inputs.{label} is required by the enabled production stages")
+    records.append((label, path))
 
 
 def _mapping(value: Any, label: str) -> Mapping[str, Any]:
@@ -298,6 +472,279 @@ def _resolve_path(value: Any, base: Path, label: str) -> Path:
     return (base / path).resolve() if not path.is_absolute() else path.resolve()
 
 
+def _optional_path(value: Any, base: Path, label: str) -> Path | None:
+    """Resolve an optional configuration path."""
+    if value is None or value == "":
+        return None
+    return _resolve_path(value, base, label)
+
+
+def _number(
+    value: Any,
+    label: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
+    """Validate a finite numeric setting within optional inclusive bounds."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ConfigurationError(f"{label} must be numeric")
+    parsed = float(value)
+    if minimum is not None and parsed < minimum:
+        raise ConfigurationError(f"{label} must be at least {minimum}")
+    if maximum is not None and parsed > maximum:
+        raise ConfigurationError(f"{label} must be at most {maximum}")
+    return parsed
+
+
+def _positive_integer(value: Any, label: str) -> int:
+    """Validate one positive integer setting."""
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ConfigurationError(f"{label} must be a positive integer")
+    return value
+
+
+def _non_empty_string(value: Any, label: str) -> str:
+    """Validate one non-empty string setting."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigurationError(f"{label} must be a non-empty string")
+    return value.strip()
+
+
+def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
+    """Build validated domain, expression, pocket and prioritisation settings."""
+    analysis = _mapping(root.get("analysis", {}), "analysis")
+    domains = _mapping(analysis.get("domains", {}), "analysis.domains")
+    expression = _mapping(analysis.get("expression", {}), "analysis.expression")
+    ligandability = _mapping(
+        analysis.get("ligandability", {}), "analysis.ligandability"
+    )
+    prioritisation = _mapping(
+        analysis.get("prioritisation", {}), "analysis.prioritisation"
+    )
+    target_species = _strings(
+        prioritisation.get("target_species", []),
+        "analysis.prioritisation.target_species",
+    )
+    mandatory_species = _strings(
+        prioritisation.get("mandatory_species", []),
+        "analysis.prioritisation.mandatory_species",
+    )
+    if not target_species:
+        target_species = (
+            "Arabidopsis_thaliana",
+            "Brachypodium_distachyon",
+            "Glycine_max",
+            "Hordeum_vulgare",
+            "Medicago_truncatula",
+            "Oryza_sativa",
+            "Populus_trichocarpa",
+            "Solanum_lycopersicum",
+            "Solanum_tuberosum",
+            "Sorghum_bicolor",
+            "Triticum_aestivum",
+            "Zea_mays",
+        )
+    if not mandatory_species:
+        mandatory_species = (
+            "Hordeum_vulgare",
+            "Oryza_sativa",
+            "Solanum_lycopersicum",
+            "Solanum_tuberosum",
+            "Triticum_aestivum",
+            "Zea_mays",
+        )
+    missing_mandatory = sorted(set(mandatory_species).difference(target_species))
+    if missing_mandatory:
+        raise ConfigurationError(
+            "mandatory_species must be a subset of target_species: "
+            + ", ".join(missing_mandatory)
+        )
+    mode = _non_empty_string(
+        ligandability.get("mode", "reuse_only"), "analysis.ligandability.mode"
+    )
+    if mode not in {"reuse_only", "reuse_then_run_missing"}:
+        raise ConfigurationError(
+            "analysis.ligandability.mode must be reuse_only or reuse_then_run_missing"
+        )
+    domain_mode = _non_empty_string(
+        domains.get("mode", "interpro_api_cache"), "analysis.domains.mode"
+    )
+    if domain_mode not in {"interpro_api_cache", "downloaded_manifest"}:
+        raise ConfigurationError(
+            "analysis.domains.mode must be interpro_api_cache or downloaded_manifest"
+        )
+    allow_network = domains.get("allow_network", True)
+    if not isinstance(allow_network, bool):
+        raise ConfigurationError("analysis.domains.allow_network must be a boolean")
+    max_retries = domains.get("max_retries", 4)
+    if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 0:
+        raise ConfigurationError("analysis.domains.max_retries must be a non-negative integer")
+    discovery_weight = _number(
+        prioritisation.get("discovery_weight", 0.10),
+        "analysis.prioritisation.discovery_weight",
+        minimum=0.0,
+    )
+    orthology_weight = _number(
+        prioritisation.get("orthology_weight", 0.35),
+        "analysis.prioritisation.orthology_weight",
+        minimum=0.0,
+    )
+    domain_weight = _number(
+        prioritisation.get("domain_weight", 0.20),
+        "analysis.prioritisation.domain_weight",
+        minimum=0.0,
+    )
+    expression_weight = _number(
+        prioritisation.get("expression_weight", 0.35),
+        "analysis.prioritisation.expression_weight",
+        minimum=0.0,
+    )
+    if abs(
+        discovery_weight + orthology_weight + domain_weight + expression_weight - 1.0
+    ) > 1e-9:
+        raise ConfigurationError("pre-structure prioritisation weights must sum to 1.0")
+    ligandability_weight = _number(
+        prioritisation.get("ligandability_weight", 0.55),
+        "analysis.prioritisation.ligandability_weight",
+        minimum=0.0,
+    )
+    pocket_conservation_weight = _number(
+        prioritisation.get("pocket_conservation_weight", 0.45),
+        "analysis.prioritisation.pocket_conservation_weight",
+        minimum=0.0,
+    )
+    if abs(ligandability_weight + pocket_conservation_weight - 1.0) > 1e-9:
+        raise ConfigurationError("structural prioritisation weights must sum to 1.0")
+    prestructure_final_weight = _number(
+        prioritisation.get("prestructure_final_weight", 0.60),
+        "analysis.prioritisation.prestructure_final_weight",
+        minimum=0.0,
+    )
+    structural_final_weight = _number(
+        prioritisation.get("structural_final_weight", 0.40),
+        "analysis.prioritisation.structural_final_weight",
+        minimum=0.0,
+    )
+    if abs(prestructure_final_weight + structural_final_weight - 1.0) > 1e-9:
+        raise ConfigurationError("final prioritisation weights must sum to 1.0")
+    return AnalysisConfig(
+        domains=DomainAnalysisConfig(
+            mode=domain_mode,
+            interpro_api_base_url=_non_empty_string(
+                domains.get("interpro_api_base_url", "https://www.ebi.ac.uk/interpro/api"),
+                "analysis.domains.interpro_api_base_url",
+            ).rstrip("/"),
+            allow_network=allow_network,
+            workers=_positive_integer(
+                domains.get("workers", 4), "analysis.domains.workers"
+            ),
+            request_timeout_seconds=_number(
+                domains.get("request_timeout_seconds", 60.0),
+                "analysis.domains.request_timeout_seconds",
+                minimum=1.0,
+            ),
+            max_retries=max_retries,
+            retry_delay_seconds=_number(
+                domains.get("retry_delay_seconds", 2.0),
+                "analysis.domains.retry_delay_seconds",
+                minimum=0.0,
+            ),
+        ),
+        expression=ExpressionAnalysisConfig(
+            minimum_expression_value=_number(
+                expression.get("minimum_expression_value", 0.0),
+                "analysis.expression.minimum_expression_value",
+                minimum=0.0,
+            ),
+            broad_positive_fraction=_number(
+                expression.get("broad_positive_fraction", 0.5),
+                "analysis.expression.broad_positive_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        ),
+        ligandability=LigandabilityAnalysisConfig(
+            mode=mode,
+            mafft_executable=_non_empty_string(
+                ligandability.get("mafft_executable", "mafft"),
+                "analysis.ligandability.mafft_executable",
+            ),
+            minimum_druggability_score=_number(
+                ligandability.get("minimum_druggability_score", 0.5),
+                "analysis.ligandability.minimum_druggability_score",
+                minimum=0.0,
+            ),
+            minimum_mapping_fraction=_number(
+                ligandability.get("minimum_mapping_fraction", 0.95),
+                "analysis.ligandability.minimum_mapping_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_pocket_plddt_fraction=_number(
+                ligandability.get("minimum_pocket_plddt_fraction", 0.7),
+                "analysis.ligandability.minimum_pocket_plddt_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_region_overlap=_number(
+                ligandability.get("minimum_region_overlap", 0.25),
+                "analysis.ligandability.minimum_region_overlap",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        ),
+        prioritisation=PrioritisationConfig(
+            profile_name=_non_empty_string(
+                prioritisation.get("profile_name", "grant_aligned_stringent_v1"),
+                "analysis.prioritisation.profile_name",
+            ),
+            target_species=target_species,
+            mandatory_species=mandatory_species,
+            minimum_target_species_fraction=_number(
+                prioritisation.get("minimum_target_species_fraction", 0.9),
+                "analysis.prioritisation.minimum_target_species_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_expression_species_fraction=_number(
+                prioritisation.get("minimum_expression_species_fraction", 0.8),
+                "analysis.prioritisation.minimum_expression_species_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_domain_species_fraction=_number(
+                prioritisation.get("minimum_domain_species_fraction", 0.8),
+                "analysis.prioritisation.minimum_domain_species_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            structure_group_limit=_positive_integer(
+                prioritisation.get("structure_group_limit", 50),
+                "analysis.prioritisation.structure_group_limit",
+            ),
+            final_candidate_limit=_positive_integer(
+                prioritisation.get("final_candidate_limit", 10),
+                "analysis.prioritisation.final_candidate_limit",
+            ),
+            discovery_weight=discovery_weight,
+            orthology_weight=orthology_weight,
+            domain_weight=domain_weight,
+            expression_weight=expression_weight,
+            ligandability_weight=ligandability_weight,
+            pocket_conservation_weight=pocket_conservation_weight,
+            prestructure_final_weight=prestructure_final_weight,
+            structural_final_weight=structural_final_weight,
+            minimum_structural_species_fraction=_number(
+                prioritisation.get("minimum_structural_species_fraction", 0.75),
+                "analysis.prioritisation.minimum_structural_species_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        ),
+    )
+
+
 def _strings(value: Any, label: str) -> tuple[str, ...]:
     """Validate a YAML sequence containing only non-empty strings."""
     if value is None:
@@ -305,6 +752,27 @@ def _strings(value: Any, label: str) -> tuple[str, ...]:
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise ConfigurationError(f"{label} must be a list of non-empty strings")
     return tuple(value)
+
+
+def _default_evidence_mode(
+    *, name: str, enabled: bool, command: tuple[str, ...], run_mode: str
+) -> str:
+    """Return the explicit provenance strategy implied by a stage configuration."""
+    if not enabled:
+        return "disabled"
+    if run_mode == "synthetic":
+        return "synthetic"
+    if name == "00_inputs":
+        return "validate"
+    if name == "01_prepared_proteomes":
+        return "prepare"
+    if name in {"02_discovery", "03_candidate_evidence", "04_orthofinder", "09_ligandability"}:
+        return "generate" if command else "reuse"
+    if name == "06_domains":
+        return "download" if not command else "generate"
+    if name == "07_expression":
+        return "reuse" if not command else "generate"
+    return "derive"
 
 
 def load_config(path: Path) -> WorkflowConfig:
@@ -340,6 +808,7 @@ def load_config(path: Path) -> WorkflowConfig:
     raw_stages = _mapping(root.get("stages"), "stages")
     raw_benchmarking = _mapping(root.get("benchmarking", {}), "benchmarking")
     raw_reporting = _mapping(root.get("reporting", {}), "reporting")
+    analysis_config = _analysis_config(root)
     sample_interval = raw_benchmarking.get("sample_interval_seconds", 5.0)
     collect_slurm = raw_benchmarking.get("collect_slurm_accounting", True)
     if (
@@ -371,6 +840,35 @@ def load_config(path: Path) -> WorkflowConfig:
         if not isinstance(enabled, bool) or not isinstance(required, bool):
             raise ConfigurationError(f"enabled and required must be booleans for {name}")
         command = _strings(item.get("command"), f"stages.{name}.command")
+        evidence_mode = item.get(
+            "evidence_mode",
+            _default_evidence_mode(
+                name=name,
+                enabled=enabled,
+                command=command,
+                run_mode=mode,
+            ),
+        )
+        if evidence_mode not in EVIDENCE_MODES:
+            raise ConfigurationError(
+                f"stages.{name}.evidence_mode must be one of: "
+                + ", ".join(sorted(EVIDENCE_MODES))
+            )
+        if enabled and evidence_mode == "disabled":
+            raise ConfigurationError(
+                f"Enabled stage cannot use disabled evidence_mode: {name}"
+            )
+        if not enabled and evidence_mode != "disabled":
+            raise ConfigurationError(
+                f"Disabled stage must use disabled evidence_mode: {name}"
+            )
+        if mode == "production" and evidence_mode == "generate" and not command and name not in {
+            "01_prepared_proteomes",
+            "06_domains",
+        }:
+            raise ConfigurationError(
+                f"Fresh generation requires an argv command for production stage: {name}"
+            )
         expected = _strings(item.get("expected_outputs"), f"stages.{name}.expected_outputs")
         threads = item.get("threads", 1)
         memory_mb = item.get("memory_mb", 8_000)
@@ -401,6 +899,7 @@ def load_config(path: Path) -> WorkflowConfig:
                 name,
                 enabled,
                 required,
+                evidence_mode,
                 command,
                 expected,
                 threads,
@@ -409,6 +908,7 @@ def load_config(path: Path) -> WorkflowConfig:
             )
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")
     return WorkflowConfig(
         source_path=source,
         project_root=project_root,
@@ -420,13 +920,57 @@ def load_config(path: Path) -> WorkflowConfig:
         ),
         seeds_manifest=_resolve_path(inputs.get("seeds_manifest"), base, "inputs.seeds_manifest"),
         shortlist_manifest=_resolve_path(
-            inputs.get("shortlist_manifest"), base, "inputs.shortlist_manifest"
+            default_shortlist, base, "inputs.shortlist_manifest"
         ),
         benchmarking=BenchmarkConfig(
             sample_interval_seconds=float(sample_interval),
             collect_slurm_accounting=collect_slurm,
         ),
         reporting=ReportingConfig(**reporting_values),
+        resources=ResourceConfig(
+            candidate_evidence=_optional_path(
+                inputs.get("candidate_evidence"), base, "inputs.candidate_evidence"
+            ),
+            candidate_evidence_manifest=_optional_path(
+                inputs.get("candidate_evidence_manifest"),
+                base,
+                "inputs.candidate_evidence_manifest",
+            ),
+            orthofinder_archive=_optional_path(
+                inputs.get("orthofinder_archive"), base, "inputs.orthofinder_archive"
+            ),
+            orthology_species_manifest=_optional_path(
+                inputs.get("orthology_species_manifest"),
+                base,
+                "inputs.orthology_species_manifest",
+            ),
+            inherited_sqlite=_optional_path(
+                inputs.get("inherited_sqlite"), base, "inputs.inherited_sqlite"
+            ),
+            expression_manifest=_optional_path(
+                inputs.get("expression_manifest"), base, "inputs.expression_manifest"
+            ),
+            ligandability_manifest=_optional_path(
+                inputs.get("ligandability_manifest"),
+                base,
+                "inputs.ligandability_manifest",
+            ),
+            domain_annotation_manifest=_optional_path(
+                inputs.get("domain_annotation_manifest"),
+                base,
+                "inputs.domain_annotation_manifest",
+            ),
+            domain_cache_root=_optional_path(
+                inputs.get("domain_cache_root"), base, "inputs.domain_cache_root"
+            )
+            or (output_root / "_shared_resource_cache" / "interpro").resolve(),
+            e3_domain_catalogue=_optional_path(
+                inputs.get("e3_domain_catalogue"),
+                base,
+                "inputs.e3_domain_catalogue",
+            ),
+        ),
+        analysis=analysis_config,
         stages=tuple(stages),
         digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
     )

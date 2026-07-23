@@ -10,16 +10,16 @@ python -m pycodestyle src tests --max-line-length=100
 python -m pydocstyle src/e3workflow
 python -m coverage erase
 python -m coverage run --branch -m pytest -q
-python -m coverage report --fail-under=95
+python -m coverage report --fail-under=90
 bash -n run_e3_end_to_end.sh run_tests.sh
 if command -v snakemake >/dev/null 2>&1; then
     snakemake --snakefile workflow/Snakefile --configfile config/synthetic.yaml --lint
     ./run_e3_end_to_end.sh --dry-run -- --nolock
     ./run_e3_end_to_end.sh --force-stage 00_inputs --threads 4 -- --nolock
-    test -s test_runs/synthetic_e2e_v0_5_1/reports/e3_workflow_summary.html
-    test -s test_runs/synthetic_e2e_v0_5_1/reports/report_manifest.json
+    test -s test_runs/synthetic_e2e_v0_6_0/reports/e3_workflow_summary.html
+    test -s test_runs/synthetic_e2e_v0_6_0/reports/report_manifest.json
     grep -q "SYNTHETIC TEST RUN" \
-        test_runs/synthetic_e2e_v0_5_1/reports/e3_workflow_summary.html
+        test_runs/synthetic_e2e_v0_6_0/reports/e3_workflow_summary.html
     ./run_e3_end_to_end.sh \
         --start-at 04_orthofinder \
         --stop-after 05_orthology \

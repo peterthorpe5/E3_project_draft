@@ -38,7 +38,7 @@ def test_parser_plan_and_validate(synthetic_config: Path) -> None:
     assert validate_stage_range("04_orthofinder", "05_orthology")["status"] == "valid"
     assert validate_stage_range("05_orthology", "05_orthology")["status"] == "valid"
     with pytest.raises(WorkflowError, match="not a prerequisite"):
-        validate_stage_range("02_discovery", "05_orthology")
+        validate_stage_range("06_domains", "05_orthology")
     assert (
         main(
             [
@@ -121,3 +121,85 @@ def test_validate_skips_inputs_for_disabled_branches(synthetic_config: Path) -> 
     assert result["controlled_inputs"] == ["proteomes"]
     assert result["seeds"] == 0
     assert result["shortlist_rows"] == 0
+
+
+def test_resource_and_report_cli_dispatch(
+    synthetic_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All resource-preparation and finalisation subcommands use their named arguments."""
+    import e3workflow.cli as cli
+
+    destination = tmp_path / "manifest.tsv"
+    monkeypatch.setattr(
+        cli,
+        "cache_domain_annotations",
+        lambda **_kwargs: {"status": "cache_complete"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_domain_cache_manifest",
+        lambda **_kwargs: destination,
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_expression_manifest",
+        lambda **_kwargs: destination,
+    )
+    monkeypatch.setattr(
+        cli,
+        "build_ligandability_manifest",
+        lambda **_kwargs: destination,
+    )
+    monkeypatch.setattr(
+        cli,
+        "aggregate_run_benchmarks",
+        lambda **_kwargs: {"status": "complete"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "generate_run_report",
+        lambda **_kwargs: {"status": "complete"},
+    )
+    assert main(["cache-domain-annotations", "--config", str(synthetic_config)]) == 0
+    assert (
+        main(
+            [
+                "build-domain-cache-manifest",
+                "--cache-root",
+                str(tmp_path),
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "build-expression-manifest",
+                "--expression-root",
+                str(tmp_path),
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "build-ligandability-manifest",
+                "--root",
+                str(tmp_path),
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    assert main(["aggregate-benchmarks", "--config", str(synthetic_config)]) == 0
+    assert main(["generate-report", "--config", str(synthetic_config)]) == 0
+    with pytest.raises(WorkflowError, match="stage list"):
+        render_plan({"mode": "x", "run_root": "x"})
+    with pytest.raises(WorkflowError, match="invalid stage"):
+        render_plan({"mode": "x", "run_root": "x", "stages": ["bad"]})

@@ -1,6 +1,6 @@
 schema_version: 1
 run:
-  name: synthetic_e2e_v0_5_1
+  name: synthetic_e2e_v0_6_0
   mode: synthetic
   project_root: ../..
   output_root: ../test_runs

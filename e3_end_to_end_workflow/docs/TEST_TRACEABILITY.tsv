@@ -2,9 +2,16 @@ module	function	tests
 e3workflow.benchmarking	capture_cpu_usage_snapshot; cpu_usage_delta; rusage_peak_rss_bytes; ProcessTreeResourceMonitor; write_stage_resource_outputs; read_stage_resource_usage; collect_slurm_accounting; aggregate_run_benchmarks	test_benchmarking.py; test_runner_e2e.py
 e3workflow.config	load_config; controlled_input_paths; previous_stage; stage_dependencies; stage_purpose; stage_interpretation; stage_ancestors	test_config.py; test_cli.py
 e3workflow.control	stage_token_path; initialise_stage_tokens; stage_manifest_target	test_control.py; test_cli.py
+e3workflow.domain_annotations	InterProClient; retrieve_annotations; flatten_domain_hits	test_domain_annotations.py; test_full_scientific_pipeline.py
+e3workflow.integration	_final_query; run_integrated_stage; run_app_ready_stage	test_full_scientific_pipeline.py; test_scientific_utilities.py
 e3workflow.io_utils	utc_now; sha256_file; atomic_write_text; atomic_write_json; read_json; write_tsv; read_tsv; configure_logging; close_logger; inventory_files	test_io_utils.py; test_seed_evidence.py
+e3workflow.ligandability	build_selected_pockets; measure_pocket_conservation; run_ligandability_stage	test_full_scientific_pipeline.py; test_scientific_adapters.py; test_scientific_utilities.py
 e3workflow.manifests	parse_boolean; validate_proteomes; validate_accessions; validate_seed_evidence; validate_shortlist	test_manifests.py
+e3workflow.orthology_groups	select_primary_groups; build_target_group_members	test_scientific_adapters.py; test_full_scientific_pipeline.py
+e3workflow.prioritisation	build_prestructure_record; rank_records; run_prestructure_stage	test_full_scientific_pipeline.py; test_scientific_utilities.py
+e3workflow.production	run_reused_discovery_stage; run_candidate_evidence_stage; run_reused_orthofinder_stage; run_domain_stage; run_expression_stage	test_scientific_adapters.py; test_full_scientific_pipeline.py
+e3workflow.resources	build_expression_manifest; build_ligandability_manifest; build_domain_cache_manifest; read_resource_manifest	test_scientific_utilities.py; test_domain_annotations.py
 e3workflow.runner	format_command; validate_upstream; validate_expected_outputs; _summarise_protein_fasta; _run_internal_prepared_proteomes; run_internal_stage; run_external_command; execute_stage	test_runner_e2e.py
 e3workflow.reporting	summarise_output; summarise_declared_outputs; write_stage_report; record_workflow_invocation; generate_run_report	test_reporting.py; test_runner_e2e.py; test_cli.py
 e3workflow.seed_evidence	derive_seed_evidence; default_provenance_path; build_seed_evidence	test_seed_evidence.py
-e3workflow.cli	build_parser; validate_command; plan_command; render_plan; validate_stage_range; main	test_cli.py; test_runner_e2e.py; test_seed_evidence.py
+e3workflow.cli	build_parser; validate_command; plan_command; render_plan; validate_stage_range; resource commands; main	test_cli.py; test_runner_e2e.py; test_seed_evidence.py; test_scientific_utilities.py

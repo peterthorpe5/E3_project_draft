@@ -54,7 +54,7 @@ while (($#)); do
         --target) TARGET="$2"; shift 2 ;;
         --dry-run) DRY_RUN="true"; shift ;;
         --unlock) UNLOCK="true"; shift ;;
-        --version) printf 'e3-end-to-end-workflow 0.5.1\n'; exit 0 ;;
+        --version) printf 'e3-end-to-end-workflow 0.6.0\n'; exit 0 ;;
         --help|-h) usage; exit 0 ;;
         --) shift; EXTRA_ARGS+=("$@"); break ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;

@@ -792,6 +792,7 @@ def write_stage_report(
         (
             ("Run name", config.run_name),
             ("Mode", config.mode),
+            ("Evidence mode", stage_summary.get("evidence_mode", "")),
             ("Configuration", config.source_path),
             ("Configuration digest", config.digest),
             ("Package version", __version__),
@@ -1032,6 +1033,7 @@ def _stage_section(manifest: Mapping[str, Any]) -> str:
     return f"""
 <section class="stage-section" id="{_escape(stage_name)}"><h2>{_escape(stage_name)}</h2>
 <p><span class="status">{_escape(manifest.get("status", ""))}</span></p>
+<p><strong>Evidence mode:</strong> {_escape(manifest.get("evidence_mode", ""))}</p>
 <p class="lede">{_escape(manifest.get("purpose", ""))}</p>
 <p><strong>Why:</strong> {_escape(manifest.get("rationale", ""))}</p>
 <div class="callout"><strong>Supported interpretation:</strong> {_escape(interpretation)}</div>

@@ -19,6 +19,7 @@ def test_environment_pins_workflow_and_orthology_engines(package_root: Path) -> 
     assert "snakemake>=9,<10" in dependencies
     assert "snakemake-executor-plugin-slurm" in dependencies
     assert "orthofinder=2.5.5" in dependencies
+    assert "mafft>=7.5,<8" in dependencies
 
 
 def test_profiles_drop_completed_job_metadata(package_root: Path) -> None:
