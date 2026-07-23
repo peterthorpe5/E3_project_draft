@@ -1,6 +1,6 @@
 schema_version: 1
 run:
-  name: synthetic_e2e_v0_6_0
+  name: synthetic_e2e_v0_7_0
   mode: synthetic
   project_root: ../..
   output_root: ../test_runs
@@ -56,6 +56,11 @@ stages:
     enabled: true
     required: true
     expected_outputs: [synthetic_stage.tsv]
+  09b_structural_alignment:
+    enabled: false
+    required: false
+    evidence_mode: disabled
+    expected_outputs: []
   10_integrated_resource:
     enabled: true
     required: true

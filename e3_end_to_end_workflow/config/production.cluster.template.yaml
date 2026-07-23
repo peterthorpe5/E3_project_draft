@@ -38,6 +38,16 @@ analysis:
     minimum_mapping_fraction: 0.95
     minimum_pocket_plddt_fraction: 0.7
     minimum_region_overlap: 0.25
+  structural_alignment:
+    usalign_executable: USalign
+    tmalign_executable: TMalign
+    distance_threshold_angstrom: 4.0
+    maximum_centroid_distance_angstrom: 8.0
+    minimum_pocket_overlap_fraction: 0.5
+    minimum_global_tm_score: 0.5
+    minimum_group_support_fraction: 0.75
+    use_for_prioritisation: false
+    prioritisation_weight: 0.25
   prioritisation:
     profile_name: CHANGE_ME_versioned_scoring_profile
     target_species: [CHANGE_ME_species_1, CHANGE_ME_species_2]
@@ -219,6 +229,52 @@ stages:
     threads: 32
     memory_mb: 180000
     runtime_minutes: 10080
+  09b_structural_alignment:
+    enabled: false
+    required: false
+    evidence_mode: disabled
+    command:
+      - conda
+      - run
+      - --no-capture-output
+      - --name
+      - e3_structural_alignment
+      - bash
+      - "{project_root}/e3_structural_alignment/run_e3_structural_alignment.sh"
+      - --selected-pockets
+      - "{selected_pockets}"
+      - --pocket-residue-mappings
+      - "{pocket_residue_mappings}"
+      - --asset-manifest
+      - "{structure_asset_manifest}"
+      - --output-dir
+      - "{stage_dir}/structural_alignment"
+      - --usalign-executable
+      - "{usalign_executable}"
+      - --tmalign-executable
+      - "{tmalign_executable}"
+      - --threads
+      - "{threads}"
+      - --distance-threshold-angstrom
+      - "{structural_distance_threshold_angstrom}"
+      - --maximum-centroid-distance-angstrom
+      - "{structural_maximum_centroid_distance_angstrom}"
+      - --minimum-pocket-overlap-fraction
+      - "{structural_minimum_pocket_overlap_fraction}"
+      - --minimum-global-tm-score
+      - "{structural_minimum_global_tm_score}"
+      - --minimum-group-support-fraction
+      - "{structural_minimum_group_support_fraction}"
+      - --resume
+    expected_outputs:
+      - structural_alignment/tables/structural_alignments.parquet
+      - structural_alignment/tables/pocket_comparisons.parquet
+      - structural_alignment/tables/structural_alignment_summary.parquet
+      - structural_alignment/qc/structural_alignment_validation.tsv
+      - structural_alignment/provenance/run_manifest.json
+    threads: 32
+    memory_mb: 120000
+    runtime_minutes: 2880
   10_integrated_resource:
     enabled: true
     required: true

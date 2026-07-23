@@ -32,7 +32,7 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
     assert config.reporting.preview_rows == 10
     assert config.reporting.max_table_columns == 12
     assert config.reporting.max_chart_items == 20
-    assert config.run_root.name == "synthetic_e2e_v0_6_0"
+    assert config.run_root.name == "synthetic_e2e_v0_7_0"
     assert len(config.digest) == 64
     assert previous_stage("00_inputs") is None
     assert previous_stage("01_prepared_proteomes") == "00_inputs"
@@ -43,6 +43,10 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         "06_domains",
         "07_expression",
     }
+    assert stage_dependencies("09b_structural_alignment") == ("09_ligandability",)
+    assert "09b_structural_alignment" in stage_dependencies("10_integrated_resource")
+    assert config.stage("09b_structural_alignment").enabled is False
+    assert config.stage("09b_structural_alignment").required is False
     assert "04_orthofinder" in stage_ancestors("05_orthology")
     assert "02_discovery" in stage_ancestors("05_orthology")
     assert "reviewed reuse or a fresh isolated run" in stage_purpose("04_orthofinder")[0]
@@ -90,6 +94,11 @@ def test_reuse_and_fresh_templates_expose_evidence_strategy(package_root: Path) 
     assert fresh.stage("02_discovery").evidence_mode == "generate"
     assert fresh.stage("04_orthofinder").evidence_mode == "generate"
     assert fresh.stage("09_ligandability").evidence_mode == "generate"
+    assert reused.stage("09b_structural_alignment").evidence_mode == "disabled"
+    assert fresh.stage("09b_structural_alignment").evidence_mode == "disabled"
+    assert reused.analysis.structural_alignment.usalign_executable == "USalign"
+    assert reused.analysis.structural_alignment.tmalign_executable == "TMalign"
+    assert reused.analysis.structural_alignment.use_for_prioritisation is False
     assert len(reused.analysis.prioritisation.target_species) == 12
 
 
@@ -229,3 +238,25 @@ def test_fresh_generation_requires_command(package_root: Path, tmp_path: Path) -
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="Fresh generation requires"):
         load_config(path)
+
+
+def test_structural_prioritisation_requires_enabled_stage(
+    synthetic_config: Path,
+) -> None:
+    """Three-dimensional evidence cannot affect ranking when its stage is disabled."""
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    data.setdefault("analysis", {}).setdefault("structural_alignment", {})[
+        "use_for_prioritisation"
+    ] = True
+    data["stages"]["09b_structural_alignment"].update(
+        enabled=False,
+        required=False,
+        evidence_mode="disabled",
+        expected_outputs=[],
+    )
+    synthetic_config.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="requires the 09b_structural_alignment"):
+        load_config(synthetic_config)

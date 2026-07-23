@@ -338,6 +338,58 @@ def test_downloaded_evidence_to_app_ready_release(
     run_ligandability_stage(
         config=config, stage_root=config.run_root / "09_ligandability"
     )
+    structural_tables = (
+        config.run_root
+        / "09b_structural_alignment"
+        / "structural_alignment"
+        / "tables"
+    )
+    _write_parquet(
+        structural_tables / "structural_alignments.parquet",
+        "cluster_id VARCHAR, alignment_tool VARCHAR",
+        [("cluster_1", "US-align"), ("cluster_1", "TM-align")],
+    )
+    _write_parquet(
+        structural_tables / "pocket_comparisons.parquet",
+        "cluster_id VARCHAR, alignment_tool VARCHAR",
+        [("cluster_1", "US-align"), ("cluster_1", "TM-align")],
+    )
+    _write_parquet(
+        structural_tables / "structural_alignment_summary.parquet",
+        (
+            "cluster_id VARCHAR, primary_group_type VARCHAR, primary_group_id VARCHAR, "
+            "three_dimensional_pocket_score DOUBLE, "
+            "alignment_status VARCHAR, mean_minimum_tm_score DOUBLE, "
+            "mean_pocket_overlap_fraction DOUBLE, "
+            "median_centroid_distance_angstrom DOUBLE"
+        ),
+        [
+            (
+                "cluster_1",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                0.9,
+                "CONSERVED_3D_POCKET_SUPPORTED",
+                0.9,
+                0.9,
+                1.0,
+            )
+        ],
+    )
+    config = replace(
+        config,
+        stages=tuple(
+            replace(
+                stage,
+                enabled=True,
+                required=False,
+                evidence_mode="generate",
+            )
+            if stage.name == "09b_structural_alignment"
+            else stage
+            for stage in config.stages
+        ),
+    )
     run_integrated_stage(
         config=config, stage_root=config.run_root / "10_integrated_resource"
     )
@@ -357,9 +409,12 @@ def test_downloaded_evidence_to_app_ready_release(
     finally:
         connection.close()
     assert result == ("PRIORITY_RECOMMENDATION", True)
-    assert {"domain_summary", "candidate_expression_summary", "selected_pockets"}.issubset(
-        tables
-    )
+    assert {
+        "domain_summary",
+        "candidate_expression_summary",
+        "selected_pockets",
+        "structural_alignment_summary",
+    }.issubset(tables)
     assert (
         config.run_root
         / "10_integrated_resource/reports/final_computational_prioritisation.html"

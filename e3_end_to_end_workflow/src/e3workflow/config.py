@@ -23,6 +23,7 @@ STAGE_NAMES = (
     "07_expression",
     "08_shortlist_gate",
     "09_ligandability",
+    "09b_structural_alignment",
     "10_integrated_resource",
     "11_app_ready",
 )
@@ -62,12 +63,14 @@ STAGE_DEPENDENCIES = {
         "07_expression",
     ),
     "09_ligandability": ("08_shortlist_gate",),
+    "09b_structural_alignment": ("09_ligandability",),
     "10_integrated_resource": (
         "03_candidate_evidence",
         "05_orthology",
         "06_domains",
         "07_expression",
         "09_ligandability",
+        "09b_structural_alignment",
     ),
     "11_app_ready": ("10_integrated_resource",),
 }
@@ -124,6 +127,16 @@ STAGE_PURPOSES = {
     "09_ligandability": (
         "Reuse or run structure and pocket analyses for computationally selected proteins.",
         "Ligandability evidence is meaningful only for the controlled shortlist.",
+    ),
+    "09b_structural_alignment": (
+        (
+            "Superpose shortlisted protein structures and compare selected pockets in three "
+            "dimensions."
+        ),
+        (
+            "Sequence-aligned pocket regions do not establish that predicted pockets occupy the "
+            "same three-dimensional position."
+        ),
     ),
     "10_integrated_resource": (
         "Assemble validated evidence authorities into the release resource.",
@@ -199,6 +212,16 @@ STAGE_INTERPRETATIONS = {
     "09_ligandability": (
         "Structure confidence and predicted-pocket evidence are available for approved proteins.",
         "AlphaFold confidence, FPocket and P2Rank predictions do not prove compound binding.",
+    ),
+    "09b_structural_alignment": (
+        (
+            "US-align and TM-align superpositions can test whether selected predicted pockets "
+            "occupy a comparable three-dimensional region."
+        ),
+        (
+            "Structural similarity and geometric pocket overlap remain computational predictions; "
+            "they do not establish binding, selectivity or biochemical function."
+        ),
     ),
     "10_integrated_resource": (
         "Validated evidence authorities have been joined into one traceable release resource.",
@@ -307,6 +330,21 @@ class LigandabilityAnalysisConfig:
 
 
 @dataclass(frozen=True)
+class StructuralAlignmentAnalysisConfig:
+    """Three-dimensional structural-superposition and pocket-comparison settings."""
+
+    usalign_executable: str
+    tmalign_executable: str
+    distance_threshold_angstrom: float
+    maximum_centroid_distance_angstrom: float
+    minimum_pocket_overlap_fraction: float
+    minimum_global_tm_score: float
+    minimum_group_support_fraction: float
+    use_for_prioritisation: bool
+    prioritisation_weight: float
+
+
+@dataclass(frozen=True)
 class PrioritisationConfig:
     """Grant-aligned evidence integration and ranking configuration."""
 
@@ -336,6 +374,7 @@ class AnalysisConfig:
     domains: DomainAnalysisConfig
     expression: ExpressionAnalysisConfig
     ligandability: LigandabilityAnalysisConfig
+    structural_alignment: StructuralAlignmentAnalysisConfig
     prioritisation: PrioritisationConfig
 
 
@@ -519,6 +558,10 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
     ligandability = _mapping(
         analysis.get("ligandability", {}), "analysis.ligandability"
     )
+    structural_alignment = _mapping(
+        analysis.get("structural_alignment", {}),
+        "analysis.structural_alignment",
+    )
     prioritisation = _mapping(
         analysis.get("prioritisation", {}), "analysis.prioritisation"
     )
@@ -577,6 +620,11 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
     allow_network = domains.get("allow_network", True)
     if not isinstance(allow_network, bool):
         raise ConfigurationError("analysis.domains.allow_network must be a boolean")
+    use_for_prioritisation = structural_alignment.get("use_for_prioritisation", False)
+    if not isinstance(use_for_prioritisation, bool):
+        raise ConfigurationError(
+            "analysis.structural_alignment.use_for_prioritisation must be a boolean"
+        )
     max_retries = domains.get("max_retries", 4)
     if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 0:
         raise ConfigurationError("analysis.domains.max_retries must be a non-negative integer")
@@ -690,6 +738,54 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
             minimum_region_overlap=_number(
                 ligandability.get("minimum_region_overlap", 0.25),
                 "analysis.ligandability.minimum_region_overlap",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+        ),
+        structural_alignment=StructuralAlignmentAnalysisConfig(
+            usalign_executable=_non_empty_string(
+                structural_alignment.get("usalign_executable", "USalign"),
+                "analysis.structural_alignment.usalign_executable",
+            ),
+            tmalign_executable=_non_empty_string(
+                structural_alignment.get("tmalign_executable", "TMalign"),
+                "analysis.structural_alignment.tmalign_executable",
+            ),
+            distance_threshold_angstrom=_number(
+                structural_alignment.get("distance_threshold_angstrom", 4.0),
+                "analysis.structural_alignment.distance_threshold_angstrom",
+                minimum=0.1,
+            ),
+            maximum_centroid_distance_angstrom=_number(
+                structural_alignment.get(
+                    "maximum_centroid_distance_angstrom",
+                    8.0,
+                ),
+                "analysis.structural_alignment.maximum_centroid_distance_angstrom",
+                minimum=0.1,
+            ),
+            minimum_pocket_overlap_fraction=_number(
+                structural_alignment.get("minimum_pocket_overlap_fraction", 0.5),
+                "analysis.structural_alignment.minimum_pocket_overlap_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_global_tm_score=_number(
+                structural_alignment.get("minimum_global_tm_score", 0.5),
+                "analysis.structural_alignment.minimum_global_tm_score",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_group_support_fraction=_number(
+                structural_alignment.get("minimum_group_support_fraction", 0.75),
+                "analysis.structural_alignment.minimum_group_support_fraction",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            use_for_prioritisation=use_for_prioritisation,
+            prioritisation_weight=_number(
+                structural_alignment.get("prioritisation_weight", 0.25),
+                "analysis.structural_alignment.prioritisation_weight",
                 minimum=0.0,
                 maximum=1.0,
             ),
@@ -835,8 +931,9 @@ def load_config(path: Path) -> WorkflowConfig:
     stages = []
     for name in STAGE_NAMES:
         item = _mapping(raw_stages.get(name, {}), f"stages.{name}")
-        enabled = item.get("enabled", True)
-        required = item.get("required", True)
+        optional_by_default = name == "09b_structural_alignment"
+        enabled = item.get("enabled", not optional_by_default)
+        required = item.get("required", not optional_by_default)
         if not isinstance(enabled, bool) or not isinstance(required, bool):
             raise ConfigurationError(f"enabled and required must be booleans for {name}")
         command = _strings(item.get("command"), f"stages.{name}.command")
@@ -906,6 +1003,14 @@ def load_config(path: Path) -> WorkflowConfig:
                 memory_mb,
                 runtime_minutes,
             )
+        )
+    structural_stage = next(
+        stage for stage in stages if stage.name == "09b_structural_alignment"
+    )
+    if analysis_config.structural_alignment.use_for_prioritisation and not structural_stage.enabled:
+        raise ConfigurationError(
+            "analysis.structural_alignment.use_for_prioritisation requires the "
+            "09b_structural_alignment stage to be enabled"
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")

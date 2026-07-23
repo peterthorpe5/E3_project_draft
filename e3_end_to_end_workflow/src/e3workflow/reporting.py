@@ -1070,7 +1070,7 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
         f"{len(skipped_stages)} optional {skipped_noun} explicitly skipped: "
         + ", ".join(skipped_stages)
         if skipped_stages
-        else "All twelve scientific stages completed."
+        else f"All {len(STAGE_NAMES)} configured scientific stages completed."
     )
     metrics = _workflow_metric_map(config)
     benchmark_manifest_path = config.run_root / "benchmark_summary" / "benchmark_manifest.json"

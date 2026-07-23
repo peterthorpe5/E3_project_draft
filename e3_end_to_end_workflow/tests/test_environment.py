@@ -45,3 +45,27 @@ def test_wrapper_safely_clears_completed_output_markers(package_root: Path) -> N
     assert "filesystem-latency retry" in wrapper
     assert '"${RUN_ROOT}/${stage_name}/stage_manifest.json"' in wrapper
     assert '"${RUN_ROOT}/${stage_name}/report/stage_report.html"' in wrapper
+
+
+def test_main_shell_entrypoints_contain_no_embedded_python(package_root: Path) -> None:
+    """User-facing shells must delegate Python work to installed, tested commands."""
+
+    for name in ("run_e3_end_to_end.sh", "submit_e3_end_to_end.sh"):
+        shell = (package_root / name).read_text(encoding="utf-8")
+        assert "python <<" not in shell
+        assert "python - <<" not in shell
+        assert "python -c" not in shell
+
+
+def test_detached_launcher_contract(package_root: Path) -> None:
+    """The cluster launcher must detach, lock, log and guard nested execution."""
+
+    launcher = (package_root / "submit_e3_end_to_end.sh").read_text(encoding="utf-8")
+    assert "nohup setsid flock" in launcher
+    assert "controller.lock" in launcher
+    assert "controller.pid.tsv" in launcher
+    assert "submission_${TIMESTAMP}.log" in launcher
+    assert "--status" in launcher
+    assert "--foreground" in launcher
+    assert "SLURM_JOB_ID" in launcher
+    assert "RUNNER_ARGS+=(--profile slurm)" in launcher

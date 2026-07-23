@@ -41,7 +41,7 @@ cumulative CPU and I/O, interval mean cores and percentage of the configured CPU
 
 ## Run-level outputs
 
-After all twelve stages complete, `benchmark_summary/` contains:
+After all configured stages complete, `benchmark_summary/` contains:
 
 | File | Contract |
 |---|---|
@@ -89,7 +89,7 @@ child process is not sampled.
 - Slurm `MaxRSS` and related fields can be delayed or unavailable depending on cluster accounting.
   The status file makes this explicit. Missing accounting never invents zero-valued measurements.
 - Failed attempts keep their benchmark files inside the corresponding `failed/` directory, but
-  the final run-level summary describes the successfully published twelve-stage DAG.
+  the final run-level summary describes the successfully published configured DAG.
 
 ## HTML presentation
 

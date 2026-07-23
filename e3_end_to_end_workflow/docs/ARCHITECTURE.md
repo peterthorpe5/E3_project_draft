@@ -20,6 +20,7 @@ component logs and checksums identify exactly which implementation produced each
 ├── 07_expression/
 ├── 08_shortlist_gate/
 ├── 09_ligandability/
+├── 09b_structural_alignment/
 ├── 10_integrated_resource/
 ├── 11_app_ready/
 ├── benchmark_summary/
@@ -42,7 +43,7 @@ optional Slurm accounting. It is created after every stage in the configured DAG
 completed or explicitly skipped state.
 
 `reports/` contains the self-contained full-run HTML, completion TSV and checksum manifest. Its
-Snakemake rule requires all twelve stage reports and the completed benchmark aggregate. Report
+Snakemake rule requires all thirteen stage reports and the completed benchmark aggregate. Report
 publication uses a temporary run directory and atomic rename; a previous report is retained under
 `superseded/` when regenerated.
 
@@ -69,6 +70,15 @@ use the full membership of the selected run-specific groups. They converge at th
 prioritisation stage. A reviewed result can replace any generation branch through `evidence_mode:
 reuse` without changing the downstream table contract.
 
+The optional `09b_structural_alignment` stage follows ligandability. When enabled, the separate
+`e3_structural_alignment` package selects a deterministic best-evidence reference per candidate
+group, runs independent US-align and TM-align superpositions concurrently within the allocated
+node, and compares selected pocket C-alpha coordinates in the common reference frame. When
+disabled, it
+publishes a normal checksummed `skipped_optional` stage manifest. Integration therefore remains
+complete but labels 3D evidence as `NOT_ASSESSED`; it never converts a configured omission into a
+negative structural result.
+
 ## Input manifest invariants
 
 - `species_id` is unique and stable across releases.
@@ -84,6 +94,8 @@ reuse` without changing the downstream table contract.
 - Target and mandatory species panels are configuration lists, not compiled constants.
 - Missing domain, expression or structural resources retain explicit unavailable states and are
   excluded from biological-negative denominators.
+- Disabled 3D structural alignment is an explicit analysis state, not a failed stage and not
+  evidence that pockets differ.
 - The stage-08 human-review TSV is an output template; the computational ranking does not claim
   human approval.
 

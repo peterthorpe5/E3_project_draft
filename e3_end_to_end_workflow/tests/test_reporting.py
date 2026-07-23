@@ -276,7 +276,7 @@ def test_complete_report_contains_all_stages_and_commands(synthetic_config: Path
 
     assert report_path.name == RUN_REPORT_FILENAME
     assert result["stage_count"] == len(STAGE_NAMES)
-    assert result["skipped_stage_count"] == 0
+    assert result["skipped_stage_count"] == 1
     assert result["application_release_eligible"] is False
     assert all(f'id="{stage_name}"' in report for stage_name in STAGE_NAMES)
     assert "target with spaces" in report
@@ -312,10 +312,13 @@ def test_complete_report_labels_bounded_runs(synthetic_config: Path) -> None:
     )
     result = generate_run_report(config=config, output_dir=config.run_root / "reports")
     report = Path(result["html_report"]).read_text(encoding="utf-8")
-    assert result["skipped_stage_count"] == 1
+    assert result["skipped_stage_count"] == 2
     assert result["application_release_eligible"] is False
     assert "complete configured run" in report
-    assert "1 optional stage was explicitly skipped: 02_discovery" in report
+    assert (
+        "2 optional stages were explicitly skipped: 02_discovery, "
+        "09b_structural_alignment"
+    ) in report
 
 
 def test_report_rejects_incomplete_or_mismatched_evidence(synthetic_config: Path) -> None:

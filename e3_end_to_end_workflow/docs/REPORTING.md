@@ -74,7 +74,7 @@ from report inspection.
 - every recorded wrapper-to-Snakemake invocation, including dry runs and resumes;
 - workflow wall/CPU/memory/I/O/output metrics with interpretation notes;
 - embedded comparison charts for wall time, CPU time, peak stage RSS and output size;
-- one scientific and computational summary for each of the twelve stages; and
+- one scientific and computational summary for every configured stage; and
 - links to detailed stage reports and manifests.
 
 For a bounded production configuration, this is a complete report for the configured run. It lists

@@ -529,6 +529,42 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 ),
                 "domain_cache_root": str(config.resources.domain_cache_root or ""),
                 "e3_domain_catalogue": str(config.resources.e3_domain_catalogue or ""),
+                "selected_pockets": str(
+                    run_root / "09_ligandability" / "tables" / "selected_pockets.parquet"
+                ),
+                "pocket_residue_mappings": str(
+                    run_root
+                    / "09_ligandability"
+                    / "tables"
+                    / "reused_pocket_residue_mappings.parquet"
+                ),
+                "structure_asset_manifest": str(
+                    run_root
+                    / "09_ligandability"
+                    / "tables"
+                    / "reused_asset_manifest.parquet"
+                ),
+                "usalign_executable": (
+                    config.analysis.structural_alignment.usalign_executable
+                ),
+                "tmalign_executable": (
+                    config.analysis.structural_alignment.tmalign_executable
+                ),
+                "structural_distance_threshold_angstrom": str(
+                    config.analysis.structural_alignment.distance_threshold_angstrom
+                ),
+                "structural_maximum_centroid_distance_angstrom": str(
+                    config.analysis.structural_alignment.maximum_centroid_distance_angstrom
+                ),
+                "structural_minimum_pocket_overlap_fraction": str(
+                    config.analysis.structural_alignment.minimum_pocket_overlap_fraction
+                ),
+                "structural_minimum_global_tm_score": str(
+                    config.analysis.structural_alignment.minimum_global_tm_score
+                ),
+                "structural_minimum_group_support_fraction": str(
+                    config.analysis.structural_alignment.minimum_group_support_fraction
+                ),
                 "threads": str(stage.threads),
             }
             argv = format_command(stage.command, values)

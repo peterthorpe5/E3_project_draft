@@ -102,6 +102,14 @@ stages:
     threads: 1
     memory_mb: 4000
     runtime_minutes: 30
+  09b_structural_alignment:
+    enabled: false
+    required: false
+    evidence_mode: disabled
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
   10_integrated_resource:
     enabled: false
     required: false

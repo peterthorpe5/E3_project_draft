@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.6.0` supports two equally explicit production strategies:
+Version `0.7.0` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -17,16 +17,76 @@ Every enabled stage declares an `evidence_mode` (`validate`, `prepare`, `reuse`,
 `derive` or `generate`). Reports and manifests therefore distinguish reused evidence from newly
 computed evidence. Per-stage threads, memory and runtime are configuration values rather than fixed
 species-count assumptions. Detailed resource measurements, stage HTML reports and the consolidated
-full-run HTML report are produced automatically.
+full-run HTML report are produced automatically. An optional US-align/TM-align stage adds direct
+three-dimensional pocket comparison without making that evidence mandatory for development runs.
 
 The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
 prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
 
-The complete twelve-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
+The complete thirteen-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
 end-to-end test remain in place. The reusable current-study template contains the reviewed paths
 already known to the project and fails closed only for the ligandability resource manifest that
 must be built from the retained result roots. The future fresh template uses explicit
 `CHANGE_ME` adapter paths and never treats a placeholder as a default.
+
+## How to start
+
+Normal cluster use is one detached command from a login node:
+
+```bash
+cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow
+conda activate e3_end_to_end_workflow
+
+./submit_e3_end_to_end.sh \
+    --config config/my_immutable_run.yaml \
+    --max-jobs 50 \
+    --account barton \
+    --partition general \
+    --resume
+```
+
+The command returns after confirming the controller process, run directory and durable log. It does
+not require the mosh terminal to remain open. The lightweight Snakemake controller stays detached on
+the login node; Snakemake submits scientific rules to Slurm. This avoids the unsupported nested
+pattern in which Snakemake itself runs inside an interactive or batch Slurm allocation.
+
+Check it later with:
+
+```bash
+./submit_e3_end_to_end.sh --config config/my_immutable_run.yaml --status
+squeue -u "${USER}"
+tail -f /path/reported/by/the/submission/command.log
+```
+
+Before the first submission, create an immutable run YAML:
+
+1. For the reviewed 60-proteome `Results_Feb26` analysis, copy
+   `config/grant_aligned_reuse.cluster.template.yaml`.
+2. For a new larger proteome panel, copy `config/production.cluster.template.yaml`.
+3. Set a new `run.name`; never reuse a name for a biologically different input panel.
+4. Review `run.project_root` and `run.output_root`.
+5. Replace every applicable `CHANGE_ME` input and component-adapter path.
+6. For a fresh panel, add any number of rows to the proteome and orthology species manifests and
+   review the target/mandatory species lists. Species are not hard-coded in the runner.
+7. Review each stage's `threads`, `memory_mb` and `runtime_minutes`.
+8. Leave `09b_structural_alignment` disabled for an orchestration test or when a group lacks
+   sufficient compatible models. Enable it only after installing `e3_structural_alignment`.
+9. Keep `analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D
+   thresholds have been reviewed on a multi-structure result.
+10. Validate and dry-run:
+
+```bash
+e3-workflow validate --config config/my_immutable_run.yaml
+e3-workflow plan --config config/my_immutable_run.yaml --human
+./submit_e3_end_to_end.sh \
+    --config config/my_immutable_run.yaml \
+    --foreground \
+    --dry-run
+```
+
+`submit_e3_end_to_end.sh` prevents a second controller for the same run. The foreground
+`run_e3_end_to_end.sh` remains available for local tests and diagnostics, but normal cluster
+execution should use the detached launcher.
 
 ## DAG and package ownership
 
@@ -42,6 +102,7 @@ must be built from the retained result roots. The future fresh template uses exp
 | `07_expression` | native Expression Atlas adapter | full selected-group mapping and expression summary |
 | `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
 | `09_ligandability` | native reuse/conservation adapter | best pockets and aligned pocket-region conservation |
+| `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align superpositions and 3D pocket geometry |
 | `10_integrated_resource` | native release assembler | DuckDB, final TSV/Parquet and scientific HTML |
 | `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
 
@@ -76,7 +137,8 @@ members of the selected run-specific groups before joining at prioritisation. Re
 replace either fresh branch without changing the downstream contracts.
 
 This is concurrency between stages. Each component package remains responsible for safe
-multithreading within its own stage.
+multithreading within its own stage. The structural package runs independent pairwise US-align and
+TM-align comparisons concurrently up to its stage thread allocation.
 
 ## Install and prove the installation
 
@@ -128,9 +190,8 @@ Both modes use the same validation and submission interface:
 e3-workflow validate --config /path/to/run.yaml
 e3-workflow plan --config /path/to/run.yaml
 ./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm --dry-run
-./run_e3_end_to_end.sh \
+./submit_e3_end_to_end.sh \
     --config /path/to/run.yaml \
-    --profile slurm \
     --max-jobs 50 \
     --resume
 ```
@@ -162,7 +223,7 @@ scopes are retained:
 
 Each stage publishes `benchmark/stage_resource_usage.tsv`, a matching JSON record and a compressed
 `stage_resource_timeseries.tsv.gz`. The final aggregation rule writes run-wide outputs under
-`benchmark_summary/`, including a 12-row stage comparison, whole-workflow metrics and optional raw
+`benchmark_summary/`, including a one-row-per-stage comparison, whole-workflow metrics and optional raw
 Slurm accounting records. CPU time, wall time, allocation efficiency, peak RSS/VMS, process and
 thread counts, I/O counters, context switches, requested resources, output sizes and execution
 context are retained where the operating system exposes them.
@@ -211,7 +272,7 @@ reporting:
   max_chart_items: 20
 ```
 
-After all twelve stages and the benchmark aggregate complete, Snakemake publishes:
+After all thirteen stages and the benchmark aggregate complete, Snakemake publishes:
 
 ```text
 <run_root>/reports/e3_workflow_summary.html

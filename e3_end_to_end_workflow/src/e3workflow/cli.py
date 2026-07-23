@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     target = subparsers.add_parser("stage-target")
     target.add_argument("--config", type=Path, required=True)
     target.add_argument("--stage", choices=STAGE_NAMES, required=True)
+    run_root = subparsers.add_parser("run-root")
+    run_root.add_argument("--config", type=Path, required=True)
     stage_range = subparsers.add_parser("validate-range")
     stage_range.add_argument("--start-at", choices=STAGE_NAMES, required=True)
     stage_range.add_argument("--stop-after", choices=STAGE_NAMES, required=True)
@@ -228,6 +230,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "stage-target":
             print(stage_manifest_target(load_config(args.config), args.stage))
+            return 0
+        elif args.command == "run-root":
+            print(load_config(args.config).run_root)
             return 0
         elif args.command == "validate-range":
             payload = validate_stage_range(args.start_at, args.stop_after)

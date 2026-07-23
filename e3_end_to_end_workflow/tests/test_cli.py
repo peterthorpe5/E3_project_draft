@@ -35,6 +35,7 @@ def test_parser_plan_and_validate(synthetic_config: Path) -> None:
     assert main(["plan", "--config", str(synthetic_config)]) == 0
     assert main(["plan", "--config", str(synthetic_config), "--human"]) == 0
     assert main(["validate", "--config", str(synthetic_config)]) == 0
+    assert main(["run-root", "--config", str(synthetic_config)]) == 0
     assert validate_stage_range("04_orthofinder", "05_orthology")["status"] == "valid"
     assert validate_stage_range("05_orthology", "05_orthology")["status"] == "valid"
     with pytest.raises(WorkflowError, match="not a prerequisite"):

@@ -27,6 +27,11 @@ FINAL_FIELDS = (
     "prestructure_score",
     "ligandability_score",
     "pocket_conservation_score",
+    "three_dimensional_pocket_score",
+    "three_dimensional_alignment_status",
+    "mean_minimum_tm_score",
+    "mean_pocket_overlap_fraction",
+    "median_centroid_distance_angstrom",
     "structural_score",
     "final_score",
     "target_species_fraction",
@@ -51,14 +56,34 @@ FINAL_FIELDS = (
 )
 
 
-def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path) -> str:
+def _final_query(
+    config: WorkflowConfig,
+    prestructure: Path,
+    conservation: Path,
+    alignment_summary: Path | None,
+) -> str:
     """Return the final transparent scoring query."""
     settings = config.analysis.prioritisation
     ligandability = config.analysis.ligandability
+    structural_alignment = config.analysis.structural_alignment
+    alignment_relation = (
+        f"read_parquet({quote_literal(alignment_summary)})"
+        if alignment_summary is not None
+        else (
+            "(SELECT NULL::VARCHAR AS cluster_id, NULL::VARCHAR AS primary_group_type, "
+            "NULL::VARCHAR AS primary_group_id, NULL::VARCHAR AS alignment_status, "
+            "NULL::DOUBLE AS three_dimensional_pocket_score, "
+            "NULL::DOUBLE AS mean_minimum_tm_score, "
+            "NULL::DOUBLE AS mean_pocket_overlap_fraction, "
+            "NULL::DOUBLE AS median_centroid_distance_angstrom WHERE false)"
+        )
+    )
+    use_alignment = "true" if structural_alignment.use_for_prioritisation else "false"
     return (
         "WITH pre AS (SELECT * FROM read_parquet("
         f"{quote_literal(prestructure)})), pockets AS (SELECT * FROM read_parquet("
-        f"{quote_literal(conservation)})), joined AS (SELECT p.*, "
+        f"{quote_literal(conservation)})), alignments AS (SELECT * FROM "
+        f"{alignment_relation}), joined AS (SELECT p.*, "
         "COALESCE(c.structured_species_count, 0) AS structured_species_count, "
         "COALESCE(c.conserved_component_species_count, 0) AS conserved_component_species_count, "
         "COALESCE(c.conserved_component_fraction, 0.0) AS conserved_component_fraction, "
@@ -71,9 +96,16 @@ def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path)
         "predictor_agreement_fraction, COALESCE(c.conserved_pocket_score, 0.0) AS "
         "pocket_conservation_score, COALESCE(c.conservation_status, "
         "'NO_STRUCTURAL_EVIDENCE') AS conservation_status, "
+        "COALESCE(a.three_dimensional_pocket_score, 0.0) AS "
+        "three_dimensional_pocket_score, COALESCE(a.alignment_status, 'NOT_ASSESSED') AS "
+        "three_dimensional_alignment_status, COALESCE(a.mean_minimum_tm_score, 0.0) AS "
+        "mean_minimum_tm_score, COALESCE(a.mean_pocket_overlap_fraction, 0.0) AS "
+        "mean_pocket_overlap_fraction, a.median_centroid_distance_angstrom AS "
+        "median_centroid_distance_angstrom, "
         "COALESCE(c.all_assessed_members_pass_druggability, false) AS "
         "all_assessed_members_pass_druggability, COALESCE(c.all_assessed_members_pass_mapping, "
         "false) AS all_assessed_members_pass_mapping FROM pre p LEFT JOIN pockets c "
+        "USING (cluster_id, primary_group_type, primary_group_id) LEFT JOIN alignments a "
         "USING (cluster_id, primary_group_type, primary_group_id)), components AS (SELECT *, "
         "(minimum_druggability_score + mean_pocket_plddt_fraction + "
         "CAST(all_assessed_members_pass_mapping AS INTEGER) + predictor_agreement_fraction) / 4.0 "
@@ -81,8 +113,14 @@ def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path)
         "NULLIF(target_species_total, 0) AS structural_species_fraction FROM joined), scores AS ("
         "SELECT *, ligandability_score * "
         f"{settings.ligandability_weight} + pocket_conservation_score * "
-        f"{settings.pocket_conservation_weight} AS structural_score FROM components), decisions "
-        "AS (SELECT *, prestructure_score * "
+        f"{settings.pocket_conservation_weight} AS base_structural_score FROM components), "
+        "refined_scores AS (SELECT *, CASE WHEN "
+        f"{use_alignment} AND three_dimensional_alignment_status <> 'NOT_ASSESSED' THEN "
+        "base_structural_score * "
+        f"{1.0 - structural_alignment.prioritisation_weight} + "
+        "three_dimensional_pocket_score * "
+        f"{structural_alignment.prioritisation_weight} ELSE base_structural_score END AS "
+        "structural_score FROM scores), decisions AS (SELECT *, prestructure_score * "
         f"{settings.prestructure_final_weight} + structural_score * "
         f"{settings.structural_final_weight} AS final_score, "
         "CAST(grant_aligned_stringent_pass AS BOOLEAN) AS grant_aligned_prestructure_pass, "
@@ -90,7 +128,9 @@ def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path)
         "'CONSERVED_REGION_SUPPORTED' AND minimum_druggability_score >= "
         f"{ligandability.minimum_druggability_score} AND all_assessed_members_pass_druggability "
         "AND all_assessed_members_pass_mapping AND structural_species_fraction >= "
-        f"{settings.minimum_structural_species_fraction} THEN true ELSE false END AS "
+        f"{settings.minimum_structural_species_fraction} AND (NOT {use_alignment} OR "
+        "three_dimensional_alignment_status = 'CONSERVED_3D_POCKET_SUPPORTED') THEN true ELSE "
+        "false END AS "
         "grant_aligned_final_pass, concat_ws(';', CASE WHEN conservation_status <> "
         "'CONSERVED_REGION_SUPPORTED' THEN 'conserved_pocket_region_not_supported' END, CASE "
         "WHEN minimum_druggability_score < "
@@ -100,8 +140,11 @@ def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path)
         "all_assessed_members_pass_mapping THEN 'not_all_assessed_members_pass_mapping' END, "
         "CASE WHEN structural_species_fraction < "
         f"{settings.minimum_structural_species_fraction} THEN "
-        "'structural_species_fraction_below_threshold' END) AS structural_exclusion_reasons "
-        "FROM scores), ranked AS (SELECT *, row_number() OVER (ORDER BY "
+        "'structural_species_fraction_below_threshold' END, CASE WHEN "
+        f"{use_alignment} AND three_dimensional_alignment_status <> "
+        "'CONSERVED_3D_POCKET_SUPPORTED' THEN 'three_dimensional_pocket_not_supported' END) AS "
+        "structural_exclusion_reasons FROM refined_scores), ranked AS (SELECT *, "
+        "row_number() OVER (ORDER BY "
         "grant_aligned_final_pass DESC, final_score DESC, evidence_completeness_fraction DESC, "
         "cluster_id) AS final_rank, CASE WHEN grant_aligned_final_pass THEN row_number() OVER "
         "(PARTITION BY grant_aligned_final_pass ORDER BY final_score DESC, cluster_id) END AS "
@@ -111,7 +154,10 @@ def _final_query(config: WorkflowConfig, prestructure: Path, conservation: Path)
         "grant_aligned_final_pass THEN 'STRINGENT_PASS_OUTSIDE_TOP_LIMIT' ELSE "
         "'FURTHER_EVIDENCE_OR_REVIEW_REQUIRED' END AS recommendation_status, cluster_id, "
         "primary_group_type, primary_group_id, candidate_accessions, prestructure_score, "
-        "ligandability_score, pocket_conservation_score, structural_score, final_score, "
+        "ligandability_score, pocket_conservation_score, three_dimensional_pocket_score, "
+        "three_dimensional_alignment_status, mean_minimum_tm_score, "
+        "mean_pocket_overlap_fraction, median_centroid_distance_angstrom, structural_score, "
+        "final_score, "
         "target_species_fraction, mandatory_species_fraction, domain_species_fraction, "
         "expression_species_fraction, structural_species_fraction, minimum_druggability_score, "
         "mean_pairwise_region_overlap, mean_chemical_group_conservation, "
@@ -188,10 +234,38 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ("pocket_conservation_summary", "09_ligandability", "pocket_conservation_summary.parquet"),
         ("pocket_conservation_members", "09_ligandability", "pocket_conservation_members.parquet"),
     )
-    return [
+    tables = [
         (table_name, find_one(root=config.run_root / stage_name, name=filename))
         for table_name, stage_name, filename in roots_and_names
     ]
+    if config.stage("09b_structural_alignment").enabled:
+        structural_root = config.run_root / "09b_structural_alignment"
+        tables.extend(
+            [
+                (
+                    "structural_alignments",
+                    find_one(
+                        root=structural_root,
+                        name="structural_alignments.parquet",
+                    ),
+                ),
+                (
+                    "structural_pocket_comparisons",
+                    find_one(
+                        root=structural_root,
+                        name="pocket_comparisons.parquet",
+                    ),
+                ),
+                (
+                    "structural_alignment_summary",
+                    find_one(
+                        root=structural_root,
+                        name="structural_alignment_summary.parquet",
+                    ),
+                ),
+            ]
+        )
+    return tables
 
 
 def _bar_chart(records: Sequence[Mapping[str, Any]], width: int = 900) -> str:
@@ -239,6 +313,7 @@ def _table(records: Sequence[Mapping[str, Any]]) -> str:
         "expression_species_fraction",
         "structural_species_fraction",
         "conservation_status",
+        "three_dimensional_alignment_status",
     )
     header = "".join(f"<th>{html.escape(column)}</th>" for column in columns)
     body = []
@@ -351,8 +426,19 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     conservation = find_one(
         root=config.run_root / "09_ligandability", name="pocket_conservation_summary.parquet"
     )
+    alignment_summary = (
+        find_one(
+            root=config.run_root / "09b_structural_alignment",
+            name="structural_alignment_summary.parquet",
+        )
+        if config.stage("09b_structural_alignment").enabled
+        else None
+    )
     final_query = _final_query(
-        config=config, prestructure=prestructure, conservation=conservation
+        config=config,
+        prestructure=prestructure,
+        conservation=conservation,
+        alignment_summary=alignment_summary,
     )
     database_path = stage_root / "duckdb" / "e3_integrated_resource.duckdb"
     database_path.parent.mkdir(parents=True, exist_ok=True)

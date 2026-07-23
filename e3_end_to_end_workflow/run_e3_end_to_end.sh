@@ -3,17 +3,20 @@
 
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 CONFIG="${SCRIPT_DIR}/config/synthetic.yaml"
 PROFILE="local"
 THREADS="4"
 MAX_JOBS="50"
+SLURM_ACCOUNT="barton"
+SLURM_PARTITION="general"
 TARGET=""
 START_AT=""
 STOP_AFTER=""
 DRY_RUN="false"
 UNLOCK="false"
 RESUME="true"
+ALLOW_INSIDE_SLURM="false"
 declare -a FORCE_STAGES=()
 declare -a EXTRA_ARGS=()
 
@@ -26,6 +29,8 @@ Options:
   --profile NAME         local, slurm, or an absolute profile directory.
   --threads INTEGER      Total local CPU budget (default: 4).
   --max-jobs INTEGER     Maximum concurrent Slurm jobs (default: 50).
+  --account NAME         Slurm account for scientific jobs (default: barton).
+  --partition NAME       Slurm partition for scientific jobs (default: general).
   --resume               Reuse only outputs Snakemake and stage manifests validate (default).
   --start-at STAGE       Intentionally rerun STAGE and affected downstream work.
   --stop-after STAGE     Stop once the selected stage manifest is complete.
@@ -33,35 +38,118 @@ Options:
   --target TARGET        Advanced explicit Snakemake target.
   --dry-run              Validate and print the DAG without executing jobs.
   --unlock               Unlock the configured working directory and exit.
+  --allow-inside-slurm   Advanced override for an intentionally nested controller.
   --version              Show the package version and exit.
   --help                 Show this help text.
 
-The shell wrapper always launches the package Snakefile. Independent branches run concurrently
-when dependencies and resources permit. --start-at never bypasses missing prerequisites.
+Use submit_e3_end_to_end.sh for normal detached cluster execution. This foreground runner always
+launches the package Snakefile. Independent branches run concurrently when dependencies and
+resources permit. --start-at never bypasses missing prerequisites.
 EOF
+}
+
+require_option_value() {
+    local option_name="$1"
+    local supplied_value="${2-}"
+    if [[ -z "${supplied_value}" || "${supplied_value}" == --* ]]; then
+        printf 'ERROR: %s requires a value.\n' "${option_name}" >&2
+        exit 2
+    fi
 }
 
 while (($#)); do
     case "$1" in
-        --config) CONFIG="$2"; shift 2 ;;
-        --profile) PROFILE="$2"; shift 2 ;;
-        --threads|--cores) THREADS="$2"; shift 2 ;;
-        --max-jobs|--jobs) MAX_JOBS="$2"; shift 2 ;;
-        --resume) RESUME="true"; shift ;;
-        --start-at) START_AT="$2"; shift 2 ;;
-        --stop-after) STOP_AFTER="$2"; shift 2 ;;
-        --force-stage) FORCE_STAGES+=("$2"); shift 2 ;;
-        --target) TARGET="$2"; shift 2 ;;
-        --dry-run) DRY_RUN="true"; shift ;;
-        --unlock) UNLOCK="true"; shift ;;
-        --version) printf 'e3-end-to-end-workflow 0.6.0\n'; exit 0 ;;
-        --help|-h) usage; exit 0 ;;
-        --) shift; EXTRA_ARGS+=("$@"); break ;;
-        *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+        --config)
+            require_option_value "$1" "${2-}"
+            CONFIG="$2"
+            shift 2
+            ;;
+        --profile)
+            require_option_value "$1" "${2-}"
+            PROFILE="$2"
+            shift 2
+            ;;
+        --threads|--cores)
+            require_option_value "$1" "${2-}"
+            THREADS="$2"
+            shift 2
+            ;;
+        --max-jobs|--jobs)
+            require_option_value "$1" "${2-}"
+            MAX_JOBS="$2"
+            shift 2
+            ;;
+        --account)
+            require_option_value "$1" "${2-}"
+            SLURM_ACCOUNT="$2"
+            shift 2
+            ;;
+        --partition)
+            require_option_value "$1" "${2-}"
+            SLURM_PARTITION="$2"
+            shift 2
+            ;;
+        --resume)
+            RESUME="true"
+            shift
+            ;;
+        --start-at)
+            require_option_value "$1" "${2-}"
+            START_AT="$2"
+            shift 2
+            ;;
+        --stop-after)
+            require_option_value "$1" "${2-}"
+            STOP_AFTER="$2"
+            shift 2
+            ;;
+        --force-stage)
+            require_option_value "$1" "${2-}"
+            FORCE_STAGES+=("$2")
+            shift 2
+            ;;
+        --target)
+            require_option_value "$1" "${2-}"
+            TARGET="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN="true"
+            shift
+            ;;
+        --unlock)
+            UNLOCK="true"
+            shift
+            ;;
+        --allow-inside-slurm)
+            ALLOW_INSIDE_SLURM="true"
+            shift
+            ;;
+        --version)
+            printf 'e3-end-to-end-workflow 0.7.0\n'
+            exit 0
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            EXTRA_ARGS+=("$@")
+            break
+            ;;
+        *)
+            printf 'ERROR: unknown option: %s\n' "$1" >&2
+            usage >&2
+            exit 2
+            ;;
     esac
 done
 
-[[ -f "${CONFIG}" ]] || { printf 'ERROR: config not found: %s\n' "${CONFIG}" >&2; exit 2; }
+[[ -f "${CONFIG}" ]] || {
+    printf 'ERROR: config not found: %s\n' "${CONFIG}" >&2
+    exit 2
+}
 [[ "${THREADS}" =~ ^[1-9][0-9]*$ ]] || {
     printf 'ERROR: --threads must be positive.\n' >&2
     exit 2
@@ -70,17 +158,42 @@ done
     printf 'ERROR: --max-jobs must be positive.\n' >&2
     exit 2
 }
-command -v e3-workflow >/dev/null || {
-    printf 'ERROR: install this package first: python -m pip install -e %s\n' "${SCRIPT_DIR}" >&2
+[[ "${SLURM_ACCOUNT}" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    printf 'ERROR: --account contains unsafe characters.\n' >&2
     exit 2
 }
-command -v snakemake >/dev/null || { printf 'ERROR: snakemake is not on PATH.\n' >&2; exit 2; }
+[[ "${SLURM_PARTITION}" =~ ^[A-Za-z0-9._-]+$ ]] || {
+    printf 'ERROR: --partition contains unsafe characters.\n' >&2
+    exit 2
+}
+command -v e3-workflow >/dev/null || {
+    printf 'ERROR: install this package first: python -m pip install -e %s\n' \
+        "${SCRIPT_DIR}" >&2
+    exit 2
+}
+command -v snakemake >/dev/null || {
+    printf 'ERROR: snakemake is not on PATH.\n' >&2
+    exit 2
+}
 
-CONFIG="$(python -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "${CONFIG}")"
+CONFIG_DIRECTORY="$(cd -- "$(dirname -- "${CONFIG}")" && pwd -P)"
+CONFIG="${CONFIG_DIRECTORY}/$(basename -- "${CONFIG}")"
 if [[ "${PROFILE}" != /* ]]; then
     PROFILE="${SCRIPT_DIR}/profiles/${PROFILE}"
 fi
-[[ -d "${PROFILE}" ]] || { printf 'ERROR: profile not found: %s\n' "${PROFILE}" >&2; exit 2; }
+[[ -d "${PROFILE}" ]] || {
+    printf 'ERROR: profile not found: %s\n' "${PROFILE}" >&2
+    exit 2
+}
+PROFILE="$(cd -- "${PROFILE}" && pwd -P)"
+
+if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" && -n "${SLURM_JOB_ID:-}" && \
+        "${ALLOW_INSIDE_SLURM}" == "false" ]]; then
+    printf 'ERROR: refusing to launch the Snakemake Slurm controller inside Slurm job %s.\n' \
+        "${SLURM_JOB_ID}" >&2
+    printf 'Use submit_e3_end_to_end.sh from a login node for detached execution.\n' >&2
+    exit 2
+fi
 
 declare -ar STAGES=(
     00_inputs
@@ -93,6 +206,7 @@ declare -ar STAGES=(
     07_expression
     08_shortlist_gate
     09_ligandability
+    09b_structural_alignment
     10_integrated_resource
     11_app_ready
 )
@@ -152,6 +266,12 @@ printf '%s INFO Resume policy: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${RESUM
 printf '%s INFO Maximum concurrent Slurm jobs: %s\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${MAX_JOBS}"
 printf '%s INFO Local CPU budget: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${THREADS}"
+if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" ]]; then
+    printf '%s INFO Slurm account: %s\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${SLURM_ACCOUNT}"
+    printf '%s INFO Slurm partition: %s\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${SLURM_PARTITION}"
+fi
 [[ -z "${START_AT}" ]] || printf '%s INFO Start at: %s\n' \
     "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "${START_AT}"
 [[ -z "${STOP_AFTER}" ]] || printf '%s INFO Stop after: %s\n' \
@@ -165,15 +285,35 @@ if [[ -n "${STOP_AFTER}" ]]; then
     TARGET="$(e3-workflow stage-target --config "${CONFIG}" --stage "${STOP_AFTER}")"
 fi
 
-COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile" --configfile "${CONFIG}"
-    --profile "${PROFILE}" --rerun-incomplete --printshellcmds --show-failed-logs)
-[[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/local" ]] && COMMAND+=(--cores "${THREADS}")
-[[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" ]] && COMMAND+=(--jobs "${MAX_JOBS}")
+COMMAND=(
+    snakemake
+    --snakefile "${SCRIPT_DIR}/workflow/Snakefile"
+    --configfile "${CONFIG}"
+    --profile "${PROFILE}"
+    --rerun-incomplete
+    --printshellcmds
+    --show-failed-logs
+)
+if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/local" ]]; then
+    COMMAND+=(--cores "${THREADS}")
+fi
+if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" ]]; then
+    COMMAND+=(
+        --jobs "${MAX_JOBS}"
+        --default-resources
+        "slurm_account=${SLURM_ACCOUNT}"
+        "slurm_partition=${SLURM_PARTITION}"
+        "mem_mb=8000"
+        "runtime=60"
+    )
+fi
 [[ "${DRY_RUN}" == "true" ]] && COMMAND+=(--dry-run)
 [[ "${UNLOCK}" == "true" ]] && COMMAND+=(--unlock)
 [[ -n "${TARGET}" ]] && COMMAND+=("${TARGET}")
 COMMAND+=("${EXTRA_ARGS[@]}")
-printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'
+printf 'Command:'
+printf ' %q' "${COMMAND[@]}"
+printf '\n'
 if [[ "${UNLOCK}" == "false" ]]; then
     e3-workflow record-invocation --config "${CONFIG}" -- "${COMMAND[@]}" >/dev/null
     printf '%s INFO Recorded the exact shell-to-Snakemake command for HTML provenance.\n' \
@@ -211,8 +351,13 @@ if [[ "${DRY_RUN}" == "false" && "${UNLOCK}" == "false" ]]; then
             )
         done
         CLEANUP_LOG="$(mktemp "${TMPDIR:-/tmp}/e3_workflow_metadata.XXXXXX.log")"
-        CLEANUP_COMMAND=(snakemake --snakefile "${SCRIPT_DIR}/workflow/Snakefile"
-            --configfile "${CONFIG}" --cleanup-metadata "${POSTPROCESSING_OUTPUTS[@]}")
+        CLEANUP_COMMAND=(
+            snakemake
+            --snakefile "${SCRIPT_DIR}/workflow/Snakefile"
+            --configfile "${CONFIG}"
+            --cleanup-metadata
+            "${POSTPROCESSING_OUTPUTS[@]}"
+        )
         CLEANUP_RESULT=""
         for cleanup_attempt in 1 2 3; do
             if "${CLEANUP_COMMAND[@]}" >"${CLEANUP_LOG}" 2>&1; then
@@ -228,7 +373,7 @@ if [[ "${DRY_RUN}" == "false" && "${UNLOCK}" == "false" ]]; then
                 break
             else
                 printf 'ERROR: completed-output metadata cleanup failed.\n' >&2
-                cat "${CLEANUP_LOG}" >&2
+                sed -n '1,240p' "${CLEANUP_LOG}" >&2
                 rm -f -- "${CLEANUP_LOG}"
                 exit 1
             fi
