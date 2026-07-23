@@ -492,11 +492,30 @@ def test_downloaded_evidence_to_app_ready_release(
         "selected_pockets",
         "pocket_sequence_coordinates",
         "candidate_group_member_sequences",
+        "candidate_master_results",
         "structural_alignment_summary",
         "structural_pocket_residue_matches",
     }.issubset(tables)
+    master = (
+        config.run_root
+        / "10_integrated_resource/tables/e3_candidate_master_results.parquet"
+    )
+    assert master.is_file()
+    master_row = duckdb.connect(":memory:").execute(
+        "SELECT cluster_id, discovery_matched_seed_ids_calculated, "
+        "orthofinder_group_member_count, selected_pocket_count "
+        "FROM read_parquet(?)",
+        [str(master)],
+    ).fetchone()
+    assert master_row == ("cluster_1", "Q9SA03;Q00002", 2, 2)
     assert (
         config.run_root
         / "10_integrated_resource/reports/final_computational_prioritisation.html"
     ).is_file()
     assert (config.run_root / "11_app_ready/app_release_manifest.json").is_file()
+    assert (
+        config.run_root / "11_app_ready/config/python_app_master_parquet.env"
+    ).is_file()
+    assert "E3_MAX_TABLE_ROWS=10000" in (
+        config.run_root / "11_app_ready/config/python_app.env"
+    ).read_text(encoding="utf-8")

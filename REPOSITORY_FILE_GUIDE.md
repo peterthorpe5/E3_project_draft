@@ -25,7 +25,7 @@ isolated output directories and checksum-bound manifests.
 | 5 | `expression_downloader` | Expression Atlas acquisition/import | expression Parquet resources and DuckDB views |
 | 6 | `e3_ligandability_pipeline` | AlphaFold confidence, FPocket, P2Rank and residue mapping | ligandability Parquet tables |
 | 7 | `e3_structural_alignment` | Optional US-align/TM-align superposition and 3D pocket comparison | alignment/pocket Parquet tables |
-| 8 | `e3_end_to_end_workflow` | Snakemake orchestration, integration, provenance and reports | integrated DuckDB, rankings, HTML and app hand-off |
+| 8 | `e3_end_to_end_workflow` | Snakemake orchestration, integration, provenance and reports | integrated DuckDB, candidate master Parquet, rankings, HTML and app hand-off |
 | 9 | `e3_python_app` / `E3_shiny_app` | Read-only exploration | interactive views of completed resources |
 
 ## Normal entry points
@@ -60,7 +60,7 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_7_1.md` | Versioned history. `v0.7.1` is the current release note. |
+| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_7_2.md` | Versioned history. `v0.7.2` is the current release note. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |
@@ -135,7 +135,7 @@ alignment engine or geometric method can evolve without embedding Python in the 
 | File or module | Role |
 |---|---|
 | `README.md` | Method, inputs, output schema, standalone command and integration instructions. |
-| `RELEASE_NOTES_v0_1_0.md`, `RELEASE_NOTES_v0_1_1.md` | Initial alignment release and current graphical/interactive reporting release. |
+| `RELEASE_NOTES_v0_1_0.md` through `RELEASE_NOTES_v0_1_2.md` | Structural method, graphical/interactive reporting and source-layout test fixes. |
 | `pyproject.toml` | Package/version/CLI and quality settings. |
 | `environment.yml` | Independent environment with pinned US-align, TM-align, Biopython and DuckDB. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime/development dependencies. |
@@ -324,9 +324,11 @@ authorities.
 | `run_app.sh` | Shell launcher. |
 | `config/app_config.example.tsv` | Data-source configuration example. |
 | `R/app_config.R` | Configuration validation. |
-| `R/data_sources.R`, `data_source_report.R`, `resource_helpers.R` | Resource discovery, validation and reporting. |
+| `R/data_sources.R`, `data_source_report.R`, `resource_helpers.R`, `resource_source.R` | DuckDB, single-Parquet and run-directory discovery, validation and reporting. |
+| `R/result_sections.R` | Grant-facing section registry, default columns and bounded selected-column queries. |
 | `R/query_helpers.R`, `utils.R` | Read-only query/common helpers. |
 | `R/module_resource_overview.R`, `module_resource_browser.R`, `module_data_sources.R` | Integrated-resource overview/browsing/provenance modules. |
+| `R/module_grant_overview.R`, `module_result_section.R` | Milestone overview and reusable section-specific checkbox table module. |
 | `R/module_expression_filters.R`, `module_expression_plots.R`, `module_expression_summary.R`, `module_expression_table.R`, `module_gene_lookup.R` | Expression/gene exploration modules. |
 | `inst/scripts/check_dependencies.R`, `run_app.R`, `write_data_sources_report.R`, `script_utils.R` | Installed operational scripts. |
 | `inst/scripts/run_tests.R` | Installed test entry point. |
@@ -346,8 +348,8 @@ This is the Python/Streamlit read-only viewer intended to parallel the Shiny app
 | `run_tests.sh` | Test/style runner. |
 | `src/e3app/cli.py`, `__main__.py` | Named CLI and module entry. |
 | `src/e3app/config.py` | Environment/resource validation. |
-| `src/e3app/data.py` | Read-only data access. |
-| `src/e3app/streamlit_app.py` | User interface. |
+| `src/e3app/data.py` | Read-only DuckDB/master-Parquet/run-directory access, section routing and bounded selected-column queries. |
+| `src/e3app/streamlit_app.py` | Grant-focused user interface with per-section column selection. |
 | `src/e3app/errors.py` | Controlled exceptions. |
 | `docs/TEST_TRACEABILITY.tsv` | App requirement/test mapping. |
 | `tests/` | Configuration, data, CLI and UI tests. |

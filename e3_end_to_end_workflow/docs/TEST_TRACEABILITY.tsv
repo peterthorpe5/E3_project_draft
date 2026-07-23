@@ -3,7 +3,7 @@ e3workflow.benchmarking	capture_cpu_usage_snapshot; cpu_usage_delta; rusage_peak
 e3workflow.config	load_config; controlled_input_paths; previous_stage; stage_dependencies; stage_purpose; stage_interpretation; stage_ancestors	test_config.py; test_cli.py
 e3workflow.control	stage_token_path; initialise_stage_tokens; stage_manifest_target	test_control.py; test_cli.py
 e3workflow.domain_annotations	InterProClient; retrieve_annotations; flatten_domain_hits	test_domain_annotations.py; test_full_scientific_pipeline.py
-e3workflow.integration	_final_query; run_integrated_stage; run_app_ready_stage; OrthoFinder ID/group-sequence imports; optional 3D position, residue-conservation and scoring imports	test_full_scientific_pipeline.py; test_scientific_utilities.py
+e3workflow.integration	_final_query; _candidate_master_query; run_integrated_stage; run_app_ready_stage; OrthoFinder ID/group-sequence imports; candidate master Parquet; optional 3D position, residue-conservation and scoring imports	test_full_scientific_pipeline.py; test_scientific_utilities.py
 e3workflow.io_utils	utc_now; sha256_file; atomic_write_text; atomic_write_json; read_json; write_tsv; read_tsv; configure_logging; close_logger; inventory_files	test_io_utils.py; test_seed_evidence.py
 e3workflow.ligandability	build_selected_pockets; measure_pocket_conservation; map_pocket_residues_to_fasta; run_ligandability_stage	test_full_scientific_pipeline.py; test_scientific_adapters.py; test_scientific_utilities.py
 e3workflow.manifests	parse_boolean; validate_proteomes; validate_accessions; validate_seed_evidence; validate_shortlist	test_manifests.py

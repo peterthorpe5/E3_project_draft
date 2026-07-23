@@ -17,7 +17,24 @@ resource_browser_ui <- function(id) {
       shiny::actionButton(ns("refresh"), "Refresh views"),
       shiny::actionButton(ns("preview"), "Preview table", class = "btn-primary")
     ),
-    shiny::h4("Columns"),
+    shiny::div(
+      class = "column-selector-panel",
+      shiny::h4("Columns to display"),
+      shiny::div(
+        class = "column-selector-actions",
+        shiny::actionButton(ns("select_first"), "First 12"),
+        shiny::actionButton(ns("select_all"), "Select all"),
+        shiny::actionButton(ns("select_none"), "Clear")
+      ),
+      shiny::checkboxGroupInput(
+        ns("selected_columns"),
+        label = NULL,
+        choices = character(),
+        selected = character(),
+        inline = TRUE
+      )
+    ),
+    shiny::h4("Column schema"),
     DT::DTOutput(ns("columns")),
     shiny::h4("Table preview"),
     shinycssloaders::withSpinner(DT::DTOutput(ns("preview_table")))
@@ -32,6 +49,7 @@ resource_browser_ui <- function(id) {
 resource_browser_server <- function(id, resource_duckdb_path) {
   shiny::moduleServer(id, function(input, output, session) {
     view_names <- shiny::reactiveVal(character())
+    current_columns <- shiny::reactiveVal(character())
 
     load_view_names <- function() {
       if (!resource_database_available(resource_duckdb_path)) {
@@ -77,6 +95,18 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         ),
         error = function(error) tibble::tibble(error = conditionMessage(error))
       )
+      names <- if ("column_name" %in% names(columns)) {
+        as.character(columns$column_name)
+      } else {
+        character()
+      }
+      current_columns(names)
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = names,
+        selected = head(names, 12L)
+      )
 
       DT::datatable(
         columns,
@@ -84,29 +114,69 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         options = list(pageLength = 25, scrollX = TRUE)
       )
     })
-
-    preview_data <- shiny::eventReactive(input$preview, {
-      shiny::req(input$view_name)
-      if (input$view_name %in% c("Loading...", "No views found", "Resource DB not configured")) {
-        return(tibble::tibble(message = "No resource view selected."))
-      }
-
-      tryCatch(
-        expr = collect_resource_preview(
-          duckdb_path = resource_duckdb_path,
-          view_name = input$view_name,
-          max_rows = input$max_rows
-        ),
-        error = function(error) {
-          shiny::showNotification(
-            paste("Failed to preview resource view:", conditionMessage(error)),
-            type = "error",
-            duration = NULL
-          )
-          tibble::tibble(error = conditionMessage(error))
-        }
+    shiny::observeEvent(input$select_first, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = current_columns(),
+        selected = head(current_columns(), 12L)
       )
-    }, ignoreNULL = FALSE)
+    })
+    shiny::observeEvent(input$select_all, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = current_columns(),
+        selected = current_columns()
+      )
+    })
+    shiny::observeEvent(input$select_none, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = current_columns(),
+        selected = character()
+      )
+    })
+
+    preview_data <- shiny::eventReactive(
+      list(input$preview, input$selected_columns),
+      {
+        shiny::req(input$view_name)
+        if (
+          input$view_name %in%
+            c("Loading...", "No views found", "Resource DB not configured")
+        ) {
+          return(tibble::tibble(message = "No resource view selected."))
+        }
+
+        if (length(input$selected_columns) == 0L) {
+          return(tibble::tibble(
+            message = "Select at least one result column."
+          ))
+        }
+        tryCatch(
+          expr = collect_selected_result(
+            resource_source = resource_duckdb_path,
+            relation = input$view_name,
+            selected_columns = input$selected_columns,
+            max_rows = input$max_rows
+          ),
+          error = function(error) {
+            shiny::showNotification(
+              paste(
+                "Failed to preview resource view:",
+                conditionMessage(error)
+              ),
+              type = "error",
+              duration = NULL
+            )
+            tibble::tibble(error = conditionMessage(error))
+          }
+        )
+      },
+      ignoreNULL = FALSE
+    )
 
     output$preview_table <- DT::renderDT({
       DT::datatable(

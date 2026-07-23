@@ -1,57 +1,80 @@
-# E3 Python app
+# ARIA plant E3 Python reporter
 
-This is the Python companion to `E3_shiny_app`. It uses Streamlit for presentation and DuckDB for
-read-only, bounded queries. The two applications are intended to consume the same release contract;
-scientific transformations belong in the data packages, not in either UI.
+Version 0.2.0 is the tested Streamlit companion to `E3_shiny_app` 0.4.0. Both
+applications use the same release contract and answer the same grant-facing
+questions across candidate prioritisation, OrthoFinder grouping, domains,
+expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-Version `0.1.0` provides:
+The app is read-only. It opens a completed DuckDB directly or registers Parquet
+files as views in an in-memory DuckDB. Every table query has a hard row cap and
+only the columns selected by the user are collected into Pandas.
 
-- resource overview with exact row and column counts;
-- a generic bounded relation browser;
-- exact, case-insensitive accession search over recognised accession columns;
-- automatic navigation categories for orthology, ligandability, expression, candidates and
-  provenance/QC;
-- a named-option launcher and environment-based configuration;
-- unit, DuckDB integration and headless Streamlit application tests.
+## Result-source modes
 
-## Install and test
+Choose exactly one:
+
+```bash
+# Recommended complete release
+./run_e3_python_app.sh \
+  --resource-duckdb /path/to/e3_integrated_resource.duckdb \
+  --max-rows 1000 \
+  --host 127.0.0.1 \
+  --port 8501
+
+# One candidate-level hand-off
+./run_e3_python_app.sh \
+  --resource-parquet /path/to/e3_candidate_master_results.parquet \
+  --max-rows 1000
+
+# Current workflow stage Parquets
+./run_e3_python_app.sh \
+  --resource-run-dir /path/to/completed_workflow_run \
+  --max-rows 1000
+```
+
+Run-directory mode excludes hidden and `superseded` paths, discovers all
+remaining Parquets recursively and assigns deterministic relation names.
+
+Environment equivalents are `E3_RESOURCE_DUCKDB`, `E3_RESOURCE_PARQUET`,
+`E3_RESOURCE_RUN_DIR`, `E3_EXPRESSION_DUCKDB` and `E3_MAX_TABLE_ROWS`.
+
+## Interface
+
+The reporter provides:
+
+- a grant overview separating Milestone 1 conservation evidence from Milestone
+  2 conserved structural/chemical starting space;
+- focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
+  conservation and 3D alignment sections;
+- a separate column multiselect and row limit for every section;
+- exact accession search across recognised scalar and semicolon-delimited
+  candidate/member fields;
+- a schema-agnostic all-results browser;
+- provenance and QC views; and
+- TSV downloads of the displayed result.
+
+The integrated DuckDB remains the complete authority. The single master Parquet
+contains one wide row per candidate group, while one-to-many group members,
+pockets, domain hits and residue matches remain detailed DuckDB relations.
+
+## Install and validate
 
 ```bash
 cd e3_python_app
-python -m pip install -e '.[dev]'
+python -m pip install --editable '.[dev]'
 ./run_tests.sh
 ```
 
-Streamlit's `AppTest` executes the app directly in the test process, permits simulated input, and
-allows rendered elements to be inspected without a browser. Query logic is additionally tested
-without Streamlit so failures can be localised to data access or presentation.
+`run_tests.sh` also puts this checkout's `src/` directory on `PYTHONPATH`, so its
+source tests can run before editable installation. The editable install remains
+required for the `e3-python-app` command.
 
-## Run
+The current quality gate comprises 22 tests at 98% branch-aware coverage,
+including DuckDB, master-Parquet, run-directory and headless Streamlit checks.
 
-```bash
-./run_e3_python_app.sh \
-    --resource-duckdb /path/to/e3_integrated_resource.duckdb \
-    --expression-duckdb /path/to/e3_expression.duckdb \
-    --max-rows 1000 \
-    --host 127.0.0.1 \
-    --port 8501
-```
+## Interpretation boundary
 
-Validate paths without starting a server:
-
-```bash
-./run_e3_python_app.sh \
-    --resource-duckdb /path/to/e3_integrated_resource.duckdb \
-    --validate-only
-```
-
-The app opens the DuckDB read-only, validates every dynamic relation/column identifier against a
-strict pattern, binds all user search values as SQL parameters, and caps every preview. It does not
-load an entire 25-million-protein resource into Pandas.
-
-## Next biological views
-
-The UI will gain focused candidate, orthology/HOG, expression and pocket-conservation pages as the
-shared integrated release schema is finalised. Those pages will call the same tested service layer;
-the generic browser remains useful for audit and provenance inspection.
-
+These are computational recommendations. OrthoFinder membership, E3-domain
+support, RNA expression, predicted cavities, pocket-region conservation and
+US-align/TM-align agreement do not prove E3 activity, compound binding or
+induced degradation.

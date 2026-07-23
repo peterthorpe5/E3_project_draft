@@ -29,6 +29,8 @@ repo_dir <- find_repo_dir()
 source(file.path(repo_dir, "inst", "scripts", "script_utils.R"))
 source(file.path(repo_dir, "R", "utils.R"))
 source(file.path(repo_dir, "R", "data_source_report.R"))
+source(file.path(repo_dir, "R", "result_sections.R"))
+source(file.path(repo_dir, "R", "resource_source.R"))
 source(file.path(repo_dir, "R", "app_config.R"))
 source(file.path(repo_dir, "R", "data_sources.R"))
 source(file.path(repo_dir, "R", "query_helpers.R"))
@@ -41,6 +43,8 @@ source(file.path(repo_dir, "R", "module_expression_plots.R"))
 source(file.path(repo_dir, "R", "module_resource_overview.R"))
 source(file.path(repo_dir, "R", "module_resource_browser.R"))
 source(file.path(repo_dir, "R", "module_data_sources.R"))
+source(file.path(repo_dir, "R", "module_grant_overview.R"))
+source(file.path(repo_dir, "R", "module_result_section.R"))
 
 make_test_expression_tbl <- function() {
   tibble::tibble(

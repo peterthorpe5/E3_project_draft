@@ -78,8 +78,10 @@ resolve_resource_derived_dir <- function(resource_duckdb_path, explicit_derived_
 #' and optional command-line arguments. Command-line values take priority over
 #' environment variables, which take priority over hard-coded defaults.
 #'
-#' The app now supports two DuckDB resources:
-#' * `resource_duckdb_path`: the source-first E3 PROTAC Parquet/DuckDB resource.
+#' The app supports one flexible E3 result source and a separate expression DB:
+#' * `resource_duckdb_path`: completed integrated/source-first DuckDB.
+#' * `resource_parquet_path`: single candidate master-results Parquet.
+#' * `resource_run_dir`: workflow run containing current stage Parquets.
 #' * `expression_duckdb_path`: the Expression Atlas DuckDB created by the
 #'   separate expression-downloader pipeline.
 #'
@@ -93,10 +95,30 @@ get_app_config <- function(args = commandArgs(trailingOnly = TRUE)) {
     Sys.getenv("E3_EXPRESSION_DUCKDB", unset = default_expression_duckdb_path())
 
   resource_duckdb_path <- parsed_args$resource_duckdb_path %||%
-    Sys.getenv("E3_RESOURCE_DUCKDB", unset = expression_duckdb_path)
+    Sys.getenv("E3_RESOURCE_DUCKDB", unset = "")
+  resource_parquet_path <- parsed_args$resource_parquet_path %||%
+    Sys.getenv("E3_RESOURCE_PARQUET", unset = "")
+  resource_run_dir <- parsed_args$resource_run_dir %||%
+    Sys.getenv("E3_RESOURCE_RUN_DIR", unset = "")
+  if (
+    !nzchar(resource_duckdb_path) &&
+      !nzchar(resource_parquet_path) &&
+      !nzchar(resource_run_dir) &&
+      !is.null(parsed_args$duckdb_path)
+  ) {
+    resource_duckdb_path <- parsed_args$duckdb_path
+  }
+  resource_source <- resolve_resource_source(
+    resource_duckdb_path = resource_duckdb_path,
+    resource_parquet_path = resource_parquet_path,
+    resource_run_dir = resource_run_dir
+  )
 
   resource_derived_dir <- resolve_resource_derived_dir(
     resource_duckdb_path = resource_duckdb_path,
+    resource_parquet_path = resource_parquet_path,
+    resource_run_dir = resource_run_dir,
+    resource_source = resource_source,
     explicit_derived_dir = parsed_args$resource_derived_dir %||%
       Sys.getenv("E3_RESOURCE_DERIVED_DIR", unset = "")
   )

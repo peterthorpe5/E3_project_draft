@@ -45,6 +45,11 @@ python -m pip install --no-deps --editable .
 ./run_tests.sh
 ```
 
+`run_tests.sh` also adds this checkout's `src/` directory to `PYTHONPATH`, so a
+freshly created environment can run the source tests before the editable install.
+The editable install is still required for the `e3-structure-align` command-line
+entry point.
+
 The environment pins the Bioconda US-align build at `20241201` and TM-align at `20240303`.
 Executable versions are recorded in every run manifest because alternative builds may change
 numerical output.

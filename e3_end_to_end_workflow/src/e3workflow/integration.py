@@ -61,6 +61,37 @@ FINAL_FIELDS = (
     "interpretation",
 )
 
+MASTER_PARQUET_NAME = "e3_candidate_master_results.parquet"
+
+RESOURCE_SECTIONS = {
+    "candidate_evidence": ("candidate_discovery", "candidate"),
+    "candidate_orthology": ("orthology", "candidate_group_mapping"),
+    "candidate_group_member_sequences": ("orthology", "group_member"),
+    "orthogroup_membership": ("orthology", "group_member"),
+    "hierarchical_membership": ("orthology", "group_member"),
+    "candidate_orthology_summary": ("orthology", "candidate"),
+    "domain_hits": ("domains", "member_domain_hit"),
+    "domain_summary": ("domains", "candidate_group_member"),
+    "candidate_identifier_aliases": ("expression", "candidate_group_member"),
+    "candidate_expression_mapping": ("expression", "candidate_group_member"),
+    "candidate_expression_summary": ("expression", "candidate_group_member"),
+    "prestructure_ranking": ("prioritisation", "candidate"),
+    "structural_analysis_accessions": ("ligandability", "candidate_group_member"),
+    "selected_pockets": ("ligandability", "pocket"),
+    "structural_prediction_status": ("ligandability", "candidate_group_member"),
+    "pocket_conservation_summary": ("pocket_conservation", "candidate"),
+    "pocket_conservation_members": ("pocket_conservation", "candidate_group_member"),
+    "pocket_sequence_coordinates": ("pocket_conservation", "pocket_residue"),
+    "structural_alignments": ("structural_alignment", "structure_pair"),
+    "structural_pocket_comparisons": ("structural_alignment", "structure_pair"),
+    "structural_pocket_residue_matches": ("structural_alignment", "pocket_residue_pair"),
+    "structural_alignment_summary": ("structural_alignment", "candidate"),
+    "final_candidate_prioritisation": ("prioritisation", "candidate"),
+    "candidate_master_results": ("prioritisation", "candidate"),
+    "resource_metadata": ("provenance", "release"),
+    "resource_relation_catalog": ("provenance", "relation"),
+}
+
 
 def _final_query(
     config: WorkflowConfig,
@@ -221,6 +252,137 @@ def _create_table_from_parquet(
     connection.execute(
         f"CREATE TABLE {quote_identifier(table_name)} AS SELECT * FROM read_parquet("
         f"{quote_literal(path)})"
+    )
+
+
+def _relation_columns(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+) -> list[str]:
+    """Return validated columns for one materialised DuckDB relation."""
+    rows = connection.execute(
+        f"DESCRIBE SELECT * FROM {quote_identifier(relation)}"
+    ).fetchall()
+    columns = [str(row[0]) for row in rows]
+    for column in columns:
+        quote_identifier(column)
+    return columns
+
+
+def _candidate_master_query(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+) -> str:
+    """Build one wide, candidate-level result without flattening detail tables.
+
+    The master relation contains every final prioritisation field, all additional
+    candidate-level pre-structure fields and every discovery-evidence column.
+    Discovery fields are prefixed to make schema growth collision-safe. Detailed
+    one-to-many evidence remains in the normalised DuckDB relations.
+    """
+    final_columns = set(
+        _relation_columns(
+            connection=connection,
+            relation="final_candidate_prioritisation",
+        )
+    )
+    prestructure_columns = _relation_columns(
+        connection=connection,
+        relation="prestructure_ranking",
+    )
+    discovery_columns = _relation_columns(
+        connection=connection,
+        relation="candidate_evidence",
+    )
+    additional_prestructure = [
+        column
+        for column in prestructure_columns
+        if column not in final_columns and column != "cluster_id"
+    ]
+    discovery_evidence = [
+        column for column in discovery_columns if column != "representative_id"
+    ]
+    selections = ["final.*"]
+    selections.extend(
+        f"pre.{quote_identifier(column)} AS {quote_identifier(column)}"
+        for column in additional_prestructure
+    )
+    selections.extend(
+        "discovery."
+        f"{quote_identifier(column)} AS {quote_identifier(f'discovery_{column}')}"
+        for column in discovery_evidence
+    )
+    selections.extend(
+        (
+            "members.orthofinder_group_member_count",
+            "members.orthofinder_group_species_count",
+            "domains.domain_evidence_row_count",
+            "expression.expression_evidence_row_count",
+            "pockets.selected_pocket_count",
+            "pocket_members.pocket_conservation_member_count",
+        )
+    )
+    return (
+        "SELECT "
+        + ", ".join(selections)
+        + " FROM final_candidate_prioritisation AS final "
+        "LEFT JOIN prestructure_ranking AS pre USING (cluster_id) "
+        "LEFT JOIN candidate_evidence AS discovery "
+        "ON discovery.representative_id = final.cluster_id "
+        "LEFT JOIN (SELECT cluster_id, COUNT(*) AS orthofinder_group_member_count, "
+        "COUNT(DISTINCT species) AS orthofinder_group_species_count "
+        "FROM candidate_group_member_sequences GROUP BY cluster_id) AS members "
+        "USING (cluster_id) "
+        "LEFT JOIN (SELECT cluster_id, COUNT(*) AS domain_evidence_row_count "
+        "FROM domain_summary GROUP BY cluster_id) AS domains USING (cluster_id) "
+        "LEFT JOIN (SELECT cluster_id, COUNT(*) AS expression_evidence_row_count "
+        "FROM candidate_expression_summary GROUP BY cluster_id) AS expression "
+        "USING (cluster_id) "
+        "LEFT JOIN (SELECT cluster_id, COUNT(*) AS selected_pocket_count "
+        "FROM selected_pockets GROUP BY cluster_id) AS pockets USING (cluster_id) "
+        "LEFT JOIN (SELECT cluster_id, COUNT(*) AS pocket_conservation_member_count "
+        "FROM pocket_conservation_members GROUP BY cluster_id) AS pocket_members "
+        "USING (cluster_id) ORDER BY final.final_rank"
+    )
+
+
+def _write_resource_relation_catalog(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    sources: Sequence[tuple[str, Path]],
+) -> None:
+    """Materialise relation purpose, granularity and source provenance."""
+    connection.execute(
+        "CREATE TABLE resource_relation_catalog ("
+        "relation_name VARCHAR, app_section VARCHAR, row_granularity VARCHAR, "
+        "source_parquet VARCHAR)"
+    )
+    records = []
+    for relation_name, source_path in sources:
+        section, granularity = RESOURCE_SECTIONS.get(
+            relation_name,
+            ("other", "unspecified"),
+        )
+        records.append(
+            (
+                relation_name,
+                section,
+                granularity,
+                str(source_path),
+            )
+        )
+    for relation_name in (
+        "final_candidate_prioritisation",
+        "candidate_master_results",
+        "resource_metadata",
+        "resource_relation_catalog",
+    ):
+        section, granularity = RESOURCE_SECTIONS[relation_name]
+        records.append((relation_name, section, granularity, "generated_in_stage_10"))
+    connection.executemany(
+        "INSERT INTO resource_relation_catalog VALUES (?, ?, ?, ?)",
+        records,
     )
 
 
@@ -485,12 +647,17 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     temporary_database.unlink(missing_ok=True)
     connection = duckdb.connect(str(temporary_database))
     try:
-        for table_name, source_path in _resource_tables(config=config):
+        resource_tables = _resource_tables(config=config)
+        for table_name, source_path in resource_tables:
             _create_table_from_parquet(
                 connection=connection, table_name=table_name, path=source_path
             )
         connection.execute(
             f"CREATE TABLE final_candidate_prioritisation AS {final_query}"
+        )
+        connection.execute(
+            "CREATE TABLE candidate_master_results AS "
+            + _candidate_master_query(connection=connection)
         )
         connection.execute(
             "CREATE TABLE resource_metadata AS SELECT ? AS resource_name, ? AS package_version, "
@@ -504,6 +671,10 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 utc_now(),
             ],
         )
+        _write_resource_relation_catalog(
+            connection=connection,
+            sources=resource_tables,
+        )
         final_rows = connection.execute(
             "SELECT * FROM final_candidate_prioritisation ORDER BY final_rank"
         ).fetchall()
@@ -516,6 +687,11 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         connection.execute(
             "COPY final_candidate_prioritisation TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
             [str(stage_root / "tables" / "final_candidate_prioritisation.parquet")],
+        )
+        master_parquet = stage_root / "tables" / MASTER_PARQUET_NAME
+        connection.execute(
+            "COPY candidate_master_results TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
+            [str(master_parquet)],
         )
         connection.execute("CHECKPOINT")
     except duckdb.Error as exc:
@@ -548,6 +724,9 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             for record in records
         ),
         "database_sha256": sha256_file(database_path),
+        "master_parquet_sha256": sha256_file(
+            stage_root / "tables" / MASTER_PARQUET_NAME
+        ),
         "report_sha256": sha256_file(report_path),
         "interpretation": (
             "computational recommendations requiring human and experimental validation"
@@ -565,6 +744,7 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "final_stringent_pass_count",
             "priority_recommendation_count",
             "database_sha256",
+            "master_parquet_sha256",
             "report_sha256",
             "interpretation",
         ),
@@ -577,7 +757,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     database = integrated_stage / "duckdb" / "e3_integrated_resource.duckdb"
     report = integrated_stage / "reports" / "final_computational_prioritisation.html"
     final_table = integrated_stage / "tables" / "final_candidate_prioritisation.parquet"
-    for path in (database, report, final_table):
+    master_table = integrated_stage / "tables" / MASTER_PARQUET_NAME
+    for path in (database, report, final_table, master_table):
         if not path.is_file() or path.stat().st_size == 0:
             raise StageError(f"Application hand-off input is missing or empty: {path}")
     rows = [
@@ -588,6 +769,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "resource_duckdb": database,
             "resource_duckdb_sha256": sha256_file(database),
             "final_ranking_parquet": final_table,
+            "candidate_master_parquet": master_table,
+            "candidate_master_parquet_sha256": sha256_file(master_table),
             "final_report_html": report,
             "python_app_root": config.project_root / "e3_python_app",
             "r_shiny_app_root": config.project_root / "E3_shiny_app",
@@ -604,6 +787,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "resource_duckdb",
             "resource_duckdb_sha256",
             "final_ranking_parquet",
+            "candidate_master_parquet",
+            "candidate_master_parquet_sha256",
             "final_report_html",
             "python_app_root",
             "r_shiny_app_root",
@@ -612,13 +797,38 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     )
     (stage_root / "config").mkdir(parents=True, exist_ok=True)
     (stage_root / "config" / "python_app.env").write_text(
-        f"E3_RESOURCE_DUCKDB={database}\nE3_MAX_ROWS=10000\n",
+        f"E3_RESOURCE_DUCKDB={database}\nE3_MAX_TABLE_ROWS=10000\n",
+        encoding="utf-8",
+    )
+    (stage_root / "config" / "python_app_master_parquet.env").write_text(
+        f"E3_RESOURCE_PARQUET={master_table}\nE3_MAX_TABLE_ROWS=10000\n",
+        encoding="utf-8",
+    )
+    (stage_root / "config" / "shiny_app.env").write_text(
+        f"E3_RESOURCE_DUCKDB={database}\nE3_MAX_TABLE_ROWS=10000\n",
+        encoding="utf-8",
+    )
+    (stage_root / "config" / "shiny_app_master_parquet.env").write_text(
+        f"E3_RESOURCE_PARQUET={master_table}\nE3_MAX_TABLE_ROWS=10000\n",
         encoding="utf-8",
     )
     write_tsv(
         stage_root / "config" / "shiny_app_config.tsv",
         [
             {"setting": "resource_duckdb", "value": database},
+            {"setting": "resource_parquet", "value": ""},
+            {"setting": "resource_run_dir", "value": ""},
+            {"setting": "expression_duckdb", "value": ""},
+            {"setting": "max_preview_rows", "value": 10000},
+        ],
+        ("setting", "value"),
+    )
+    write_tsv(
+        stage_root / "config" / "shiny_app_master_parquet_config.tsv",
+        [
+            {"setting": "resource_duckdb", "value": ""},
+            {"setting": "resource_parquet", "value": master_table},
+            {"setting": "resource_run_dir", "value": ""},
             {"setting": "expression_duckdb", "value": ""},
             {"setting": "max_preview_rows", "value": 10000},
         ],
@@ -630,6 +840,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "run_name": config.run_name,
             "resource_duckdb": str(database),
             "resource_duckdb_sha256": sha256_file(database),
+            "candidate_master_parquet": str(master_table),
+            "candidate_master_parquet_sha256": sha256_file(master_table),
             "final_report_html": str(report),
             "created_at": utc_now(),
             "status": "READY_FOR_READ_ONLY_APPLICATIONS",

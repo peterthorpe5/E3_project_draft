@@ -19,6 +19,9 @@ testthat::test_that("resource query builders quote view names and limit rows", {
   testthat::expect_match(query, "e3_resource.main", fixed = TRUE)
   testthat::expect_match(query, '"source tables weird/name"', fixed = TRUE)
   testthat::expect_match(query, "LIMIT 25", fixed = TRUE)
+  catalog_query <- build_resource_relation_catalog_query(alias = "e3-resource")
+  testthat::expect_match(catalog_query, "e3_resource.main", fixed = TRUE)
+  testthat::expect_match(catalog_query, "app_section", fixed = TRUE)
 })
 
 testthat::test_that("resource catalog summary counts statuses", {

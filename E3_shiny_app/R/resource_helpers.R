@@ -10,6 +10,9 @@
 #' @param duckdb_path Path to a DuckDB database.
 #' @return TRUE when the file exists and is not a directory.
 resource_database_available <- function(duckdb_path) {
+  if (is.list(duckdb_path)) {
+    return(resource_source_available(duckdb_path))
+  }
   !is.null(duckdb_path) &&
     length(duckdb_path) == 1L &&
     !is.na(duckdb_path) &&
@@ -24,6 +27,9 @@ resource_database_available <- function(duckdb_path) {
 #' @param alias Alias used for the attached database.
 #' @return Sanitised alias.
 attach_resource_duckdb <- function(duckdb_path, alias = "e3_resource") {
+  if (is.list(duckdb_path)) {
+    return(initialise_resource_source(duckdb_path, alias = alias))
+  }
   if (!resource_database_available(duckdb_path)) {
     stop(
       paste0(
@@ -53,6 +59,21 @@ attach_resource_duckdb <- function(duckdb_path, alias = "e3_resource") {
 #'
 #' @param alias Attached database alias.
 #' @return SQL query string.
+build_resource_relation_catalog_query <- function(alias = "e3_resource") {
+  safe_alias <- sanitise_duckdb_alias(alias = alias)
+
+  paste(
+    "SELECT relation_name AS view_name, source_parquet AS parquet_file,",
+    "'available' AS status, '' AS error, app_section, row_granularity",
+    "FROM", paste0(safe_alias, ".main.resource_relation_catalog"),
+    "ORDER BY relation_name"
+  )
+}
+
+#' Build the legacy source-first Parquet view-catalog query.
+#'
+#' @param alias Attached database alias.
+#' @return SQL query string.
 build_resource_view_catalog_query <- function(alias = "e3_resource") {
   safe_alias <- sanitise_duckdb_alias(alias = alias)
 
@@ -67,11 +88,14 @@ build_resource_view_catalog_query <- function(alias = "e3_resource") {
 #' Build a fallback query listing DuckDB tables/views.
 #'
 #' @return SQL query string.
-build_resource_information_schema_query <- function() {
+build_resource_information_schema_query <- function(alias = "e3_resource") {
+  safe_alias <- escape_sql_literal(sanitise_duckdb_alias(alias))
+
   paste(
     "SELECT table_name AS view_name, table_type, table_schema",
     "FROM information_schema.tables",
-    "WHERE table_schema = 'main'",
+    paste0("WHERE table_catalog = '", safe_alias, "'"),
+    "AND table_schema = 'main'",
     "ORDER BY table_name"
   )
 }
@@ -136,7 +160,11 @@ build_resource_row_count_query <- function(view_name, alias = "e3_resource") {
 #' @param alias Attached database alias.
 #' @return Collected tibble.
 collect_resource_query <- function(duckdb_path, query, alias = "e3_resource") {
-  attach_resource_duckdb(duckdb_path = duckdb_path, alias = alias)
+  if (is.list(duckdb_path)) {
+    initialise_resource_source(resource_source = duckdb_path, alias = alias)
+  } else {
+    attach_resource_duckdb(duckdb_path = duckdb_path, alias = alias)
+  }
 
   duckplyr::read_sql_duckdb(query) |>
     dplyr::collect()
@@ -150,17 +178,25 @@ collect_resource_view_catalog <- function(duckdb_path) {
   tryCatch(
     expr = collect_resource_query(
       duckdb_path = duckdb_path,
-      query = build_resource_view_catalog_query()
+      query = build_resource_relation_catalog_query()
     ),
     error = function(error) {
-      fallback <- collect_resource_query(
-        duckdb_path = duckdb_path,
-        query = build_resource_information_schema_query()
+      tryCatch(
+        expr = collect_resource_query(
+          duckdb_path = duckdb_path,
+          query = build_resource_view_catalog_query()
+        ),
+        error = function(legacy_error) {
+          fallback <- collect_resource_query(
+            duckdb_path = duckdb_path,
+            query = build_resource_information_schema_query(alias = "e3_resource")
+          )
+          fallback$parquet_file <- NA_character_
+          fallback$status <- "available"
+          fallback$error <- ""
+          fallback
+        }
       )
-      fallback$parquet_file <- NA_character_
-      fallback$status <- "available"
-      fallback$error <- ""
-      fallback
     }
   )
 }

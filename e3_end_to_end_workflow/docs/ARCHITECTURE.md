@@ -81,6 +81,14 @@ publishes a normal checksummed `skipped_optional` stage manifest. Integration th
 complete but labels 3D evidence as `NOT_ASSESSED`; it never converts a configured omission into a
 negative structural result.
 
+Stage 10 materialises every normalised evidence relation in
+`e3_integrated_resource.duckdb` and additionally exports
+`e3_candidate_master_results.parquet`. The latter is a one-row-per-candidate
+convenience contract containing all candidate-level fields; it cannot replace
+one-to-many member, pocket or residue relations. Stage 11 records and checksums
+both sources so either app can use the complete DuckDB, the master Parquet, or
+the current workflow Parquet tree.
+
 ## Input manifest invariants
 
 - `species_id` is unique and stable across releases.

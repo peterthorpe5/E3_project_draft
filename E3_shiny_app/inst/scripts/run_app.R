@@ -13,6 +13,8 @@ setwd(repo_dir)
 # been installed after local edits.
 source("R/utils.R")
 source("R/data_source_report.R")
+source("R/result_sections.R")
+source("R/resource_source.R")
 source("R/app_config.R")
 
 app_config <- get_app_config(args = commandArgs(trailingOnly = TRUE))
@@ -33,6 +35,9 @@ if (!is.null(app_config$host) && nzchar(app_config$host)) {
 message("Starting E3 PROTAC Resource Shiny app")
 message("Repository: ", repo_dir)
 message("Resource DuckDB path: ", app_config$resource_duckdb_path)
+message("Resource master Parquet path: ", app_config$resource_parquet_path)
+message("Resource workflow run dir: ", app_config$resource_run_dir)
+message("Resolved resource mode: ", app_config$resource_source$mode)
 message("Resource derived dir: ", app_config$resource_derived_dir)
 message("Expression DuckDB path: ", app_config$expression_duckdb_path)
 message("Host: ", shiny_args$host %||% "default")

@@ -11,6 +11,7 @@ testthat::test_that("resource browser UI exposes bounded preview controls", {
 
   testthat::expect_match(ui_text, "browser-view_name", fixed = TRUE)
   testthat::expect_match(ui_text, "browser-max_rows", fixed = TRUE)
+  testthat::expect_match(ui_text, "browser-selected_columns", fixed = TRUE)
   testthat::expect_match(ui_text, "browser-preview_table", fixed = TRUE)
 })
 

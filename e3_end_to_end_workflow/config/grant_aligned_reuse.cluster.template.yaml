@@ -306,6 +306,7 @@ stages:
       - duckdb/e3_integrated_resource.duckdb
       - tables/final_candidate_prioritisation.tsv
       - tables/final_candidate_prioritisation.parquet
+      - tables/e3_candidate_master_results.parquet
       - reports/final_computational_prioritisation.html
       - provenance/integrated_resource_manifest.json
       - qc/integrated_resource_validation.tsv
@@ -320,7 +321,11 @@ stages:
       - app_handoff.tsv
       - app_release_manifest.json
       - config/python_app.env
+      - config/python_app_master_parquet.env
+      - config/shiny_app.env
+      - config/shiny_app_master_parquet.env
       - config/shiny_app_config.tsv
+      - config/shiny_app_master_parquet_config.tsv
     threads: 1
     memory_mb: 8000
     runtime_minutes: 120

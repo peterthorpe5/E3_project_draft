@@ -1,5 +1,7 @@
 setting	value	description
 E3_RESOURCE_DUCKDB	/path/to/derived/duckdb/e3_protac_resource.duckdb	DuckDB created by the source-to-Parquet E3 PROTAC resource pipeline.
+E3_RESOURCE_PARQUET	/path/to/e3_candidate_master_results.parquet	Alternative single candidate-level master Parquet; do not set with another E3 resource source.
+E3_RESOURCE_RUN_DIR	/path/to/completed_workflow_run	Alternative current workflow run whose non-superseded Parquets will be imported lazily.
 E3_RESOURCE_DERIVED_DIR	/path/to/derived	Derived directory containing qc/, parquet/, duckdb/ and docs/.
 E3_EXPRESSION_DUCKDB	/path/to/e3_expression.duckdb	Optional Expression Atlas DuckDB created by the expression-downloader pipeline.
 E3_MAX_TABLE_ROWS	1000	Maximum rows collected for preview tables.

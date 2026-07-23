@@ -4,6 +4,8 @@
 set -Eeuo pipefail
 
 RESOURCE_DUCKDB=""
+RESOURCE_PARQUET=""
+RESOURCE_RUN_DIR=""
 EXPRESSION_DUCKDB=""
 MAX_ROWS="1000"
 HOST="127.0.0.1"
@@ -13,10 +15,12 @@ VALIDATE_ONLY="false"
 
 usage() {
     cat <<'EOF'
-Usage: run_e3_python_app.sh --resource-duckdb PATH [options]
+Usage: run_e3_python_app.sh RESOURCE_OPTION [options]
 
 Options:
-  --resource-duckdb PATH     Required integrated/source-first DuckDB.
+  --resource-duckdb PATH     Integrated/source-first DuckDB.
+  --resource-parquet PATH    Single candidate master-results Parquet.
+  --resource-run-dir PATH    Current workflow run containing stage Parquets.
   --expression-duckdb PATH   Optional Expression Atlas DuckDB.
   --max-rows INTEGER         Hard preview/search row cap (default: 1000).
   --host HOST                Bind address (default: 127.0.0.1).
@@ -30,6 +34,8 @@ EOF
 while (($#)); do
     case "$1" in
         --resource-duckdb) RESOURCE_DUCKDB="$2"; shift 2 ;;
+        --resource-parquet) RESOURCE_PARQUET="$2"; shift 2 ;;
+        --resource-run-dir) RESOURCE_RUN_DIR="$2"; shift 2 ;;
         --expression-duckdb) EXPRESSION_DUCKDB="$2"; shift 2 ;;
         --max-rows) MAX_ROWS="$2"; shift 2 ;;
         --host) HOST="$2"; shift 2 ;;
@@ -41,12 +47,21 @@ while (($#)); do
     esac
 done
 
-[[ -n "${RESOURCE_DUCKDB}" ]] || { printf 'ERROR: --resource-duckdb is required.\n' >&2; exit 2; }
-COMMAND=(e3-python-app --resource-duckdb "${RESOURCE_DUCKDB}" --max-rows "${MAX_ROWS}"
+SOURCE_COUNT="0"
+[[ -n "${RESOURCE_DUCKDB}" ]] && SOURCE_COUNT="$((SOURCE_COUNT + 1))"
+[[ -n "${RESOURCE_PARQUET}" ]] && SOURCE_COUNT="$((SOURCE_COUNT + 1))"
+[[ -n "${RESOURCE_RUN_DIR}" ]] && SOURCE_COUNT="$((SOURCE_COUNT + 1))"
+[[ "${SOURCE_COUNT}" == "1" ]] || {
+    printf 'ERROR: choose exactly one resource source option.\n' >&2
+    exit 2
+}
+COMMAND=(e3-python-app --max-rows "${MAX_ROWS}"
     --host "${HOST}" --port "${PORT}")
+[[ -n "${RESOURCE_DUCKDB}" ]] && COMMAND+=(--resource-duckdb "${RESOURCE_DUCKDB}")
+[[ -n "${RESOURCE_PARQUET}" ]] && COMMAND+=(--resource-parquet "${RESOURCE_PARQUET}")
+[[ -n "${RESOURCE_RUN_DIR}" ]] && COMMAND+=(--resource-run-dir "${RESOURCE_RUN_DIR}")
 [[ -n "${EXPRESSION_DUCKDB}" ]] && COMMAND+=(--expression-duckdb "${EXPRESSION_DUCKDB}")
 [[ "${HEADLESS}" == "true" ]] && COMMAND+=(--headless)
 [[ "${VALIDATE_ONLY}" == "true" ]] && COMMAND+=(--validate-only)
 printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'
 "${COMMAND[@]}"
-

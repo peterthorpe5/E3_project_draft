@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.7.1` supports two equally explicit production strategies:
+Version `0.7.2` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -118,7 +118,7 @@ execution should use the detached launcher.
 | `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
 | `09_ligandability` | native reuse/conservation adapter | best pockets, pocket-region conservation and validated FASTA coordinates |
 | `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align pocket-position/conservation tests and interactive HTML |
-| `10_integrated_resource` | native release assembler | DuckDB, final TSV/Parquet and scientific HTML |
+| `10_integrated_resource` | native release assembler | complete DuckDB, candidate master Parquet, final TSV/Parquet and scientific HTML |
 | `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
 
 DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
@@ -127,6 +127,33 @@ orthogroup/hierarchical-group IDs. Stage 05 also publishes a candidate-relevant 
 sequence table, making every associated protein sequence retrievable without exporting unrelated
 proteomes. The computational shortlist controls expensive structural analysis; it is a transparent
 recommendation for human review, not a pre-existing signed approval falsely represented as evidence.
+
+## Integrated resource and application sources
+
+Stage 10 publishes two complementary authorities:
+
+- `duckdb/e3_integrated_resource.duckdb` contains every normalised result
+  relation, including one-to-many OrthoFinder members and sequences, domain
+  hits, expression mappings, pockets, FASTA coordinates and structural residue
+  matches.
+- `tables/e3_candidate_master_results.parquet` contains one wide row per
+  candidate group. It combines the final prioritisation, additional
+  pre-structure metrics, all prefixed discovery-evidence fields and useful
+  detailed-relation counts.
+
+The wide Parquet is the requested portable one-file hand-off. It does not
+replace the detailed DuckDB: forcing multiple members, pockets and residues into
+one flat candidate row would either duplicate candidates or discard evidence.
+
+Both the R Shiny and Python reporters can open:
+
+1. the integrated DuckDB, which is the production default;
+2. the candidate master Parquet alone; or
+3. a current workflow run directory, in which case all non-superseded Parquets
+   are discovered and queried lazily.
+
+Stage 11 writes ready-to-use configuration examples for the DuckDB and
+master-Parquet modes.
 
 ## Missing evidence policy
 

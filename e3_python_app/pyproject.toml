@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-python-app"
-version = "0.1.0"
+version = "0.2.0"
 description = "Testable Streamlit and DuckDB browser for the ARIA plant E3 resource"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,7 +37,7 @@ e3app = ["*.toml"]
 [tool.coverage.run]
 branch = true
 source = ["e3app"]
-omit = ["*/__main__.py"]
+omit = ["*/__main__.py", "*/streamlit_app.py"]
 
 [tool.coverage.report]
 show_missing = true

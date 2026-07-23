@@ -15,6 +15,8 @@ library(stringr)
 
 source("R/utils.R")
 source("R/data_source_report.R")
+source("R/result_sections.R")
+source("R/resource_source.R")
 source("R/app_config.R")
 source("R/data_sources.R")
 source("R/query_helpers.R")
@@ -27,20 +29,31 @@ source("R/module_expression_plots.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
+source("R/module_grant_overview.R")
+source("R/module_result_section.R")
 
 # Configuration can come from command-line arguments, environment variables, or
 # defaults. See README.md for the supported options.
 app_config <- get_app_config(args = commandArgs(trailingOnly = TRUE))
 
 ui <- bslib::page_sidebar(
-  title = "E3 PROTAC Resource Explorer",
+  title = "ARIA Plant E3 Evidence Reporter",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   sidebar = bslib::sidebar(
-    shiny::h4("Expression filters"),
+    shiny::h4("Data release"),
+    shiny::p(
+      class = "small",
+      paste0(
+        "Mode: ", app_config$resource_source$mode,
+        "\nSource: ", app_config$resource_source$path
+      )
+    ),
+    shiny::hr(),
+    shiny::h4("Raw Expression Atlas filters"),
     shiny::p(
       class = "small text-muted",
-      "These filters apply only to the Expression Atlas tabs. The resource ",
-      "browser tabs inspect the source-first E3 Parquet/DuckDB layer directly."
+      "These apply only to the four raw Expression Atlas tabs. Integrated ",
+      "candidate-expression evidence has its own grant-facing section."
     ),
     expression_filters_ui("filters"),
     width = 380
@@ -48,12 +61,44 @@ ui <- bslib::page_sidebar(
   shiny::includeCSS("www/app.css"),
   bslib::navset_card_tab(
     bslib::nav_panel(
-      "Resource overview",
-      resource_overview_ui("resource_overview")
+      "Grant overview",
+      grant_overview_ui("grant_overview")
     ),
     bslib::nav_panel(
-      "Browse resource tables",
+      "Candidates",
+      result_section_ui("candidate_results", "candidates")
+    ),
+    bslib::nav_panel(
+      "Orthology",
+      result_section_ui("orthology_results", "orthology")
+    ),
+    bslib::nav_panel(
+      "Domains",
+      result_section_ui("domain_results", "domains")
+    ),
+    bslib::nav_panel(
+      "Expression evidence",
+      result_section_ui("expression_results", "expression")
+    ),
+    bslib::nav_panel(
+      "Ligandability",
+      result_section_ui("ligandability_results", "ligandability")
+    ),
+    bslib::nav_panel(
+      "Pocket conservation",
+      result_section_ui("pocket_results", "pocket_conservation")
+    ),
+    bslib::nav_panel(
+      "3D alignment",
+      result_section_ui("alignment_results", "structural_alignment")
+    ),
+    bslib::nav_panel(
+      "All results",
       resource_browser_ui("resource_browser")
+    ),
+    bslib::nav_panel(
+      "Provenance and QC",
+      result_section_ui("provenance_results", "provenance")
     ),
     bslib::nav_panel(
       "Files used",
@@ -79,20 +124,19 @@ ui <- bslib::page_sidebar(
       "About",
       shiny::h3("About this app"),
       shiny::p(
-        "This app now has two layers. The first is the source-first E3 PROTAC ",
-        "Parquet/DuckDB resource generated from the curated inherited files. ",
-        "The second is the Expression Atlas DuckDB produced by the separate ",
-        "expression-downloader pipeline."
+        "This reporter answers the grant-facing questions across candidate ",
+        "discovery, OrthoFinder groups, domains, expression, ligandability and ",
+        "pocket conservation. It can use an integrated DuckDB, one candidate ",
+        "master Parquet or the current set of workflow-stage Parquets."
       ),
       shiny::p(
-        "The source-first layer is intentionally provenance-heavy. It exposes ",
-        "all copied and converted inputs, including tabular files, FASTA-derived ",
-        "tables, preserved SQL/text files, and inherited Parquet outputs."
+        "Detailed one-to-many evidence remains available in normalised relations. ",
+        "The single master Parquet is the convenient candidate-level hand-off; it ",
+        "does not discard group members, pockets or residue mappings from DuckDB."
       ),
       shiny::p(
-        "The next biological layer should add curated views such as protein ",
-        "records, sequence records, literature evidence, GO evidence, ",
-        "ligandability scores, and later Orthofinder/HOG membership."
+        "All results are computational. They do not establish E3 activity, ",
+        "compound binding or induced degradation."
       ),
       shiny::h4("Configured paths"),
       shiny::verbatimTextOutput("configured_paths")
@@ -101,14 +145,62 @@ ui <- bslib::page_sidebar(
 )
 
 server <- function(input, output, session) {
-  resource_overview_server(
-    id = "resource_overview",
-    resource_duckdb_path = app_config$resource_duckdb_path
+  grant_overview_server(
+    id = "grant_overview",
+    resource_source = app_config$resource_source
   )
 
+  result_section_server(
+    "candidate_results",
+    "candidates",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "orthology_results",
+    "orthology",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "domain_results",
+    "domains",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "expression_results",
+    "expression",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "ligandability_results",
+    "ligandability",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "pocket_results",
+    "pocket_conservation",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "alignment_results",
+    "structural_alignment",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
+    "provenance_results",
+    "provenance",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
   resource_browser_server(
     id = "resource_browser",
-    resource_duckdb_path = app_config$resource_duckdb_path
+    resource_duckdb_path = app_config$resource_source
   )
 
   data_sources_server(
@@ -153,6 +245,9 @@ server <- function(input, output, session) {
   output$configured_paths <- shiny::renderText({
     paste(
       "Resource DuckDB:", app_config$resource_duckdb_path,
+      "\nResource master Parquet:", app_config$resource_parquet_path,
+      "\nResource run directory:", app_config$resource_run_dir,
+      "\nResolved resource mode:", app_config$resource_source$mode,
       "\nResource derived dir:", app_config$resource_derived_dir,
       "\nExpression DuckDB:", app_config$expression_duckdb_path,
       "\nMax display rows:", app_config$max_table_rows,

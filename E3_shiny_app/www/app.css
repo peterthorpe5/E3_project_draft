@@ -14,3 +14,41 @@ body {
 .dataTables_wrapper {
   font-size: 0.85rem;
 }
+.grant-question {
+  border-left: 4px solid #2c7a7b;
+  background: #f0f8f8;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.column-selector-panel {
+  border: 1px solid #d7e0e7;
+  border-radius: 0.5rem;
+  background: #f8fafb;
+  padding: 0.9rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.column-selector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.column-selector-panel .shiny-options-group {
+  max-height: 15rem;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.column-selector-panel .checkbox-inline {
+  min-width: 15rem;
+  margin-left: 0;
+  margin-right: 1rem;
+}
+
+.interpretation-card {
+  border-left: 5px solid #a66a00;
+  background: #fff8e8;
+}

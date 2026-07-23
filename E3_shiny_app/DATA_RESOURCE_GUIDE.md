@@ -27,9 +27,12 @@ Expected groups include:
 
 `derived/qc/` contains manifests and catalogs. These are as important as the data tables because they show what was used, skipped, copied, converted or failed.
 
-## Next biological views
+## Integrated biological relations
 
-The next stage should create curated DuckDB views rather than one giant Parquet file.
+The end-to-end workflow now materialises curated DuckDB relations for candidate
+evidence, OrthoFinder membership, candidate-relevant group-member sequences,
+domain evidence, expression mapping, prioritisation, ligandability, pocket
+conservation, FASTA coordinates and optional 3D alignment.
 
 Recommended views:
 
@@ -43,16 +46,22 @@ Recommended views:
 - `candidate_e3_summary`
 - `sqlite_regression_query_results`
 
-Later Orthofinder layer:
+OrthoFinder relations include:
 
 - `orthogroup_members`
-- `hog_members`
+- hierarchical-group members
 - `orthogroup_species_counts`
-- `hog_species_counts`
+- hierarchical-group species counts
 - `orthogroup_sequence_export`
 
-## Why not one big Parquet file?
+## Candidate master Parquet and detailed relations
 
-One giant Parquet file would make the early app look simpler, but it would make future updates painful. Protein records, sequences, ligandability, GO terms, literature evidence, expression, and Orthofinder/HOG data change at different times and come from different sources. Keeping them separate means one layer can be rebuilt without damaging the others.
+Stage 10 now also writes `e3_candidate_master_results.parquet`, one wide row per
+candidate group. This is the portable one-file summary requested for project
+reporting and it supports every summary-level app section.
 
-DuckDB views are the right place to join layers for Shiny.
+It does not place unlike row granularities into one flat table. Multiple protein
+members, sequences, pockets, domain hits and residue matches remain separate
+relations in DuckDB. This preserves every result without duplicating candidate
+rows or hiding provenance. DuckDB and duckplyr remain the production query
+layer; the master Parquet is the convenient summary hand-off.

@@ -27,10 +27,32 @@ testthat::test_that("app config uses command-line values", {
   ))
 
   testthat::expect_equal(config$duckdb_path, "/tmp/example.duckdb")
+  testthat::expect_equal(config$resource_source$mode, "duckdb")
+  testthat::expect_equal(
+    config$resource_source$path,
+    normalizePath("/tmp/example.duckdb", mustWork = FALSE)
+  )
   testthat::expect_equal(config$max_table_rows, 123L)
   testthat::expect_equal(config$default_expression_unit, "FPKM")
   testthat::expect_equal(config$host, "0.0.0.0")
   testthat::expect_equal(config$port, 3838L)
+})
+
+testthat::test_that("app config accepts each flexible resource option", {
+  parquet <- get_app_config(c(
+    "--resource_parquet_path=/tmp/master.parquet",
+    "--expression_duckdb_path=/tmp/expression.duckdb"
+  ))
+  testthat::expect_equal(parquet$resource_source$mode, "master_parquet")
+  run <- get_app_config(c("--resource_run_dir=/tmp/workflow_run"))
+  testthat::expect_equal(run$resource_source$mode, "run_directory")
+  testthat::expect_error(
+    get_app_config(c(
+      "--resource_duckdb_path=/tmp/resource.duckdb",
+      "--resource_parquet_path=/tmp/master.parquet"
+    )),
+    "exactly one"
+  )
 })
 
 testthat::test_that("null coalescing operator returns primary or fallback", {

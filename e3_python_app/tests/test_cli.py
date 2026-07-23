@@ -28,10 +28,17 @@ def test_parser_and_streamlit_argv(resource_db: Path) -> None:
         raise AssertionError("invalid port was accepted")
 
 
-def test_validate_only_and_missing(resource_db: Path, tmp_path: Path) -> None:
+def test_validate_only_and_missing(
+    resource_db: Path,
+    master_parquet: Path,
+    run_results_dir: Path,
+    tmp_path: Path,
+) -> None:
     """Validation-only succeeds and missing inputs return status two."""
 
     assert main(["--resource-duckdb", str(resource_db), "--validate-only"]) == 0
+    assert main(["--resource-parquet", str(master_parquet), "--validate-only"]) == 0
+    assert main(["--resource-run-dir", str(run_results_dir), "--validate-only"]) == 0
     assert main(["--resource-duckdb", str(tmp_path / "missing"), "--validate-only"]) == 2
 
 
@@ -54,6 +61,7 @@ def test_launcher_subprocess(resource_db: Path) -> None:
         )
     assert run.call_args.kwargs["env"]["E3_RESOURCE_DUCKDB"] == str(resource_db)
     assert run.call_args.kwargs["env"]["E3_EXPRESSION_DUCKDB"] == str(resource_db)
+    assert "E3_RESOURCE_PARQUET" not in run.call_args.kwargs["env"]
 
 
 def test_bad_host(resource_db: Path) -> None:

@@ -66,6 +66,11 @@ Malformed or unsupported content produces an explicit inspection warning. It doe
 count or reinterpret a component's scientific result. Declared output validation remains separate
 from report inspection.
 
+Stage 10 also publishes `e3_candidate_master_results.parquet`, the portable
+one-row-per-candidate application hand-off. The R Shiny and Python reporters can
+query it directly through DuckDB when the full integrated database is not
+required. The detailed DuckDB remains authoritative for one-to-many evidence.
+
 ## Full-run report
 
 `reports/e3_workflow_summary.html` contains:
