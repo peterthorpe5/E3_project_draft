@@ -1,0 +1,66 @@
+schema_version: 1
+run:
+  name: synthetic_e2e_v0_6_0
+  mode: synthetic
+  project_root: ../..
+  output_root: ../test_runs
+inputs:
+  proteomes_manifest: synthetic_proteomes.tsv
+  seeds_manifest: synthetic_seeds.tsv
+  shortlist_manifest: synthetic_shortlist.tsv
+benchmarking:
+  sample_interval_seconds: 0.01
+  collect_slurm_accounting: false
+reporting:
+  preview_rows: 10
+  max_table_columns: 12
+  max_chart_items: 20
+stages:
+  00_inputs:
+    enabled: true
+    required: true
+    expected_outputs: [input_validation.tsv]
+  01_prepared_proteomes:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  02_discovery:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  03_candidate_evidence:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  04_orthofinder:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  05_orthology:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  06_domains:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  07_expression:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  08_shortlist_gate:
+    enabled: true
+    required: true
+    expected_outputs: [approved_accessions.tsv]
+  09_ligandability:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  10_integrated_resource:
+    enabled: true
+    required: true
+    expected_outputs: [synthetic_stage.tsv]
+  11_app_ready:
+    enabled: true
+    required: true
+    expected_outputs: [app_handoff.tsv]

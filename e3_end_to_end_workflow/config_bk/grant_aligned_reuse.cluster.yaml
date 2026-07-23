@@ -1,0 +1,252 @@
+schema_version: 1
+run:
+  name: grant_aligned_reuse_q9sa03_only_v0_1_0_20260723
+  mode: production
+  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+inputs:
+  proteomes_manifest: /CHANGE_ME/not_used_by_reuse_profile/proteomes.tsv
+  seeds_manifest: /CHANGE_ME/not_used_by_reuse_profile/seeds.tsv
+  shortlist_manifest: /CHANGE_ME/not_used_by_computational_gate/shortlist.tsv
+  candidate_evidence: /home/pthorpe001/data/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/candidate_evidence/e3_cluster_candidate_evidence.parquet
+  candidate_evidence_manifest: /home/pthorpe001/data/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/provenance/e3_cluster_candidate_evidence_manifest.json
+  orthofinder_archive: /home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/OrthoFinder/Results_Feb26.tar.gz
+  orthology_species_manifest: /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_orthology_integration/config/species_manifest_results_feb26.tsv
+  inherited_sqlite: /home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/E3_database/e3_ligase_sqlite_db.db
+  expression_manifest: /home/pthorpe001/data/2026_E3_protac/analysis/expression_atlas_ftp_full/manifests/e3_workflow_expression_resources.tsv
+  ligandability_manifest: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_workflow_resources/e3_workflow_ligandability_resources_q9sa03_smoke_v0_1_1.tsv
+  domain_annotation_manifest: ''
+  domain_cache_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_resource_cache/interpro
+  e3_domain_catalogue: ../data/e3_domain_catalogue.tsv
+analysis:
+  domains:
+    mode: interpro_api_cache
+    interpro_api_base_url: https://www.ebi.ac.uk/interpro/api
+    allow_network: true
+    workers: 16
+    request_timeout_seconds: 60
+    max_retries: 4
+    retry_delay_seconds: 2
+  expression:
+    minimum_expression_value: 0.0
+    broad_positive_fraction: 0.5
+  ligandability:
+    mode: reuse_only
+    mafft_executable: mafft
+    minimum_druggability_score: 0.5
+    minimum_mapping_fraction: 0.95
+    minimum_pocket_plddt_fraction: 0.7
+    minimum_region_overlap: 0.25
+  prioritisation:
+    profile_name: grant_aligned_stringent_v1
+    target_species:
+    - Arabidopsis_thaliana
+    - Brachypodium_distachyon
+    - Glycine_max
+    - Hordeum_vulgare
+    - Medicago_truncatula
+    - Oryza_sativa
+    - Populus_trichocarpa
+    - Solanum_lycopersicum
+    - Solanum_tuberosum
+    - Sorghum_bicolor
+    - Triticum_aestivum
+    - Zea_mays
+    mandatory_species:
+    - Hordeum_vulgare
+    - Oryza_sativa
+    - Solanum_lycopersicum
+    - Solanum_tuberosum
+    - Triticum_aestivum
+    - Zea_mays
+    minimum_target_species_fraction: 0.9
+    minimum_expression_species_fraction: 0.8
+    minimum_domain_species_fraction: 0.8
+    structure_group_limit: 50
+    final_candidate_limit: 10
+    discovery_weight: 0.1
+    orthology_weight: 0.35
+    domain_weight: 0.2
+    expression_weight: 0.35
+    ligandability_weight: 0.55
+    pocket_conservation_weight: 0.45
+    prestructure_final_weight: 0.6
+    structural_final_weight: 0.4
+    minimum_structural_species_fraction: 0.75
+benchmarking:
+  sample_interval_seconds: 5.0
+  collect_slurm_accounting: true
+reporting:
+  preview_rows: 15
+  max_table_columns: 16
+  max_chart_items: 25
+stages:
+  00_inputs:
+    enabled: true
+    required: true
+    evidence_mode: validate
+    expected_outputs:
+    - input_validation.tsv
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 120
+  01_prepared_proteomes:
+    enabled: false
+    required: false
+    evidence_mode: disabled
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  02_discovery:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+    - discovery_authority.tsv
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 60
+  03_candidate_evidence:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+    - candidate_evidence/e3_cluster_candidate_evidence.parquet
+    - candidate_evidence_summary.tsv
+    threads: 2
+    memory_mb: 16000
+    runtime_minutes: 120
+  04_orthofinder:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+    - orthofinder_authority.tsv
+    - orthofinder_reuse_validation.tsv
+    - Results/WorkingDirectory/SpeciesIDs.txt
+    - Results/WorkingDirectory/SequenceIDs.txt
+    - Results/Orthogroups/Orthogroups.tsv
+    - Results/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
+    - Results/Species_Tree/SpeciesTree_rooted_node_labels.txt
+    threads: 2
+    memory_mb: 32000
+    runtime_minutes: 720
+  05_orthology:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    command:
+    - conda
+    - run
+    - --no-capture-output
+    - --name
+    - e3_orthology
+    - python
+    - -m
+    - e3orthology
+    - --project-root
+    - '{project_root}'
+    - --orthofinder-results-dir
+    - '{run_root}/04_orthofinder/Results'
+    - --results-directory-name
+    - Results
+    - --candidate-evidence
+    - '{run_root}/03_candidate_evidence/candidate_evidence/e3_cluster_candidate_evidence.parquet'
+    - --sqlite-database
+    - '{inherited_sqlite}'
+    - --species-manifest
+    - '{orthology_species_manifest}'
+    - --output-root
+    - '{stage_dir}'
+    - --run-name
+    - orthology
+    - --expected-species-count
+    - '60'
+    - --threads
+    - '{threads}'
+    - --resume
+    expected_outputs:
+    - orthology/tables/candidate_membership_mapping.parquet
+    - orthology/tables/orthogroup_membership.parquet
+    - orthology/tables/hierarchical_membership.parquet
+    - orthology/tables/candidate_cluster_orthology_summary.parquet
+    - orthology/qc/validation_checks.tsv
+    threads: 8
+    memory_mb: 64000
+    runtime_minutes: 720
+  06_domains:
+    enabled: true
+    required: true
+    evidence_mode: download
+    expected_outputs:
+    - tables/domain_hits.parquet
+    - tables/domain_summary.parquet
+    - raw/interpro_cache_inventory.tsv
+    - qc/domain_validation.tsv
+    threads: 16
+    memory_mb: 32000
+    runtime_minutes: 1440
+  07_expression:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+    - tables/candidate_identifier_aliases.parquet
+    - tables/candidate_expression_mapping.parquet
+    - tables/candidate_expression_summary.parquet
+    - qc/expression_validation.tsv
+    threads: 16
+    memory_mb: 64000
+    runtime_minutes: 1440
+  08_shortlist_gate:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs:
+    - tables/computational_prestructure_ranking.parquet
+    - tables/structural_analysis_accessions.parquet
+    - tables/human_review_template.tsv
+    - qc/prioritisation_validation.tsv
+    threads: 8
+    memory_mb: 64000
+    runtime_minutes: 720
+  09_ligandability:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+    - tables/selected_pockets.parquet
+    - tables/structural_prediction_status.parquet
+    - tables/pocket_conservation_summary.parquet
+    - tables/pocket_conservation_members.parquet
+    - qc/ligandability_validation.tsv
+    threads: 32
+    memory_mb: 160000
+    runtime_minutes: 2880
+  10_integrated_resource:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs:
+    - duckdb/e3_integrated_resource.duckdb
+    - tables/final_candidate_prioritisation.tsv
+    - tables/final_candidate_prioritisation.parquet
+    - reports/final_computational_prioritisation.html
+    - provenance/integrated_resource_manifest.json
+    - qc/integrated_resource_validation.tsv
+    threads: 16
+    memory_mb: 120000
+    runtime_minutes: 720
+  11_app_ready:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs:
+    - app_handoff.tsv
+    - app_release_manifest.json
+    - config/python_app.env
+    - config/shiny_app_config.tsv
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 120

@@ -1,0 +1,118 @@
+schema_version: 1
+run:
+  name: five_proteome_orthofinder_v0_1_0_20260722
+  mode: production
+  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+inputs:
+  proteomes_manifest: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_workflow/test_inputs_five_proteomes_v0_1_0/manifests/proteomes.tsv
+  seeds_manifest: /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow/data/known_e3_seed_evidence.tsv.gz
+  shortlist_manifest: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_workflow/approved_ligandability_shortlist.tsv
+benchmarking:
+  sample_interval_seconds: 5.0
+  collect_slurm_accounting: true
+reporting:
+  preview_rows: 10
+  max_table_columns: 12
+  max_chart_items: 20
+stages:
+  00_inputs:
+    enabled: true
+    required: true
+    expected_outputs: [input_validation.tsv]
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  01_prepared_proteomes:
+    enabled: true
+    required: true
+    expected_outputs: [prepared_proteomes.tsv]
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 120
+  02_discovery:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  03_candidate_evidence:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  04_orthofinder:
+    enabled: true
+    required: true
+    command:
+      - orthofinder
+      - -f
+      - "{run_root}/01_prepared_proteomes/proteomes"
+      - -o
+      - "{stage_dir}/Results"
+      - -t
+      - "{threads}"
+      - -a
+      - "{threads}"
+    expected_outputs:
+      - Results/Log.txt
+      - Results/WorkingDirectory/SpeciesIDs.txt
+      - Results/WorkingDirectory/SequenceIDs.txt
+      - Results/Orthogroups/Orthogroups.tsv
+      - Results/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
+      - Results/Species_Tree/SpeciesTree_rooted_node_labels.txt
+    threads: 4
+    memory_mb: 64000
+    runtime_minutes: 1440
+  05_orthology:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  06_domains:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  07_expression:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  08_shortlist_gate:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  09_ligandability:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  10_integrated_resource:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30
+  11_app_ready:
+    enabled: false
+    required: false
+    expected_outputs: []
+    threads: 1
+    memory_mb: 4000
+    runtime_minutes: 30

@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "e3-structural-alignment"
+version = "0.1.0"
+description = "US-align/TM-align superposition and 3D pocket comparison for ARIA E3 candidates"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Internal research use"}
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = [
+  "biopython>=1.85,<2",
+  "duckdb>=1.4,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7.6,<8",
+  "pycodestyle>=2.12,<3",
+  "pydocstyle>=6.3,<7",
+  "pytest>=8,<9",
+]
+
+[project.scripts]
+e3-structure-align = "e3structalign.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["e3structalign"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+
+[tool.pycodestyle]
+max-line-length = 100
+exclude = ".git,__pycache__,build,dist"
+
+[tool.pydocstyle]
+convention = "google"
+add-ignore = ["D105", "D107"]

@@ -1,0 +1,241 @@
+# Flexible fresh-production template for a larger proteome/species panel.
+# Commands are argv lists. Replace each CHANGE_ME value with the reviewed component adapter.
+schema_version: 1
+run:
+  name: CHANGE_ME_large_fresh_run_id
+  mode: production
+  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+inputs:
+  proteomes_manifest: /CHANGE_ME/proteomes.tsv
+  seeds_manifest: ../data/known_e3_seed_evidence.tsv.gz
+  shortlist_manifest: /CHANGE_ME/not_used_by_computational_gate/shortlist.tsv
+  orthology_species_manifest: /CHANGE_ME/species_manifest.tsv
+  inherited_sqlite: /CHANGE_ME/e3_ligase_sqlite_db.db
+  expression_manifest: /CHANGE_ME/e3_workflow_expression_resources.tsv
+  ligandability_manifest: /CHANGE_ME/optional_reusable_ligandability_resources.tsv
+  domain_annotation_manifest: ""
+  domain_cache_root: /CHANGE_ME/shared_interpro_cache
+  e3_domain_catalogue: ../data/e3_domain_catalogue.tsv
+analysis:
+  domains:
+    mode: interpro_api_cache
+    interpro_api_base_url: https://www.ebi.ac.uk/interpro/api
+    allow_network: true
+    workers: 16
+    request_timeout_seconds: 60
+    max_retries: 4
+    retry_delay_seconds: 2
+  expression:
+    minimum_expression_value: 0.0
+    broad_positive_fraction: 0.5
+  ligandability:
+    # Set reuse_only when stage 09 uses the internal reusable-evidence adapter. A fresh stage-09
+    # external command must publish the same standard tables declared below.
+    mode: reuse_only
+    mafft_executable: mafft
+    minimum_druggability_score: 0.5
+    minimum_mapping_fraction: 0.95
+    minimum_pocket_plddt_fraction: 0.7
+    minimum_region_overlap: 0.25
+  prioritisation:
+    profile_name: CHANGE_ME_versioned_scoring_profile
+    target_species: [CHANGE_ME_species_1, CHANGE_ME_species_2]
+    mandatory_species: [CHANGE_ME_species_1]
+    minimum_target_species_fraction: 0.9
+    minimum_expression_species_fraction: 0.8
+    minimum_domain_species_fraction: 0.8
+    structure_group_limit: 100
+    final_candidate_limit: 20
+    discovery_weight: 0.10
+    orthology_weight: 0.35
+    domain_weight: 0.20
+    expression_weight: 0.35
+    ligandability_weight: 0.55
+    pocket_conservation_weight: 0.45
+    prestructure_final_weight: 0.60
+    structural_final_weight: 0.40
+    minimum_structural_species_fraction: 0.75
+benchmarking:
+  sample_interval_seconds: 5.0
+  collect_slurm_accounting: true
+reporting:
+  preview_rows: 15
+  max_table_columns: 16
+  max_chart_items: 25
+stages:
+  00_inputs:
+    enabled: true
+    required: true
+    evidence_mode: validate
+    expected_outputs: [input_validation.tsv]
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 120
+  01_prepared_proteomes:
+    enabled: true
+    required: true
+    evidence_mode: prepare
+    expected_outputs: [prepared_proteomes.tsv]
+    threads: 4
+    memory_mb: 32000
+    runtime_minutes: 360
+  02_discovery:
+    enabled: true
+    required: true
+    evidence_mode: generate
+    command:
+      - CHANGE_ME_DISCOVERY_ADAPTER
+      - --proteomes-manifest
+      - "{proteomes_manifest}"
+      - --seeds-manifest
+      - "{seeds_manifest}"
+      - --output-dir
+      - "{stage_dir}"
+      - --threads
+      - "{threads}"
+    expected_outputs: [duckdb/e3_discovery_resource.duckdb]
+    threads: 32
+    memory_mb: 180000
+    runtime_minutes: 10080
+  03_candidate_evidence:
+    enabled: true
+    required: true
+    evidence_mode: generate
+    command:
+      - CHANGE_ME_CANDIDATE_EVIDENCE_ADAPTER
+      - --discovery-stage
+      - "{run_root}/02_discovery"
+      - --output-dir
+      - "{stage_dir}"
+    expected_outputs:
+      - candidate_evidence/e3_cluster_candidate_evidence.parquet
+      - provenance/e3_cluster_candidate_evidence_manifest.json
+    threads: 8
+    memory_mb: 64000
+    runtime_minutes: 1440
+  04_orthofinder:
+    enabled: true
+    required: true
+    evidence_mode: generate
+    command:
+      - orthofinder
+      - -f
+      - "{run_root}/01_prepared_proteomes/proteomes"
+      - -o
+      - "{stage_dir}/Results"
+      - -t
+      - "{threads}"
+      - -a
+      - "{threads}"
+    expected_outputs:
+      - Results/Log.txt
+      - Results/WorkingDirectory/SpeciesIDs.txt
+      - Results/WorkingDirectory/SequenceIDs.txt
+      - Results/Orthogroups/Orthogroups.tsv
+      - Results/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
+      - Results/Species_Tree/SpeciesTree_rooted_node_labels.txt
+    threads: 32
+    memory_mb: 180000
+    runtime_minutes: 10080
+  05_orthology:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    command:
+      - CHANGE_ME_ORTHOLOGY_ADAPTER
+      - --orthofinder-results-dir
+      - "{run_root}/04_orthofinder/Results"
+      - --candidate-evidence
+      - "{run_root}/03_candidate_evidence/candidate_evidence/e3_cluster_candidate_evidence.parquet"
+      - --species-manifest
+      - "{orthology_species_manifest}"
+      - --output-dir
+      - "{stage_dir}"
+      - --threads
+      - "{threads}"
+    expected_outputs:
+      - tables/candidate_membership_mapping.parquet
+      - tables/orthogroup_membership.parquet
+      - tables/hierarchical_membership.parquet
+      - tables/candidate_cluster_orthology_summary.parquet
+    threads: 16
+    memory_mb: 120000
+    runtime_minutes: 2880
+  06_domains:
+    enabled: true
+    required: true
+    evidence_mode: download
+    expected_outputs:
+      - tables/domain_hits.parquet
+      - tables/domain_summary.parquet
+      - raw/interpro_cache_inventory.tsv
+      - qc/domain_validation.tsv
+    threads: 16
+    memory_mb: 64000
+    runtime_minutes: 2880
+  07_expression:
+    enabled: true
+    required: true
+    evidence_mode: reuse
+    expected_outputs:
+      - tables/candidate_identifier_aliases.parquet
+      - tables/candidate_expression_mapping.parquet
+      - tables/candidate_expression_summary.parquet
+      - qc/expression_validation.tsv
+    threads: 16
+    memory_mb: 120000
+    runtime_minutes: 2880
+  08_shortlist_gate:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs:
+      - tables/computational_prestructure_ranking.parquet
+      - tables/structural_analysis_accessions.parquet
+      - tables/human_review_template.tsv
+      - qc/prioritisation_validation.tsv
+    threads: 16
+    memory_mb: 120000
+    runtime_minutes: 1440
+  09_ligandability:
+    enabled: true
+    required: true
+    evidence_mode: generate
+    command:
+      - CHANGE_ME_FRESH_LIGANDABILITY_ADAPTER
+      - --accessions
+      - "{run_root}/08_shortlist_gate/tables/structural_analysis_accessions.tsv"
+      - --output-dir
+      - "{stage_dir}"
+      - --threads
+      - "{threads}"
+    expected_outputs:
+      - tables/selected_pockets.parquet
+      - tables/structural_prediction_status.parquet
+      - tables/pocket_conservation_summary.parquet
+      - tables/pocket_conservation_members.parquet
+      - qc/ligandability_validation.tsv
+    threads: 32
+    memory_mb: 180000
+    runtime_minutes: 10080
+  10_integrated_resource:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs:
+      - duckdb/e3_integrated_resource.duckdb
+      - tables/final_candidate_prioritisation.parquet
+      - reports/final_computational_prioritisation.html
+      - qc/integrated_resource_validation.tsv
+    threads: 16
+    memory_mb: 120000
+    runtime_minutes: 1440
+  11_app_ready:
+    enabled: true
+    required: true
+    evidence_mode: derive
+    expected_outputs: [app_handoff.tsv, app_release_manifest.json]
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 120
