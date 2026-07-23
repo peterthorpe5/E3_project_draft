@@ -29,6 +29,7 @@ def test_complete_pipeline_and_resume(structural_inputs: dict[str, Path]) -> Non
     manifest = run_pipeline(
         selected_pockets_path=structural_inputs["selected"],
         pocket_residue_mappings_path=structural_inputs["mappings"],
+        pocket_sequence_coordinates_path=structural_inputs["sequence_coordinates"],
         asset_manifest_path=structural_inputs["assets"],
         output_dir=structural_inputs["output"],
         settings=settings,
@@ -50,9 +51,36 @@ def test_complete_pipeline_and_resume(structural_inputs: dict[str, Path]) -> Non
     )
     assert summaries[0]["alignment_status"] == "CONSERVED_3D_POCKET_SUPPORTED"
     assert summaries[0]["mean_pocket_overlap_fraction"] == 1.0
+    assert summaries[0]["position_alignment_status"] == (
+        "SAME_3D_POCKET_POSITION_SUPPORTED"
+    )
+    assert summaries[0]["mean_structural_chemical_group_conservation"] == 1.0
+    residue_matches = read_records(
+        structural_inputs["output"] / "tables" / "pocket_residue_matches.parquet"
+    )
+    assert len(residue_matches) == 4
+    assert all(row["sequence_comparison_status"].startswith("ASSESSED") for row in residue_matches)
+    static_report = (
+        structural_inputs["output"]
+        / "reports"
+        / "structural_alignment_summary.html"
+    )
+    browser_index = (
+        structural_inputs["output"]
+        / "interactive"
+        / "structural_alignment_browser.html"
+    )
+    assert "Mean TM-score" in static_report.read_text(encoding="utf-8")
+    assert "Open 3D viewer" in browser_index.read_text(encoding="utf-8")
+    pair_viewers = list(
+        (structural_inputs["output"] / "interactive" / "pairs").rglob("*.html")
+    )
+    assert len(pair_viewers) == 2
+    assert "Drag to rotate" in pair_viewers[0].read_text(encoding="utf-8")
     resumed = run_pipeline(
         selected_pockets_path=structural_inputs["selected"],
         pocket_residue_mappings_path=structural_inputs["mappings"],
+        pocket_sequence_coordinates_path=structural_inputs["sequence_coordinates"],
         asset_manifest_path=structural_inputs["assets"],
         output_dir=structural_inputs["output"],
         settings=settings,
@@ -189,6 +217,7 @@ def test_force_and_failed_attempt_retention(structural_inputs: dict[str, Path]) 
     manifest = run_pipeline(
         selected_pockets_path=structural_inputs["selected"],
         pocket_residue_mappings_path=structural_inputs["mappings"],
+        pocket_sequence_coordinates_path=structural_inputs["sequence_coordinates"],
         asset_manifest_path=structural_inputs["assets"],
         output_dir=output,
         settings=settings,
@@ -203,6 +232,7 @@ def test_force_and_failed_attempt_retention(structural_inputs: dict[str, Path]) 
         run_pipeline(
             selected_pockets_path=structural_inputs["selected"],
             pocket_residue_mappings_path=structural_inputs["mappings"],
+            pocket_sequence_coordinates_path=structural_inputs["sequence_coordinates"],
             asset_manifest_path=structural_inputs["assets"],
             output_dir=output,
             settings=AlignmentSettings(

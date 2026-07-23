@@ -26,6 +26,8 @@ PRESTRUCTURE_FIELDS = (
     "cluster_id",
     "primary_group_type",
     "primary_group_id",
+    "orthofinder_orthogroup_ids",
+    "orthofinder_hierarchical_group_ids",
     "alternative_group_count",
     "candidate_accession_count",
     "candidate_accessions",
@@ -456,7 +458,9 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         root=config.run_root / "07_expression", name="candidate_expression_summary.parquet"
     )
     mapping_rows = candidate_mapping_rows(path=candidate_mapping)
-    primary_by_cluster, _ = choose_primary_groups(mapping_rows=mapping_rows)
+    primary_by_cluster, mappings_by_cluster = choose_primary_groups(
+        mapping_rows=mapping_rows
+    )
     group_species = _full_group_species(
         selected=primary_by_cluster,
         orthogroup_membership=orthogroup_membership,
@@ -486,17 +490,27 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             if primary is None
             else group_species.get((primary["record_type"], primary["group_id"]), set())
         )
-        scored.append(
-            score_candidate(
-                config=config,
-                candidate=candidate,
-                primary=primary,
-                full_species=species,
-                domain_rows=domain_by_cluster.get(cluster_id, []),
-                expression_rows=expression_by_cluster.get(cluster_id, []),
-                expression_available_species=expression_available_species,
-            )
+        scored_record = score_candidate(
+            config=config,
+            candidate=candidate,
+            primary=primary,
+            full_species=species,
+            domain_rows=domain_by_cluster.get(cluster_id, []),
+            expression_rows=expression_by_cluster.get(cluster_id, []),
+            expression_available_species=expression_available_species,
         )
+        cluster_mappings = mappings_by_cluster.get(cluster_id, [])
+        scored_record["orthofinder_orthogroup_ids"] = _string_set(
+            str(record["group_id"])
+            for record in cluster_mappings
+            if record.get("record_type") == "ORTHOGROUP"
+        )
+        scored_record["orthofinder_hierarchical_group_ids"] = _string_set(
+            str(record["group_id"])
+            for record in cluster_mappings
+            if record.get("record_type") == "HIERARCHICAL_ORTHOGROUP"
+        )
+        scored.append(scored_record)
     ranked = rank_records(
         records=scored,
         structure_group_limit=config.analysis.prioritisation.structure_group_limit,

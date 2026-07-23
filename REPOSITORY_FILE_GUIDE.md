@@ -60,7 +60,7 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_7_0.md` | Versioned history. `v0.7.0` is the current release note. |
+| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_7_1.md` | Versioned history. `v0.7.1` is the current release note. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |
@@ -117,8 +117,8 @@ collects resource measurements and creates the integrated release.
 | `orthology_groups.py` | Candidate/group membership selection helpers. |
 | `domain_annotations.py` | InterPro API/cache retrieval and annotation flattening. |
 | `prioritisation.py` | Grant-aligned pre-structure scoring and computational shortlist. |
-| `ligandability.py` | Reused pocket selection plus sequence-aligned pocket-region conservation. |
-| `integration.py` | Integrated DuckDB, final prioritisation, optional 3D evidence join, HTML and app hand-off. |
+| `ligandability.py` | Reused pocket selection, sequence-aligned pocket-region conservation and validated pocket-to-FASTA coordinates. |
+| `integration.py` | Integrated DuckDB, explicit OrthoFinder IDs/sequences, optional 3D position/conservation joins, HTML and app hand-off. |
 | `benchmarking.py` | Process-tree measurements and run-level benchmark aggregation. |
 | `reporting.py` | Self-contained stage/run HTML reports and exact invocation provenance. |
 | `seed_evidence.py` | Deterministic compact seed-evidence resource builder. |
@@ -135,7 +135,7 @@ alignment engine or geometric method can evolve without embedding Python in the 
 | File or module | Role |
 |---|---|
 | `README.md` | Method, inputs, output schema, standalone command and integration instructions. |
-| `RELEASE_NOTES_v0_1_0.md` | Initial release record. |
+| `RELEASE_NOTES_v0_1_0.md`, `RELEASE_NOTES_v0_1_1.md` | Initial alignment release and current graphical/interactive reporting release. |
 | `pyproject.toml` | Package/version/CLI and quality settings. |
 | `environment.yml` | Independent environment with pinned US-align, TM-align, Biopython and DuckDB. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime/development dependencies. |
@@ -143,10 +143,12 @@ alignment engine or geometric method can evolve without embedding Python in the 
 | `run_tests.sh` | Coverage, unit, style, docstring and shell validation. |
 | `src/e3structalign/__init__.py`, `__main__.py` | Version and module entry point. |
 | `src/e3structalign/cli.py` | Defensive named CLI and threshold parsing. |
-| `src/e3structalign/pipeline.py` | Input reconciliation, deterministic references, bounded concurrent pair runs, group summaries, resume and atomic publication. |
+| `src/e3structalign/pipeline.py` | Input reconciliation, deterministic references, bounded concurrent pair runs, local residue correspondences, group summaries, resume and atomic publication. |
 | `src/e3structalign/usalign.py` | Shared US-align/TM-align execution, version capture, output parsing and matrix validation. |
-| `src/e3structalign/structure_io.py` | PDB/mmCIF C-alpha parsing, residue lookup, coordinate transforms and pocket geometry. |
-| `src/e3structalign/models.py` | Immutable pocket, asset, residue, atom, transform and result objects. |
+| `src/e3structalign/structure_io.py` | PDB/mmCIF C-alpha parsing, residue lookup, coordinate transforms, pocket geometry and mutual-nearest residue matching. |
+| `src/e3structalign/models.py` | Immutable pocket, asset, residue, sequence-coordinate, atom, transform and result objects. |
+| `src/e3structalign/reporting.py` | Self-contained scientific HTML summary with SVG graphics and evidence/provenance tables. |
+| `src/e3structalign/interactive.py` | Offline rotatable C-alpha/pocket pair viewers and searchable browser index. |
 | `src/e3structalign/io_utils.py` | TSV/Parquet/JSON, checksums, manifests, logging and output inventories. |
 | `src/e3structalign/errors.py` | Input, tool and workflow exceptions. |
 | `tests/` | Unit and end-to-end tests, including fake deterministic structural aligners. |
@@ -235,7 +237,7 @@ relationships.
 
 | File or module | Role |
 |---|---|
-| `README.md`, `RELEASE_NOTES_v0_1_3.md` | User guide and current release record. |
+| `README.md`, `RELEASE_NOTES_v0_1_3.md`, `RELEASE_NOTES_v0_1_4.md` | User guide plus maintenance and current group-sequence release records. |
 | `config/results_feb26.yaml` | Reviewed authoritative Results_Feb26 settings. |
 | `config/species_manifest_results_feb26.tsv` | 60-proteome species mapping. |
 | `e3orthology/data/*` | Packaged copies of the default Results_Feb26 configuration/manifest. |
@@ -248,7 +250,7 @@ relationships.
 | `config.py`, `species.py` | Configuration and species mappings. |
 | `identifiers.py`, `candidates.py` | Candidate/FASTA/OrthoFinder identifier reconciliation. |
 | `orthofinder.py`, `sqlite_audit.py` | OrthoFinder parsers and inherited SQLite cross-checks. |
-| `stages.py`, `pipeline.py` | Restartable stage orchestration. |
+| `stages.py`, `pipeline.py` | Restartable stage orchestration, including candidate-group member sequence publication. |
 | `io_utils.py`, `logging_utils.py`, `errors.py` | Defensive operations. |
 | `tests/` | Function, CLI, stage, integration and release tests. |
 

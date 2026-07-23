@@ -60,6 +60,30 @@ class PipelineEndToEndTests(unittest.TestCase):
                 pq.read_table(publish / "tables" / "candidate_membership_mapping.parquet").num_rows,
                 len(rows),
             )
+            group_members = pq.read_table(
+                publish / "tables" / "candidate_group_member_sequences.parquet"
+            ).to_pylist()
+            self.assertEqual(len(group_members), 4)
+            self.assertEqual(
+                {
+                    (row["record_type"], row["group_id"])
+                    for row in group_members
+                },
+                {
+                    ("ORTHOGROUP", "OG0001686"),
+                    ("HIERARCHICAL_ORTHOGROUP", "N0.HOG0002084"),
+                },
+            )
+            self.assertTrue(
+                all(row["protein_sequence"].startswith("MSTN") for row in group_members)
+            )
+            self.assertEqual(
+                {
+                    row["orthogroup_id"]
+                    for row in group_members
+                },
+                {"OG0001686"},
+            )
             validation = json.loads(
                 (publish / "qc" / "validation_summary.json").read_text(encoding="utf-8")
             )

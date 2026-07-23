@@ -17,6 +17,7 @@ Required options:
   --output-dir PATH
 
 Typical optional controls:
+  --pocket-sequence-coordinates PATH
   --usalign-executable PATH
   --tmalign-executable PATH
   --skip-usalign
@@ -26,6 +27,8 @@ Typical optional controls:
   --maximum-centroid-distance-angstrom FLOAT
   --minimum-pocket-overlap-fraction FLOAT
   --minimum-global-tm-score FLOAT
+  --minimum-structural-residue-match-fraction FLOAT
+  --minimum-structural-chemical-group-conservation FLOAT
   --minimum-group-support-fraction FLOAT
   --resume
   --force

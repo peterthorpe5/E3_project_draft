@@ -14,7 +14,11 @@ import pytest
 
 from e3workflow.config import load_config
 from e3workflow.io_utils import read_tsv, sha256_file, write_tsv
-from e3workflow.ligandability import _load_sequences, build_selected_pockets
+from e3workflow.ligandability import (
+    _load_sequences,
+    build_selected_pockets,
+    map_pocket_residues_to_fasta,
+)
 from e3workflow.prioritisation import score_candidate
 from e3workflow.errors import StageError
 from e3workflow.production import (
@@ -319,6 +323,53 @@ def test_reused_orthofinder_sequences_and_best_pocket_selection(
     assert duckdb.connect(":memory:").execute(
         f"SELECT pocket_number FROM read_parquet('{output}')"
     ).fetchone()[0] == 2
+
+
+def test_pocket_residues_map_to_exact_fasta_coordinates() -> None:
+    """Model label numbering becomes FASTA coordinates only after residue validation."""
+    selected = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+            "primary_group_id": "N0.HOG0001",
+            "candidate_accession": "Q9SA03",
+            "species_column": "Arabidopsis_thaliana",
+            "pocket_number": 3,
+        }
+    ]
+    mappings = [
+        {
+            "accession": "Q9SA03",
+            "pocket_number": 3,
+            "mapping_status": "MAPPED",
+            "model_label_chain": "A",
+            "model_label_seq_id": "2",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": "2",
+            "model_insertion_code": "",
+            "model_residue_name": "SER",
+        },
+        {
+            "accession": "Q9SA03",
+            "pocket_number": 3,
+            "mapping_status": "MAPPED",
+            "model_label_chain": "A",
+            "model_label_seq_id": "3",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": "3",
+            "model_insertion_code": "",
+            "model_residue_name": "GLY",
+        },
+    ]
+    rows = map_pocket_residues_to_fasta(
+        selected_records=selected,
+        mapping_records=mappings,
+        sequences={"Q9SA03": "MSA"},
+    )
+    assert rows[0]["fasta_position"] == 2
+    assert rows[0]["fasta_residue"] == "S"
+    assert rows[0]["sequence_coordinate_status"] == "MAPPED_EXACT"
+    assert rows[1]["sequence_coordinate_status"] == "RESIDUE_IDENTITY_MISMATCH"
 
 
 def test_reused_orthofinder_archive_is_validated_and_published(

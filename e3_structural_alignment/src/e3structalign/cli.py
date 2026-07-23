@@ -57,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--selected-pockets", type=Path, required=True)
     run.add_argument("--pocket-residue-mappings", type=Path, required=True)
+    run.add_argument("--pocket-sequence-coordinates", type=Path)
     run.add_argument("--asset-manifest", type=Path, required=True)
     run.add_argument("--output-dir", type=Path, required=True)
     run.add_argument("--usalign-executable", default="USalign")
@@ -85,6 +86,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.5,
     )
     run.add_argument(
+        "--minimum-structural-residue-match-fraction",
+        type=fraction,
+        default=0.5,
+    )
+    run.add_argument(
+        "--minimum-structural-chemical-group-conservation",
+        type=fraction,
+        default=0.6,
+    )
+    run.add_argument(
         "--minimum-group-support-fraction",
         type=fraction,
         default=0.75,
@@ -105,6 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = run_pipeline(
             selected_pockets_path=args.selected_pockets,
             pocket_residue_mappings_path=args.pocket_residue_mappings,
+            pocket_sequence_coordinates_path=args.pocket_sequence_coordinates,
             asset_manifest_path=args.asset_manifest,
             output_dir=args.output_dir,
             settings=AlignmentSettings(
@@ -121,6 +133,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.minimum_pocket_overlap_fraction
                 ),
                 minimum_global_tm_score=args.minimum_global_tm_score,
+                minimum_structural_residue_match_fraction=(
+                    args.minimum_structural_residue_match_fraction
+                ),
+                minimum_structural_chemical_group_conservation=(
+                    args.minimum_structural_chemical_group_conservation
+                ),
                 minimum_group_support_fraction=(
                     args.minimum_group_support_fraction
                 ),

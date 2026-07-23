@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.7.0` supports two equally explicit production strategies:
+Version `0.7.1` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -18,7 +18,9 @@ Every enabled stage declares an `evidence_mode` (`validate`, `prepare`, `reuse`,
 computed evidence. Per-stage threads, memory and runtime are configuration values rather than fixed
 species-count assumptions. Detailed resource measurements, stage HTML reports and the consolidated
 full-run HTML report are produced automatically. An optional US-align/TM-align stage adds direct
-three-dimensional pocket comparison without making that evidence mandatory for development runs.
+three-dimensional pocket-position and local-residue conservation tests, a graphical scientific
+report and an offline interactive alignment browser without making that evidence mandatory for
+development runs.
 
 The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
 prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
@@ -57,6 +59,19 @@ Check it later with:
 squeue -u "${USER}"
 tail -f /path/reported/by/the/submission/command.log
 ```
+
+To migrate an older controller that was started inside an interactive `srun`, interrupt Snakemake
+cleanly in that terminal first (normally `Ctrl+C`) and allow it to cancel or account for submitted
+children. Check `squeue -u "${USER}"` and do not launch a replacement while jobs belonging to that
+same workflow invocation remain active. From a login node, rerun the same immutable configuration
+through `submit_e3_end_to_end.sh --resume`; complete checksum-valid stages are reused and incomplete
+staging directories are not accepted as completed work. Do not cancel an unrelated validation job
+merely because it belongs to the same Unix account.
+
+Resuming an interrupted analysis and upgrading its scientific schema are different operations. The
+same immutable YAML/run name is appropriate for completing the original analysis. To obtain newly
+declared tables or altered scientific methods, create a new versioned run YAML/name or perform an
+explicitly documented forced-stage migration; never silently rewrite the old run configuration.
 
 Before the first submission, create an immutable run YAML:
 
@@ -97,17 +112,20 @@ execution should use the detached launcher.
 | `02_discovery` | `e3_discovery_engine` | reused authority or fresh DIAMOND/DeepClust resource |
 | `03_candidate_evidence` | `e3_source_to_parquet_seed` | reused or fresh candidate evidence authority |
 | `04_orthofinder` | OrthoFinder 2.5.5 | reviewed archive reuse or fresh isolated result |
-| `05_orthology` | `e3_orthology_integration` | parsed identifier and run-specific membership tables |
+| `05_orthology` | `e3_orthology_integration` | run-specific group IDs, membership and candidate-group sequences |
 | `06_domains` | native download/cache adapter | InterPro/Pfam hits and tri-state domain evidence |
 | `07_expression` | native Expression Atlas adapter | full selected-group mapping and expression summary |
 | `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
-| `09_ligandability` | native reuse/conservation adapter | best pockets and aligned pocket-region conservation |
-| `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align superpositions and 3D pocket geometry |
+| `09_ligandability` | native reuse/conservation adapter | best pockets, pocket-region conservation and validated FASTA coordinates |
+| `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align pocket-position/conservation tests and interactive HTML |
 | `10_integrated_resource` | native release assembler | DuckDB, final TSV/Parquet and scientific HTML |
 | `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
 
 DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
-to a run. The computational shortlist controls expensive structural analysis; it is a transparent
+to a run. Final candidate records expose both the DeepClust cluster ID and the OrthoFinder
+orthogroup/hierarchical-group IDs. Stage 05 also publishes a candidate-relevant group-member
+sequence table, making every associated protein sequence retrievable without exporting unrelated
+proteomes. The computational shortlist controls expensive structural analysis; it is a transparent
 recommendation for human review, not a pre-existing signed approval falsely represented as evidence.
 
 ## Missing evidence policy
@@ -119,7 +137,8 @@ Missing coverage is allowed and is never silently converted to a biological fail
 - Expression evidence distinguishes mapped support, limited/zero measurements, mapping failure and
   unavailable species resources.
 - Structural evidence distinguishes a completed prediction below threshold from a protein with no
-  available model or pocket result.
+  available model or pocket result. Same-position support and local pocket-residue conservation are
+  reported separately.
 - Fractions use only species for which the relevant evidence could actually be assessed; separate
   completeness fields expose the missing denominator.
 
@@ -138,7 +157,8 @@ replace either fresh branch without changing the downstream contracts.
 
 This is concurrency between stages. Each component package remains responsible for safe
 multithreading within its own stage. The structural package runs independent pairwise US-align and
-TM-align comparisons concurrently up to its stage thread allocation.
+TM-align comparisons concurrently up to its stage thread allocation. Each completed comparison is
+also available as a rotatable, zoomable offline HTML view with both pocket residue sets marked.
 
 ## Install and prove the installation
 
@@ -286,6 +306,20 @@ every detailed stage report. It is self-contained HTML5 with embedded CSS/SVG an
 readable when copied away from the cluster, although links to the original result files naturally
 require the run directory to remain together. A partial `--stop-after` run has reports for every
 completed stage but does not claim a complete-run report.
+
+When stage `09b_structural_alignment` is enabled, its specialised outputs are:
+
+```text
+09b_structural_alignment/structural_alignment/
+├── reports/structural_alignment_summary.html
+├── interactive/structural_alignment_browser.html
+└── interactive/pairs/<tool>/<group>/<reference>__<member>.html
+```
+
+The first file is the scientific overview with SVG graphics, thresholds, versions, checksums,
+group/pair evidence and residue correspondences. The browser links to one offline interactive
+C-alpha superposition per US-align/TM-align result, with reference and member pockets marked
+separately.
 
 See [docs/REPORTING.md](docs/REPORTING.md) for the complete reporting contract and interpretation
 rules.

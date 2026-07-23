@@ -73,8 +73,10 @@ reuse` without changing the downstream table contract.
 The optional `09b_structural_alignment` stage follows ligandability. When enabled, the separate
 `e3_structural_alignment` package selects a deterministic best-evidence reference per candidate
 group, runs independent US-align and TM-align superpositions concurrently within the allocated
-node, and compares selected pocket C-alpha coordinates in the common reference frame. When
-disabled, it
+node, compares selected pocket C-alpha coordinates in the common reference frame and builds
+mutual-nearest local residue correspondences. Same-position support and
+local structural/chemical conservation are separate conclusions. Each tool comparison receives a
+self-contained interactive C-alpha/pocket view. When disabled, it
 publishes a normal checksummed `skipped_optional` stage manifest. Integration therefore remains
 complete but labels 3D evidence as `NOT_ASSESSED`; it never converts a configured omission into a
 negative structural result.

@@ -85,6 +85,29 @@ def structural_inputs(tmp_path: Path) -> dict[str, Path]:
         for residue in (1, 2)
     ]
     write_tsv(mappings, mapping_rows, tuple(mapping_rows[0]))
+    sequence_coordinates = tmp_path / "sequence_coordinates.tsv"
+    sequence_coordinate_rows = [
+        {
+            "candidate_accession": accession,
+            "pocket_number": 1,
+            "structure_label_chain": "A",
+            "structure_label_seq_id": residue,
+            "structure_auth_chain": "A",
+            "structure_auth_seq_id": residue,
+            "structure_insertion_code": "",
+            "structure_residue_name": "ALA",
+            "fasta_position": residue,
+            "fasta_residue": "A",
+            "sequence_coordinate_status": "MAPPED_EXACT",
+        }
+        for accession in ("P1", "P2")
+        for residue in (1, 2)
+    ]
+    write_tsv(
+        sequence_coordinates,
+        sequence_coordinate_rows,
+        tuple(sequence_coordinate_rows[0]),
+    )
     assets = tmp_path / "assets.tsv"
     asset_rows = [
         {
@@ -132,6 +155,7 @@ print("TM-score= 1.00000 (if normalized by length of Chain_2)")
     return {
         "selected": selected,
         "mappings": mappings,
+        "sequence_coordinates": sequence_coordinates,
         "assets": assets,
         "reference": reference,
         "mobile": mobile,

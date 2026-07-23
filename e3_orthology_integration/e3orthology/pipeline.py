@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -102,6 +103,28 @@ CANDIDATE_MAPPING_FIELDS = (
     "identifier_format",
     "source_file",
     "source_row",
+)
+
+GROUP_MEMBER_SEQUENCE_FIELDS = (
+    "cluster_id",
+    "record_type",
+    "group_id",
+    "orthogroup_id",
+    "gene_tree_parent_clade",
+    "species",
+    "internal_id",
+    "source_fasta",
+    "raw_identifier",
+    "parsed_accession",
+    "parsed_entry",
+    "review_status",
+    "identifier_format",
+    "mapping_status",
+    "is_input_candidate",
+    "candidate_accessions_for_cluster",
+    "sequence_length",
+    "sequence_sha256",
+    "protein_sequence",
 )
 
 SPECIES_COVERAGE_FIELDS = (
@@ -347,6 +370,202 @@ def load_candidate_sequence_lookup(
             if accession in lookup:
                 lookup[accession].append(row)
     return lookup
+
+
+def _load_requested_fasta_sequences(
+    *,
+    working_directory: Path,
+    requested_internal_ids: set[str],
+) -> dict[str, str]:
+    """Load only requested OrthoFinder internal sequences from working FASTAs.
+
+    Args:
+        working_directory: OrthoFinder ``WorkingDirectory``.
+        requested_internal_ids: Internal identifiers required by candidate groups.
+
+    Returns:
+        Internal identifier to uppercase protein sequence.
+
+    Raises:
+        InputValidationError: If FASTA syntax, identifiers or requested coverage are invalid.
+    """
+    sequences: dict[str, str] = {}
+    for fasta_path in sorted(working_directory.glob("Species*.fa")):
+        current_identifier = ""
+        chunks: list[str] = []
+
+        def publish_current() -> None:
+            if not current_identifier or current_identifier not in requested_internal_ids:
+                return
+            sequence = "".join(chunks).replace(" ", "").upper()
+            if not sequence:
+                raise InputValidationError(
+                    f"Requested OrthoFinder sequence is empty: {current_identifier}"
+                )
+            previous = sequences.get(current_identifier)
+            if previous is not None and previous != sequence:
+                raise InputValidationError(
+                    f"Conflicting OrthoFinder sequences for {current_identifier}"
+                )
+            sequences[current_identifier] = sequence
+
+        with fasta_path.open(mode="r", encoding="utf-8") as handle:
+            for line_number, raw_line in enumerate(handle, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    publish_current()
+                    current_identifier = line[1:].split(maxsplit=1)[0]
+                    chunks = []
+                    if not current_identifier:
+                        raise InputValidationError(
+                            f"Empty FASTA identifier at {fasta_path}:{line_number}"
+                        )
+                else:
+                    if not current_identifier:
+                        raise InputValidationError(
+                            f"Sequence precedes FASTA header at {fasta_path}:{line_number}"
+                        )
+                    chunks.append(line)
+            publish_current()
+    missing = sorted(requested_internal_ids.difference(sequences))
+    if missing:
+        preview = ";".join(missing[:20])
+        raise InputValidationError(
+            f"Candidate-group members are missing from Species*.fa: {preview}"
+        )
+    return sequences
+
+
+def build_candidate_group_member_sequences(
+    *,
+    mapping_records: Sequence[dict[str, Any]],
+    identifier_map_path: Path,
+    membership_paths: Sequence[Path],
+    working_directory: Path,
+) -> list[dict[str, Any]]:
+    """Build a candidate-relevant OrthoFinder group-member sequence authority.
+
+    Args:
+        mapping_records: Candidate-to-group mapping records.
+        identifier_map_path: Parsed ``SequenceIDs.txt`` authority.
+        membership_paths: Orthogroup and hierarchical membership TSVs.
+        working_directory: Directory containing OrthoFinder ``Species*.fa`` files.
+
+    Returns:
+        One record per candidate cluster, selected group and member sequence.
+
+    Raises:
+        InputValidationError: If membership-to-sequence identifiers are ambiguous or incomplete.
+    """
+    group_to_clusters: dict[tuple[str, str], set[str]] = {}
+    cluster_candidates: dict[str, set[str]] = {}
+    for record in mapping_records:
+        cluster_id = str(record["cluster_id"])
+        accession = str(record["candidate_accession"])
+        cluster_candidates.setdefault(cluster_id, set()).add(accession)
+        record_type = str(record.get("record_type") or "")
+        group_id = str(record.get("group_id") or "")
+        if record_type and group_id and record.get("mapping_status") != "NOT_MATCHED":
+            group_to_clusters.setdefault((record_type, group_id), set()).add(
+                cluster_id
+            )
+    sequence_identifier_index: dict[
+        tuple[str, str], list[dict[str, str]]
+    ] = {}
+    with identifier_map_path.open(mode="r", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle, delimiter="\t"):
+            species = species_name_from_fasta(fasta_name=row["source_fasta"])
+            sequence_identifier_index.setdefault(
+                (species, row["raw_identifier"]), []
+            ).append(row)
+    pending: list[tuple[str, dict[str, str], dict[str, str]]] = []
+    requested_internal_ids: set[str] = set()
+    for membership_path in membership_paths:
+        with membership_path.open(mode="r", encoding="utf-8", newline="") as handle:
+            for membership in csv.DictReader(handle, delimiter="\t"):
+                group_key = (
+                    str(membership["record_type"]),
+                    str(membership["group_id"]),
+                )
+                clusters = group_to_clusters.get(group_key)
+                if not clusters:
+                    continue
+                sequence_rows = sequence_identifier_index.get(
+                    (
+                        str(membership["species"]),
+                        str(membership["raw_identifier"]),
+                    ),
+                    [],
+                )
+                if len(sequence_rows) != 1:
+                    raise InputValidationError(
+                        "Candidate-group membership must map to exactly one SequenceIDs "
+                        f"record: {group_key}/{membership['species']}/"
+                        f"{membership['raw_identifier']} observed={len(sequence_rows)}"
+                    )
+                sequence_row = sequence_rows[0]
+                requested_internal_ids.add(sequence_row["internal_id"])
+                for cluster_id in sorted(clusters):
+                    pending.append((cluster_id, membership, sequence_row))
+    sequences = _load_requested_fasta_sequences(
+        working_directory=working_directory,
+        requested_internal_ids=requested_internal_ids,
+    )
+    records: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for cluster_id, membership, sequence_row in pending:
+        internal_id = sequence_row["internal_id"]
+        key = (
+            cluster_id,
+            str(membership["record_type"]),
+            str(membership["group_id"]),
+            internal_id,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        sequence = sequences[internal_id]
+        parsed_accession = str(sequence_row.get("parsed_accession") or "")
+        records.append(
+            {
+                "cluster_id": cluster_id,
+                "record_type": membership["record_type"],
+                "group_id": membership["group_id"],
+                "orthogroup_id": membership["orthogroup_id"],
+                "gene_tree_parent_clade": membership["gene_tree_parent_clade"],
+                "species": membership["species"],
+                "internal_id": internal_id,
+                "source_fasta": sequence_row["source_fasta"],
+                "raw_identifier": membership["raw_identifier"],
+                "parsed_accession": parsed_accession,
+                "parsed_entry": sequence_row["parsed_entry"],
+                "review_status": sequence_row["review_status"],
+                "identifier_format": sequence_row["identifier_format"],
+                "mapping_status": sequence_row["mapping_status"],
+                "is_input_candidate": parsed_accession
+                in cluster_candidates.get(cluster_id, set()),
+                "candidate_accessions_for_cluster": ";".join(
+                    sorted(cluster_candidates.get(cluster_id, set()))
+                ),
+                "sequence_length": len(sequence),
+                "sequence_sha256": hashlib.sha256(
+                    sequence.encode("ascii")
+                ).hexdigest(),
+                "protein_sequence": sequence,
+            }
+        )
+    records.sort(
+        key=lambda row: (
+            str(row["cluster_id"]),
+            str(row["record_type"]),
+            str(row["group_id"]),
+            str(row["species"]),
+            str(row["internal_id"]),
+        )
+    )
+    return records
 
 
 def run_preflight_stage(
@@ -726,11 +945,19 @@ def run_candidate_mapping_stage(
         accession: [] for accession in candidate_index
     }
     unvalidated_memberships: list[dict[str, str]] = []
-    for stage_name, filename in (
-        ("02_build_membership", "orthogroup_membership.tsv"),
-        ("02_build_membership", "hierarchical_membership.tsv"),
-    ):
-        source = stage_directory(run_root=paths.run_root, stage_name=stage_name) / filename
+    membership_paths = (
+        stage_directory(
+            run_root=paths.run_root,
+            stage_name="02_build_membership",
+        )
+        / "orthogroup_membership.tsv",
+        stage_directory(
+            run_root=paths.run_root,
+            stage_name="02_build_membership",
+        )
+        / "hierarchical_membership.tsv",
+    )
+    for source in membership_paths:
         _LOGGER.info("Candidate mapping: scanning %s", source)
         with source.open(mode="r", encoding="utf-8", newline="") as handle:
             for row in csv.DictReader(handle, delimiter="\t"):
@@ -879,8 +1106,15 @@ def run_candidate_mapping_stage(
         }
         for cluster_id, state in sorted(cluster_state.items())
     ]
+    group_member_sequences = build_candidate_group_member_sequences(
+        mapping_records=mapping_records,
+        identifier_map_path=identifier_map,
+        membership_paths=membership_paths,
+        working_directory=paths.results_directory / "WorkingDirectory",
+    )
     mapping_tsv = staging / "candidate_membership_mapping.tsv"
     cluster_tsv = staging / "candidate_cluster_orthology_summary.tsv"
+    group_sequences_tsv = staging / "candidate_group_member_sequences.tsv"
     write_tsv(
         path=mapping_tsv,
         fieldnames=CANDIDATE_MAPPING_FIELDS,
@@ -899,6 +1133,11 @@ def run_candidate_mapping_stage(
             "status",
         ),
         records=cluster_records,
+    )
+    write_tsv(
+        path=group_sequences_tsv,
+        fieldnames=GROUP_MEMBER_SEQUENCE_FIELDS,
+        records=group_member_sequences,
     )
     write_tsv(
         path=staging / "unmatched_candidate_accessions.tsv",
@@ -957,6 +1196,11 @@ def run_candidate_mapping_stage(
         parquet_path=staging / "candidate_cluster_orthology_summary.parquet",
         block_size=block_size,
     )
+    tsv_to_parquet(
+        tsv_path=group_sequences_tsv,
+        parquet_path=staging / "candidate_group_member_sequences.parquet",
+        block_size=block_size,
+    )
     _write_summary(
         path=staging / "candidate_mapping_summary.tsv",
         records=(
@@ -976,12 +1220,17 @@ def run_candidate_mapping_stage(
                 "value": len(unvalidated_memberships),
             },
             {"metric": "candidate_mapping_row_count", "value": len(mapping_records)},
+            {
+                "metric": "candidate_group_member_sequence_count",
+                "value": len(group_member_sequences),
+            },
             {"metric": "cluster_count", "value": len(cluster_records)},
         ),
     )
     return {
         "candidate_accession_count": len(candidate_index),
         "candidate_mapping_row_count": len(mapping_records),
+        "candidate_group_member_sequence_count": len(group_member_sequences),
         "cluster_count": len(cluster_records),
         "unmatched_cluster_accession_count": len(unmatched_records),
         "ambiguous_candidate_accession_count": len(ambiguity_records),
@@ -1244,6 +1493,16 @@ def run_publish_stage(
         ("03_map_candidates", "candidate_membership_mapping.parquet", "tables"),
         (
             "03_map_candidates",
+            "candidate_group_member_sequences.tsv",
+            "tables",
+        ),
+        (
+            "03_map_candidates",
+            "candidate_group_member_sequences.parquet",
+            "tables",
+        ),
+        (
+            "03_map_candidates",
             "candidate_sequence_identifier_mappings.tsv",
             "tables",
         ),
@@ -1363,6 +1622,8 @@ def build_stage_specs(*, paths: RuntimePaths, config: dict[str, Any]) -> tuple[S
         "candidate_sequence_identifier_mappings.parquet",
         "candidate_membership_mapping.tsv",
         "candidate_membership_mapping.parquet",
+        "candidate_group_member_sequences.tsv",
+        "candidate_group_member_sequences.parquet",
         "candidate_cluster_orthology_summary.tsv",
         "candidate_cluster_orthology_summary.parquet",
         "unmatched_candidate_accessions.tsv",
@@ -1383,6 +1644,8 @@ def build_stage_specs(*, paths: RuntimePaths, config: dict[str, Any]) -> tuple[S
                 "hierarchical_membership.parquet",
                 "candidate_membership_mapping.tsv",
                 "candidate_membership_mapping.parquet",
+                "candidate_group_member_sequences.tsv",
+                "candidate_group_member_sequences.parquet",
                 "candidate_sequence_identifier_mappings.tsv",
                 "candidate_sequence_identifier_mappings.parquet",
                 "candidate_cluster_orthology_summary.tsv",
@@ -1463,7 +1726,7 @@ def build_stage_specs(*, paths: RuntimePaths, config: dict[str, Any]) -> tuple[S
         ),
         StageSpec(
             name="03_map_candidates",
-            version="2",
+            version="3",
             expected_outputs=candidate_outputs,
             input_provider=lambda: (
                 paths.candidate_evidence,
@@ -1471,6 +1734,13 @@ def build_stage_specs(*, paths: RuntimePaths, config: dict[str, Any]) -> tuple[S
                 stage_file("02_build_membership", "hierarchical_membership.tsv"),
                 stage_file("01_build_identifier_map", "sequence_identifier_map.tsv"),
                 stage_file("01_build_identifier_map", "parsed_accession_ambiguities.tsv"),
+                *tuple(
+                    sorted(
+                        (paths.results_directory / "WorkingDirectory").glob(
+                            "Species*.fa"
+                        )
+                    )
+                ),
             ),
             executor=lambda staging: run_candidate_mapping_stage(
                 staging=staging, paths=paths, config=config
@@ -1497,7 +1767,7 @@ def build_stage_specs(*, paths: RuntimePaths, config: dict[str, Any]) -> tuple[S
         ),
         StageSpec(
             name="05_publish_portable_outputs",
-            version="2",
+            version="3",
             expected_outputs=publish_outputs,
             input_provider=lambda: tuple(
                 stage_file(stage_name, filename)

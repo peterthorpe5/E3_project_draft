@@ -139,8 +139,8 @@ CA . A 1 A 1 ? 1 bad 2.0 3.0
 def test_ambiguous_and_author_residue_matching() -> None:
     """Author identifiers work and conflicting matches are rejected."""
     atoms = [
-        AtomCoordinate("A", "1", "X", "10", "", 0.0, 0.0, 0.0),
-        AtomCoordinate("B", "2", "X", "10", "", 5.0, 0.0, 0.0),
+        AtomCoordinate("A", "1", "X", "10", "", "ALA", 0.0, 0.0, 0.0),
+        AtomCoordinate("B", "2", "X", "10", "", "ALA", 5.0, 0.0, 0.0),
     ]
     author_locator = ResidueLocator("", "", "X", "10", "")
     with pytest.raises(InputValidationError, match="multiple"):

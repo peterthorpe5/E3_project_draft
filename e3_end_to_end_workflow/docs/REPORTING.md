@@ -77,6 +77,13 @@ from report inspection.
 - one scientific and computational summary for every configured stage; and
 - links to detailed stage reports and manifests.
 
+If optional stage `09b_structural_alignment` runs, its stage directory also contains a specialised
+scientific report and an offline interactive browser. The scientific report embeds an SVG
+TM-score/pocket-overlap plot, group and pair conclusions, residue correspondences, thresholds,
+aligner versions and controlled-input checksums. The browser links to a rotatable C-alpha
+superposition for every US-align/TM-align comparison, with reference and member pockets highlighted
+and clickable residue labels. These pages use no remote scripts or network resources.
+
 For a bounded production configuration, this is a complete report for the configured run. It lists
 every explicitly skipped stage and marks application-release eligibility as false. A bounded
 OrthoFinder analysis is therefore never presented as the completed integrated E3 application

@@ -538,6 +538,12 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                     / "tables"
                     / "reused_pocket_residue_mappings.parquet"
                 ),
+                "pocket_sequence_coordinates": str(
+                    run_root
+                    / "09_ligandability"
+                    / "tables"
+                    / "pocket_sequence_coordinates.parquet"
+                ),
                 "structure_asset_manifest": str(
                     run_root
                     / "09_ligandability"
@@ -561,6 +567,14 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 ),
                 "structural_minimum_global_tm_score": str(
                     config.analysis.structural_alignment.minimum_global_tm_score
+                ),
+                "structural_minimum_residue_match_fraction": str(
+                    config.analysis.structural_alignment
+                    .minimum_structural_residue_match_fraction
+                ),
+                "structural_minimum_chemical_group_conservation": str(
+                    config.analysis.structural_alignment
+                    .minimum_structural_chemical_group_conservation
                 ),
                 "structural_minimum_group_support_fraction": str(
                     config.analysis.structural_alignment.minimum_group_support_fraction

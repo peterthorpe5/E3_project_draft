@@ -45,6 +45,8 @@ analysis:
     maximum_centroid_distance_angstrom: 8.0
     minimum_pocket_overlap_fraction: 0.5
     minimum_global_tm_score: 0.5
+    minimum_structural_residue_match_fraction: 0.5
+    minimum_structural_chemical_group_conservation: 0.6
     minimum_group_support_fraction: 0.75
     use_for_prioritisation: false
     prioritisation_weight: 0.25
@@ -166,6 +168,7 @@ stages:
       - "{threads}"
     expected_outputs:
       - tables/candidate_membership_mapping.parquet
+      - tables/candidate_group_member_sequences.parquet
       - tables/orthogroup_membership.parquet
       - tables/hierarchical_membership.parquet
       - tables/candidate_cluster_orthology_summary.parquet
@@ -225,6 +228,7 @@ stages:
       - tables/structural_prediction_status.parquet
       - tables/pocket_conservation_summary.parquet
       - tables/pocket_conservation_members.parquet
+      - tables/pocket_sequence_coordinates.parquet
       - qc/ligandability_validation.tsv
     threads: 32
     memory_mb: 180000
@@ -245,6 +249,8 @@ stages:
       - "{selected_pockets}"
       - --pocket-residue-mappings
       - "{pocket_residue_mappings}"
+      - --pocket-sequence-coordinates
+      - "{pocket_sequence_coordinates}"
       - --asset-manifest
       - "{structure_asset_manifest}"
       - --output-dir
@@ -263,14 +269,21 @@ stages:
       - "{structural_minimum_pocket_overlap_fraction}"
       - --minimum-global-tm-score
       - "{structural_minimum_global_tm_score}"
+      - --minimum-structural-residue-match-fraction
+      - "{structural_minimum_residue_match_fraction}"
+      - --minimum-structural-chemical-group-conservation
+      - "{structural_minimum_chemical_group_conservation}"
       - --minimum-group-support-fraction
       - "{structural_minimum_group_support_fraction}"
       - --resume
     expected_outputs:
       - structural_alignment/tables/structural_alignments.parquet
       - structural_alignment/tables/pocket_comparisons.parquet
+      - structural_alignment/tables/pocket_residue_matches.parquet
       - structural_alignment/tables/structural_alignment_summary.parquet
       - structural_alignment/qc/structural_alignment_validation.tsv
+      - structural_alignment/reports/structural_alignment_summary.html
+      - structural_alignment/interactive/structural_alignment_browser.html
       - structural_alignment/provenance/run_manifest.json
     threads: 32
     memory_mb: 120000

@@ -125,6 +125,13 @@ ls -lrth \
 The final publication stage contains `tables`, `qc`, and `provenance` directories. TSV is the
 human-auditable authority and Parquet is the efficient analytical authority.
 
+For downstream retrieval, `tables/candidate_group_member_sequences.tsv` and the equivalent typed
+Parquet contain every member of every candidate-relevant orthogroup or hierarchical orthogroup.
+Each row includes the run-scoped group identifier, species, OrthoFinder internal ID, original FASTA
+identifier, parsed accession/entry, candidate linkage, sequence length, sequence SHA-256 and full
+amino-acid sequence. The table is intentionally candidate-bounded; it does not duplicate every
+sequence from unrelated groups in the 60-proteome run.
+
 ## A different or expanded run
 
 All inputs are named options. A future run should use a new `--run-name`, a new species manifest,
@@ -192,9 +199,8 @@ The test runner executes unit, integration and end-to-end tests, branch coverage
 Google-style docstring checks, Python compilation and shell syntax validation. The package targets
 100 characters per normal Python line and at least 95% branch-aware statement coverage.
 
-## Version 0.1.3
+## Version 0.1.4
 
-This maintenance release fixes progress logging for grouped record counts, prevents inherited
-Slurm CPU metadata from contaminating child jobs, enforces agreement between requested CPUs and
-pipeline threads, and applies the thread limit to PyArrow's compute and I/O pools. These changes do
-not alter the scientific mapping or validation rules.
+This release adds a checksum-bound, candidate-relevant OrthoFinder group-member sequence table and
+retains explicit group identifiers with every sequence. The v0.1.3 progress, Slurm CPU and PyArrow
+thread controls remain in place. See `RELEASE_NOTES_v0_1_4.md` for the complete change record.

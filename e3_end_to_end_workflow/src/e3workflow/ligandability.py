@@ -89,6 +89,26 @@ POCKET_MEMBER_FIELDS = (
     "predictor_agreement",
 )
 
+POCKET_SEQUENCE_COORDINATE_FIELDS = (
+    "cluster_id",
+    "primary_group_type",
+    "primary_group_id",
+    "candidate_accession",
+    "species_column",
+    "pocket_number",
+    "structure_label_chain",
+    "structure_label_seq_id",
+    "structure_auth_chain",
+    "structure_auth_seq_id",
+    "structure_insertion_code",
+    "structure_residue_name",
+    "fasta_position",
+    "fasta_residue",
+    "sequence_length",
+    "sequence_coordinate_status",
+    "sequence_coordinate_reason",
+)
+
 STRUCTURAL_STATUS_FIELDS = (
     "cluster_id",
     "primary_group_id",
@@ -106,6 +126,31 @@ CHEMICAL_GROUPS = {
     **{residue: "positive" for residue in "KRH"},
     **{residue: "negative" for residue in "DE"},
     **{residue: "special" for residue in "CGP"},
+}
+
+THREE_TO_ONE = {
+    "ALA": "A",
+    "ARG": "R",
+    "ASN": "N",
+    "ASP": "D",
+    "CYS": "C",
+    "GLN": "Q",
+    "GLU": "E",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LEU": "L",
+    "LYS": "K",
+    "MET": "M",
+    "PHE": "F",
+    "PRO": "P",
+    "SER": "S",
+    "THR": "T",
+    "TRP": "W",
+    "TYR": "Y",
+    "VAL": "V",
+    "SEC": "U",
+    "PYL": "O",
 }
 
 
@@ -344,6 +389,145 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                 )
             sequences[accession] = sequence
     return sequences
+
+
+def map_pocket_residues_to_fasta(
+    *,
+    selected_records: Sequence[Mapping[str, Any]],
+    mapping_records: Sequence[Mapping[str, Any]],
+    sequences: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    """Map selected model pocket residues to one-based FASTA coordinates.
+
+    AlphaFold-style ``label_seq_id`` values are treated as candidate FASTA
+    coordinates only when they are positive, in range and consistent with the
+    model residue identity. Author numbering is retained for traceability but
+    is never assumed to be a FASTA coordinate.
+
+    Args:
+        selected_records: One selected pocket per candidate and group.
+        mapping_records: Residue-level model mapping records.
+        sequences: Exact candidate protein sequences keyed by accession.
+
+    Returns:
+        Explicit mapped and unmapped residue-coordinate records.
+
+    Raises:
+        StageError: If selected-pocket keys are duplicated or numeric fields are malformed.
+    """
+    selected_by_key: dict[tuple[str, int], Mapping[str, Any]] = {}
+    for record in selected_records:
+        accession = str(record["candidate_accession"])
+        try:
+            pocket_number = int(record["pocket_number"])
+        except (TypeError, ValueError) as exc:
+            raise StageError(
+                f"Selected pocket number is not an integer for {accession}"
+            ) from exc
+        key = (accession, pocket_number)
+        if key in selected_by_key:
+            raise StageError(f"Duplicate selected pocket key: {accession}/{pocket_number}")
+        selected_by_key[key] = record
+
+    results: list[dict[str, Any]] = []
+    seen: set[tuple[str, int, str, str, str]] = set()
+    for record in mapping_records:
+        accession = str(record.get("accession") or "")
+        try:
+            pocket_number = int(record.get("pocket_number"))
+        except (TypeError, ValueError) as exc:
+            raise StageError(
+                f"Pocket residue mapping has a non-integer pocket number for {accession}"
+            ) from exc
+        selected = selected_by_key.get((accession, pocket_number))
+        if selected is None:
+            continue
+        label_chain = str(record.get("model_label_chain") or "")
+        label_seq_id = str(record.get("model_label_seq_id") or "")
+        auth_chain = str(record.get("model_auth_chain") or "")
+        auth_seq_id = str(record.get("model_auth_seq_id") or "")
+        insertion_code = str(record.get("model_insertion_code") or "")
+        residue_key = (
+            accession,
+            pocket_number,
+            label_chain,
+            label_seq_id,
+            f"{auth_chain}:{auth_seq_id}:{insertion_code}",
+        )
+        if residue_key in seen:
+            continue
+        seen.add(residue_key)
+        sequence = sequences.get(accession)
+        mapping_status = str(record.get("mapping_status") or "").upper()
+        model_residue_name = str(record.get("model_residue_name") or "").upper()
+        fasta_position: int | None = None
+        fasta_residue = ""
+        if mapping_status != "MAPPED":
+            status = "NOT_MAPPED_TO_MODEL"
+            reason = "ligandability residue mapping was not MAPPED"
+        elif sequence is None:
+            status = "FASTA_SEQUENCE_UNAVAILABLE"
+            reason = "exact candidate FASTA sequence was not available"
+        elif not label_seq_id:
+            status = "LABEL_SEQUENCE_ID_UNAVAILABLE"
+            reason = "author numbering was retained but not assumed to be a FASTA coordinate"
+        else:
+            try:
+                fasta_position = int(label_seq_id)
+            except ValueError:
+                status = "INVALID_LABEL_SEQUENCE_ID"
+                reason = "model label_seq_id was not an integer"
+            else:
+                if fasta_position < 1 or fasta_position > len(sequence):
+                    status = "FASTA_POSITION_OUT_OF_RANGE"
+                    reason = "model label_seq_id falls outside the exact FASTA sequence"
+                else:
+                    fasta_residue = sequence[fasta_position - 1].upper()
+                    expected_residue = THREE_TO_ONE.get(model_residue_name)
+                    if expected_residue is None:
+                        status = "NON_STANDARD_MODEL_RESIDUE"
+                        reason = "FASTA position inferred but model residue was non-standard"
+                    elif expected_residue != fasta_residue:
+                        status = "RESIDUE_IDENTITY_MISMATCH"
+                        reason = (
+                            "model residue identity disagrees with the exact FASTA sequence"
+                        )
+                    else:
+                        status = "MAPPED_EXACT"
+                        reason = (
+                            "one-based model label_seq_id and residue identity match FASTA"
+                        )
+        results.append(
+            {
+                "cluster_id": selected["cluster_id"],
+                "primary_group_type": selected["primary_group_type"],
+                "primary_group_id": selected["primary_group_id"],
+                "candidate_accession": accession,
+                "species_column": selected["species_column"],
+                "pocket_number": pocket_number,
+                "structure_label_chain": label_chain,
+                "structure_label_seq_id": label_seq_id,
+                "structure_auth_chain": auth_chain,
+                "structure_auth_seq_id": auth_seq_id,
+                "structure_insertion_code": insertion_code,
+                "structure_residue_name": model_residue_name,
+                "fasta_position": fasta_position,
+                "fasta_residue": fasta_residue,
+                "sequence_length": len(sequence) if sequence is not None else None,
+                "sequence_coordinate_status": status,
+                "sequence_coordinate_reason": reason,
+            }
+        )
+    results.sort(
+        key=lambda row: (
+            str(row["cluster_id"]),
+            str(row["candidate_accession"]),
+            int(row["pocket_number"]),
+            int(row["fasta_position"]) if row["fasta_position"] is not None else math.inf,
+            str(row["structure_auth_seq_id"]),
+        )
+    )
+    return results
 
 
 def _run_mafft(
@@ -799,9 +983,21 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
     mapping_records = _read_query(
         path=copied["pocket_residue_mappings"],
         query=(
-            "SELECT accession, pocket_number, mapping_status, model_label_seq_id, "
-            "model_residue_name, model_plddt FROM source"
+            "SELECT accession, pocket_number, mapping_status, model_label_chain, "
+            "model_label_seq_id, model_auth_chain, model_auth_seq_id, "
+            "model_insertion_code, model_residue_name, model_plddt FROM source"
         ),
+    )
+    sequence_coordinates = map_pocket_residues_to_fasta(
+        selected_records=selected,
+        mapping_records=mapping_records,
+        sequences=sequences,
+    )
+    write_records(
+        tsv_path=stage_root / "tables" / "pocket_sequence_coordinates.tsv",
+        parquet_path=stage_root / "tables" / "pocket_sequence_coordinates.parquet",
+        fieldnames=POCKET_SEQUENCE_COORDINATE_FIELDS,
+        records=sequence_coordinates,
     )
     summaries, members = measure_pocket_conservation(
         config=config,
@@ -832,6 +1028,11 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
                     row["status"] == "MISSING_REUSED_PREDICTION" for row in status
                 ),
                 "group_conservation_summary_count": len(summaries),
+                "pocket_sequence_coordinate_count": len(sequence_coordinates),
+                "exact_pocket_sequence_coordinate_count": sum(
+                    row["sequence_coordinate_status"] == "MAPPED_EXACT"
+                    for row in sequence_coordinates
+                ),
                 "conserved_region_supported_count": sum(
                     row["conservation_status"] == "CONSERVED_REGION_SUPPORTED"
                     for row in summaries
@@ -848,6 +1049,8 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
             "selected_reused_pocket_count",
             "missing_reused_prediction_count",
             "group_conservation_summary_count",
+            "pocket_sequence_coordinate_count",
+            "exact_pocket_sequence_coordinate_count",
             "conserved_region_supported_count",
             "mode",
             "interpretation",

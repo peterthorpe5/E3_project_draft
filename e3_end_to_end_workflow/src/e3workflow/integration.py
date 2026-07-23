@@ -23,15 +23,21 @@ FINAL_FIELDS = (
     "cluster_id",
     "primary_group_type",
     "primary_group_id",
+    "orthofinder_orthogroup_ids",
+    "orthofinder_hierarchical_group_ids",
     "candidate_accessions",
     "prestructure_score",
     "ligandability_score",
     "pocket_conservation_score",
     "three_dimensional_pocket_score",
+    "three_dimensional_position_status",
     "three_dimensional_alignment_status",
     "mean_minimum_tm_score",
     "mean_pocket_overlap_fraction",
     "median_centroid_distance_angstrom",
+    "mean_structural_residue_match_fraction",
+    "mean_structural_residue_identity_fraction",
+    "mean_structural_chemical_group_conservation",
     "structural_score",
     "final_score",
     "target_species_fraction",
@@ -72,10 +78,14 @@ def _final_query(
         else (
             "(SELECT NULL::VARCHAR AS cluster_id, NULL::VARCHAR AS primary_group_type, "
             "NULL::VARCHAR AS primary_group_id, NULL::VARCHAR AS alignment_status, "
+            "NULL::VARCHAR AS position_alignment_status, "
             "NULL::DOUBLE AS three_dimensional_pocket_score, "
             "NULL::DOUBLE AS mean_minimum_tm_score, "
             "NULL::DOUBLE AS mean_pocket_overlap_fraction, "
-            "NULL::DOUBLE AS median_centroid_distance_angstrom WHERE false)"
+            "NULL::DOUBLE AS median_centroid_distance_angstrom, "
+            "NULL::DOUBLE AS mean_structural_residue_match_fraction, "
+            "NULL::DOUBLE AS mean_structural_residue_identity_fraction, "
+            "NULL::DOUBLE AS mean_structural_chemical_group_conservation WHERE false)"
         )
     )
     use_alignment = "true" if structural_alignment.use_for_prioritisation else "false"
@@ -98,10 +108,18 @@ def _final_query(
         "'NO_STRUCTURAL_EVIDENCE') AS conservation_status, "
         "COALESCE(a.three_dimensional_pocket_score, 0.0) AS "
         "three_dimensional_pocket_score, COALESCE(a.alignment_status, 'NOT_ASSESSED') AS "
-        "three_dimensional_alignment_status, COALESCE(a.mean_minimum_tm_score, 0.0) AS "
+        "three_dimensional_alignment_status, COALESCE(a.position_alignment_status, "
+        "'NOT_ASSESSED') AS three_dimensional_position_status, "
+        "COALESCE(a.mean_minimum_tm_score, 0.0) AS "
         "mean_minimum_tm_score, COALESCE(a.mean_pocket_overlap_fraction, 0.0) AS "
         "mean_pocket_overlap_fraction, a.median_centroid_distance_angstrom AS "
         "median_centroid_distance_angstrom, "
+        "a.mean_structural_residue_match_fraction AS "
+        "mean_structural_residue_match_fraction, "
+        "a.mean_structural_residue_identity_fraction AS "
+        "mean_structural_residue_identity_fraction, "
+        "a.mean_structural_chemical_group_conservation AS "
+        "mean_structural_chemical_group_conservation, "
         "COALESCE(c.all_assessed_members_pass_druggability, false) AS "
         "all_assessed_members_pass_druggability, COALESCE(c.all_assessed_members_pass_mapping, "
         "false) AS all_assessed_members_pass_mapping FROM pre p LEFT JOIN pockets c "
@@ -153,10 +171,14 @@ def _final_query(
         f"{settings.final_candidate_limit} THEN 'PRIORITY_RECOMMENDATION' WHEN "
         "grant_aligned_final_pass THEN 'STRINGENT_PASS_OUTSIDE_TOP_LIMIT' ELSE "
         "'FURTHER_EVIDENCE_OR_REVIEW_REQUIRED' END AS recommendation_status, cluster_id, "
-        "primary_group_type, primary_group_id, candidate_accessions, prestructure_score, "
+        "primary_group_type, primary_group_id, orthofinder_orthogroup_ids, "
+        "orthofinder_hierarchical_group_ids, candidate_accessions, prestructure_score, "
         "ligandability_score, pocket_conservation_score, three_dimensional_pocket_score, "
-        "three_dimensional_alignment_status, mean_minimum_tm_score, "
-        "mean_pocket_overlap_fraction, median_centroid_distance_angstrom, structural_score, "
+        "three_dimensional_position_status, three_dimensional_alignment_status, "
+        "mean_minimum_tm_score, mean_pocket_overlap_fraction, "
+        "median_centroid_distance_angstrom, mean_structural_residue_match_fraction, "
+        "mean_structural_residue_identity_fraction, "
+        "mean_structural_chemical_group_conservation, structural_score, "
         "final_score, "
         "target_species_fraction, mandatory_species_fraction, domain_species_fraction, "
         "expression_species_fraction, structural_species_fraction, minimum_druggability_score, "
@@ -207,6 +229,11 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
     roots_and_names = (
         ("candidate_evidence", "03_candidate_evidence", "e3_cluster_candidate_evidence.parquet"),
         ("candidate_orthology", "05_orthology", "candidate_membership_mapping.parquet"),
+        (
+            "candidate_group_member_sequences",
+            "05_orthology",
+            "candidate_group_member_sequences.parquet",
+        ),
         ("orthogroup_membership", "05_orthology", "orthogroup_membership.parquet"),
         ("hierarchical_membership", "05_orthology", "hierarchical_membership.parquet"),
         (
@@ -233,6 +260,11 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ),
         ("pocket_conservation_summary", "09_ligandability", "pocket_conservation_summary.parquet"),
         ("pocket_conservation_members", "09_ligandability", "pocket_conservation_members.parquet"),
+        (
+            "pocket_sequence_coordinates",
+            "09_ligandability",
+            "pocket_sequence_coordinates.parquet",
+        ),
     )
     tables = [
         (table_name, find_one(root=config.run_root / stage_name, name=filename))
@@ -254,6 +286,13 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
                     find_one(
                         root=structural_root,
                         name="pocket_comparisons.parquet",
+                    ),
+                ),
+                (
+                    "structural_pocket_residue_matches",
+                    find_one(
+                        root=structural_root,
+                        name="pocket_residue_matches.parquet",
                     ),
                 ),
                 (

@@ -339,6 +339,8 @@ class StructuralAlignmentAnalysisConfig:
     maximum_centroid_distance_angstrom: float
     minimum_pocket_overlap_fraction: float
     minimum_global_tm_score: float
+    minimum_structural_residue_match_fraction: float
+    minimum_structural_chemical_group_conservation: float
     minimum_group_support_fraction: float
     use_for_prioritisation: bool
     prioritisation_weight: float
@@ -773,6 +775,28 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
             minimum_global_tm_score=_number(
                 structural_alignment.get("minimum_global_tm_score", 0.5),
                 "analysis.structural_alignment.minimum_global_tm_score",
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_structural_residue_match_fraction=_number(
+                structural_alignment.get(
+                    "minimum_structural_residue_match_fraction", 0.5
+                ),
+                (
+                    "analysis.structural_alignment."
+                    "minimum_structural_residue_match_fraction"
+                ),
+                minimum=0.0,
+                maximum=1.0,
+            ),
+            minimum_structural_chemical_group_conservation=_number(
+                structural_alignment.get(
+                    "minimum_structural_chemical_group_conservation", 0.6
+                ),
+                (
+                    "analysis.structural_alignment."
+                    "minimum_structural_chemical_group_conservation"
+                ),
                 minimum=0.0,
                 maximum=1.0,
             ),

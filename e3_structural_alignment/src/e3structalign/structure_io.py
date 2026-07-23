@@ -59,6 +59,7 @@ def parse_pdb_ca_atoms(path: Path) -> list[AtomCoordinate]:
                         auth_chain=line[21:22].strip(),
                         auth_seq_id=line[22:26].strip(),
                         insertion_code=line[26:27].strip(),
+                        residue_name=line[17:20].strip().upper(),
                         x=float(line[30:38]),
                         y=float(line[38:46]),
                         z=float(line[46:54]),
@@ -92,6 +93,11 @@ def parse_mmcif_ca_atoms(path: Path) -> list[AtomCoordinate]:
     label_sequences = _as_list(payload.get("_atom_site.label_seq_id"), count)
     auth_chains = _as_list(payload.get("_atom_site.auth_asym_id"), count)
     auth_sequences = _as_list(payload.get("_atom_site.auth_seq_id"), count)
+    residue_names = _as_list(
+        payload.get("_atom_site.label_comp_id")
+        or payload.get("_atom_site.auth_comp_id"),
+        count,
+    )
     insertions = _as_list(payload.get("_atom_site.pdbx_PDB_ins_code"), count)
     alternatives = _as_list(payload.get("_atom_site.label_alt_id"), count)
     models = _as_list(payload.get("_atom_site.pdbx_PDB_model_num"), count, "1")
@@ -114,6 +120,7 @@ def parse_mmcif_ca_atoms(path: Path) -> list[AtomCoordinate]:
                     auth_chain=_normalise_identifier(auth_chains[index]),
                     auth_seq_id=_normalise_identifier(auth_sequences[index]),
                     insertion_code=_normalise_identifier(insertions[index]),
+                    residue_name=_normalise_identifier(residue_names[index]).upper(),
                     x=float(x_values[index]),
                     y=float(y_values[index]),
                     z=float(z_values[index]),
@@ -188,12 +195,78 @@ def pocket_coordinates(
     return coordinates
 
 
+def pocket_atom_coordinates(
+    atoms: Sequence[AtomCoordinate],
+    locators: Sequence[ResidueLocator],
+) -> list[tuple[ResidueLocator, AtomCoordinate]]:
+    """Return one deterministic C-alpha atom for each resolved pocket locator."""
+    resolved: list[tuple[ResidueLocator, AtomCoordinate]] = []
+    seen_coordinates: set[tuple[float, float, float]] = set()
+    for locator in locators:
+        matches = [atom for atom in atoms if _matches(atom, locator)]
+        if len(matches) > 1:
+            unique_coordinates = {atom.coordinate for atom in matches}
+            if len(unique_coordinates) > 1:
+                raise InputValidationError(
+                    "Pocket residue locator matches multiple C-alpha coordinates: "
+                    f"{locator}"
+                )
+        if matches and matches[0].coordinate not in seen_coordinates:
+            resolved.append((locator, matches[0]))
+            seen_coordinates.add(matches[0].coordinate)
+    return resolved
+
+
 def transform_coordinates(
     coordinates: Sequence[tuple[float, float, float]],
     transform: Transform,
 ) -> list[tuple[float, float, float]]:
     """Apply one structural-aligner transform to every mobile coordinate."""
     return [transform.apply(coordinate) for coordinate in coordinates]
+
+
+def mutual_nearest_matches(
+    *,
+    reference_coordinates: Sequence[tuple[float, float, float]],
+    mobile_coordinates: Sequence[tuple[float, float, float]],
+    distance_threshold_angstrom: float,
+) -> list[tuple[int, int, float]]:
+    """Return deterministic mutual-nearest residue matches within a distance threshold."""
+    if distance_threshold_angstrom <= 0:
+        raise InputValidationError("distance_threshold_angstrom must be greater than zero")
+    if not reference_coordinates or not mobile_coordinates:
+        return []
+    reference_to_mobile = [
+        min(
+            range(len(mobile_coordinates)),
+            key=lambda index: (
+                euclidean_distance(reference, mobile_coordinates[index]),
+                index,
+            ),
+        )
+        for reference in reference_coordinates
+    ]
+    mobile_to_reference = [
+        min(
+            range(len(reference_coordinates)),
+            key=lambda index: (
+                euclidean_distance(mobile, reference_coordinates[index]),
+                index,
+            ),
+        )
+        for mobile in mobile_coordinates
+    ]
+    matches = []
+    for reference_index, mobile_index in enumerate(reference_to_mobile):
+        if mobile_to_reference[mobile_index] != reference_index:
+            continue
+        distance = euclidean_distance(
+            reference_coordinates[reference_index],
+            mobile_coordinates[mobile_index],
+        )
+        if distance <= distance_threshold_angstrom:
+            matches.append((reference_index, mobile_index, distance))
+    return matches
 
 
 def euclidean_distance(

@@ -83,6 +83,14 @@ def create_fixture(root: Path) -> tuple[RuntimePaths, dict]:
         ),
     )
     write_text(
+        results / "WorkingDirectory" / "Species0.fa",
+        ">0_0\nMSTNPKPQR\n",
+    )
+    write_text(
+        results / "WorkingDirectory" / "Species1.fa",
+        ">1_0\nMSTNPKPQA\n",
+    )
+    write_text(
         results / "Orthogroups" / "Orthogroups.tsv",
         (
             "Orthogroup\tArabidopsis_thaliana\tHomo_sapiens\n"

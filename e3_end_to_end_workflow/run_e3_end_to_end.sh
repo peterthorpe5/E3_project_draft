@@ -126,7 +126,7 @@ while (($#)); do
             shift
             ;;
         --version)
-            printf 'e3-end-to-end-workflow 0.7.0\n'
+            printf 'e3-end-to-end-workflow 0.7.1\n'
             exit 0
             ;;
         --help|-h)

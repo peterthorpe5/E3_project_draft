@@ -52,6 +52,7 @@ class AtomCoordinate:
     auth_chain: str
     auth_seq_id: str
     insertion_code: str
+    residue_name: str
     x: float
     y: float
     z: float
@@ -85,6 +86,19 @@ class Transform:
             )
             for row in range(3)
         )
+
+
+@dataclass(frozen=True)
+class PocketSequenceCoordinate:
+    """One pocket residue linked explicitly to a FASTA coordinate."""
+
+    accession: str
+    pocket_number: int
+    locator: ResidueLocator
+    structure_residue_name: str
+    fasta_position: int | None
+    fasta_residue: str
+    sequence_coordinate_status: str
 
 
 @dataclass(frozen=True)

@@ -148,6 +148,24 @@ def test_downloaded_evidence_to_app_ready_release(
             (
                 "cluster_1",
                 "Q9SA03",
+                "ORTHOGROUP",
+                "OG0001",
+                "Arabidopsis_thaliana",
+                "MATCHED",
+                "UNAMBIGUOUS",
+            ),
+            (
+                "cluster_1",
+                "Q00002",
+                "ORTHOGROUP",
+                "OG0001",
+                "Oryza_sativa",
+                "MATCHED",
+                "UNAMBIGUOUS",
+            ),
+            (
+                "cluster_1",
+                "Q9SA03",
                 "HIERARCHICAL_ORTHOGROUP",
                 "N0.HOG0001",
                 "Arabidopsis_thaliana",
@@ -189,6 +207,41 @@ def test_downloaded_evidence_to_app_ready_release(
         orthology / "candidate_cluster_orthology_summary.parquet",
         "cluster_id VARCHAR, mapped_candidate_count INTEGER",
         [("cluster_1", 2)],
+    )
+    _write_parquet(
+        orthology / "candidate_group_member_sequences.parquet",
+        (
+            "cluster_id VARCHAR, record_type VARCHAR, group_id VARCHAR, "
+            "orthogroup_id VARCHAR, species VARCHAR, internal_id VARCHAR, "
+            "parsed_accession VARCHAR, sequence_length INTEGER, "
+            "sequence_sha256 VARCHAR, protein_sequence VARCHAR"
+        ),
+        [
+            (
+                "cluster_1",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                "OG0001",
+                "Arabidopsis_thaliana",
+                "0_0",
+                "Q9SA03",
+                8,
+                "fixture",
+                "MACDEFGH",
+            ),
+            (
+                "cluster_1",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                "OG0001",
+                "Oryza_sativa",
+                "0_1",
+                "Q00002",
+                8,
+                "fixture",
+                "MACDEFGH",
+            ),
+        ],
     )
 
     cache_root = tmp_path / "interpro_cache"
@@ -261,13 +314,16 @@ def test_downloaded_evidence_to_app_ready_release(
         ligand_root / "pocket_residue_mappings.parquet",
         (
             "accession VARCHAR, pocket_number INTEGER, mapping_status VARCHAR, "
-            "model_label_seq_id INTEGER, model_residue_name VARCHAR, model_plddt DOUBLE"
+            "model_label_chain VARCHAR, model_label_seq_id INTEGER, "
+            "model_auth_chain VARCHAR, model_auth_seq_id INTEGER, "
+            "model_insertion_code VARCHAR, model_residue_name VARCHAR, "
+            "model_plddt DOUBLE"
         ),
         [
-            ("Q9SA03", 1, "MAPPED", 2, "A", 90.0),
-            ("Q9SA03", 1, "MAPPED", 3, "C", 90.0),
-            ("Q00002", 1, "MAPPED", 2, "A", 88.0),
-            ("Q00002", 1, "MAPPED", 3, "C", 88.0),
+            ("Q9SA03", 1, "MAPPED", "A", 2, "A", 2, "", "ALA", 90.0),
+            ("Q9SA03", 1, "MAPPED", "A", 3, "A", 3, "", "CYS", 90.0),
+            ("Q00002", 1, "MAPPED", "A", 2, "A", 2, "", "ALA", 88.0),
+            ("Q00002", 1, "MAPPED", "A", 3, "A", 3, "", "CYS", 88.0),
         ],
     )
     _write_parquet(
@@ -355,13 +411,22 @@ def test_downloaded_evidence_to_app_ready_release(
         [("cluster_1", "US-align"), ("cluster_1", "TM-align")],
     )
     _write_parquet(
+        structural_tables / "pocket_residue_matches.parquet",
+        "cluster_id VARCHAR, alignment_tool VARCHAR",
+        [("cluster_1", "US-align"), ("cluster_1", "TM-align")],
+    )
+    _write_parquet(
         structural_tables / "structural_alignment_summary.parquet",
         (
             "cluster_id VARCHAR, primary_group_type VARCHAR, primary_group_id VARCHAR, "
             "three_dimensional_pocket_score DOUBLE, "
-            "alignment_status VARCHAR, mean_minimum_tm_score DOUBLE, "
+            "position_alignment_status VARCHAR, alignment_status VARCHAR, "
+            "mean_minimum_tm_score DOUBLE, "
             "mean_pocket_overlap_fraction DOUBLE, "
-            "median_centroid_distance_angstrom DOUBLE"
+            "median_centroid_distance_angstrom DOUBLE, "
+            "mean_structural_residue_match_fraction DOUBLE, "
+            "mean_structural_residue_identity_fraction DOUBLE, "
+            "mean_structural_chemical_group_conservation DOUBLE"
         ),
         [
             (
@@ -369,10 +434,14 @@ def test_downloaded_evidence_to_app_ready_release(
                 "HIERARCHICAL_ORTHOGROUP",
                 "N0.HOG0001",
                 0.9,
+                "SAME_3D_POCKET_POSITION_SUPPORTED",
                 "CONSERVED_3D_POCKET_SUPPORTED",
                 0.9,
                 0.9,
                 1.0,
+                0.9,
+                0.8,
+                0.9,
             )
         ],
     )
@@ -399,7 +468,9 @@ def test_downloaded_evidence_to_app_ready_release(
     connection = duckdb.connect(str(database), read_only=True)
     try:
         result = connection.execute(
-            "SELECT recommendation_status, grant_aligned_final_pass "
+            "SELECT recommendation_status, grant_aligned_final_pass, "
+            "orthofinder_orthogroup_ids, orthofinder_hierarchical_group_ids, "
+            "three_dimensional_position_status "
             "FROM final_candidate_prioritisation"
         ).fetchone()
         tables = {
@@ -408,12 +479,21 @@ def test_downloaded_evidence_to_app_ready_release(
         }
     finally:
         connection.close()
-    assert result == ("PRIORITY_RECOMMENDATION", True)
+    assert result == (
+        "PRIORITY_RECOMMENDATION",
+        True,
+        "OG0001",
+        "N0.HOG0001",
+        "SAME_3D_POCKET_POSITION_SUPPORTED",
+    )
     assert {
         "domain_summary",
         "candidate_expression_summary",
         "selected_pockets",
+        "pocket_sequence_coordinates",
+        "candidate_group_member_sequences",
         "structural_alignment_summary",
+        "structural_pocket_residue_matches",
     }.issubset(tables)
     assert (
         config.run_root
