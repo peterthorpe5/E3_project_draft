@@ -132,6 +132,7 @@ printf '%s\\0' "$@" >"${FAKE_SNAKEMAKE_ARGUMENT_RECORD}"
     environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
     environment["FAKE_RUN_ROOT"] = str(run_root)
     environment["FAKE_SNAKEMAKE_ARGUMENT_RECORD"] = str(argument_record)
+    environment.pop("SLURM_JOB_ID", None)
 
     subprocess.run(
         [
@@ -154,7 +155,7 @@ printf '%s\\0' "$@" >"${FAKE_SNAKEMAKE_ARGUMENT_RECORD}"
     target = str(run_root / "05_orthology" / "stage_manifest.json")
     resource_index = arguments.index("--default-resources")
     assert arguments.index(target) < resource_index
-    assert arguments[resource_index + 1: resource_index + 5] == [
+    assert arguments[resource_index + 1:resource_index + 5] == [
         "slurm_account=barton",
         "slurm_partition=general",
         "mem_mb=8000",
