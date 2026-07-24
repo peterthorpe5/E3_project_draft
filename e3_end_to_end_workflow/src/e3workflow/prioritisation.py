@@ -17,7 +17,7 @@ from e3workflow.orthology_groups import (
     choose_primary_groups,
     selected_group_members,
 )
-from e3workflow.production import find_one, split_accessions
+from e3workflow.production import find_one, find_orthology_table, split_accessions
 from e3workflow.resources import EXPRESSION_RESOURCE_TYPES, read_resource_manifest
 from e3workflow.tabular import quote_literal, write_records
 
@@ -446,12 +446,17 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         name="e3_cluster_candidate_evidence.parquet",
     )
     orthology_root = config.run_root / "05_orthology"
-    candidate_mapping = find_one(
-        root=orthology_root, name="candidate_membership_mapping.parquet"
+    candidate_mapping = find_orthology_table(
+        root=orthology_root,
+        name="candidate_membership_mapping.parquet",
     )
-    orthogroup_membership = find_one(root=orthology_root, name="orthogroup_membership.parquet")
-    hierarchical_membership = find_one(
-        root=orthology_root, name="hierarchical_membership.parquet"
+    orthogroup_membership = find_orthology_table(
+        root=orthology_root,
+        name="orthogroup_membership.parquet",
+    )
+    hierarchical_membership = find_orthology_table(
+        root=orthology_root,
+        name="hierarchical_membership.parquet",
     )
     domain_summary = find_one(root=config.run_root / "06_domains", name="domain_summary.parquet")
     expression_summary = find_one(

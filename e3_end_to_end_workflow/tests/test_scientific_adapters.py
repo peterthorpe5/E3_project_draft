@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import tarfile
 from dataclasses import replace
@@ -23,6 +24,7 @@ from e3workflow.prioritisation import score_candidate
 from e3workflow.errors import StageError
 from e3workflow.production import (
     find_one,
+    find_orthology_table,
     iter_fasta,
     load_domain_catalogue,
     run_candidate_evidence_stage,
@@ -88,7 +90,7 @@ def test_expression_maps_full_selected_group_members(
 ) -> None:
     """Expression is assessed across selected group members, not only original seed accessions."""
     config = load_config(synthetic_config)
-    orthology = config.run_root / "05_orthology" / "tables"
+    orthology = config.run_root / "05_orthology" / "orthology" / "tables"
     write_parquet(
         orthology / "candidate_membership_mapping.parquet",
         (
@@ -134,6 +136,22 @@ def test_expression_maps_full_selected_group_members(
             ),
         ],
     )
+    component_stages = (
+        "03_map_candidates",
+        "05_publish_portable_outputs",
+    )
+    for component_stage in component_stages:
+        duplicate_root = (
+            config.run_root
+            / "05_orthology"
+            / "orthology"
+            / "stages"
+            / component_stage
+            / "tables"
+        )
+        duplicate_root.mkdir(parents=True, exist_ok=True)
+        for source in orthology.glob("*.parquet"):
+            shutil.copyfile(source, duplicate_root / source.name)
     sqlite_path = tmp_path / "e3.db"
     sqlite_connection = sqlite3.connect(sqlite_path)
     sqlite_connection.execute(
@@ -489,6 +507,33 @@ def test_fasta_catalogue_and_recursive_lookup_errors(tmp_path: Path) -> None:
     write_tsv(catalogue, [{"pfam_accession": "PF1"}], ("pfam_accession",))
     with pytest.raises(StageError, match="missing columns"):
         load_domain_catalogue(catalogue)
+
+
+def test_orthology_lookup_ignores_component_stage_copies(tmp_path: Path) -> None:
+    """Only a public stage-05 contract file is a downstream orthology authority."""
+    name = "candidate_membership_mapping.parquet"
+    public = tmp_path / "orthology" / "tables" / name
+    public.parent.mkdir(parents=True)
+    public.write_bytes(b"public authority")
+    for component_stage in ("03_map_candidates", "05_publish_portable_outputs"):
+        internal = (
+            tmp_path
+            / "orthology"
+            / "stages"
+            / component_stage
+            / "tables"
+            / name
+        )
+        internal.parent.mkdir(parents=True)
+        internal.write_bytes(b"component provenance")
+
+    assert find_orthology_table(root=tmp_path, name=name) == public
+
+    direct_public = tmp_path / "tables" / name
+    direct_public.parent.mkdir(parents=True)
+    direct_public.write_bytes(b"second public authority")
+    with pytest.raises(StageError, match="observed 2"):
+        find_orthology_table(root=tmp_path, name=name)
 
 
 def test_orthofinder_archive_rejects_unsafe_member(

@@ -153,6 +153,43 @@ def find_one(root: Path, name: str) -> Path:
     return matches[0]
 
 
+def find_orthology_table(*, root: Path, name: str) -> Path:
+    """Resolve one public orthology table without scanning component provenance.
+
+    The master workflow supports both its ``orthology/tables`` component-adapter contract and the
+    direct ``tables`` contract used by other external adapters. Independently restartable
+    orthology components retain internal stage products below ``orthology/stages``; those files
+    are provenance copies rather than additional downstream authorities.
+
+    Args:
+        root: Completed master stage-05 directory.
+        name: Basename of the required public table.
+
+    Returns:
+        The single non-empty table at a supported public contract path.
+
+    Raises:
+        StageError: If ``name`` is not a basename, or zero or multiple public contract files
+            exist.
+    """
+    relative_name = Path(name)
+    if not name or relative_name.name != name or name in {".", ".."}:
+        raise StageError(f"Orthology table name must be a safe basename: {name!r}")
+    stage_root = Path(root)
+    candidates = (
+        stage_root / "orthology" / "tables" / name,
+        stage_root / "tables" / name,
+    )
+    matches = [path for path in candidates if path.is_file() and path.stat().st_size > 0]
+    if len(matches) != 1:
+        expected = ", ".join(str(path) for path in candidates)
+        raise StageError(
+            f"Expected exactly one non-empty public orthology table {name!r}; "
+            f"observed {len(matches)} at supported paths: {expected}"
+        )
+    return matches[0]
+
+
 def split_accessions(value: Any) -> tuple[str, ...]:
     """Return unique accessions from one semicolon-delimited candidate field."""
     if value is None:
@@ -480,9 +517,18 @@ def _load_annotation_manifest(path: Path) -> tuple[dict[str, dict[str, Any]], li
 def _domain_group_members(config: WorkflowConfig) -> list[dict[str, Any]]:
     """Return target-species members of each selected candidate OrthoFinder group."""
     orthology_root = config.run_root / "05_orthology"
-    mapping = find_one(root=orthology_root, name="candidate_membership_mapping.parquet")
-    orthogroups = find_one(root=orthology_root, name="orthogroup_membership.parquet")
-    hierarchical = find_one(root=orthology_root, name="hierarchical_membership.parquet")
+    mapping = find_orthology_table(
+        root=orthology_root,
+        name="candidate_membership_mapping.parquet",
+    )
+    orthogroups = find_orthology_table(
+        root=orthology_root,
+        name="orthogroup_membership.parquet",
+    )
+    hierarchical = find_orthology_table(
+        root=orthology_root,
+        name="hierarchical_membership.parquet",
+    )
     selected, _ = choose_primary_groups(mapping_rows=candidate_mapping_rows(path=mapping))
     if not selected:
         raise StageError("No candidate cluster could be assigned an exact OrthoFinder group")

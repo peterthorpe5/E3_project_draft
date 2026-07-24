@@ -13,7 +13,7 @@ from e3workflow import __version__
 from e3workflow.config import WorkflowConfig
 from e3workflow.errors import StageError
 from e3workflow.io_utils import atomic_write_json, sha256_file, utc_now, write_tsv
-from e3workflow.production import find_one
+from e3workflow.production import find_one, find_orthology_table
 from e3workflow.tabular import quote_identifier, quote_literal
 
 FINAL_FIELDS = (
@@ -428,10 +428,15 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
             "pocket_sequence_coordinates.parquet",
         ),
     )
-    tables = [
-        (table_name, find_one(root=config.run_root / stage_name, name=filename))
-        for table_name, stage_name, filename in roots_and_names
-    ]
+    tables = []
+    for table_name, stage_name, filename in roots_and_names:
+        stage_root = config.run_root / stage_name
+        source = (
+            find_orthology_table(root=stage_root, name=filename)
+            if stage_name == "05_orthology"
+            else find_one(root=stage_root, name=filename)
+        )
+        tables.append((table_name, source))
     if config.stage("09b_structural_alignment").enabled:
         structural_root = config.run_root / "09b_structural_alignment"
         tables.extend(
