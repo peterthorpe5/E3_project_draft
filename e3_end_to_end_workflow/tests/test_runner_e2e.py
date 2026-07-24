@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from e3workflow.runner import (
     _summarise_protein_fasta,
     execute_stage,
     format_command,
+    materialise_orthology_component_outputs,
     run_internal_stage,
     validate_expected_outputs,
     validate_upstream,
@@ -53,6 +55,119 @@ def test_format_command_and_expected_outputs(tmp_path: Path) -> None:
     validate_expected_outputs(tmp_path, ("output.txt",))
     with pytest.raises(StageError, match="Missing"):
         validate_expected_outputs(tmp_path, ("missing",))
+
+
+def test_materialise_orthology_component_outputs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Nested portable products satisfy the stable master-stage contract."""
+
+    expected_outputs = (
+        "orthology/tables/candidate_membership_mapping.parquet",
+        "orthology/qc/validation_checks.tsv",
+    )
+    component_root = (
+        tmp_path / "orthology" / "stages" / "05_publish_portable_outputs"
+    )
+    sources = {
+        "tables/candidate_membership_mapping.parquet": b"parquet fixture",
+        "qc/validation_checks.tsv": b"check_name\tstatus\nfixture\tPASS\n",
+    }
+    for relative_path, content in sources.items():
+        source = component_root / relative_path
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(content)
+
+    logger = logging.getLogger("test.orthology_materialisation")
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        materialise_orthology_component_outputs(
+            stage_root=tmp_path,
+            expected_outputs=expected_outputs,
+            logger=logger,
+        )
+
+    validate_expected_outputs(tmp_path, expected_outputs)
+    for expected_output in expected_outputs:
+        destination = tmp_path / expected_output
+        source = component_root / Path(expected_output).relative_to("orthology")
+        assert destination.read_bytes() == source.read_bytes()
+    assert "Materialised orthology component output" in caplog.text
+
+
+def test_materialise_orthology_component_outputs_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Missing component products and invalid master paths are never hidden."""
+
+    logger = logging.getLogger("test.orthology_materialisation_failure")
+    with pytest.raises(StageError, match="did not publish"):
+        materialise_orthology_component_outputs(
+            stage_root=tmp_path,
+            expected_outputs=("orthology/tables/missing.parquet",),
+            logger=logger,
+        )
+    with pytest.raises(StageError, match="below orthology"):
+        materialise_orthology_component_outputs(
+            stage_root=tmp_path,
+            expected_outputs=("tables/unscoped.parquet",),
+            logger=logger,
+        )
+
+
+def test_external_orthology_command_materialises_master_contract(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """A successful nested component publication completes outer stage 05."""
+
+    import sys
+    import yaml
+
+    fake_component = tmp_path / "fake_orthology_component.py"
+    fake_component.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "import sys",
+                "root = (Path(sys.argv[1]) / 'orthology' / 'stages' / "
+                "'05_publish_portable_outputs')",
+                "outputs = {",
+                "    'tables/candidate_membership_mapping.parquet': b'parquet fixture',",
+                "    'qc/validation_checks.tsv': b'check_name\\tstatus\\nfixture\\tPASS\\n',",
+                "}",
+                "for relative_path, content in outputs.items():",
+                "    destination = root / relative_path",
+                "    destination.parent.mkdir(parents=True, exist_ok=True)",
+                "    destination.write_bytes(content)",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    raw = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    expected_outputs = [
+        "orthology/tables/candidate_membership_mapping.parquet",
+        "orthology/qc/validation_checks.tsv",
+    ]
+    raw["stages"]["05_orthology"].update(
+        command=[sys.executable, str(fake_component), "{stage_dir}"],
+        expected_outputs=expected_outputs,
+    )
+    synthetic_config.write_text(
+        yaml.safe_dump(raw, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    config = load_config(synthetic_config)
+    initialise_stage_tokens(config)
+    for stage_name in STAGE_NAMES[:5]:
+        execute_stage(config, stage_name)
+    manifest = execute_stage(config, "05_orthology")
+
+    assert manifest.is_file()
+    assert json.loads(manifest.read_text(encoding="utf-8"))["status"] == "complete"
+    validate_expected_outputs(manifest.parent, tuple(expected_outputs))
 
 
 def test_stage_requires_wrapper_control_token(synthetic_config: Path) -> None:

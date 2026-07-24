@@ -128,6 +128,75 @@ def validate_expected_outputs(stage_root: Path, outputs: tuple[str, ...]) -> Non
         raise StageError(f"Missing or empty declared outputs: {', '.join(missing)}")
 
 
+def materialise_orthology_component_outputs(
+    *,
+    stage_root: Path,
+    expected_outputs: tuple[str, ...],
+    logger: logging.Logger,
+) -> None:
+    """Expose the orthology component's portable products at the master stage contract.
+
+    The independently restartable ``e3_orthology_integration`` package publishes its portable
+    products below ``orthology/stages/05_publish_portable_outputs``. The master workflow owns a
+    flatter contract below ``orthology``. Materialising only the declared outputs preserves the
+    component's complete nested run for provenance while avoiding duplicated scientific files
+    where hard links are supported.
+
+    Args:
+        stage_root: Temporary atomic-publication directory for master stage 05.
+        expected_outputs: Master stage output paths relative to ``stage_root``.
+        logger: Stage logger used to record each publication method.
+
+    Raises:
+        StageError: If an expected output is outside the orthology contract, the component did not
+            publish its corresponding portable file, or materialisation changes file content.
+    """
+    destination_root = stage_root / "orthology"
+    source_root = destination_root / "stages" / "05_publish_portable_outputs"
+    for relative_output in expected_outputs:
+        relative_path = Path(relative_output)
+        try:
+            component_relative_path = relative_path.relative_to("orthology")
+        except ValueError as error:
+            raise StageError(
+                "Orthology stage outputs must be declared below orthology/: "
+                f"{relative_output}"
+            ) from error
+        destination = stage_root / relative_path
+        if destination.is_file() and destination.stat().st_size > 0:
+            logger.info("Orthology output already satisfies master contract: %s", destination)
+            continue
+        source = source_root / component_relative_path
+        if not source.is_file() or source.stat().st_size == 0:
+            raise StageError(
+                "Orthology component did not publish a required portable output: "
+                f"{source}"
+            )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(source, destination)
+            publication_method = "hardlink"
+        except OSError:
+            shutil.copyfile(source, destination)
+            publication_method = "copy"
+        if destination.stat().st_size != source.stat().st_size:
+            raise StageError(
+                "Materialised orthology output differs in size from its component source: "
+                f"{destination}"
+            )
+        if publication_method == "copy" and sha256_file(destination) != sha256_file(source):
+            raise StageError(
+                "Copied orthology output differs in checksum from its component source: "
+                f"{destination}"
+            )
+        logger.info(
+            "Materialised orthology component output by %s: %s -> %s",
+            publication_method,
+            source,
+            destination,
+        )
+
+
 def _run_internal_inputs(config: WorkflowConfig, stage_root: Path) -> None:
     """Validate controlled inputs required by enabled branches and publish an inventory."""
     required_inputs = dict(controlled_input_paths(config))
@@ -603,6 +672,12 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 stage_return_code = return_code
                 raise StageError(
                     f"Stage command returned {return_code}; see logs/command.log"
+                )
+            if stage_name == "05_orthology":
+                materialise_orthology_component_outputs(
+                    stage_root=staging,
+                    expected_outputs=stage.expected_outputs,
+                    logger=logger,
                 )
         else:
             logger.info("Using the package's validated internal implementation for this stage.")
