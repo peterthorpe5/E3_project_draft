@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import duckdb
 import pytest
 import yaml
 
-from e3workflow import reporting
+from e3workflow import reporting, runner
 from e3workflow.benchmarking import aggregate_run_benchmarks
 from e3workflow.config import STAGE_NAMES, load_config
 from e3workflow.control import initialise_stage_tokens
@@ -19,6 +20,8 @@ from e3workflow.io_utils import write_tsv
 from e3workflow.reporting import (
     RUN_REPORT_FILENAME,
     _bar_chart,
+    _controlled_input_role,
+    _input_records,
     _integer,
     _line_chart,
     _number,
@@ -29,6 +32,116 @@ from e3workflow.reporting import (
     summarise_output,
 )
 from e3workflow.runner import execute_stage
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("candidate_evidence", "candidate evidence Parquet"),
+        ("candidate_evidence_manifest", "candidate evidence provenance manifest"),
+        ("orthology_species_manifest", "orthology species manifest"),
+        ("inherited_sqlite", "inherited E3 SQLite database"),
+        ("orthofinder_archive", "reviewed OrthoFinder result archive"),
+        ("e3_domain_catalogue", "E3 domain catalogue"),
+        ("domain_annotation_manifest", "domain annotation manifest"),
+        ("expression_manifest", "Expression Atlas resource manifest"),
+        ("ligandability_manifest", "ligandability resource manifest"),
+        ("future_evidence_authority", "controlled input: future evidence authority"),
+        ("", "controlled input: unlabelled resource"),
+    ],
+)
+def test_controlled_input_roles_are_complete_and_forward_compatible(
+    label: str, expected: str
+) -> None:
+    """Production and future controlled inputs receive non-failing report labels."""
+    assert _controlled_input_role(label) == expected
+
+
+def test_input_records_accept_complete_production_resources(
+    synthetic_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage-00 reporting inventories every reuse input without a label lookup failure."""
+    config = load_config(path=synthetic_config)
+    labels = (
+        "candidate_evidence",
+        "candidate_evidence_manifest",
+        "orthology_species_manifest",
+        "inherited_sqlite",
+        "orthofinder_archive",
+        "e3_domain_catalogue",
+        "domain_annotation_manifest",
+        "expression_manifest",
+        "ligandability_manifest",
+        "future_evidence_authority",
+    )
+    controlled_inputs = []
+    for label in labels:
+        path = tmp_path / f"{label}.input"
+        path.write_text(f"{label}\n", encoding="utf-8")
+        controlled_inputs.append((label, path))
+    monkeypatch.setattr(
+        reporting,
+        "controlled_input_paths",
+        lambda _config: tuple(controlled_inputs),
+    )
+
+    records = _input_records(config, "00_inputs")
+    roles = [str(record[0]) for record in records]
+
+    assert len(records) == len(controlled_inputs) + 1
+    assert roles[0] == "workflow configuration"
+    assert "candidate evidence Parquet" in roles
+    assert "reviewed OrthoFinder result archive" in roles
+    assert "controlled input: future evidence authority" in roles
+
+
+def test_production_stage_zero_publishes_complete_resource_report(
+    synthetic_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The complete production reuse inventory survives stage execution and HTML publication."""
+    config = replace(load_config(path=synthetic_config), mode="production")
+    labels = (
+        "candidate_evidence",
+        "candidate_evidence_manifest",
+        "orthology_species_manifest",
+        "inherited_sqlite",
+        "orthofinder_archive",
+        "e3_domain_catalogue",
+        "expression_manifest",
+        "ligandability_manifest",
+    )
+    controlled_inputs = []
+    for label in labels:
+        path = tmp_path / f"{label}.input"
+        path.write_text(f"{label}\n", encoding="utf-8")
+        controlled_inputs.append((label, path))
+    controlled_input_result = tuple(controlled_inputs)
+    monkeypatch.setattr(
+        reporting,
+        "controlled_input_paths",
+        lambda _config: controlled_input_result,
+    )
+    monkeypatch.setattr(
+        runner,
+        "controlled_input_paths",
+        lambda _config: controlled_input_result,
+    )
+    monkeypatch.setattr(runner, "read_resource_manifest", lambda **_kwargs: ({},))
+    initialise_stage_tokens(config=config)
+
+    manifest_path = execute_stage(config=config, stage_name="00_inputs")
+    report_path = config.run_root / "00_inputs" / "report" / "stage_report.html"
+    report = report_path.read_text(encoding="utf-8")
+
+    assert manifest_path.is_file()
+    assert "candidate evidence Parquet" in report
+    assert "reviewed OrthoFinder result archive" in report
+    assert "Expression Atlas resource manifest" in report
+    assert "ligandability resource manifest" in report
 
 
 def test_streaming_output_summaries_are_bounded(tmp_path: Path) -> None:

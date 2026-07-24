@@ -43,6 +43,20 @@ REPORT_FILENAME = "stage_report.html"
 RUN_REPORT_FILENAME = "e3_workflow_summary.html"
 MAX_JSON_INSPECTION_BYTES = 10 * 1024 * 1024
 MAX_TEXT_PREVIEW_CHARACTERS = 240
+CONTROLLED_INPUT_ROLE_LABELS = {
+    "proteomes": "proteome manifest",
+    "seeds": "known-E3 evidence manifest",
+    "shortlist": "shortlist manifest",
+    "candidate_evidence": "candidate evidence Parquet",
+    "candidate_evidence_manifest": "candidate evidence provenance manifest",
+    "orthology_species_manifest": "orthology species manifest",
+    "inherited_sqlite": "inherited E3 SQLite database",
+    "orthofinder_archive": "reviewed OrthoFinder result archive",
+    "e3_domain_catalogue": "E3 domain catalogue",
+    "domain_annotation_manifest": "domain annotation manifest",
+    "expression_manifest": "Expression Atlas resource manifest",
+    "ligandability_manifest": "ligandability resource manifest",
+}
 
 
 def _escape(value: object) -> str:
@@ -75,6 +89,26 @@ def _integer(value: object, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _controlled_input_role(label: str) -> str:
+    """Return a readable report role for one controlled-input identifier.
+
+    Known workflow inputs receive explicit scientific labels. A future validated input identifier
+    receives a conservative human-readable fallback so reporting cannot invalidate an otherwise
+    successful stage merely because its presentation label has not yet been specialised.
+
+    Args:
+        label: Stable controlled-input identifier from the workflow configuration.
+
+    Returns:
+        Human-readable role for the stage and consolidated HTML reports.
+    """
+    known_role = CONTROLLED_INPUT_ROLE_LABELS.get(label)
+    if known_role is not None:
+        return known_role
+    humanised_label = " ".join(label.replace("_", " ").split())
+    return f"controlled input: {humanised_label or 'unlabelled resource'}"
 
 
 @contextmanager
@@ -641,14 +675,10 @@ def _input_records(config: WorkflowConfig, stage_name: str) -> list[tuple[object
             for dependency in dependencies
         )
     else:
-        input_labels = {
-            "proteomes": "proteome manifest",
-            "seeds": "known-E3 evidence manifest",
-            "shortlist": "shortlist manifest",
-        }
         paths.append(("workflow configuration", config.source_path))
         paths.extend(
-            (input_labels[label], path) for label, path in controlled_input_paths(config)
+            (_controlled_input_role(label), path)
+            for label, path in controlled_input_paths(config)
         )
     return [
         (label, path, _human_bytes(path.stat().st_size), sha256_file(path))
