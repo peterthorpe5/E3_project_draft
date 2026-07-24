@@ -126,7 +126,7 @@ while (($#)); do
             shift
             ;;
         --version)
-            printf 'e3-end-to-end-workflow 0.7.3\n'
+            printf 'e3-end-to-end-workflow 0.7.4\n'
             exit 0
             ;;
         --help|-h)
@@ -297,6 +297,7 @@ COMMAND=(
 if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/local" ]]; then
     COMMAND+=(--cores "${THREADS}")
 fi
+[[ -n "${TARGET}" ]] && COMMAND+=("${TARGET}")
 if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" ]]; then
     COMMAND+=(
         --jobs "${MAX_JOBS}"
@@ -309,7 +310,6 @@ if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" ]]; then
 fi
 [[ "${DRY_RUN}" == "true" ]] && COMMAND+=(--dry-run)
 [[ "${UNLOCK}" == "true" ]] && COMMAND+=(--unlock)
-[[ -n "${TARGET}" ]] && COMMAND+=("${TARGET}")
 COMMAND+=("${EXTRA_ARGS[@]}")
 printf 'Command:'
 printf ' %q' "${COMMAND[@]}"

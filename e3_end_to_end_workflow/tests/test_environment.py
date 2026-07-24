@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -69,3 +71,92 @@ def test_detached_launcher_contract(package_root: Path) -> None:
     assert "--foreground" in launcher
     assert "SLURM_JOB_ID" in launcher
     assert "RUNNER_ARGS+=(--profile slurm)" in launcher
+
+
+def test_bounded_slurm_target_precedes_variadic_resources(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """A bounded target must not be consumed as a default-resource expression."""
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    run_root = tmp_path / "run"
+    argument_record = tmp_path / "snakemake_arguments.bin"
+
+    fake_workflow = binary_directory / "e3-workflow"
+    fake_workflow.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+command_name="$1"
+shift
+case "${command_name}" in
+    validate|control|record-invocation)
+        exit 0
+        ;;
+    plan)
+        printf 'Synthetic plan\\n'
+        ;;
+    stage-target)
+        stage_name=""
+        while (($#)); do
+            if [[ "$1" == "--stage" ]]; then
+                stage_name="$2"
+                break
+            fi
+            shift
+        done
+        printf '%s/%s/stage_manifest.json\\n' "${FAKE_RUN_ROOT}" "${stage_name}"
+        ;;
+    *)
+        printf 'Unexpected fake e3-workflow command: %s\\n' "${command_name}" >&2
+        exit 2
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_workflow.chmod(0o755)
+
+    fake_snakemake = binary_directory / "snakemake"
+    fake_snakemake.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\\0' "$@" >"${FAKE_SNAKEMAKE_ARGUMENT_RECORD}"
+""",
+        encoding="utf-8",
+    )
+    fake_snakemake.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
+    environment["FAKE_RUN_ROOT"] = str(run_root)
+    environment["FAKE_SNAKEMAKE_ARGUMENT_RECORD"] = str(argument_record)
+
+    subprocess.run(
+        [
+            str(package_root / "run_e3_end_to_end.sh"),
+            "--config",
+            str(package_root / "config" / "synthetic.yaml"),
+            "--profile",
+            "slurm",
+            "--stop-after",
+            "05_orthology",
+        ],
+        cwd=package_root,
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    arguments = argument_record.read_bytes().decode("utf-8").rstrip("\0").split("\0")
+    target = str(run_root / "05_orthology" / "stage_manifest.json")
+    resource_index = arguments.index("--default-resources")
+    assert arguments.index(target) < resource_index
+    assert arguments[resource_index + 1 : resource_index + 5] == [
+        "slurm_account=barton",
+        "slurm_partition=general",
+        "mem_mb=8000",
+        "runtime=60",
+    ]
