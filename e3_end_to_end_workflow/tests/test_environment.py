@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import yaml
@@ -120,7 +121,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.9.2" in result.stderr
+    assert "source package is 0.9.3" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -173,6 +174,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
     binary_directory.mkdir()
     run_root = tmp_path / "run"
     argument_record = tmp_path / "sbatch_arguments.bin"
+    accounting_record = tmp_path / "sacct_invocations.txt"
 
     fake_workflow = binary_directory / "e3-workflow"
     fake_workflow.write_text(
@@ -180,7 +182,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.9.2\\n'
+        printf 'e3-workflow 0.9.3\\n'
         ;;
     diagnose-install|diagnose-slurm-executor|validate)
         exit 0
@@ -224,6 +226,10 @@ done
     fake_sbatch.write_text(
         """#!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ "${FAKE_SBATCH_MODE:-accepted}" == "rejected" ]]; then
+    printf 'scheduler rejected submission\\n' >&2
+    exit 42
+fi
 printf '%s\\0' "$@" >"${FAKE_SBATCH_ARGUMENT_RECORD}"
 printf '98765;test-cluster\\n'
 """,
@@ -235,23 +241,77 @@ printf '98765;test-cluster\\n'
     fake_squeue.write_text(
         """#!/usr/bin/env bash
 set -Eeuo pipefail
-if [[ "${FAKE_SLURM_STATE:-}" == "active" ]]; then
-    printf 'RUNNING\\n'
-fi
+case "${FAKE_SLURM_STATE:-inactive}" in
+    active)
+        printf 'RUNNING\\n'
+        ;;
+    failed_query)
+        printf 'scheduler query unavailable\\n' >&2
+        exit 1
+        ;;
+    hanging)
+        sleep 10
+        ;;
+    terminal)
+        printf 'COMPLETED\\n'
+        ;;
+    unknown)
+        printf 'FUTURE_UNKNOWN_STATE\\n'
+        ;;
+    inactive)
+        ;;
+    *)
+        printf 'Unexpected fake scheduler state\\n' >&2
+        exit 2
+        ;;
+esac
 """,
         encoding="utf-8",
     )
     fake_squeue.chmod(0o755)
 
     fake_sacct = binary_directory / "sacct"
-    fake_sacct.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_sacct.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf 'invoked\\n' >>"${FAKE_SACCT_INVOCATION_RECORD}"
+case "${FAKE_SACCT_MODE:-completed}" in
+    completed)
+        printf 'COMPLETED|\\n'
+        ;;
+    failed)
+        printf 'accounting database unavailable\\n' >&2
+        exit 1
+        ;;
+    hanging)
+        sleep 10
+        ;;
+    *)
+        printf 'Unexpected fake accounting mode\\n' >&2
+        exit 2
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
     fake_sacct.chmod(0o755)
 
     fake_scontrol = binary_directory / "scontrol"
     fake_scontrol.write_text(
         """#!/usr/bin/env bash
 set -Eeuo pipefail
-printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
+case "${FAKE_SCONTROL_MODE:-available}" in
+    available)
+        printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
+        ;;
+    hanging)
+        sleep 10
+        ;;
+    *)
+        printf 'Unexpected fake scontrol mode\\n' >&2
+        exit 2
+        ;;
+esac
 """,
         encoding="utf-8",
     )
@@ -261,6 +321,7 @@ printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
     environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
     environment["FAKE_RUN_ROOT"] = str(run_root)
     environment["FAKE_SBATCH_ARGUMENT_RECORD"] = str(argument_record)
+    environment["FAKE_SACCT_INVOCATION_RECORD"] = str(accounting_record)
     environment.pop("SLURM_JOB_ID", None)
 
     launcher = package_root / "submit_e3_controller_slurm.sh"
@@ -322,6 +383,26 @@ printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
     assert rows[0].startswith("job_id\tsubmitted_at_utc")
     assert rows[1].startswith("98765\t")
 
+    unavailable_accounting_environment = environment.copy()
+    unavailable_accounting_environment["FAKE_SACCT_MODE"] = "failed"
+    stale_metadata_resume = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--resume",
+        ],
+        cwd=package_root,
+        check=False,
+        env=unavailable_accounting_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert stale_metadata_resume.returncode == 0, stale_metadata_resume.stderr
+    assert "Controller job: 98765" in stale_metadata_resume.stdout
+    assert "safe resume is permitted" in stale_metadata_resume.stdout
+    assert not accounting_record.exists()
+
     duplicate_environment = environment.copy()
     duplicate_environment["FAKE_SLURM_STATE"] = "active"
     duplicate = subprocess.run(
@@ -334,6 +415,169 @@ printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
     )
     assert duplicate.returncode == 3
     assert "already active" in duplicate.stderr
+    assert "Status source: squeue" in duplicate.stderr
+    assert not accounting_record.exists()
+
+    failed_squeue_environment = environment.copy()
+    failed_squeue_environment["FAKE_SLURM_STATE"] = "failed_query"
+    failed_squeue = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=failed_squeue_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert failed_squeue.returncode == 3
+    assert "squeue could not determine" in failed_squeue.stderr
+    assert "refusing to submit" in failed_squeue.stderr
+    assert not accounting_record.exists()
+
+    hanging_squeue_environment = environment.copy()
+    hanging_squeue_environment["FAKE_SLURM_STATE"] = "hanging"
+    started_at = time.monotonic()
+    hanging_squeue = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--resume",
+            "--scheduler-query-timeout-seconds",
+            "1",
+        ],
+        cwd=package_root,
+        check=False,
+        env=hanging_squeue_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert time.monotonic() - started_at < 3
+    assert hanging_squeue.returncode == 3
+    assert "squeue could not determine" in hanging_squeue.stderr
+    assert "refusing to submit" in hanging_squeue.stderr
+
+    terminal_squeue_environment = environment.copy()
+    terminal_squeue_environment["FAKE_SLURM_STATE"] = "terminal"
+    terminal_state_resume = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=terminal_squeue_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert terminal_state_resume.returncode == 0, terminal_state_resume.stderr
+    assert "safe resume is permitted" in terminal_state_resume.stdout
+    assert not accounting_record.exists()
+
+    unknown_squeue_environment = environment.copy()
+    unknown_squeue_environment["FAKE_SLURM_STATE"] = "unknown"
+    unknown_state = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=unknown_squeue_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert unknown_state.returncode == 3
+    assert "unrecognised controller state" in unknown_state.stderr
+    assert not accounting_record.exists()
+
+    status_unavailable = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--status",
+            "--scheduler-query-timeout-seconds",
+            "1",
+        ],
+        cwd=package_root,
+        check=True,
+        env=unavailable_accounting_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert "Controller: NOT_IN_QUEUE" in status_unavailable.stdout
+    assert "Status source: squeue" in status_unavailable.stdout
+    assert "Accounting: UNAVAILABLE_OR_NO_RECORD" in status_unavailable.stdout
+    assert accounting_record.read_text(encoding="utf-8").splitlines() == ["invoked"]
+
+    hanging_accounting_environment = environment.copy()
+    hanging_accounting_environment["FAKE_SACCT_MODE"] = "hanging"
+    started_at = time.monotonic()
+    status_timeout = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--status",
+            "--scheduler-query-timeout-seconds",
+            "1",
+        ],
+        cwd=package_root,
+        check=True,
+        env=hanging_accounting_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert time.monotonic() - started_at < 3
+    assert "Controller: NOT_IN_QUEUE" in status_timeout.stdout
+    assert "Accounting: UNAVAILABLE_OR_NO_RECORD" in status_timeout.stdout
+
+    hanging_scontrol_environment = environment.copy()
+    hanging_scontrol_environment["FAKE_SCONTROL_MODE"] = "hanging"
+    started_at = time.monotonic()
+    scontrol_timeout = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--resume",
+            "--scheduler-query-timeout-seconds",
+            "1",
+        ],
+        cwd=package_root,
+        check=False,
+        env=hanging_scontrol_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert time.monotonic() - started_at < 3
+    assert scontrol_timeout.returncode == 2
+    assert "scontrol could not report MinJobAge within 1 seconds" in (
+        scontrol_timeout.stderr
+    )
+
+    rejected_submission_environment = environment.copy()
+    rejected_submission_environment["FAKE_SBATCH_MODE"] = "rejected"
+    rejected_submission = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=rejected_submission_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected_submission.returncode == 42
+    assert "scheduler rejected submission" in rejected_submission.stderr
+    assert "sbatch rejected" in rejected_submission.stderr
+
+    metadata.write_text(
+        "job_id\tsubmitted_at_utc\trun_name\tconfiguration\n",
+        encoding="utf-8",
+    )
+    malformed_metadata = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert malformed_metadata.returncode == 2
+    assert "does not contain a valid Slurm job ID" in malformed_metadata.stderr
 
 
 def test_slurm_spool_copy_uses_explicit_source_root(
@@ -355,7 +599,7 @@ def test_slurm_spool_copy_uses_explicit_source_root(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.9.2\\n'
+        printf 'e3-workflow 0.9.3\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -476,7 +720,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.9.2\\n'
+        printf 'e3-workflow 0.9.3\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

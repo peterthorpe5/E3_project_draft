@@ -16,11 +16,29 @@ CONDA_EXECUTABLE="${CONDA_EXE:-}"
 CHILD_ACCOUNT="barton"
 CHILD_PARTITION="general"
 readonly MINIMUM_SQUEUE_RETENTION_SECONDS="120"
+SCHEDULER_QUERY_TIMEOUT_SECONDS="15"
+SUBMITTED_JOB_ID=""
 declare -a RUNNER_ARGS=()
 
 if [[ -n "${CONDA_DEFAULT_ENV:-}" && "${CONDA_DEFAULT_ENV}" != "base" ]]; then
     CONDA_ENVIRONMENT="${CONDA_DEFAULT_ENV}"
 fi
+
+report_unexpected_error() {
+    local exit_status="$1"
+    local line_number="$2"
+    local failed_command="$3"
+    printf 'ERROR: controller launcher stopped unexpectedly at line %s '\
+'(exit status %s): %s\n' \
+        "${line_number}" "${exit_status}" "${failed_command}" >&2
+    if [[ -n "${SUBMITTED_JOB_ID}" ]]; then
+        printf 'IMPORTANT: Slurm accepted controller job %s before the launcher error. '\
+'Check it with: squeue --jobs %s\n' \
+            "${SUBMITTED_JOB_ID}" "${SUBMITTED_JOB_ID}" >&2
+    fi
+}
+
+trap 'report_unexpected_error "$?" "${LINENO}" "${BASH_COMMAND}"' ERR
 
 usage() {
     cat <<'EOF'
@@ -38,6 +56,9 @@ Controller allocation:
   --conda-environment NAME      Conda environment (default: active environment or
                                 e3_end_to_end_workflow).
   --conda-executable PATH       Conda executable (default: CONDA_EXE or PATH).
+  --scheduler-query-timeout-seconds INT
+                                Maximum time for each squeue, scontrol or
+                                optional sacct query (default: 15).
   --status                      Report the submitted controller job state.
   --help                        Show this help text.
   --version                     Show the package version.
@@ -77,10 +98,17 @@ validate_squeue_retention() {
     local suffix
     local unit
     local seconds
-    configuration_line="$(
-        scontrol show config 2>/dev/null |
+    if configuration_line="$(
+        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+            scontrol show config 2>/dev/null |
             awk '$1 == "MinJobAge" {print $3, $4; exit}'
-    )"
+    )"; then
+        :
+    else
+        printf 'ERROR: scontrol could not report MinJobAge within %s seconds.\n' \
+            "${SCHEDULER_QUERY_TIMEOUT_SECONDS}" >&2
+        return 2
+    fi
     [[ -n "${configuration_line}" ]] || {
         printf 'ERROR: could not read MinJobAge from scontrol show config.\n' >&2
         return 2
@@ -155,6 +183,11 @@ while (($#)); do
             CONDA_EXECUTABLE="$2"
             shift 2
             ;;
+        --scheduler-query-timeout-seconds)
+            require_option_value "$1" "${2-}"
+            SCHEDULER_QUERY_TIMEOUT_SECONDS="$2"
+            shift 2
+            ;;
         --account)
             require_option_value "$1" "${2-}"
             CHILD_ACCOUNT="$2"
@@ -221,6 +254,14 @@ done
     printf 'ERROR: --conda-environment contains unsafe characters.\n' >&2
     exit 2
 }
+[[ "${SCHEDULER_QUERY_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'ERROR: --scheduler-query-timeout-seconds must be a positive integer.\n' >&2
+    exit 2
+}
+((SCHEDULER_QUERY_TIMEOUT_SECONDS <= 300)) || {
+    printf 'ERROR: --scheduler-query-timeout-seconds must not exceed 300.\n' >&2
+    exit 2
+}
 validate_scheduler_name "--account" "${CHILD_ACCOUNT}"
 validate_scheduler_name "--partition" "${CHILD_PARTITION}"
 CONTROLLER_ACCOUNT="${CONTROLLER_ACCOUNT:-${CHILD_ACCOUNT}}"
@@ -266,30 +307,84 @@ SUBMISSION_LOCK="${CONTROL_DIRECTORY}/controller_submission.lock"
 mkdir -p -- "${CONTROL_DIRECTORY}" "${LOG_DIRECTORY}"
 
 read_job_id() {
-    if [[ -s "${METADATA_FILE}" ]]; then
-        awk -F '\t' 'NR == 2 {print $1}' "${METADATA_FILE}"
+    local job_id
+    if [[ ! -s "${METADATA_FILE}" ]]; then
+        return 0
     fi
+    job_id="$(awk -F '\t' 'NR == 2 {print $1; exit}' "${METADATA_FILE}")"
+    if [[ ! "${job_id}" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'ERROR: controller metadata does not contain a valid Slurm job ID: %s\n' \
+            "${METADATA_FILE}" >&2
+        return 2
+    fi
+    printf '%s\n' "${job_id}"
 }
 
-query_controller_state() {
+query_squeue_state() {
     local job_id="$1"
-    local state=""
-    if command -v squeue >/dev/null; then
-        state="$(squeue --noheader --jobs "${job_id}" --format '%T' 2>/dev/null | \
-            awk 'NF {print $1; exit}')"
+    local output
+    local state
+    command -v squeue >/dev/null || {
+        printf 'ERROR: required Slurm command is not on PATH: squeue\n' >&2
+        return 2
+    }
+    command -v timeout >/dev/null || {
+        printf 'ERROR: required command is not on PATH: timeout\n' >&2
+        return 2
+    }
+    if output="$(
+        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+            squeue --noheader --jobs "${job_id}" --format '%T' 2>&1
+    )"; then
+        state="$(awk 'NF {print $1; exit}' <<<"${output}")"
+        printf '%s\n' "${state}"
+        return 0
     fi
-    if [[ -z "${state}" ]] && command -v sacct >/dev/null; then
-        state="$(sacct --noheader --parsable2 --jobs "${job_id}" \
-            --format State 2>/dev/null | awk -F '|' 'NF && $1 != "" {print $1; exit}')"
+    output="$(awk 'NF {print; exit}' <<<"${output}")"
+    printf 'ERROR: squeue could not determine whether controller job %s is active: %s\n' \
+        "${job_id}" "${output:-no scheduler diagnostic was returned}" >&2
+    return 2
+}
+
+query_sacct_state() {
+    local job_id="$1"
+    local output
+    local state
+    command -v sacct >/dev/null || return 1
+    command -v timeout >/dev/null || return 1
+    if output="$(
+        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+            sacct --noheader --parsable2 --jobs "${job_id}" \
+            --format State 2>/dev/null
+    )"; then
+        state="$(awk -F '|' 'NF && $1 != "" {print $1; exit}' <<<"${output}")"
         state="${state%%+*}"
+        [[ -z "${state}" ]] || {
+            printf '%s\n' "${state}"
+            return 0
+        }
     fi
-    printf '%s\n' "${state:-UNKNOWN}"
+    return 1
 }
 
 controller_is_active() {
     local state="$1"
     case "${state}" in
-        PENDING|RUNNING|CONFIGURING|COMPLETING|REQUEUED|RESIZING|SUSPENDED)
+        PENDING|RUNNING|CONFIGURING|COMPLETING|REQUEUED|REQUEUE_FED|\
+REQUEUE_HOLD|RESIZING|RESV_DEL_HOLD|SIGNALING|STAGE_OUT|STOPPED|SUSPENDED)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+controller_is_terminal() {
+    local state="$1"
+    case "${state}" in
+        BOOT_FAIL|CANCELLED|COMPLETED|DEADLINE|FAILED|NODE_FAIL|\
+OUT_OF_MEMORY|PREEMPTED|REVOKED|TIMEOUT)
             return 0
             ;;
         *)
@@ -300,16 +395,40 @@ controller_is_active() {
 
 controller_status() {
     local job_id
+    local status_source
     local state
-    job_id="$(read_job_id)"
+    if job_id="$(read_job_id)"; then
+        :
+    else
+        printf 'Run: %s\nController: METADATA_INVALID\nMetadata: %s\n' \
+            "${RUN_NAME}" "${METADATA_FILE}"
+        return 2
+    fi
     if [[ -z "${job_id}" ]]; then
         printf 'Run: %s\nController: NOT_SUBMITTED\nMetadata: %s\n' \
             "${RUN_NAME}" "${METADATA_FILE}"
         return 1
     fi
-    state="$(query_controller_state "${job_id}")"
-    printf 'Run: %s\nController: %s\nSlurm job: %s\nMetadata: %s\n' \
-        "${RUN_NAME}" "${state}" "${job_id}" "${METADATA_FILE}"
+    if state="$(query_squeue_state "${job_id}")"; then
+        status_source="squeue"
+    else
+        printf 'Run: %s\nController: STATUS_QUERY_FAILED\nSlurm job: %s\nMetadata: %s\n' \
+            "${RUN_NAME}" "${job_id}" "${METADATA_FILE}"
+        return 2
+    fi
+    if [[ -z "${state}" ]]; then
+        if state="$(query_sacct_state "${job_id}")"; then
+            status_source="sacct"
+        else
+            state="NOT_IN_QUEUE"
+            status_source="squeue"
+        fi
+    fi
+    printf 'Run: %s\nController: %s\nSlurm job: %s\nStatus source: %s\nMetadata: %s\n' \
+        "${RUN_NAME}" "${state}" "${job_id}" "${status_source}" "${METADATA_FILE}"
+    if [[ "${state}" == "NOT_IN_QUEUE" ]]; then
+        printf 'Accounting: UNAVAILABLE_OR_NO_RECORD\n'
+    fi
     controller_is_active "${state}"
 }
 
@@ -320,7 +439,7 @@ fi
 
 "${CONDA_RUN[@]}" e3-workflow diagnose-slurm-executor \
     --require-compatible >/dev/null
-for command_name in sbatch squeue sacct scontrol; do
+for command_name in sbatch squeue scontrol timeout; do
     command -v "${command_name}" >/dev/null || {
         printf 'ERROR: required Slurm command is not on PATH: %s\n' "${command_name}" >&2
         exit 2
@@ -338,10 +457,37 @@ if ! flock --nonblock 9; then
         "${RUN_NAME}" >&2
     exit 3
 fi
-if controller_status >/dev/null 2>&1; then
-    printf 'ERROR: a Slurm controller is already active for %s.\n' "${RUN_NAME}" >&2
-    controller_status >&2
-    exit 3
+printf 'E3 controller submission preflight passed.\n'
+printf 'Run: %s\n' "${RUN_NAME}"
+printf 'Configuration: %s\n' "${CONFIG}"
+printf 'Status backend for scientific jobs: squeue\n'
+
+if PRIOR_JOB_ID="$(read_job_id)"; then
+    :
+else
+    exit 2
+fi
+if [[ -n "${PRIOR_JOB_ID}" ]]; then
+    if PRIOR_STATE="$(query_squeue_state "${PRIOR_JOB_ID}")"; then
+        :
+    else
+        printf 'ERROR: refusing to submit while the prior controller state is unknown.\n' >&2
+        exit 3
+    fi
+    if controller_is_active "${PRIOR_STATE}"; then
+        printf 'ERROR: a Slurm controller is already active for %s.\n' "${RUN_NAME}" >&2
+        printf 'Controller: %s\nSlurm job: %s\nStatus source: squeue\n' \
+            "${PRIOR_STATE}" "${PRIOR_JOB_ID}" >&2
+        exit 3
+    fi
+    if [[ -n "${PRIOR_STATE}" ]] && ! controller_is_terminal "${PRIOR_STATE}"; then
+        printf 'ERROR: refusing to submit because squeue returned an unrecognised '\
+'controller state for job %s: %s\n' \
+            "${PRIOR_JOB_ID}" "${PRIOR_STATE}" >&2
+        exit 3
+    fi
+    printf 'Previous controller job %s is not active in squeue; safe resume is permitted.\n' \
+        "${PRIOR_JOB_ID}"
 fi
 
 SAFE_RUN_NAME="${RUN_NAME//[^A-Za-z0-9_-]/_}"
@@ -368,12 +514,20 @@ SBATCH_COMMAND=(
     --
     "${RUNNER_ARGS[@]}"
 )
-SBATCH_RESPONSE="$("${SBATCH_COMMAND[@]}")"
+if SBATCH_RESPONSE="$("${SBATCH_COMMAND[@]}")"; then
+    :
+else
+    SBATCH_STATUS="$?"
+    printf 'ERROR: sbatch rejected the E3 controller submission (exit status %s).\n' \
+        "${SBATCH_STATUS}" >&2
+    exit "${SBATCH_STATUS}"
+fi
 JOB_ID="${SBATCH_RESPONSE%%;*}"
 [[ "${JOB_ID}" =~ ^[1-9][0-9]*$ ]] || {
     printf 'ERROR: sbatch returned an invalid job identifier: %s\n' "${SBATCH_RESPONSE}" >&2
     exit 1
 }
+SUBMITTED_JOB_ID="${JOB_ID}"
 
 METADATA_TEMP="${METADATA_FILE}.partial.$$"
 {
