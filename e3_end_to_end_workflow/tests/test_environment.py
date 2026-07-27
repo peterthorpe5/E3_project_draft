@@ -111,7 +111,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.9.1" in result.stderr
+    assert "source package is 0.9.2" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -171,7 +171,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.9.1\\n'
+        printf 'e3-workflow 0.9.2\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -279,6 +279,8 @@ fi
     assert arguments[arguments.index("--mem") + 1] == "6000M"
     assert "--time" in arguments
     assert arguments[arguments.index("--time") + 1] == "2-00:00:00"
+    assert "--source-root" in arguments
+    assert arguments[arguments.index("--source-root") + 1] == str(package_root)
     assert "--max-jobs" in arguments
     assert arguments[arguments.index("--max-jobs") + 1] == "7"
     assert "--resume" in arguments
@@ -302,6 +304,127 @@ fi
     assert "already active" in duplicate.stderr
 
 
+def test_slurm_spool_copy_uses_explicit_source_root(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """A Slurm-copied job body must run the real source-tree workflow runner."""
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    fake_source_root = tmp_path / "workflow-source"
+    fake_source_root.mkdir()
+    run_root = tmp_path / "run"
+    runner_argument_record = tmp_path / "runner_arguments.bin"
+
+    fake_workflow = binary_directory / "e3-workflow"
+    fake_workflow.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+case "$1" in
+    --version)
+        printf 'e3-workflow 0.9.2\\n'
+        ;;
+    diagnose-install|validate)
+        exit 0
+        ;;
+    run-root)
+        printf '%s\\n' "${FAKE_RUN_ROOT}"
+        ;;
+    *)
+        printf 'Unexpected e3-workflow command: %s\\n' "$1" >&2
+        exit 2
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_workflow.chmod(0o755)
+
+    fake_conda = binary_directory / "conda"
+    fake_conda.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+while (($#)); do
+    case "$1" in
+        run|--no-capture-output)
+            shift
+            ;;
+        --name)
+            shift 2
+            ;;
+        *)
+            exec "$@"
+            ;;
+    esac
+done
+""",
+        encoding="utf-8",
+    )
+    fake_conda.chmod(0o755)
+
+    fake_runner = fake_source_root / "run_e3_end_to_end.sh"
+    fake_runner.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\\0' "$@" >"${FAKE_RUNNER_ARGUMENT_RECORD}"
+""",
+        encoding="utf-8",
+    )
+    fake_runner.chmod(0o755)
+
+    spool_directory = tmp_path / "var" / "spool" / "slurmd"
+    spool_directory.mkdir(parents=True)
+    spooled_job = spool_directory / "slurm_script"
+    spooled_job.write_bytes(
+        (package_root / "scripts" / "slurm_e3_controller_job.sh").read_bytes()
+    )
+    spooled_job.chmod(0o755)
+    configuration = tmp_path / "configuration.yaml"
+    configuration.write_text("schema_version: 2\n", encoding="utf-8")
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
+    environment["FAKE_RUN_ROOT"] = str(run_root)
+    environment["FAKE_RUNNER_ARGUMENT_RECORD"] = str(runner_argument_record)
+    environment["SLURM_JOB_ID"] = "62079"
+
+    result = subprocess.run(
+        [
+            str(spooled_job),
+            "--source-root",
+            str(fake_source_root),
+            "--config",
+            str(configuration),
+            "--conda-executable",
+            str(fake_conda),
+            "--conda-environment",
+            "e3_end_to_end_workflow",
+            "--",
+            "--resume",
+        ],
+        cwd=spool_directory,
+        check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "/var/spool/slurmd/run_e3_end_to_end.sh" not in result.stderr
+    runner_arguments = (
+        runner_argument_record.read_bytes().decode("utf-8").rstrip("\0").split("\0")
+    )
+    assert runner_arguments == [
+        "--config",
+        str(configuration),
+        "--profile",
+        "slurm",
+        "--allow-inside-slurm",
+        "--resume",
+    ]
+
+
 def test_bounded_slurm_target_precedes_variadic_resources(
     package_root: Path,
     tmp_path: Path,
@@ -321,7 +444,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.9.1\\n'
+        printf 'e3-workflow 0.9.2\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

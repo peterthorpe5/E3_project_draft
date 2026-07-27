@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.9.1` supports two equally explicit production strategies:
+Version `0.9.2` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,

@@ -22,9 +22,15 @@ conda run --name e3_end_to_end_workflow \
     --editable "$(pwd)"
 ```
 
-Do not install from a nested `E3_project_draft/E3_project_draft` copy. Release v0.9.1 has
+Do not install from a nested `E3_project_draft/E3_project_draft` copy. Release v0.9.2 has
 one repository root and the launchers stop before execution if the source and command do
 not match.
+
+## Controller reports `/var/spool/slurmd/run_e3_end_to_end.sh`
+
+This is the v0.9.1 Slurm batch-copy defect. The controller ended before Snakemake or a scientific
+child job started. Install v0.9.2, which passes the absolute workflow source root into the copied
+batch body, then resume the same immutable configuration. Do not delete completed stages.
 
 ## Controller is pending
 
@@ -95,10 +101,10 @@ sacct --jobs JOB_ID \
     --format=JobIDRaw,JobName,State,ExitCode,Elapsed,ReqMem,MaxRSS,NodeList,Reason
 ```
 
-Version 0.9.1 scans only expression partitions for selected group-member species, reduces
+Version 0.9.2 scans only expression partitions for selected group-member species, reduces
 measurements to candidate genes before alias expansion, materialises mapping summaries once,
 and gives DuckDB a bounded memory limit plus disk spill directory. Resume the same immutable
-configuration after installing v0.9.1; do not delete the completed Stage 00–05 directories.
+configuration after installing v0.9.2; do not delete the completed Stage 00–05 directories.
 
 ## Domain annotation is missing
 

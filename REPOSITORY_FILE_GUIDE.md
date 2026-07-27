@@ -63,7 +63,7 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_1.md` | Versioned history. `v0.9.1` is the current release note. |
+| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_2.md` | Versioned history. `v0.9.2` is the current release note. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |

@@ -21,9 +21,9 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.9.1 retains the schema-v2 tool registry, parameter sweeps, fresh-run launcher and
-searchable manual introduced in v0.9.0. It additionally repairs Stage 07 Expression Atlas scaling,
-introduces source-to-install provenance checks and restores one unambiguous repository root.
+Version 0.9.2 retains the Stage 07 Expression Atlas scaling and installation-provenance repairs
+from v0.9.1. It additionally passes the absolute workflow source root into Slurm controller jobs,
+so Slurm's temporary batch-script copy cannot redirect the controller to `/var/spool/slurmd`.
 
 ## Sixty-second cluster quick start
 

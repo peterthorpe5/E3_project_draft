@@ -310,6 +310,7 @@ SBATCH_COMMAND=(
     --error "${SLURM_LOG}"
     --signal "B:TERM@120"
     "${CONTROLLER_JOB}"
+    --source-root "${SCRIPT_DIR}"
     --config "${CONFIG}"
     --conda-executable "${CONDA_EXECUTABLE}"
     --conda-environment "${CONDA_ENVIRONMENT}"

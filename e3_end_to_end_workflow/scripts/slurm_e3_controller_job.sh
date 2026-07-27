@@ -3,8 +3,7 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-readonly RUNNER="${SCRIPT_DIR}/run_e3_end_to_end.sh"
+SOURCE_ROOT=""
 CONFIG=""
 CONDA_EXECUTABLE=""
 CONDA_ENVIRONMENT=""
@@ -12,7 +11,7 @@ declare -a RUNNER_ARGS=()
 
 usage() {
     cat <<'EOF'
-Usage: slurm_e3_controller_job.sh --config PATH --conda-executable PATH
+Usage: slurm_e3_controller_job.sh --source-root PATH --config PATH --conda-executable PATH
                                   --conda-environment NAME [-- workflow options]
 
 This is the internal Slurm job body. Users should normally invoke
@@ -31,6 +30,11 @@ require_option_value() {
 
 while (($#)); do
     case "$1" in
+        --source-root)
+            require_option_value "$1" "${2-}"
+            SOURCE_ROOT="$2"
+            shift 2
+            ;;
         --config)
             require_option_value "$1" "${2-}"
             CONFIG="$2"
@@ -67,6 +71,10 @@ done
     printf 'ERROR: this script must run inside a Slurm batch allocation.\n' >&2
     exit 2
 }
+[[ -n "${SOURCE_ROOT}" && -d "${SOURCE_ROOT}" ]] || {
+    printf 'ERROR: workflow source root is unavailable: %s\n' "${SOURCE_ROOT}" >&2
+    exit 2
+}
 [[ -f "${CONFIG}" ]] || {
     printf 'ERROR: config not found: %s\n' "${CONFIG}" >&2
     exit 2
@@ -79,6 +87,9 @@ done
     printf 'ERROR: unsafe Conda environment name: %s\n' "${CONDA_ENVIRONMENT}" >&2
     exit 2
 }
+SOURCE_ROOT="$(cd -- "${SOURCE_ROOT}" && pwd -P)"
+readonly SOURCE_ROOT
+readonly RUNNER="${SOURCE_ROOT}/run_e3_end_to_end.sh"
 [[ -x "${RUNNER}" ]] || {
     printf 'ERROR: workflow runner is not executable: %s\n' "${RUNNER}" >&2
     exit 2
@@ -94,7 +105,7 @@ CONDA_RUN=(
     "${CONDA_ENVIRONMENT}"
 )
 "${CONDA_RUN[@]}" e3-workflow diagnose-install \
-    --source-root "${SCRIPT_DIR}" \
+    --source-root "${SOURCE_ROOT}" \
     --require-source-match >/dev/null
 "${CONDA_RUN[@]}" e3-workflow validate --config "${CONFIG}" >/dev/null
 RUN_ROOT="$("${CONDA_RUN[@]}" e3-workflow run-root --config "${CONFIG}")"
