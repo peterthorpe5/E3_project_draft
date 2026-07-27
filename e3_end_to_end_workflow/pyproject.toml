@@ -10,7 +10,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Internal research use"}
 authors = [{name = "Peter Thorpe and collaborators"}]
-dependencies = ["duckdb>=1.4,<2", "PyYAML>=6,<7", "psutil>=6,<8"]
+dependencies = [
+  "duckdb>=1.4,<2",
+  "packaging>=24,<27",
+  "PyYAML>=6,<7",
+  "psutil>=6,<8",
+]
 
 [project.optional-dependencies]
 dev = [

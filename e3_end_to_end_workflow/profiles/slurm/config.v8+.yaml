@@ -1,4 +1,6 @@
 executor: slurm
+slurm-status-command: squeue
+slurm-status-attempts: 5
 jobs: 50
 printshellcmds: true
 rerun-incomplete: true

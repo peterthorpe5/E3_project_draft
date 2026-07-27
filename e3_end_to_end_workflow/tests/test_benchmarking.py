@@ -314,6 +314,22 @@ def test_slurm_accounting_unavailable_failure_and_success() -> None:
     assert rows[0]["State"] == "COMPLETED"
 
 
+def test_slurm_accounting_timeout_is_best_effort() -> None:
+    """An unresponsive accounting service must not block final aggregation."""
+    with (
+        mock.patch.object(benchmarking.shutil, "which", return_value="/usr/bin/sacct"),
+        mock.patch.object(
+            benchmarking.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(cmd=["sacct"], timeout=30),
+        ),
+    ):
+        status, rows = collect_slurm_accounting(job_ids=["1"])
+    assert status["status"] == "failed"
+    assert "did not respond within 30 seconds" in str(status["message"])
+    assert rows == []
+
+
 def test_full_synthetic_benchmark_aggregation(synthetic_config: Path) -> None:
     """All stage measurements join into complete run-level benchmark authorities."""
     config = load_config(path=synthetic_config)

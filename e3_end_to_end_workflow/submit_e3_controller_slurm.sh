@@ -15,6 +15,7 @@ CONDA_ENVIRONMENT="e3_end_to_end_workflow"
 CONDA_EXECUTABLE="${CONDA_EXE:-}"
 CHILD_ACCOUNT="barton"
 CHILD_PARTITION="general"
+readonly MINIMUM_SQUEUE_RETENTION_SECONDS="120"
 declare -a RUNNER_ARGS=()
 
 if [[ -n "${CONDA_DEFAULT_ENV:-}" && "${CONDA_DEFAULT_ENV}" != "base" ]]; then
@@ -67,6 +68,53 @@ validate_scheduler_name() {
         printf 'ERROR: %s contains unsafe characters: %s\n' \
             "${option_name}" "${supplied_value}" >&2
         exit 2
+    fi
+}
+
+validate_squeue_retention() {
+    local configuration_line
+    local count
+    local suffix
+    local unit
+    local seconds
+    configuration_line="$(
+        scontrol show config 2>/dev/null |
+            awk '$1 == "MinJobAge" {print $3, $4; exit}'
+    )"
+    [[ -n "${configuration_line}" ]] || {
+        printf 'ERROR: could not read MinJobAge from scontrol show config.\n' >&2
+        return 2
+    }
+    read -r count unit <<<"${configuration_line}"
+    if [[ "${count}" =~ ^([0-9]+)([A-Za-z]*)$ ]]; then
+        count="${BASH_REMATCH[1]}"
+        suffix="${BASH_REMATCH[2],,}"
+    else
+        printf 'ERROR: unsupported Slurm MinJobAge value: %s\n' \
+            "${configuration_line}" >&2
+        return 2
+    fi
+    [[ -n "${suffix}" ]] || suffix="${unit,,}"
+    case "${suffix}" in
+        ""|s|sec|secs|second|seconds)
+            seconds="${count}"
+            ;;
+        m|min|mins|minute|minutes)
+            seconds="$((count * 60))"
+            ;;
+        h|hour|hours)
+            seconds="$((count * 3600))"
+            ;;
+        *)
+            printf 'ERROR: unsupported Slurm MinJobAge unit: %s\n' "${suffix}" >&2
+            return 2
+            ;;
+    esac
+    if ((seconds < MINIMUM_SQUEUE_RETENTION_SECONDS)); then
+        printf 'ERROR: Slurm MinJobAge is %s seconds; the squeue status backend requires '\
+'at least %s seconds for reliable completed-job detection.\n' \
+            "${seconds}" "${MINIMUM_SQUEUE_RETENTION_SECONDS}" >&2
+        return 2
     fi
 }
 
@@ -270,12 +318,15 @@ if [[ "${STATUS_ONLY}" == "true" ]]; then
     exit 0
 fi
 
-for command_name in sbatch squeue sacct; do
+"${CONDA_RUN[@]}" e3-workflow diagnose-slurm-executor \
+    --require-compatible >/dev/null
+for command_name in sbatch squeue sacct scontrol; do
     command -v "${command_name}" >/dev/null || {
         printf 'ERROR: required Slurm command is not on PATH: %s\n' "${command_name}" >&2
         exit 2
     }
 done
+validate_squeue_retention
 [[ -x "${CONTROLLER_JOB}" ]] || {
     printf 'ERROR: controller job script is not executable: %s\n' "${CONTROLLER_JOB}" >&2
     exit 2

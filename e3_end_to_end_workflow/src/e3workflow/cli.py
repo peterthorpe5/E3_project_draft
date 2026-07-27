@@ -19,7 +19,12 @@ from e3workflow.config import (
     stage_purpose,
 )
 from e3workflow.control import initialise_stage_tokens, stage_manifest_target
-from e3workflow.diagnostics import diagnose_installation, require_matching_source
+from e3workflow.diagnostics import (
+    diagnose_installation,
+    diagnose_slurm_executor,
+    require_compatible_slurm_executor,
+    require_matching_source,
+)
 from e3workflow.errors import WorkflowError
 from e3workflow.fresh import validate_fresh_config
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
@@ -103,6 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics = subparsers.add_parser("diagnose-install")
     diagnostics.add_argument("--source-root", type=Path)
     diagnostics.add_argument("--require-source-match", action="store_true")
+    slurm_diagnostics = subparsers.add_parser("diagnose-slurm-executor")
+    slurm_diagnostics.add_argument("--require-compatible", action="store_true")
     return parser
 
 
@@ -329,6 +336,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 payload = require_matching_source(source_root=args.source_root)
             else:
                 payload = diagnose_installation(source_root=args.source_root)
+        elif args.command == "diagnose-slurm-executor":
+            payload = (
+                require_compatible_slurm_executor()
+                if args.require_compatible
+                else diagnose_slurm_executor()
+            )
         else:
             raise WorkflowError(f"Unsupported command: {args.command}")
         print(json.dumps(payload, indent=2, sort_keys=True))

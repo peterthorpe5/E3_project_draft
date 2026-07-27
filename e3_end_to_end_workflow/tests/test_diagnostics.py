@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from importlib import metadata
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
 from e3workflow import __version__
-from e3workflow.diagnostics import diagnose_installation, require_matching_source
+from e3workflow.diagnostics import (
+    diagnose_installation,
+    diagnose_slurm_executor,
+    require_compatible_slurm_executor,
+    require_matching_source,
+)
 from e3workflow.errors import WorkflowError
 
 
@@ -42,3 +49,46 @@ def test_diagnostics_reject_invalid_and_mismatched_source_roots(
     assert payload["status"] == "VERSION_MISMATCH"
     with pytest.raises(WorkflowError, match="VERSION_MISMATCH"):
         require_matching_source(source_root=source_root)
+
+
+@pytest.mark.parametrize(
+    ("installed_version", "status", "compatible"),
+    [
+        ("2.7.1", "COMPATIBLE", True),
+        ("2.8.0", "COMPATIBLE", True),
+        ("2.7.0", "INCOMPATIBLE_VERSION", False),
+        ("3.0.0", "INCOMPATIBLE_VERSION", False),
+        ("not-a-version", "INVALID_VERSION", False),
+    ],
+)
+def test_slurm_executor_diagnostics_validate_supported_versions(
+    installed_version: str,
+    status: str,
+    compatible: bool,
+) -> None:
+    """Executor diagnostics must enforce the batch-controller compatibility range."""
+    with mock.patch(
+        "e3workflow.diagnostics.metadata.version",
+        return_value=installed_version,
+    ):
+        payload = diagnose_slurm_executor()
+        assert payload["status"] == status
+        assert payload["compatible"] is compatible
+        if compatible:
+            assert require_compatible_slurm_executor() == payload
+        else:
+            with pytest.raises(WorkflowError, match="batch-controller mode"):
+                require_compatible_slurm_executor()
+
+
+def test_slurm_executor_diagnostics_reject_missing_distribution() -> None:
+    """A missing Slurm executor must fail before a controller is submitted."""
+    with mock.patch(
+        "e3workflow.diagnostics.metadata.version",
+        side_effect=metadata.PackageNotFoundError,
+    ):
+        payload = diagnose_slurm_executor()
+        assert payload["status"] == "NOT_INSTALLED"
+        assert payload["compatible"] is False
+        with pytest.raises(WorkflowError, match="NOT_INSTALLED"):
+            require_compatible_slurm_executor()

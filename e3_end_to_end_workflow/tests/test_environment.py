@@ -17,9 +17,10 @@ def test_environment_pins_workflow_and_orthology_engines(package_root: Path) -> 
     assert environment["channels"] == ["conda-forge", "bioconda", "nodefaults"]
     dependencies = environment["dependencies"]
     assert "duckdb>=1.4,<2" in dependencies
+    assert "packaging>=24,<27" in dependencies
     assert "psutil>=6,<8" in dependencies
     assert "snakemake>=9,<10" in dependencies
-    assert "snakemake-executor-plugin-slurm" in dependencies
+    assert "snakemake-executor-plugin-slurm>=2.7.1,<3" in dependencies
     assert "orthofinder=2.5.5" in dependencies
     assert "mafft>=7.5,<8" in dependencies
 
@@ -32,6 +33,14 @@ def test_profiles_drop_completed_job_metadata(package_root: Path) -> None:
         profile = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert profile["rerun-incomplete"] is True
         assert profile["drop-metadata"] is True
+
+    slurm_profile = yaml.safe_load(
+        (package_root / "profiles" / "slurm" / "config.v8+.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert slurm_profile["slurm-status-command"] == "squeue"
+    assert slurm_profile["slurm-status-attempts"] == 5
 
 
 def test_fresh_template_respects_dundee_walltime_limit(package_root: Path) -> None:
@@ -173,7 +182,7 @@ case "$1" in
     --version)
         printf 'e3-workflow 0.9.2\\n'
         ;;
-    diagnose-install|validate)
+    diagnose-install|diagnose-slurm-executor|validate)
         exit 0
         ;;
     run-root)
@@ -238,6 +247,16 @@ fi
     fake_sacct.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
     fake_sacct.chmod(0o755)
 
+    fake_scontrol = binary_directory / "scontrol"
+    fake_scontrol.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
+""",
+        encoding="utf-8",
+    )
+    fake_scontrol.chmod(0o755)
+
     environment = os.environ.copy()
     environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
     environment["FAKE_RUN_ROOT"] = str(run_root)
@@ -246,6 +265,19 @@ fi
 
     launcher = package_root / "submit_e3_controller_slurm.sh"
     configuration = package_root / "config" / "synthetic.yaml"
+    unsafe_environment = environment.copy()
+    unsafe_environment["FAKE_MIN_JOB_AGE"] = "60"
+    unsafe = subprocess.run(
+        [str(launcher), "--config", str(configuration)],
+        cwd=package_root,
+        check=False,
+        env=unsafe_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert unsafe.returncode == 2
+    assert "requires at least 120 seconds" in unsafe.stderr
+
     result = subprocess.run(
         [
             str(launcher),

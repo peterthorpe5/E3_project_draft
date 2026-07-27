@@ -9,11 +9,15 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
+from packaging.version import InvalidVersion, Version
+
 import e3workflow
 from e3workflow import __version__
 from e3workflow.errors import WorkflowError
 
 PACKAGE_DISTRIBUTION = "e3-end-to-end-workflow"
+SLURM_EXECUTOR_DISTRIBUTION = "snakemake-executor-plugin-slurm"
+MINIMUM_SLURM_EXECUTOR_VERSION = Version("2.7.1")
 
 
 def _source_version(source_root: Path) -> str:
@@ -120,5 +124,64 @@ def require_matching_source(*, source_root: Path) -> dict[str, Any]:
             f"status={payload['status']}, source_version={payload['source_version']}, "
             f"imported_version={payload['imported_version']}, "
             f"imported_module_path={payload['imported_module_path']}"
+        )
+    return payload
+
+
+def diagnose_slurm_executor() -> dict[str, Any]:
+    """Report whether the installed Slurm executor is safe for batch controllers.
+
+    Returns:
+        Machine-readable executor version and compatibility fields.
+    """
+    try:
+        installed_text = metadata.version(SLURM_EXECUTOR_DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        return {
+            "status": "NOT_INSTALLED",
+            "distribution": SLURM_EXECUTOR_DISTRIBUTION,
+            "installed_version": "",
+            "minimum_version": str(MINIMUM_SLURM_EXECUTOR_VERSION),
+            "compatible": False,
+        }
+    try:
+        installed_version = Version(installed_text)
+    except InvalidVersion:
+        return {
+            "status": "INVALID_VERSION",
+            "distribution": SLURM_EXECUTOR_DISTRIBUTION,
+            "installed_version": installed_text,
+            "minimum_version": str(MINIMUM_SLURM_EXECUTOR_VERSION),
+            "compatible": False,
+        }
+    compatible = (
+        installed_version >= MINIMUM_SLURM_EXECUTOR_VERSION
+        and installed_version.major < 3
+    )
+    return {
+        "status": "COMPATIBLE" if compatible else "INCOMPATIBLE_VERSION",
+        "distribution": SLURM_EXECUTOR_DISTRIBUTION,
+        "installed_version": installed_text,
+        "minimum_version": str(MINIMUM_SLURM_EXECUTOR_VERSION),
+        "compatible": compatible,
+    }
+
+
+def require_compatible_slurm_executor() -> dict[str, Any]:
+    """Require a Slurm executor version safe for a controller inside Slurm.
+
+    Returns:
+        Successful executor diagnostic.
+
+    Raises:
+        WorkflowError: If the executor is missing, invalid or outside the supported range.
+    """
+    payload = diagnose_slurm_executor()
+    if not payload["compatible"]:
+        raise WorkflowError(
+            "The Slurm executor is not compatible with the batch-controller mode: "
+            f"status={payload['status']}, installed_version="
+            f"{payload['installed_version'] or 'NOT_INSTALLED'}, required="
+            f">={payload['minimum_version']},<3"
         )
     return payload

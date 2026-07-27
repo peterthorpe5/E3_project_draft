@@ -701,6 +701,7 @@ SLURM_ACCOUNTING_COLUMNS = (
     "NTasks",
     "NodeList",
 )
+SLURM_ACCOUNTING_TIMEOUT_SECONDS = 30
 
 
 def collect_slurm_accounting(
@@ -729,12 +730,22 @@ def collect_slurm_accounting(
         "--units=M",
         "--format=" + ",".join(SLURM_ACCOUNTING_COLUMNS),
     ]
-    completed = subprocess.run(
-        args=command,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            args=command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=SLURM_ACCOUNTING_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "failed",
+            "message": (
+                "sacct did not respond within "
+                f"{SLURM_ACCOUNTING_TIMEOUT_SECONDS} seconds"
+            ),
+        }, []
     if completed.returncode != 0:
         message = completed.stderr.strip() or f"sacct returned {completed.returncode}"
         return {"status": "failed", "message": message}, []
