@@ -1,0 +1,5 @@
+cseqid	mseqid	pident	clen	mlen	cstart	cend	mstart	mend	length	evalue	Bitscore
+species_a@@sp|AUXA1|AUXA1_SPA	species_a@@sp|AUXA1|AUXA1_SPA	100	80	80	1	80	1	80	80	2.78e-60	166
+species_b@@tr|E3B1|E3B1_SPB	species_a@@sp|E3A1|E3A1_SPA	98.9	87	88	1	87	1	88	88	5.97e-63	173
+species_b@@tr|E3B1|E3B1_SPB	species_b@@tr|E3B1|E3B1_SPB	100	87	87	1	87	1	87	87	8.53e-65	177
+species_b@@tr|AUXB1|AUXB1_SPB	species_b@@tr|AUXB1|AUXB1_SPB	100	80	80	1	80	1	80	80	6.25e-66	180

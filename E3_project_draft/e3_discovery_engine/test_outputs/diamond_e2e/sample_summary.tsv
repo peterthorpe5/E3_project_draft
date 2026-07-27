@@ -1,0 +1,3 @@
+sample_id	species	taxon_id	proteome_id	fasta_path	source_sha256	sequence_count	total_residues
+species_a	A			/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/tests/fixtures/species_a.fasta	4e82bf0894f94f07f6b462eaba7e345bdca36202ee854100e31d778ab10112e0	2	168
+species_b	B			/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/tests/fixtures/species_b.fasta	1bef4f05bacb64442971b3d12b21c61d427f64031e03df713e01d3376191155d	2	167

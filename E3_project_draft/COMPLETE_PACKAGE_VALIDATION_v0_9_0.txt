@@ -1,0 +1,96 @@
+E3 PROJECT DRAFT COMPLETE PACKAGE VALIDATION
+============================================
+
+Release: 0.9.0
+Validation date: 27 July 2026
+
+PACKAGE ASSEMBLY
+----------------
+
+The complete source tree was assembled from the current component-package
+sources and the verified v0.9.0 repository-root and master-workflow updates.
+The resulting package has one E3_project_draft root and no nested repository
+copy.
+
+Required component directories present:
+
+    E3_shiny_app
+    e3_discovery_engine
+    e3_end_to_end_workflow
+    e3_ligandability_pipeline
+    e3_orthology_integration
+    e3_python_app
+    e3_source_to_parquet_seed
+    e3_structural_alignment
+    expression_downloader
+
+VERSION CONSISTENCY
+-------------------
+
+    root launcher:                     0.9.0
+    fresh-run launcher:                0.9.0
+    master-workflow package metadata:  0.9.0
+    master-workflow Python version:    0.9.0
+
+REPOSITORY-ROOT VALIDATION
+--------------------------
+
+    12 tests passed
+    shell syntax passed
+    documentation navigation passed
+    internal documentation links passed
+    GitHub Pages workflow contract passed
+    Slurm and local launcher contracts passed
+    ten-job fresh-run limit passed
+    no-embedded-Python shell contract passed
+
+MASTER-WORKFLOW VALIDATION
+--------------------------
+
+    172 tests passed
+    branch-aware coverage: 90%
+    PEP 8 checks passed with a 100-character line limit
+    Google-style docstring checks passed
+    Python compilation passed
+    shell syntax passed
+    Snakemake lint passed
+    complete 16-job synthetic DAG passed
+    controlled start/stop/resume passed
+    final no-op dry run passed
+    HTML and manifest publication checks passed
+
+DOCUMENTATION VALIDATION
+------------------------
+
+    MkDocs strict build passed
+    v0.8.0 operator guide retained
+    v0.9.0 operator guide retained
+    v0.8.0 release validation retained
+    v0.9.0 release validation retained
+    27 July 2026 detailed handover retained
+
+RELEASE HYGIENE
+---------------
+
+The delivered tree excludes:
+
+    Git metadata
+    macOS .DS_Store files
+    Python bytecode and cache directories
+    pytest, Ruff and Snakemake caches
+    coverage working files
+    editable-install metadata
+    synthetic test-run outputs
+    generated documentation-site output
+    temporary PDF-build files
+    duplicate data_bk content
+
+SCIENTIFIC SCOPE
+----------------
+
+This validation demonstrates software consistency and synthetic execution. It
+does not convert the unresolved production stage-07 Expression Atlas failure
+into a confirmed software fix. The diagnostic and proposed acceptance criteria
+remain documented in:
+
+    docs/handovers/PT_E3_6_VERY_VERBOSE_HANDOVER_20260727.txt

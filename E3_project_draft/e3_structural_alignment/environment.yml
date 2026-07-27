@@ -1,0 +1,16 @@
+name: e3_structural_alignment
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python>=3.11,<3.14
+  - pip
+  - biopython>=1.85,<2
+  - duckdb>=1.4,<2
+  - usalign=20241201
+  - tmalign=20240303
+  - coverage>=7.6,<8
+  - pycodestyle>=2.12,<3
+  - pydocstyle>=6.3,<7
+  - pytest>=8,<9

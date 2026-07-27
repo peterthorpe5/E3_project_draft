@@ -1,0 +1,2 @@
+biopython>=1.85,<2
+duckdb>=1.4,<2

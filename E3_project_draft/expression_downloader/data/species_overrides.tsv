@@ -1,0 +1,15 @@
+species_column	scientific_name	atlas_species_query	include	priority	notes
+Arabidopsis_thaliana	Arabidopsis thaliana	Arabidopsis thaliana	TRUE	plant_priority	Priority plant model species
+Brachypodium_distachyon	Brachypodium distachyon	Brachypodium distachyon	TRUE	plant_priority	Priority grass model species
+Chlamydomonas_reinhardtii	Chlamydomonas reinhardtii	Chlamydomonas reinhardtii	TRUE	plant_priority	Priority green algal species
+Glycine_max	Glycine max	Glycine max	TRUE	plant_priority	Priority crop species
+Hordeum_vulgare	Hordeum vulgare	Hordeum vulgare	TRUE	plant_priority	Priority crop species
+Medicago_truncatula	Medicago truncatula	Medicago truncatula	TRUE	plant_priority	Priority plant model species
+Oryza_sativa	Oryza sativa	Oryza sativa	TRUE	plant_priority	Priority crop species
+Physcomitrella_patens	Physcomitrella patens	Physcomitrella patens	TRUE	plant_priority	Priority bryophyte species; check current naming if Atlas uses Physcomitrium patens
+Populus_trichocarpa	Populus trichocarpa	Populus trichocarpa	TRUE	plant_priority	Priority tree species
+Solanum_lycopersicum	Solanum lycopersicum	Solanum lycopersicum	TRUE	plant_priority	Priority crop species
+Solanum_tuberosum	Solanum tuberosum	Solanum tuberosum	TRUE	plant_priority	Priority crop species
+Sorghum_bicolor	Sorghum bicolor	Sorghum bicolor	TRUE	plant_priority	Priority crop species
+Triticum_aestivum	Triticum aestivum	Triticum aestivum	TRUE	plant_priority	Priority crop species
+Zea_mays	Zea mays	Zea mays	TRUE	plant_priority	Priority crop species

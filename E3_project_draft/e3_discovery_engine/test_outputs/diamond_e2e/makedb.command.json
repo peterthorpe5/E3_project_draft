@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/Users/PThorpe001/miniforge3/envs/e3_discovery/bin/diamond",
+    "makedb",
+    "--in",
+    "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/combined.fasta",
+    "--db",
+    "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine/test_outputs/diamond_e2e/combined.dmnd",
+    "--threads",
+    "1"
+  ],
+  "working_directory": "/Users/PThorpe001/github_repos/E3_project_draft/e3_discovery_engine"
+}

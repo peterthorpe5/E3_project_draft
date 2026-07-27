@@ -1,0 +1,13 @@
+name: e3_orthology
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pyarrow>=18,<25
+  - pyyaml>=6,<7
+  - pip
+  - pip:
+      - coverage>=7.6,<8
+      - pycodestyle>=2.12,<3
+      - pydocstyle>=6.3,<7
+      - ruff>=0.15,<1

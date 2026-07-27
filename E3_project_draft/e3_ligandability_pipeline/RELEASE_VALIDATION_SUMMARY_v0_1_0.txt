@@ -1,0 +1,53 @@
+E3 Ligandability Pipeline v0.1.0 release validation
+Date: 2026-07-17
+
+Package scope
+-------------
+Production replacement for inherited AlphaFold metadata/model download,
+model pLDDT, FPocket, P2Rank fpocket-rescore, pocket residue mapping and
+pocket pLDDT scripts.
+
+Static and automated validation
+-------------------------------
+Production Python functions: 104
+Function-to-test traceability: PASS for every production function
+Automated tests: 81 passed; 0 failed; 0 skipped
+Branch-aware source coverage: 97%
+Coverage release threshold: 95%
+PEP 8: pycodestyle PASS at 88-character maximum
+Documentation: every production function has a non-empty Google-style/
+PEP 257-compatible docstring
+Python compilation: compileall PASS
+Shell syntax: bash -n PASS for every production shell script
+Frozen legacy files: all five SHA-256 checks passed
+
+Package validation
+------------------
+Source distribution build: PASS
+Universal wheel build: PASS
+Twine metadata check: PASS for sdist and wheel
+Isolated wheel installation: PASS
+Installed package version: 0.1.0
+pip check: no broken requirements
+Installed CLI help: PASS
+
+End-to-end validation
+---------------------
+Synthetic command-line end-to-end workflow: PASS
+Synthetic mmCIF model parsing: PASS
+Fake FPocket/P2Rank command orchestration and output contract: PASS
+TSV, Parquet and materialised DuckDB publication: PASS
+QC and provenance manifest generation: PASS
+Legacy model-level regression command: PASS on synthetic fixture
+
+Remaining external validation
+-----------------------------
+The package-build environment did not run real FPocket or P2Rank executables.
+The next scientific validation is:
+1. run model-level regression on the retained inherited testing directory;
+2. inspect the exact cluster FPocket and P2Rank versions;
+3. run one or two retained AlphaFold models end to end;
+4. compare raw and normalised outputs with the inherited results;
+5. proceed to the final curated shortlist only after review.
+
+No full inherited E3 collection rerun is recommended.
