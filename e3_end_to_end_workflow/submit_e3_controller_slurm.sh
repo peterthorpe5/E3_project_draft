@@ -328,6 +328,11 @@ read_job_id() {
     printf '%s\n' "${job_id}"
 }
 
+squeue_diagnostic_means_job_absent() {
+    local diagnostic="$1"
+    [[ "${diagnostic,,}" =~ invalid[[:space:]]+job[[:space:]]+id([[:space:]]+specified)? ]]
+}
+
 query_squeue_state() {
     local job_id="$1"
     local output
@@ -346,6 +351,9 @@ query_squeue_state() {
     )"; then
         state="$(awk 'NF {print $1; exit}' <<<"${output}")"
         printf '%s\n' "${state}"
+        return 0
+    fi
+    if squeue_diagnostic_means_job_absent "${output}"; then
         return 0
     fi
     output="$(awk 'NF {print; exit}' <<<"${output}")"
