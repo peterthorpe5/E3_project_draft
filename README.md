@@ -837,7 +837,44 @@ Each component has its own `run_tests.sh` or documented R test command. Run a co
 after changing that component, and run the end-to-end synthetic regression after changing a
 publication contract used downstream.
 
+The component environments are intentionally separate. Running
+`e3_end_to_end_workflow/run_tests.sh` validates the master workflow only; it must not collect
+tests from sibling packages. The launchers clear inherited `PYTEST_ADDOPTS` and pass their own
+absolute `tests/` directory to pytest so repository-level discovery settings cannot leak into a
+package test.
+
+`e3structalign` is the Python import namespace, not a PyPI distribution name. Do not run
+`pip install e3structalign`. To validate the structural-alignment component, use its controlled
+environment and install the repository-local distribution:
+
+```bash
+conda env update \
+    --name e3_structural_alignment \
+    --file e3_structural_alignment/environment.yml
+
+conda run --name e3_structural_alignment \
+    python -m pip install \
+    --no-deps \
+    --editable ./e3_structural_alignment
+
+conda run --name e3_structural_alignment \
+    ./e3_structural_alignment/run_tests.sh
+```
+
 ## Common failures
+
+### Pytest collects sibling packages
+
+If a component test unexpectedly lists tests from several sibling packages, first confirm that
+the updated package-scoped launcher is being used:
+
+```bash
+unset PYTEST_ADDOPTS
+./e3_end_to_end_workflow/run_tests.sh
+```
+
+Do not install every component into the master workflow environment merely to suppress collection
+errors. Each package should be tested in its documented environment.
 
 ### Controller is `PENDING`
 
