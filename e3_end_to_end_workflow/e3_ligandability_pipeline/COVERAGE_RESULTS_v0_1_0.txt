@@ -1,0 +1,108 @@
+Optional AlphaFold asset URL missing for Q1: pae_url
+Optional AlphaFold asset URL missing for Q1: msa_url
+Optional AlphaFold asset URL missing for Q1: plddt_url
+......................2026-07-17 10:50:22,713 | DEBUG | e3ligandability | Logging configured: /tmp/tmp9yx90qed/run.log
+2026-07-17 10:50:22,714 | INFO | e3ligandability | hello
+.........2026-07-17 10:50:22,893 | INFO | e3ligandability.tools | Running external command: /tmp/tmppiy67xze/sleep.sh
+........2026-07-17 10:50:22,919 | ERROR | e3ligandability.pipeline | Accession Q1 failed during stage model_materialisation
+Traceback (most recent call last):
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/pipeline.py", line 303, in process_accession
+    model_path, asset_manifests = materialise_model_assets(
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~^
+        accession=accession,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/alphafold.py", line 506, in materialise_model_assets
+    else copy_atomic(source_model, model_path, validate_cif_file)
+         ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/alphafold.py", line 399, in copy_atomic
+    raise FileNotFoundError(f"Source file does not exist: {source_path}")
+FileNotFoundError: Source file does not exist: /missing/model.cif
+2026-07-17 10:50:22,922 | ERROR | e3ligandability.pipeline | Accession Q1 failed during stage model_materialisation
+Traceback (most recent call last):
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/pipeline.py", line 303, in process_accession
+    model_path, asset_manifests = materialise_model_assets(
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~^
+        accession=accession,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/alphafold.py", line 506, in materialise_model_assets
+    else copy_atomic(source_model, model_path, validate_cif_file)
+         ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/data/e3_ligandability_pipeline_v0_1_0/e3ligandability/alphafold.py", line 399, in copy_atomic
+    raise FileNotFoundError(f"Source file does not exist: {source_path}")
+FileNotFoundError: Source file does not exist: /missing/model.cif
+2026-07-17 10:50:22,929 | INFO | e3ligandability.outputs | Dataset asset_manifest is empty; no table file written.
+2026-07-17 10:50:22,929 | INFO | e3ligandability.outputs | Dataset model_quality is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset fpocket_pockets is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset p2rank_pockets is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset joined_pockets is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset pocket_residue_mappings is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset pocket_quality is empty; no table file written.
+2026-07-17 10:50:22,930 | INFO | e3ligandability.outputs | Dataset external_commands is empty; no table file written.
+.ERROR: FileNotFoundError: Accession input does not exist: /missing
+.2026-07-17 10:50:23,034 | INFO | e3ligandability | Accessions accepted: 1
+2026-07-17 10:50:23,062 | INFO | e3ligandability.tools | Running external command: /tmp/tmplzkn_6z7/prank fpocket-rescore /tmp/tmplzkn_6z7/cli_output/tool_outputs/.TEST.running.1lssm2cu/TEST.ds -c rescore_2024 -o /tmp/tmplzkn_6z7/cli_output/tool_outputs/.TEST.running.1lssm2cu -threads 1 -fpocket_command /tmp/tmplzkn_6z7/fpocket -fpocket_keep_output 1
+2026-07-17 10:50:23,339 | INFO | e3ligandability | Run manifest: /tmp/tmplzkn_6z7/cli_output/provenance/run_manifest.json
+2026-07-17 10:50:23,339 | INFO | e3ligandability | Failed accessions: []
+2026-07-17 10:50:23,339 | INFO | e3ligandability | Failed checks: []
+2026-07-17 10:50:23,346 | INFO | e3ligandability | Regression rows: 1
+2026-07-17 10:50:23,346 | INFO | e3ligandability | Non-passing accessions: []
+..2026-07-17 10:50:23,381 | INFO | e3ligandability.tools | Running external command: /tmp/tmpy706xh0x/prank fpocket-rescore /tmp/tmpy706xh0x/output/tool_outputs/.TEST.running.733zlqo8/TEST.ds -c rescore_2024 -o /tmp/tmpy706xh0x/output/tool_outputs/.TEST.running.733zlqo8 -threads 1 -fpocket_command /tmp/tmpy706xh0x/fpocket -fpocket_keep_output 1
+2026-07-17 10:50:23,664 | INFO | e3ligandability.tools | Running external command: /tmp/tmpy706xh0x/prank fpocket-rescore /tmp/tmpy706xh0x/direct/tool_outputs/.TEST.running.53d3_t2o/TEST.ds -c rescore_2024 -o /tmp/tmpy706xh0x/direct/tool_outputs/.TEST.running.53d3_t2o -threads 1 -fpocket_command /tmp/tmpy706xh0x/fpocket -fpocket_keep_output 1
+............2026-07-17 10:50:23,923 | INFO | e3ligandability | Tool inspection written: /tmp/tmpu17k58i0/tool_versions.json
+.2026-07-17 10:50:23,927 | INFO | e3ligandability | Tool inspection written: /tmp/tmpc228un7y/versions.json
+.2026-07-17 10:50:23,929 | INFO | e3ligandability | Regression rows: 1
+2026-07-17 10:50:23,929 | INFO | e3ligandability | Non-passing accessions: ['Q1']
+.2026-07-17 10:50:23,932 | INFO | e3ligandability | Accessions accepted: 1
+2026-07-17 10:50:23,932 | INFO | e3ligandability | Run manifest: manifest.json
+2026-07-17 10:50:23,932 | INFO | e3ligandability | Failed accessions: ['Q1']
+2026-07-17 10:50:23,932 | INFO | e3ligandability | Failed checks: []
+.................2026-07-17 10:50:23,951 | INFO | e3ligandability.outputs | Dataset alphafold_metadata is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset asset_manifest is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset model_quality is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset fpocket_pockets is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset p2rank_pockets is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset joined_pockets is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset pocket_residue_mappings is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset pocket_quality is empty; no table file written.
+2026-07-17 10:50:23,952 | INFO | e3ligandability.outputs | Dataset external_commands is empty; no table file written.
+2026-07-17 10:50:24,055 | INFO | e3ligandability.outputs | Dataset empty is empty; no table file written.
+....2026-07-17 10:50:24,080 | INFO | e3ligandability.tools | Running external command: /tmp/tmpnnq97m5y/success
+2026-07-17 10:50:24,097 | INFO | e3ligandability.tools | Running external command: /tmp/tmpnnq97m5y/failure
+.2026-07-17 10:50:24,118 | INFO | e3ligandability.tools | Running external command: /tmp/tmpmsnv_jtu/prank fpocket-rescore /tmp/tmpmsnv_jtu/.out.running.pcgb9znv/TEST.ds -c rescore_2024 -o /tmp/tmpmsnv_jtu/.out.running.pcgb9znv -threads 2 -fpocket_command /tmp/tmpmsnv_jtu/fpocket -fpocket_keep_output 1
+.
+----------------------------------------------------------------------
+Ran 81 tests in 1.550s
+
+OK
+Name                               Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------
+e3ligandability/__init__.py            1      0      0      0   100%
+e3ligandability/alphafold.py         188      2     58      0    99%   279-280
+e3ligandability/cli.py                82      3      8      2    94%   192-193, 197
+e3ligandability/config.py            110      1     60      1    99%   290
+e3ligandability/fpocket.py            83      0     36      1    99%   110->96
+e3ligandability/io_utils.py          165      5     62      3    96%   157, 210, 295->294, 299->298, 343-345
+e3ligandability/logging_utils.py      24      0      2      0   100%
+e3ligandability/mapping.py           105      0     46      2    99%   33->38, 38->32
+e3ligandability/models.py             46      0      0      0   100%
+e3ligandability/outputs.py            63      1     18      3    95%   58->71, 71->84, 147
+e3ligandability/p2rank.py             57      0     24      1    99%   32->31
+e3ligandability/pipeline.py          155      6     28      6    93%   231, 355->394, 357, 398-400, 435->442, 510, 527->537
+e3ligandability/provenance.py         39      2      6      0    96%   82-83
+e3ligandability/qc.py                 55      0     14      0   100%
+e3ligandability/regression.py         53      2     14      2    94%   28, 90
+e3ligandability/structure.py          87      0     30      0   100%
+e3ligandability/tools.py             105      4     30      0    96%   306-309
+------------------------------------------------------------------------------
+TOTAL                               1418     26    436     21    97%
+Wrote XML report to coverage.xml

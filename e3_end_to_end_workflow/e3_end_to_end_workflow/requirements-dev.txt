@@ -1,0 +1,6 @@
+-r requirements.txt
+coverage>=7.6,<8
+pycodestyle>=2.12,<3
+pydocstyle>=6.3,<7
+pytest>=8,<9
+snakemake>=9,<10

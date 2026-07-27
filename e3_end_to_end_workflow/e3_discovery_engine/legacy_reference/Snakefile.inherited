@@ -1,0 +1,139 @@
+configfile: "config.json"
+configfile: "samples.json"
+
+rule all:
+    input:
+        # expand('files/{file}.fasta', file = config["Samples"]),
+        # "concat_file/concated_file.fasta"
+        # "concat_db.dmnd"
+        # "concat_db_clustered.parquet"
+        # "concat_file/concated_seqs.parquet",
+        # "diamond_files/realigned_clusters.parquet"
+        # "output/e3_discovery_db.db"
+        "output/E3_deepclust_alignment_results.parquet",
+        "output/E3_deepclust_representative_seqs.fasta",
+        "output/E3_deepclust_e3_clusters_seqs.fasta"
+
+
+rule unzip_fasta_files:
+    input:
+        "files/fasta_files/{file}.fasta.gz"
+    output:
+        "files/fasta_files/{file}.fasta"
+    conda:
+        config["conda_envs"]["gzip"]
+    shell:
+        "gunzip {input}"
+
+rule concat_files:
+    input:
+        expand('files/fasta_files/{file}.fasta', file = config["Samples"])
+    output:
+        "concat_file/concated_file.fasta"
+    shell:
+        "cat {input} >> {output}"
+
+rule clean_fasta:
+    input:
+        "concat_file/concated_file.fasta"
+    output:
+        "concat_file/cleaned_concated_file.fasta"
+    conda:
+        config["conda_envs"]["clean_fasta"]
+    benchmark:
+        config["benchmark"]["clean_fasta"]
+    shell:
+        "seqkit seq -m 1 {input} > {output}"
+
+rule get_seq_parquet:
+    input:
+        "concat_file/cleaned_concated_file.fasta"
+    output:
+        "concat_file/concated_seqs.parquet"
+    conda:
+        config["conda_envs"]["fasta_convert"]
+    benchmark:
+        config["benchmark"]["fasta_convert"]
+    shell:
+        "python src/convert_seqs_to_parquet.py -f {input} -o {output}"
+
+rule make_diamond_db:
+    input:
+        "concat_file/cleaned_concated_file.fasta"
+    output:
+        "diamond_files/concat_db.dmnd"
+    threads:
+        10
+    conda:
+        config["conda_envs"]["diamond"]
+    benchmark:
+        config["benchmark"]["make_diamond_db"]
+    shell:
+        "diamond makedb --in {input} -d {output} --threads {threads}"
+
+rule run_clustering:
+    input:
+        "diamond_files/concat_db.dmnd"
+    output:
+        "diamond_files/concat_db_clustered.tsv"
+    threads:
+        10
+    conda:
+        config["conda_envs"]["diamond"]
+    benchmark:
+        config["benchmark"]["run_clustering"]
+    shell:
+        "diamond deepclust -d {input} -o {output} -M 64G --threads {threads} --approx-id 50 --mutual-cover 50 --swipe-task-size 10000000 --anchored-swipe --connected-component-depth 1 1 3 3 3 1 -e 0.1 --cluster-steps faster_lin fast_lin fast default sensitive very-sensitive --no-reassign --header"
+
+
+rule realign_clusters:
+    input:
+        db = "diamond_files/concat_db.dmnd",
+        infile = "diamond_files/concat_db_clustered.tsv"
+    output:
+        "diamond_files/realigned_clusters.parquet"
+    threads:
+        10
+    conda:
+        config["conda_envs"]["diamond"]
+    benchmark:
+        config["benchmark"]["realign_clusters"]
+    shell:
+        """
+        diamond realign -d {input.db} --clusters {input.infile} -M 64G --threads {threads} --header| 
+        duckdb -c "SET threads=16; 
+        COPY(select * from read_csv_auto('/dev/stdin', delim='\\t', parallel=true)) 
+        TO '{output}' 
+        WITH (FORMAT 'PARQUET');
+        "
+        """
+
+rule make_duckdb_db:
+    input:
+        "concat_file/concated_seqs.parquet",
+        "diamond_files/concat_db_clustered.tsv",
+        "diamond_files/realigned_clusters.parquet",
+        "files/e3_ligases.csv"
+    output:
+        "output/e3_discovery_db.db"
+    conda:
+        config["conda_envs"]["diamond"]
+    benchmark:
+        config["benchmark"]["make_duck_db"]
+    shell:
+        "python src/create_duckdb.py"
+
+
+rule extract_clusters:
+    input:
+        db = "output/e3_discovery_db.db"
+    output:
+        aln = "output/E3_deepclust_alignment_results.parquet",
+        rep = "output/E3_deepclust_representative_seqs.fasta",
+        seqs = "output/E3_deepclust_e3_clusters_seqs.fasta"
+    conda:
+        config["conda_envs"]["duckdb"]
+    benchmark:
+        config["benchmark"]["extract_clusters"]
+    shell:
+        "python src/retrieve_clusters.py -db {input} -aln {output.aln} -rep {output.rep} -seqs {output.seqs}"

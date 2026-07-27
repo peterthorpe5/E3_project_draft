@@ -1,0 +1,21 @@
+{
+    "conda_envs": {
+        "gzip": "/home/ubuntu/kitchen/micromamba/envs/gzip", 
+        "clean_fasta": "/home/ubuntu/kitchen/micromamba/envs/seqkit",
+        "fasta_convert": "/home/ubuntu/kitchen/micromamba/envs/fasta_convert3",
+        "diamond": "/home/ubuntu/kitchen/micromamba/envs/diamond",
+        "duckdb": "/home/ubuntu/kitchen/micromamba/envs/duckdb_analysis"
+    },
+    "e3_ligases": "files/e3_ligases.csv",
+    "benchmark":{
+        "gzip": "benchmarking/test_onekp/gzip.txt",
+        "concat_files": "benchmarking/test_onekp/concat_files.txt",
+        "fasta_convert": "benchmarking/test_onekp/fasta_convert.txt",
+        "clean_fasta": "benchmarking/test_onekp/clean_fasta",
+        "make_diamond_db": "benchmarking/test_onekp/make_diamond_db.txt",
+        "run_clustering": "benchmarking/test_onekp/run_clustering.txt",
+        "realign_clusters": "benchmarking/test_onekp/realign_clusters.txt",
+        "make_duck_db": "benchmarking/test_onekp/make_duck_db.txt",
+        "extract_clusters": "benchmarking/test_onekp/extract_clusters.txt"
+    }
+}

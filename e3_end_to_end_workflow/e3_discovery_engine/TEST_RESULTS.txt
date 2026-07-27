@@ -1,0 +1,62 @@
+E3 Discovery Engine Milestone 1 v0.1.14 release checks
+Date: 15 July 2026
+
+Automated tests
+---------------
+Command:
+  ./scripts/run_release_checks.sh
+
+Result:
+  215 tests run
+  212 passed
+  3 skipped
+  0 failures
+  0 errors
+
+The three skipped tests require an installed DIAMOND executable and the
+RUN_DIAMOND_E2E=1 opt-in flag. The real DIAMOND 2.2.3 end-to-end workflow
+passed for the preceding production package. Version 0.1.14 does not alter the
+validated DeepClust or realignment command contract.
+
+Coverage
+--------
+  1,943 executable source statements
+  46 not executed by the ordinary suite
+  98% total source coverage
+
+Version 0.1.14 tests
+--------------------
+  Strict empty-record validation reports source path, record number, header
+  line and offending header.
+  Explicit 1KP skip mode records exclusions and preserves original record
+  indices.
+  The maximum skipped-empty-record safeguard is enforced.
+  Sample summary and skipped-record QC tables are tested.
+  Full-source preflight and recovered samples.json fallback are tested.
+  Generated full-run manifests apply skip mode only to onekp_dataset.
+
+Style and documentation
+-----------------------
+  Python compilation passed.
+  pycodestyle passed with an 88-character maximum line length.
+  Detailed PEP 257-compatible function and method docstrings passed the
+  automated documentation contract.
+  Every source function and method is mapped in tests/FUNCTION_TEST_MATRIX.tsv.
+  bash -n passed for every repository shell script.
+
+Scientific handling
+-------------------
+  The inherited 1KP audit scanned 25,241,940 FASTA records and found exactly
+  two header-only records. The inherited report stated 25,821,204 sequences,
+  which is 579,264 more than the actual FASTA header count; this discrepancy is
+  recorded rather than silently reconciled. They contain no amino-acid sequence, cannot
+  contribute to clustering, and are excluded only under the explicit
+  onekp_dataset policy. Their identifiers and source locations are retained in
+  qc/skipped_fasta_records.tsv. Named proteomes remain strict.
+
+External validation still required
+----------------------------------
+  Run the full Slurm analysis on the University of Dundee cluster and compare
+  workflow CPU accounting with Slurm sacct when the accounting service is
+  available. The job records wall time, peak process-tree RSS, commands,
+  versions, Git state, scientific QC and a compact review bundle.

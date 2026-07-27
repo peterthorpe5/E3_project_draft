@@ -1,0 +1,24 @@
+name: e3_atlas_duckplyr_minimal
+channels:
+  - conda-forge
+channel_priority: strict
+dependencies:
+  - python>=3.10,<3.13
+  - ca-certificates
+  - certifi
+  - openssl
+  - pyarrow
+  - r-base>=4.3
+  - r-dplyr
+  - r-duckplyr
+  - r-duckdb
+  - r-fs
+  - r-httr2
+  - r-purrr
+  - r-readr
+  - r-rlang
+  - r-stringr
+  - r-tibble
+  - r-tidyr
+  - r-xml2
+  - r-testthat

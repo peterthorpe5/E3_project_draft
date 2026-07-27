@@ -1,0 +1,32 @@
+E3 Ligandability Pipeline v0.1.1 release validation
+
+Reason for release
+- Real Q9SA03 FPocket/P2Rank execution completed, but the v0.1.0 parser
+  incorrectly required full AlphaFold-model _atom_site columns in reduced
+  FPocket pocket mmCIF files.
+- The run failed safely before pocket tables were published.
+
+Correction
+- Dedicated reduced-FPocket mmCIF parser added.
+- Model-level AlphaFold parsing and pLDDT calculations are unchanged.
+- Protein ATOM residues are retained; hetero atoms are excluded.
+- At least one label or author residue-numbering scheme is required.
+- Missing optional author/label columns no longer cause false parser failure.
+
+Validation
+- Automated tests: 83 passed; 0 failed.
+- Production functions: 107; every function has a docstring and named test.
+- Branch-aware source coverage: 97% overall.
+- pycodestyle: passed at 88 characters.
+- shell syntax: bash -n passed.
+- compileall: passed.
+- wheel and source distribution: built successfully.
+- Twine metadata check: passed for both distributions.
+- Isolated wheel installation: version 0.1.1; pip check passed.
+- Frozen inherited scripts: unchanged and checksum-protected.
+
+Scientific status
+- Model-level pLDDT regression: 3/3 passed before this release.
+- Q9SA03 pocket-level smoke test under v0.1.0: external tools completed;
+  parser failed safely; no pocket result published.
+- Q9SA03 pocket-level smoke test under v0.1.1: still required.

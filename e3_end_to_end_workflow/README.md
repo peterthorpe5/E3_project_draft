@@ -1,449 +1,889 @@
-# E3 end-to-end workflow
+# ARIA plant E3 project
 
-This package is the orchestration and evidence-integration layer above the existing E3 project
-packages. Snakemake controls dependencies; each component package remains responsible for its
-detailed scientific analysis, while the master package enforces shared manifests, missing-data
-semantics, scoring, provenance, reporting and application hand-off.
+This repository contains the modular discovery, orthology, expression, structural analysis,
+integration and reporting software for the PT_E3_6 / ARIA plant E3 project. The packages remain
+independently testable, but `e3_end_to_end_workflow` joins them into one restartable Snakemake
+workflow.
 
-Version `0.9.1` supports two equally explicit production strategies:
+The main user entry point is at the top of the repository:
 
-- **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
-  OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
-  conserved-pocket comparison, report and application resource; and
-- **fresh scalable execution** for a future, larger proteome panel: prepare an arbitrary manifest
-  of proteomes and run configured component adapters under the same output contracts.
+```text
+E3_project_draft/run_e3_pipeline.sh
+```
 
-Every enabled stage declares an `evidence_mode` (`validate`, `prepare`, `reuse`, `download`,
-`derive` or `generate`). Reports and manifests therefore distinguish reused evidence from newly
-computed evidence. Per-stage threads, memory and runtime are configuration values rather than fixed
-species-count assumptions. Detailed resource measurements, stage HTML reports and the consolidated
-full-run HTML report are produced automatically. An optional US-align/TM-align stage adds direct
-three-dimensional pocket-position and local-residue conservation tests, a graphical scientific
-report and an offline interactive alignment browser without making that evidence mandatory for
-development runs.
+It can run the complete configured pipeline in either of two recommended ways:
 
-The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
-prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
+- `--mode slurm`: submit the Snakemake controller itself as a Slurm batch job, then leave it
+  running after logout; or
+- `--mode local`: run the complete enabled DAG in the foreground on a machine without Slurm.
 
-The complete thirteen-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
-end-to-end test remain in place. The reusable current-study template contains the reviewed paths
-already known to the project and fails closed only for the ligandability resource manifest that
-must be built from the retained result roots. The future fresh template uses explicit
-`CHANGE_ME` adapter paths and never treats a placeholder as a default.
+The repository never treats the presence of an output file as proof that a stage completed.
+Checksum-bound manifests, controlled configuration, declared output validation and atomic
+publication are the restart authority.
 
-Schema version 2 adds a central `tools` mapping for external executables, reviewed versions, Conda
-environments and scalar component parameters. Stage argv templates use named values such as
-`{tool_orthofinder_search_threads}`. The resolved tool registry is recorded in stage provenance.
-The `prepare-sweep` and `compare-sweep` commands create immutable threshold experiments and
-tab-separated sensitivity summaries. The repository-root `run_e3_pipeline_fresh.sh` rejects
-previous-analysis authorities and submits the complete generation DAG through a Slurm-owned
-controller.
+Version 0.9.2 retains the Stage 07 Expression Atlas scaling and installation-provenance repairs
+from v0.9.1. It additionally passes the absolute workflow source root into Slurm controller jobs,
+so Slurm's temporary batch-script copy cannot redirect the controller to `/var/spool/slurmd`.
 
-## How to start
+## Sixty-second cluster quick start
 
-Normal cluster use submits the Snakemake controller itself as a small Slurm job:
+From the repository root:
 
 ```bash
-cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow
+cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft
 conda activate e3_end_to_end_workflow
 
-./submit_e3_controller_slurm.sh \
-    --config config/my_immutable_run.yaml \
-    --max-jobs 50 \
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --max-jobs 4 \
     --account barton \
     --partition general \
     --resume
 ```
 
-The command returns as soon as Slurm accepts the controller. The terminal can close immediately.
-The controller uses one CPU and 4 GB by default, holds the per-run lock and submits the
-stage-specific scientific jobs through the Snakemake Slurm executor. It runs through
-`conda run`, so it does not depend on interactive `conda activate` state surviving inside the batch
-shell. The default controller walltime is three days and can be changed with
-`--controller-runtime`; it must cover the complete orchestration period.
+The submission command returns after Slurm accepts the controller. You can close the terminal or
+lose the network connection. Both the Snakemake controller and its scientific stage jobs are then
+owned by Slurm.
 
-Check it later with:
+Check it later:
 
 ```bash
-./submit_e3_controller_slurm.sh --config config/my_immutable_run.yaml --status
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --status
+
 squeue -u "${USER}"
-tail -F /path/reported/by/the/submission/command.log
 ```
 
-For a workstation without Slurm, use the local profile:
+The submission response prints the persistent controller log. Follow it with:
 
 ```bash
-./run_e3_end_to_end.sh \
-    --config config/my_immutable_run.yaml \
-    --profile local \
+tail -F /absolute/path/to/controller_slurm_JOB_ID.log
+```
+
+Do not use `--stop-after` when the intention is to run the whole configured pipeline. Every stage
+whose YAML entry has `enabled: true` will run when its prerequisites are ready.
+
+## Sixty-second local quick start
+
+Use this mode on a workstation or another system without Slurm:
+
+```bash
+cd /path/to/E3_project_draft
+conda activate e3_end_to_end_workflow
+
+./run_e3_pipeline.sh \
+    --mode local \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
     --threads 8 \
     --resume
 ```
 
-The local command stays in the foreground and uses the supplied total CPU budget. Closing that
-terminal stops the controller, so use the Slurm-controller mode on the Dundee cluster.
-
-`submit_e3_end_to_end.sh` remains as a legacy alternative for sites that permit a detached
-login-node controller. It is no longer the recommended Dundee mode.
-
-All launchers verify that the active `e3-workflow` command imports this exact source tree before
-they validate or submit a run. This prevents an older editable install from silently executing
-against a newer checkout.
-
-To migrate an older controller that was started inside an interactive `srun` or through the legacy
-login-node launcher, stop that controller cleanly first and allow Snakemake to account for its
-submitted children. Check `squeue -u "${USER}"` and do not launch a replacement while stage jobs
-belonging to that invocation remain active. Resume the same immutable configuration through
-`submit_e3_controller_slurm.sh --resume`; complete checksum-valid stages are reused and incomplete
-staging directories are not accepted as completed work.
-
-Resuming an interrupted analysis and upgrading its scientific schema are different operations. The
-same immutable YAML/run name is appropriate for completing the original analysis. To obtain newly
-declared tables or altered scientific methods, create a new versioned run YAML/name or perform an
-explicitly documented forced-stage migration; never silently rewrite the old run configuration.
-
-Before the first submission, create an immutable run YAML:
-
-1. For the reviewed 60-proteome `Results_Feb26` analysis, copy
-   `config/grant_aligned_reuse.cluster.template.yaml`.
-2. For a new larger proteome panel, copy `config/production.cluster.template.yaml`.
-3. Set a new `run.name`; never reuse a name for a biologically different input panel.
-4. Review `run.project_root` and `run.output_root`.
-5. Replace every applicable `CHANGE_ME` input and component-adapter path.
-6. For a fresh panel, add any number of rows to the proteome and orthology species manifests and
-   review the target/mandatory species lists. Species are not hard-coded in the runner.
-7. Review each stage's `threads`, `memory_mb` and `runtime_minutes`.
-8. Leave `09b_structural_alignment` disabled for an orchestration test or when a group lacks
-   sufficient compatible models. Enable it only after installing `e3_structural_alignment`.
-9. Keep `analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D
-   thresholds have been reviewed on a multi-structure result.
-10. Validate and dry-run:
+Local mode remains in the foreground. Closing the terminal stops the controller. For a quick
+installation check, use the synthetic configuration:
 
 ```bash
-e3-workflow validate --config config/my_immutable_run.yaml
-e3-workflow plan --config config/my_immutable_run.yaml --human
-./submit_e3_controller_slurm.sh \
-    --config config/my_immutable_run.yaml \
+./run_e3_pipeline.sh \
+    --mode local \
+    --config e3_end_to_end_workflow/config/synthetic.yaml \
+    --threads 4 \
     --dry-run
 ```
 
-Both cluster launchers share the same per-run lock. The Slurm launcher additionally records the
-controller job in `workflow_control/controller.slurm.tsv` and checks `squeue`/`sacct` before
-accepting another submission. The foreground `run_e3_end_to_end.sh` remains available for local
-tests and diagnostics.
+Synthetic outputs are marked as test data and are not production eligible.
 
-## DAG and package ownership
+## Complete clean-room quick start
 
-| Stage | Owner | Publication contract |
+Use the strict fresh launcher for a new analysis that must not consume results from a previous E3
+workflow run:
+
+```bash
+./run_e3_pipeline_fresh.sh \
+    --config e3_end_to_end_workflow/config/my_fresh_panel_v0_1_0_20260725.yaml \
+    --mode slurm \
+    --max-jobs 10 \
+    --account barton \
+    --partition general
+```
+
+The preflight requires schema version 2, central tool settings, all 13 stages and generation
+commands for every external scientific component. It rejects previous discovery, OrthoFinder,
+expression, domain-result and ligandability authorities. The Slurm controller is submitted as a
+batch job, so the terminal can close after submission.
+
+Start from `e3_end_to_end_workflow/config/production.cluster.template.yaml`, replace every
+`CHANGE_ME` value, then run:
+
+```bash
+e3-workflow validate-fresh \
+    --config e3_end_to_end_workflow/config/my_fresh_panel_v0_1_0_20260725.yaml
+```
+
+See `docs_site/fresh-run.md` for the exact contract and resume procedure.
+
+## Execution modes
+
+| Root mode | Controller location | Scientific jobs | Survives logout | Intended use |
+|---|---|---|---|---|
+| `slurm` | Small Slurm batch job | Separate Slurm jobs | Yes | Recommended Dundee cluster mode |
+| `local` | Current terminal | Local processes | No | Workstations, development and synthetic tests |
+| `login-detached` | Detached login-node process | Separate Slurm jobs | Usually | Legacy fallback only where login-node policy permits |
+
+The default is `--mode slurm`. The controller allocation defaults to one CPU, 4,000 MiB and three
+days. Override these separately from scientific resources when required:
+
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --controller-memory-mb 6000 \
+    --controller-runtime 2-00:00:00 \
+    --max-jobs 4 \
+    --account barton \
+    --partition general \
+    --resume
+```
+
+`--controller-runtime` must cover the orchestration period, including time spent waiting for child
+jobs. The Dundee maximum is three days. If a much larger analysis cannot finish within that
+controller window, resume the same immutable run after the controller ends; validated completed
+stages are retained.
+
+## First installation
+
+Install the master environment and package:
+
+```bash
+cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow
+
+conda env create --file environment.yml
+conda run --name e3_end_to_end_workflow \
+    python -m pip install --no-deps --force-reinstall --editable .
+conda run --name e3_end_to_end_workflow \
+    e3-workflow diagnose-install \
+    --source-root "$(pwd)" \
+    --require-source-match
+conda run --name e3_end_to_end_workflow ./run_tests.sh
+```
+
+The environment supplies Python, Snakemake 9, the Slurm executor plugin, DuckDB, MAFFT and the
+project-approved OrthoFinder 2.5.5. Component packages invoked through their own Conda environment,
+such as `e3_orthology` and `e3_structural_alignment`, must also be installed when the selected YAML
+uses those adapters.
+
+Validate the repository-level launcher:
+
+```bash
+cd ..
+./run_repository_tests.sh
+```
+
+## Which configuration template to use
+
+Do not edit a completed run's configuration into a different analysis. Copy a template to a new,
+descriptive, immutable filename.
+
+| Analysis | Starting template |
+|---|---|
+| Current reviewed analysis using the authoritative 60-proteome February OrthoFinder result and existing evidence | `e3_end_to_end_workflow/config/grant_aligned_reuse.cluster.template.yaml` |
+| New or expanded proteome panel requiring fresh discovery and OrthoFinder | `e3_end_to_end_workflow/config/production.cluster.template.yaml` |
+| Small fresh OrthoFinder validation only | `e3_end_to_end_workflow/config/five_proteome_orthofinder.cluster.yaml` |
+| Software test | `e3_end_to_end_workflow/config/synthetic.yaml` |
+
+Example:
+
+```bash
+cd e3_end_to_end_workflow
+
+cp \
+    config/production.cluster.template.yaml \
+    config/my_species_panel_v0_1_0_20260724.yaml
+```
+
+Replace every applicable `CHANGE_ME` value. A placeholder must never be accepted as a production
+default.
+
+## Required end-to-end configuration
+
+The schema-v2 YAML has seven main sections. Schema version 1 remains readable for old immutable
+runs.
+
+| Section | Required content |
+|---|---|
+| `schema_version` | Configuration schema version; use `2` for new central-tool configurations |
+| `run` | Unique run name, `production` or `synthetic` mode, repository root and output root |
+| `inputs` | Controlled manifests and reusable evidence authorities required by enabled stages |
+| `analysis` | Scientific thresholds, species priorities and feature-specific policies |
+| `tools` | Executables, reviewed versions, Conda environments and tool-specific parameters |
+| `benchmarking` / `reporting` | Resource sampling and bounded HTML preview settings |
+| `stages` | Enabled state, evidence mode, command adapter, expected outputs and Slurm resources |
+
+### `run`
+
+Use a run name that encodes the dataset or purpose, method version and date:
+
+```yaml
+run:
+  name: wheat_barley_rice_panel_v0_1_0_20260724
+  mode: production
+  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+```
+
+A biologically different panel needs a different `run.name`. Never reuse a formal run name merely
+to avoid creating another output directory.
+
+### `inputs`
+
+The exact files needed depend on enabled branches and their evidence modes.
+
+| Input | Purpose |
+|---|---|
+| `proteomes_manifest` | Species-to-FASTA mapping for fresh proteome preparation, discovery and OrthoFinder |
+| `seeds_manifest` | Controlled known-E3 seed evidence |
+| `shortlist_manifest` | Optional reviewed shortlist; not used by the computational gate unless configured |
+| `candidate_evidence` / manifest | Reused candidate-cluster evidence for the reviewed-results route |
+| `orthofinder_archive` | Read-only reviewed OrthoFinder archive for reuse |
+| `orthology_species_manifest` | Maps OrthoFinder species columns to project species identifiers |
+| `inherited_sqlite` | Read-only regression authority where the configured orthology adapter uses it |
+| `expression_manifest` | Checksummed existing Expression Atlas Parquet resources |
+| `ligandability_manifest` | Checksummed existing pocket/model resources for reuse |
+| `domain_annotation_manifest` | Optional pre-existing domain resource manifest |
+| `domain_cache_root` | Shared incremental InterPro/Pfam response cache |
+| `e3_domain_catalogue` | Reviewed catalogue used to interpret E3-associated domain evidence |
+
+Disabled branches do not require irrelevant placeholder inputs. Enabled production stages fail
+closed when a required authority is absent, empty, malformed or checksum-inconsistent.
+
+### Proteome manifest
+
+Start with `config/proteomes.template.tsv`. It is tab-separated:
+
+```text
+species_id	scientific_name	fasta_path	fasta_sha256	include
+arabidopsis_thaliana	Arabidopsis thaliana	/data/proteomes/Arabidopsis_thaliana.faa	<sha256>	true
+```
+
+Rules:
+
+- one row per complete proteome;
+- stable unique `species_id` values;
+- absolute FASTA paths for cluster runs;
+- SHA-256 calculated from the exact file being analysed;
+- `include` explicitly `true` or `false`;
+- no comma-separated analytical manifest;
+- do not mix protein releases silently under one run name.
+
+Calculate a checksum with:
+
+```bash
+sha256sum /data/proteomes/Arabidopsis_thaliana.faa
+```
+
+### Known-E3 seed manifest
+
+The packaged controlled seed evidence is normally used:
+
+```yaml
+seeds_manifest: ../data/known_e3_seed_evidence.tsv.gz
+```
+
+For a revised seed authority, use the schema in
+`config/known_e3_seed_evidence.template.tsv`, preserve the source path and source row, and create a
+new versioned resource. Changing the seeds changes the discovery question and therefore requires a
+new run name.
+
+### Orthology species manifest
+
+This file connects OrthoFinder's run-specific species representation to the project names used by
+domain, expression, prioritisation and reporting stages. It must describe every included proteome.
+An expanded panel needs a new species manifest and a new OrthoFinder result. Do not carry
+`OG...` or hierarchical-group labels from an earlier species panel into a new run merely because
+the labels look similar.
+
+### Existing expression data
+
+The current reviewed run reuses:
+
+```text
+analysis/expression_atlas_ftp_full/
+    manifests/e3_workflow_expression_resources.tsv
+    parquet/atlas_expression_long/
+    parquet/atlas_sample_metadata_long/
+    parquet/atlas_sample_metadata_wide/
+    e3_expression.duckdb
+```
+
+Stage `07_expression` does not redownload these resources when its `evidence_mode` is `reuse`.
+It performs new run-specific identifier mapping and expression summaries for the selected
+OrthoFinder group members.
+
+### `analysis`
+
+Review, rather than blindly copy:
+
+- `analysis.prioritisation.target_species`;
+- `analysis.prioritisation.mandatory_species`;
+- evidence completeness thresholds;
+- ranking weights and shortlist sizes;
+- domain download/cache settings;
+- ligandability mapping and conservation thresholds; and
+- optional structural-alignment thresholds.
+
+The target and mandatory species names must agree with the controlled species manifests. Keep
+`analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D thresholds have
+been reviewed on an appropriate multi-structure dataset.
+
+### `tools`
+
+External executables and their tool-specific parameters are controlled in one place:
+
+```yaml
+tools:
+  orthofinder:
+    executable: orthofinder
+    expected_version: 2.5.5
+    conda_environment: e3_end_to_end_workflow
+    parameters:
+      search_threads: 32
+      analysis_threads: 32
+```
+
+Stage commands refer to these values by named placeholders:
+
+```yaml
+command:
+  - "{tool_orthofinder_executable}"
+  - -t
+  - "{tool_orthofinder_search_threads}"
+  - -a
+  - "{tool_orthofinder_analysis_threads}"
+```
+
+Each parameter is one scalar argv value. Lists and nested parameter mappings are rejected rather
+than joined ambiguously. The complete resolved tool registry is included in stage provenance and
+the configuration digest.
+
+### Controlled parameter sweeps
+
+Copy `config/parameter_sweep.template.yaml`, define existing paths below `analysis.` or `tools.`,
+then generate separate immutable run configurations:
+
+```bash
+e3-workflow prepare-sweep \
+    --sweep-config e3_end_to_end_workflow/config/my_threshold_sweep_v1.yaml \
+    --output-dir e3_end_to_end_workflow/config/generated/my_threshold_sweep_v1
+```
+
+After the generated runs complete, compare ranks, scores and recommendation stability:
+
+```bash
+e3-workflow compare-sweep \
+    --manifest e3_end_to_end_workflow/config/generated/my_threshold_sweep_v1/sweep_runs.tsv \
+    --output-dir /path/to/analysis/my_threshold_sweep_v1_comparison
+```
+
+Comparison outputs are TSV. The generator never edits a completed run and has a mandatory
+`maximum_runs` guard against accidental combinatorial expansion. See
+`docs_site/parameter-sweeps.md`.
+
+### `stages`
+
+Each stage has:
+
+```yaml
+enabled: true
+required: true
+evidence_mode: reuse
+expected_outputs:
+  - tables/example.parquet
+threads: 8
+memory_mb: 64000
+runtime_minutes: 1440
+```
+
+Fresh external components also have a YAML argument-vector `command`. Commands are lists, not shell
+strings, so paths and options are passed without shell interpolation. The permitted evidence modes
+are stage-specific and include `validate`, `prepare`, `reuse`, `download`, `derive`, `generate` and
+`disabled`.
+
+On the Dundee cluster, no stage should request more than 4,320 minutes. If a component genuinely
+needs longer, split it into restartable component work rather than requesting an impossible
+walltime.
+
+## Recommended organisation for a new dataset
+
+Keep code, controlled inputs, reusable evidence and run outputs separate:
+
+```text
+/home/pthorpe001/data/2026_E3_protac/
+    E3_project_draft/                  # Git checkout and software only
+        README.md
+        run_e3_pipeline.sh
+        e3_end_to_end_workflow/
+        component packages...
+    inputs/
+        wheat_barley_rice_v1/
+            manifests/
+                proteomes.tsv
+                orthology_species.tsv
+            proteomes/
+                Triticum_aestivum.faa
+                Hordeum_vulgare.faa
+                Oryza_sativa.faa
+    analysis/
+        e3_resource_cache/interpro/
+        expression_atlas_ftp_full/
+        e3_end_to_end_runs/
+            wheat_barley_rice_panel_v0_1_0_20260724/
+    retained_authorities/
+        read_only_source_material...
+```
+
+The checkout should not accumulate scientific outputs. The end-to-end `run.output_root` is where
+formal runs, logs, staging data, failed attempts and reports belong. Existing inherited evidence
+remains read-only.
+
+## Adding a new or different dataset
+
+Use this sequence.
+
+1. Decide whether the analysis is a reviewed reuse or a genuinely fresh panel.
+2. Create a versioned input directory outside the Git checkout.
+3. Obtain one complete protein FASTA per species and record its release/source.
+4. Calculate SHA-256 checksums and build the proteome manifest.
+5. Build a matching orthology species manifest.
+6. Decide whether the existing controlled seed evidence still answers the intended question.
+7. Confirm expression coverage. Add species to `expression_downloader/data/species.txt` and build
+   missing resources only when required.
+8. Copy `config/production.cluster.template.yaml` to a new run-specific YAML.
+9. Set a unique `run.name`, input paths, target species, mandatory species and stage resources.
+10. Replace fresh-stage adapter placeholders with reviewed named-option command vectors.
+11. Keep OrthoFinder at the project-approved 2.5.5 for comparability unless a new method decision is
+    explicitly documented.
+12. Validate the configuration and human-readable plan.
+13. Perform a dry run.
+14. Run a small representative panel before the full dataset.
+15. Submit the full run through the repository-root Slurm mode.
+
+Validation commands:
+
+```bash
+cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft
+conda activate e3_end_to_end_workflow
+
+e3-workflow validate \
+    --config e3_end_to_end_workflow/config/my_new_panel.yaml
+
+e3-workflow plan \
+    --config e3_end_to_end_workflow/config/my_new_panel.yaml \
+    --human
+
+./run_e3_pipeline.sh \
+    --mode local \
+    --config e3_end_to_end_workflow/config/my_new_panel.yaml \
+    --dry-run
+```
+
+The local dry run creates no scientific jobs. A cluster-specific dry run can instead be submitted
+through `--mode slurm --dry-run`.
+
+## Whole-pipeline stages
+
+| Stage | Primary owner | Purpose |
 |---|---|---|
-| `00_inputs` | master workflow | branch-aware, checksummed controlled-input inventory |
-| `01_prepared_proteomes` | native master adapter | validated, isolated species/FASTA inventory |
-| `02_discovery` | `e3_discovery_engine` | reused authority or fresh DIAMOND/DeepClust resource |
-| `03_candidate_evidence` | `e3_source_to_parquet_seed` | reused or fresh candidate evidence authority |
-| `04_orthofinder` | OrthoFinder 2.5.5 | reviewed archive reuse or fresh isolated result |
-| `05_orthology` | `e3_orthology_integration` | run-specific group IDs, membership and candidate-group sequences |
-| `06_domains` | native download/cache adapter | InterPro/Pfam hits and tri-state domain evidence |
-| `07_expression` | native Expression Atlas adapter | full selected-group mapping and expression summary |
-| `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
-| `09_ligandability` | native reuse/conservation adapter | best pockets, pocket-region conservation and validated FASTA coordinates |
-| `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align pocket-position/conservation tests and interactive HTML |
-| `10_integrated_resource` | native release assembler | complete DuckDB, candidate master Parquet, final TSV/Parquet and scientific HTML |
-| `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
+| `00_inputs` | Master workflow | Validate and checksum controlled inputs |
+| `01_prepared_proteomes` | Master adapter | Validate and isolate included protein FASTAs |
+| `02_discovery` | `e3_discovery_engine` | E3-seeded DIAMOND/DeepClust discovery or reviewed reuse |
+| `03_candidate_evidence` | `e3_source_to_parquet_seed` | Build/reuse candidate cluster evidence |
+| `04_orthofinder` | OrthoFinder 2.5.5 | Generate or validate complete-proteome group results |
+| `05_orthology` | `e3_orthology_integration` | Reconcile identifiers and publish candidate-relevant group membership/sequences |
+| `06_domains` | Master domain adapter | Retrieve/reuse InterPro/Pfam annotations and explicit coverage states |
+| `07_expression` | Master expression adapter | Map group members to existing Expression Atlas resources |
+| `08_shortlist_gate` | Master prioritisation | Build the transparent computational structural shortlist |
+| `09_ligandability` | `e3_ligandability_pipeline` plus master adapter | Select pockets and assess pocket-region conservation |
+| `09b_structural_alignment` | `e3_structural_alignment` | Optional US-align/TM-align 3D pocket-position evidence |
+| `10_integrated_resource` | Master workflow | Create integrated DuckDB, Parquet, TSV and scientific report |
+| `11_app_ready` | Master workflow | Publish Python/Shiny hand-off configuration |
 
-DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
-to a run. Final candidate records expose both the DeepClust cluster ID and the OrthoFinder
-orthogroup/hierarchical-group IDs. Stage 05 also publishes a candidate-relevant group-member
-sequence table, making every associated protein sequence retrievable without exporting unrelated
-proteomes. The computational shortlist controls expensive structural analysis; it is a transparent
-recommendation for human review, not a pre-existing signed approval falsely represented as evidence.
+Independent branches run concurrently when resources permit. For example, domain and expression
+work can run in parallel after orthology publication. DeepClust sequence clusters and OrthoFinder
+groups remain different scientific concepts.
 
-## Integrated resource and application sources
+## Resume and controlled reruns
 
-Stage 10 publishes two complementary authorities:
+Normal restart:
 
-- `duckdb/e3_integrated_resource.duckdb` contains every normalised result
-  relation, including one-to-many OrthoFinder members and sequences, domain
-  hits, expression mappings, pockets, FASTA coordinates and structural residue
-  matches.
-- `tables/e3_candidate_master_results.parquet` contains one wide row per
-  candidate group. It combines the final prioritisation, additional
-  pre-structure metrics, all prefixed discovery-evidence fields and useful
-  detailed-relation counts.
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --resume
+```
 
-The wide Parquet is the requested portable one-file hand-off. It does not
-replace the detailed DuckDB: forcing multiple members, pockets and residues into
-one flat candidate row would either duplicate candidates or discard evidence.
+Bound a diagnostic run:
 
-Both the R Shiny and Python reporters can open:
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --resume \
+    --stop-after 05_orthology
+```
 
-1. the integrated DuckDB, which is the production default;
-2. the candidate master Parquet alone; or
-3. a current workflow run directory, in which case all non-superseded Parquets
-   are discovered and queried lazily.
+Intentionally rerun from a stage:
 
-Stage 11 writes ready-to-use configuration examples for the DuckDB and
-master-Parquet modes.
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --start-at 07_expression \
+    --resume
+```
 
-## Missing evidence policy
+Force one stage:
 
-Missing coverage is allowed and is never silently converted to a biological failure.
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --force-stage 07_expression \
+    --resume
+```
 
-- Domain evidence is `SUPPORTED`, `ANNOTATED_NO_CATALOGUED_E3_DOMAIN`, or
-  `ANNOTATION_UNAVAILABLE`. Only the second state is a true annotated negative.
-- Expression evidence distinguishes mapped support, limited/zero measurements, mapping failure and
-  unavailable species resources.
-- Structural evidence distinguishes a completed prediction below threshold from a protein with no
-  available model or pocket result. Same-position support and local pocket-residue conservation are
-  reported separately.
-- Fractions use only species for which the relevant evidence could actually be assessed; separate
-  completeness fields expose the missing denominator.
+`--resume` never means "skip because a filename exists". A completed stage is reusable only when
+its manifest, configuration/input digests and declared output checksums validate. Failed staging
+directories are retained under `failed/` for diagnosis and do not satisfy the stage contract.
+Intentional reruns preserve invalidated or superseded results rather than silently overwriting them.
 
-Stage 06 does not require a local InterProScan or Pfam HMM installation. It retrieves bounded
-InterPro/Pfam annotation JSON for the accessions in the selected orthology groups, caches every
-terminal response and can later run entirely from a checksum manifest. This makes the current reuse
-analysis economical and lets a larger future run populate the same shared cache incrementally.
+## Monitoring and logs
 
-## Concurrent execution model
+Controller state:
 
-After controlled input preparation, Snakemake can submit fresh Discovery Engine and OrthoFinder
-branches together. Candidate evidence waits for Discovery; orthology integration waits for both
-candidate evidence and OrthoFinder. Domain and expression mapping then interrogate the complete
-members of the selected run-specific groups before joining at prioritisation. Reuse stages can
-replace either fresh branch without changing the downstream contracts.
+```bash
+./run_e3_pipeline.sh \
+    --mode slurm \
+    --config e3_end_to_end_workflow/config/my_immutable_run.yaml \
+    --status
+```
 
-This is concurrency between stages. Each component package remains responsible for safe
-multithreading within its own stage. The structural package runs independent pairwise US-align and
-TM-align comparisons concurrently up to its stage thread allocation. Each completed comparison is
-also available as a rotatable, zoomable offline HTML view with both pocket residue sets marked.
+All jobs:
 
-## Install and prove the installation
+```bash
+squeue -u "${USER}"
+```
+
+Completed controller or stage accounting:
+
+```bash
+sacct \
+    --jobs JOB_ID \
+    --format JobID,JobName,State,ExitCode,Elapsed,MaxRSS,AllocCPUS
+```
+
+Important persistent paths below the configured run:
+
+```text
+workflow_control/controller.slurm.tsv
+workflow_control/controller.lock
+workflow_logs/controller_slurm_JOB_ID.log
+workflow_logs/STAGE.snakemake.log
+STAGE/stage_manifest.json
+STAGE/report/stage_report.html
+benchmark_summary/
+reports/e3_workflow_summary.html
+```
+
+The `.snakemake/slurm_logs` area is executor-managed and may be transient. Prefer the persistent
+`workflow_logs` and stage manifests for diagnosis.
+
+## Final outputs
+
+The two main final analytical authorities are:
+
+```text
+10_integrated_resource/duckdb/e3_integrated_resource.duckdb
+10_integrated_resource/tables/e3_candidate_master_results.parquet
+```
+
+The DuckDB retains one-to-many group members, sequences, domains, expression mappings, pockets and
+residue-level evidence. The master Parquet provides one wide row per candidate group for portable
+review. TSV is used for human-auditable tables; comma-separated analytical outputs are not used.
+
+The complete run also publishes:
+
+- stage-level HTML reports;
+- one consolidated workflow HTML report;
+- benchmark and Slurm accounting summaries;
+- candidate rankings and missing-evidence states;
+- application-ready configuration; and
+- checksummed provenance/manifests.
+
+## Package quick starts
+
+The end-to-end runner is the normal route. Run a component directly only for development,
+component-specific validation or resource preparation.
+
+### `e3_end_to_end_workflow`
+
+Purpose: stable DAG, restart state, stage adapters, integration, benchmarking and reports.
 
 ```bash
 cd e3_end_to_end_workflow
 conda env create --file environment.yml
-conda activate e3_end_to_end_workflow
-python -m pip install --no-deps --editable .
-e3-workflow diagnose-install \
-    --source-root "$(pwd)" \
-    --require-source-match
-./run_e3_end_to_end.sh --check-install
-./run_tests.sh
-./run_e3_end_to_end.sh --dry-run
+conda run --name e3_end_to_end_workflow \
+    python -m pip install --no-deps --editable .
+conda run --name e3_end_to_end_workflow ./run_tests.sh
 ```
 
-When replacing an older editable install, use:
+Then return to the repository root and use `./run_e3_pipeline.sh`.
+
+### `e3_discovery_engine`
+
+Purpose: E3-seeded DIAMOND/DeepClust discovery and candidate-cluster resource.
+
+```bash
+cd e3_discovery_engine
+conda env create --file workflow/envs/production.yml
+conda run --name e3_discovery python -m pip install --editable .
+conda run --name e3_discovery ./run_tests.sh
+
+cp config/config.example.production.yaml config/config.production.yaml
+cp config/samples.production.example.tsv config/samples.production.tsv
+./run_workflow.sh config/config.production.yaml 16
+```
+
+Always dry-run a new configuration. The legacy DIAMOND environment is only for controlled
+reproduction and must not be mixed with production outputs.
+
+### `e3_source_to_parquet_seed`
+
+Purpose: source-preserving Parquet/DuckDB conversion and candidate-evidence publication.
+
+For the current candidate-evidence layer:
+
+```bash
+cd e3_source_to_parquet_seed
+./run_tests.sh
+
+./run_e3_candidate_evidence.sh \
+    /path/to/e3_discovery_resource.duckdb \
+    /path/to/derived_v0_4_0 \
+    --conda-env e3_discovery
+```
+
+Older `run_e3_seed_pipeline.sh` examples use positional arguments and are retained for package
+compatibility. New master-workflow adapters should use named options.
+
+### `e3_orthology_integration`
+
+Purpose: reconcile candidate identifiers with OrthoFinder groups and publish candidate-relevant
+group members and sequences.
+
+```bash
+cd e3_orthology_integration
+conda env create --file environment.yml
+conda run --name e3_orthology python -m pip install --no-deps --editable .
+conda run --name e3_orthology ./run_tests.sh
+
+./run_e3_orthology_integration.sh \
+    --conda-env e3_orthology \
+    --threads 4 \
+    --dry-run
+```
+
+The package also has a standalone Slurm submitter. For the whole analysis, let the master workflow
+own stage submission.
+
+### `expression_downloader`
+
+Purpose: discover/download Expression Atlas experiments and create reusable partitioned Parquet
+and DuckDB views.
+
+```bash
+cd expression_downloader
+mamba env create --file envs/e3_atlas_duckplyr.yml
+conda activate e3_atlas_duckplyr
+
+R CMD INSTALL .
+Rscript inst/scripts/08_run_tests.R
+./inst/scripts/09_run_python_tests.sh
+
+./inst/scripts/run_python_first_then_r.sh \
+    --species_file=data/species.txt \
+    --override_tsv=data/species_overrides.tsv \
+    --output_dir=/path/to/analysis/expression_atlas \
+    --force_download=false \
+    --force_import=false \
+    --create_duckdb=true \
+    --import_backend=python \
+    --expression_file_types=tpms,fpkms
+```
+
+Add one species per line to `data/species.txt`. Existing non-empty downloads are skipped unless
+forced. The end-to-end expression stage consumes a validated resource manifest rather than
+redownloading the data.
+
+### `e3_ligandability_pipeline`
+
+Purpose: AlphaFold model confidence, FPocket/P2Rank pockets and residue mapping.
+
+```bash
+cd e3_ligandability_pipeline
+conda env create --file environment.cluster.yml
+conda run --name e3_ligandability python -m pip install --editable .
+conda run --name e3_ligandability ./run_tests.sh
+conda run --name e3_ligandability ./run_coverage.sh
+```
+
+The standalone runner currently retains a positional compatibility interface:
+
+```bash
+./run_e3_ligandability.sh \
+    examples/accessions.local_models.example.tsv \
+    /path/to/analysis/ligandability_smoke \
+    config/config.cluster.yaml \
+    e3_ligandability
+```
+
+For production end-to-end work, use the master YAML adapter and its declared output contract.
+
+### `e3_structural_alignment`
+
+Purpose: optional direct US-align/TM-align comparison of pocket position and local residue
+conservation.
+
+```bash
+cd e3_structural_alignment
+conda env create --file environment.yml
+conda run --name e3_structural_alignment \
+    python -m pip install --no-deps --editable .
+conda run --name e3_structural_alignment ./run_tests.sh
+
+./run_e3_structural_alignment.sh --help
+```
+
+The standalone interface uses named options. In normal use it is stage `09b` and may remain
+disabled when compatible structures are insufficient.
+
+### `e3_python_app`
+
+Purpose: read-only Streamlit exploration of a completed result.
+
+```bash
+cd e3_python_app
+python -m pip install --editable '.[dev]'
+./run_tests.sh
+
+./run_e3_python_app.sh \
+    --resource-duckdb /path/to/e3_integrated_resource.duckdb \
+    --max-rows 1000 \
+    --host 127.0.0.1 \
+    --port 8501
+```
+
+It can alternatively use `--resource-parquet` or `--resource-run-dir`.
+
+### `E3_shiny_app`
+
+Purpose: read-only R Shiny exploration using the same integrated resource contract.
+
+```bash
+cd E3_shiny_app
+Rscript inst/scripts/check_dependencies.R
+Rscript inst/scripts/run_tests.R
+
+./run_app.sh \
+    --resource_duckdb_path /path/to/e3_integrated_resource.duckdb \
+    --expression_duckdb_path /path/to/e3_expression.duckdb \
+    --max_table_rows 1000 \
+    --host 127.0.0.1 \
+    --port 3838
+```
+
+It can alternatively use `--resource_parquet_path` or `--resource_run_dir`.
+
+## Package ownership summary
+
+| Package | Owns | Does not claim |
+|---|---|---|
+| `e3_discovery_engine` | Sequence clusters containing controlled E3 seeds | That every cluster member is an E3 ligase |
+| `e3_source_to_parquet_seed` | Curated/source-preserving resources and candidate evidence | Orthology |
+| `e3_orthology_integration` | Run-specific OrthoFinder membership and identifier reconciliation | Experimental orthology validation |
+| `expression_downloader` | Expression Atlas acquisition/import | Protein activity |
+| `e3_ligandability_pipeline` | Predicted structural confidence and cavities | Binding or degradative activity |
+| `e3_structural_alignment` | Predicted 3D position/conservation comparisons | Ligand selectivity or biochemical function |
+| `e3_end_to_end_workflow` | Orchestration, integration, provenance and transparent prioritisation | Experimental proof |
+| Reporting apps | Read-only exploration | New scientific transformations |
+
+## Tests
+
+Repository-root launcher:
+
+```bash
+./run_repository_tests.sh
+```
+
+Master package:
 
 ```bash
 conda run --name e3_end_to_end_workflow \
-    python -m pip install \
-    --no-deps \
-    --force-reinstall \
-    --editable "$(pwd)"
+    ./e3_end_to_end_workflow/run_tests.sh
 ```
 
-Running `./run_e3_end_to_end.sh --version` reports both the source release and the command resolved
-from `PATH`; it no longer prints a hard-coded value that can conceal an older installation.
+Each component has its own `run_tests.sh` or documented R test command. Run a component's tests
+after changing that component, and run the end-to-end synthetic regression after changing a
+publication contract used downstream.
 
-The environment pins OrthoFinder exactly because its output contract is part of the scientific
-provenance. Recreate the environment from `environment.yml`; do not borrow `orthofinder` from a
-different activated environment.
+## Common failures
 
-## OrthoFinder version policy
+### Controller is `PENDING`
 
-The OrthoFinder version is fixed across the inherited reference and new workflow runs:
-
-- The inherited `Results_Feb26` result remains a frozen OrthoFinder 2.5.5 reference. It is never
-  overwritten or extended.
-- New isolated end-to-end runs use exactly OrthoFinder 2.5.5 from this package environment. This
-  matches the boss-approved version, preserves the project-reviewed phylogeny that was preferred
-  over the version-3 result, and follows the input contract already validated by
-  `e3_orthology_integration`. This is a dataset-specific project decision rather than a claim that
-  version 2 is universally more accurate than version 3.
-
-Stage 04 requires both `Orthogroups/Orthogroups.tsv` and the version-2 root hierarchical grouping at
-`Phylogenetic_Hierarchical_Orthogroups/N0.tsv`. Run-specific identifiers must not be merged with
-identifiers from `Results_Feb26` merely because their labels look similar. Adding species creates a
-new, separately versioned complete-proteome analysis rather than modifying the inherited result.
-
-The committed synthetic configuration uses two tiny, visibly synthetic FASTAs and runs all stages.
-Its outputs contain `TEST DATA ONLY` and are never production eligible.
-
-## Production preparation
-
-For the current reviewed-results analysis, copy
-`config/grant_aligned_reuse.cluster.template.yaml` to an immutable run-specific YAML. Build the
-Expression Atlas and ligandability manifests with the supplied CLI commands, keep the existing
-OrthoFinder archive read-only, and validate the configuration. For a larger future analysis, copy
-`config/production.cluster.template.yaml`, add any number of proteome rows/species and configure the
-fresh component adapter argument vectors. Commands are YAML argv lists rather than shell strings.
-
-Both modes use the same validation and submission interface:
+Inspect:
 
 ```bash
-e3-workflow validate --config /path/to/run.yaml
-e3-workflow plan --config /path/to/run.yaml
-./run_e3_end_to_end.sh --config /path/to/run.yaml --profile local --dry-run
-./submit_e3_controller_slurm.sh \
-    --config /path/to/run.yaml \
-    --max-jobs 50 \
-    --resume
+squeue --jobs JOB_ID --start
+scontrol show job JOB_ID
 ```
 
-The Slurm profile defaults to account `barton`, partition `general`. Stage-specific threads, memory
-and runtime are declared in the YAML, with profile values used only as fallbacks. The fresh template
-permits up to 32 threads and 180 GB for expensive components, while the current reuse stages request
-substantially less. A production stage without an explicit command or a documented native
-implementation is rejected at configuration load time. Every stage runs under
-`.staging`, records file and console logs plus SHA-256 checksums, and is moved to its formal
-directory only after its declared output contract passes.
+No second controller should be submitted for the same run while the first is pending.
 
-`config/five_proteome_orthofinder.cluster.yaml` remains a bounded fresh-OrthoFinder demonstration.
-It is not the current grant analysis and does not supersede the reviewed 60-proteome
-`Results_Feb26` authority.
+### Controller ended but some stages completed
 
-See [docs/EVIDENCE_MODES_AND_SCALING.md](docs/EVIDENCE_MODES_AND_SCALING.md) for the evidence-state,
-reuse and larger-panel contracts.
+Check the controller log and accounting, fix the cause, then submit the same immutable YAML with
+`--resume`. Do not delete validated successful stage directories.
 
-## Benchmarking and resource provenance
+### Configuration path or input changed
 
-Benchmarking is automatic for every full run; no separate profiling command is required. Multiple
-scopes are retained:
+Do not weaken validation. Either restore the immutable input or create a new run YAML and run name
+for the changed dataset.
 
-- the stage monitor samples the stage process tree while its scientific command and output
-  validation run;
-- runner timestamps cover the broader stage orchestration through checksum inventory; and
-- Slurm accounting, when available, independently describes the complete scheduled job.
+### A stage output exists but is rejected
 
-Each stage publishes `benchmark/stage_resource_usage.tsv`, a matching JSON record and a compressed
-`stage_resource_timeseries.tsv.gz`. The final aggregation rule writes run-wide outputs under
-`benchmark_summary/`, including a one-row-per-stage comparison, whole-workflow metrics and optional raw
-Slurm accounting records. CPU time, wall time, allocation efficiency, peak RSS/VMS, process and
-thread counts, I/O counters, context switches, requested resources, output sizes and execution
-context are retained where the operating system exposes them.
+Inspect its `stage_manifest.json`, persistent stage log and the retained `failed/` directory.
+Existence alone is intentionally insufficient.
 
-Set the sampling and accounting policy in the run YAML:
+### Expression coverage is absent for a species
 
-```yaml
-benchmarking:
-  sample_interval_seconds: 5.0
-  collect_slurm_accounting: true
-```
+This should become an explicit unavailable or mapping state, not a false biological zero. Use
+`expression_downloader` to prepare missing reusable data if it exists in Expression Atlas.
 
-Measurements from a failed stage are retained under `failed/`. Slurm accounting is best-effort:
-an unavailable or delayed `sacct` service is recorded in `slurm_accounting_status.tsv` but does not
-invalidate successful process-tree measurements. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md)
-for field definitions and interpretation limits.
+### Optional structural alignment is unavailable
 
-## Verbose HTML reports
+Leave `09b_structural_alignment` disabled/optional. The final integration will record
+`NOT_ASSESSED`; it must not reinterpret missing structures as dissimilar pockets.
 
-Every successfully published stage contains:
+## Further documentation
 
-```text
-<run_root>/<stage>/report/stage_report.html
-```
-
-The report is generated after declared outputs validate and before atomic stage publication. It is
-then included in the stage manifest's checksum inventory. Each stage report contains:
-
-- what the stage did, why it was needed, the supported interpretation and an explicit scientific
-  limitation;
-- direct input paths, byte sizes and SHA-256 checksums;
-- the exact external argument vector, or the named internal implementation;
-- start/finish state, declared output validation and links to stage/tool logs;
-- measured wall time, CPU, peak RSS/VMS, I/O, processes, threads, scheduler context and embedded
-  CPU/RAM time-series graphics;
-- declared-output sizes, checksums and evidence-based summaries; and
-- bounded result previews for TSV/TSV.GZ, FASTA, Parquet, DuckDB, SQLite, JSON and text outputs.
-
-Large data authorities are never embedded into HTML. TSV and FASTA files are inspected by streaming;
-Parquet and database files are queried read-only. Preview rows and columns are bounded by the YAML:
-
-```yaml
-reporting:
-  preview_rows: 10
-  max_table_columns: 12
-  max_chart_items: 20
-```
-
-After all thirteen stages and the benchmark aggregate complete, Snakemake publishes:
-
-```text
-<run_root>/reports/e3_workflow_summary.html
-<run_root>/reports/report_manifest.json
-<run_root>/reports/report_complete.tsv
-```
-
-The consolidated report includes the controlled inputs, full shell-to-Snakemake invocation history,
-per-stage commands and summaries, workflow metrics, inline stage-comparison graphics and links to
-every detailed stage report. It is self-contained HTML5 with embedded CSS/SVG and therefore remains
-readable when copied away from the cluster, although links to the original result files naturally
-require the run directory to remain together. A partial `--stop-after` run has reports for every
-completed stage but does not claim a complete-run report.
-
-When stage `09b_structural_alignment` is enabled, its specialised outputs are:
-
-```text
-09b_structural_alignment/structural_alignment/
-├── reports/structural_alignment_summary.html
-├── interactive/structural_alignment_browser.html
-└── interactive/pairs/<tool>/<group>/<reference>__<member>.html
-```
-
-The first file is the scientific overview with SVG graphics, thresholds, versions, checksums,
-group/pair evidence and residue correspondences. The browser links to one offline interactive
-C-alpha superposition per US-align/TM-align result, with reference and member pockets marked
-separately.
-
-See [docs/REPORTING.md](docs/REPORTING.md) for the complete reporting contract and interpretation
-rules.
-
-## Restart behaviour
-
-Normal Snakemake targets, `--rerun-incomplete`, checksum-bearing stage manifests and persistent stage
-control tokens provide the restart boundary. Completed work is reused only when the configured
-inputs and outputs remain valid. Completed-job metadata is dropped after success because the
-configuration digest, control tokens and checksummed manifests are the workflow's authoritative
-restart records; an interrupted job remains marked incomplete.
-
-The profiles set `drop-metadata: true`, so Snakemake does not retain completed-job metadata after
-successful jobs. After the complete default target succeeds, the wrapper also clears incomplete
-markers for every declared, successfully published output. This narrow compatibility step addresses
-a Snakemake 9 multi-output timing edge case; it runs only after the full DAG succeeds and tolerates
-the expected "metadata was not present" return because completed metadata has already been dropped.
-It never runs after a partial target or a failed/interrupted DAG. Checksummed manifests and control
-tokens remain the restart authority.
-
-Use named controls rather than deleting outputs:
-
-```bash
-./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm --resume
-./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm \
-    --start-at 04_orthofinder --stop-after 05_orthology
-./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm \
-    --force-stage 07_expression
-```
-
-`--start-at` refreshes the selected stage control token and propagates the rerun through the DAG. It
-does not bypass missing or invalid prerequisites. Existing stage directories are moved under
-`superseded` when a rerun is published. Failed staging directories are retained under `failed`.
-
-## Known-E3 evidence resource
-
-The production seed evidence is a deterministic derivative of the discovery engine's authoritative
-`prepared_inputs/known_e3_seeds.tsv`. It retains the accession, E3 category, GO evidence flags,
-organism, taxon, sequence MD5 and source-row provenance without storing the full sequence-bearing
-51 MB table in Git.
-
-Build it on the cluster from the workflow package root:
-
-```bash
-e3-workflow build-seed-evidence \
-    --source /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_14_20260715_100551/prepared_inputs/known_e3_seeds.tsv \
-    --output data/known_e3_seed_evidence.tsv.gz
-```
-
-The command also writes `data/known_e3_seed_evidence.provenance.tsv`. Existing outputs are protected;
-use `--force` only when intentionally rebuilding them from a reviewed source.
-
-The seed archives and provenance sidecars committed in `data/` are controlled inputs. Workflow
-upgrades must preserve them byte-for-byte; a run stages and checksums them but never rewrites them.
+- `https://peterthorpe5.github.io/E3_project_draft/`: searchable browser-based manual after
+  GitHub Pages is enabled.
+- `docs_site/`: version-controlled source for that manual.
+- `docs/E3_PROJECT_OPERATOR_GUIDE_v0_9_0.pdf`: printable cross-package operator guide.
+- `README.md`: accessible source and continuously maintained quick-start guide.
+- `REPOSITORY_FILE_GUIDE.md`: file-by-file package map.
+- `e3_end_to_end_workflow/README.md`: detailed master package behaviour.
+- `e3_end_to_end_workflow/docs/ARCHITECTURE.md`: DAG and atomic-publication design.
+- `e3_end_to_end_workflow/docs/EVIDENCE_MODES_AND_SCALING.md`: reuse/fresh evidence policy.
+- each component package's `README.md`: complete standalone interface and scientific boundary.

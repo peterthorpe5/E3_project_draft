@@ -1,0 +1,29 @@
+E3 PROTAC Resource Shiny app v0.3.0 test note
+================================================
+
+The package includes an expanded test suite under tests/testthat/.
+
+Important limitation of this ChatGPT sandbox:
+- R is not installed in the sandbox environment, so I could not execute the R
+  testthat suite here.
+- The tests are included and should be run in Pete's active R/conda environment
+  with:
+
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
+
+New test files added in v0.3.0:
+- tests/testthat/test_resource_helpers.R
+- tests/testthat/test_data_source_report.R
+- tests/testthat/test_resource_modules_ui.R
+
+Existing expression-app tests are retained.
+
+Expected test coverage:
+- CLI/config parsing.
+- Expression SQL helper construction.
+- Resource DuckDB query builders.
+- Resource catalog/status summaries.
+- Small DuckDB integration tests when DBI/duckdb/duckplyr are installed.
+- Resource overview/browser/data-source UI controls.
+- Markdown data-source report generation.

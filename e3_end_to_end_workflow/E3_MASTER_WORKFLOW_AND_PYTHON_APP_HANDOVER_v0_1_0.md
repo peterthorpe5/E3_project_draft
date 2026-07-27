@@ -1,0 +1,118 @@
+# E3 master workflow and Python app handover — v0.1.0 WIP
+
+Date: 20 July 2026
+
+Repository: `peterthorpe5/E3_project_draft`
+
+Base/default branch: `main`
+
+Working branch: `codex/e3-end-to-end-workflow-wip`
+
+## Delivered packages
+
+### `e3_end_to_end_workflow`
+
+The new master Snakemake orchestration package sits above the existing discovery, source/candidate,
+orthology, expression and ligandability packages. It defines twelve ordered stage boundaries from
+controlled input manifests through an application-ready handoff.
+
+Implemented in v0.1.0:
+
+- strict YAML configuration and immutable run names;
+- checksummed proteome, E3 seed and human shortlist manifests;
+- local and Slurm profiles (`barton`, `general` defaults);
+- named-option end-to-end shell wrapper;
+- argv-list external command execution without shell interpolation;
+- console, stage, command and Snakemake logs;
+- per-stage temporary directories and atomic publication;
+- required non-empty output contracts;
+- complete upstream lineage plus size/SHA-256 revalidation before downstream execution;
+- retained `failed` and `superseded` stage directories;
+- explicit synthetic mode which cannot be described as production eligible;
+- a full twelve-stage synthetic end-to-end regression.
+
+The production template deliberately fails closed. The exact package adapters, domain component and
+final release assembler still need to be wired to the cluster installations and final shared schema.
+No `CHANGE_ME` command is silently accepted as a built-in scientific analysis.
+
+### `e3_python_app`
+
+The new Python companion to the R Shiny app uses Streamlit and read-only DuckDB queries. It provides
+a resource overview, bounded relation browser, cross-relation exact accession search and a
+provenance/QC view. Relation identifiers are allowlisted, user values are bound SQL parameters, and
+queries are row-capped.
+
+Scientific transformations remain outside both UIs. The Python and Shiny apps should ultimately
+consume the same `10_integrated_resource` schema.
+
+## Verification completed here
+
+- GitHub repository/default-branch metadata confirmed through the connected GitHub integration.
+- Python 3.12 compilation passed for both source trees and all tests.
+- Shell syntax passed for all four new shell scripts.
+- No Python source/test line exceeds the 100-character target.
+- AST audit found module/class/function docstrings for every public source symbol.
+- `git diff --check` passed.
+- Controlled synthetic inputs validated: 2 proteomes, 2 seeds and 2 shortlist decisions.
+- All 12 stages executed sequentially and published complete ordered lineage.
+- Published output sizes and SHA-256 values were rechecked successfully.
+- Deliberately modified upstream output was rejected before downstream execution.
+
+## Checks prepared but not executable in the handover sandbox
+
+PyPI access was unavailable and the environment did not contain Snakemake, DuckDB, PyArrow,
+Streamlit, pytest, coverage, pycodestyle or pydocstyle. Consequently, the committed test runners are
+present but their dependency-backed portions were not claimed as passed here.
+
+Run on the cluster (or another connected environment):
+
+```bash
+cd e3_end_to_end_workflow
+conda env create -f environment.yml
+conda run -n e3_end_to_end_workflow python -m pip install --no-deps -e .
+conda run -n e3_end_to_end_workflow ./run_tests.sh
+
+cd ../e3_python_app
+conda env create -f environment.yml
+conda run -n e3_python_app python -m pip install --no-deps -e .
+conda run -n e3_python_app ./run_tests.sh
+```
+
+These commands run pytest, branch-aware coverage with a 95% threshold, pycodestyle, pydocstyle,
+compilation and shell checks. When Snakemake is present, the workflow runner additionally performs
+Snakemake lint and a dry run. The app suite includes DuckDB integration and Streamlit `AppTest`.
+
+## Suggested Git commands
+
+Review before committing:
+
+```bash
+git status --short
+git diff --check
+find e3_end_to_end_workflow e3_python_app -type f | sort
+```
+
+After the cluster test runners pass:
+
+```bash
+git add \
+    E3_MASTER_WORKFLOW_AND_PYTHON_APP_HANDOVER_v0_1_0.md \
+    e3_end_to_end_workflow \
+    e3_python_app
+git commit -m "Add WIP master E3 workflow and Python resource app"
+git push -u origin codex/e3-end-to-end-workflow-wip
+```
+
+Alternatively, merge or copy the files onto a branch name chosen locally before committing.
+
+## Immediate next development slice
+
+1. Run both full test suites on the cluster and resolve version-specific Snakemake/Streamlit issues.
+2. Implement a real proteome-preparation adapter and test it on a tiny copied FASTA set.
+3. Wire the existing discovery and candidate-evidence package outputs into stages 02 and 03.
+4. Add a clean fresh OrthoFinder runner, then point stage 05 at `e3_orthology_integration`.
+5. Specify and implement the domain-evidence component.
+6. Wire Expression Atlas and the signed ligandability shortlist.
+7. Build the shared integrated DuckDB/Parquet/TSV release assembler.
+8. Add focused candidate, orthology, expression and ligandability pages to both apps against that
+   shared schema.

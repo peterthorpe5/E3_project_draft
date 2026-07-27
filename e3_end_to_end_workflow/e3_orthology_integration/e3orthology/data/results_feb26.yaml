@@ -1,0 +1,20 @@
+project:
+  name: ARIA plant E3 orthology integration
+  orthofinder_run_id: orthofinder2_results_feb26_2026
+input:
+  results_directory_name: Results_Feb26
+  expected_species_count: 60
+  require_sqlite_regression: true
+identifiers:
+  candidate_delimiter: ";"
+  fail_on_parsed_accession_ambiguity: true
+  fail_on_unvalidated_candidate_membership: true
+  minimum_uniprot_parse_fraction: 0.99
+regression:
+  accession: Q9SA03
+  expected_raw_identifier: sp|Q9SA03|FB27_ARATH
+  expected_orthogroup: OG0001686
+  expected_hierarchical_orthogroup: N0.HOG0002084
+execution:
+  parquet_block_size_bytes: 67108864
+  threads: 1

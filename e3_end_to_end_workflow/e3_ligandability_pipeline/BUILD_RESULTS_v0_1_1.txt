@@ -1,0 +1,208 @@
+* Creating isolated environment: venv+pip...
+* Installing packages in isolated environment:
+  - setuptools>=75
+  - wheel
+* Getting build dependencies for sdist...
+running egg_info
+creating e3_ligandability_pipeline.egg-info
+writing e3_ligandability_pipeline.egg-info/PKG-INFO
+writing dependency_links to e3_ligandability_pipeline.egg-info/dependency_links.txt
+writing entry points to e3_ligandability_pipeline.egg-info/entry_points.txt
+writing requirements to e3_ligandability_pipeline.egg-info/requires.txt
+writing top-level names to e3_ligandability_pipeline.egg-info/top_level.txt
+writing manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+reading manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+writing manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+* Building sdist...
+running sdist
+running egg_info
+writing e3_ligandability_pipeline.egg-info/PKG-INFO
+writing dependency_links to e3_ligandability_pipeline.egg-info/dependency_links.txt
+writing entry points to e3_ligandability_pipeline.egg-info/entry_points.txt
+writing requirements to e3_ligandability_pipeline.egg-info/requires.txt
+writing top-level names to e3_ligandability_pipeline.egg-info/top_level.txt
+reading manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+writing manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+running check
+creating e3_ligandability_pipeline-0.1.1
+creating e3_ligandability_pipeline-0.1.1/config
+creating e3_ligandability_pipeline-0.1.1/docs
+creating e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+creating e3_ligandability_pipeline-0.1.1/e3ligandability
+creating e3_ligandability_pipeline-0.1.1/examples
+creating e3_ligandability_pipeline-0.1.1/legacy_reference
+creating e3_ligandability_pipeline-0.1.1/scripts
+creating e3_ligandability_pipeline-0.1.1/tests
+creating e3_ligandability_pipeline-0.1.1/tests/fixtures
+copying files to e3_ligandability_pipeline-0.1.1...
+copying COVERAGE_RESULTS_v0_1_1.txt -> e3_ligandability_pipeline-0.1.1
+copying MANIFEST.in -> e3_ligandability_pipeline-0.1.1
+copying README.md -> e3_ligandability_pipeline-0.1.1
+copying RELEASE_NOTES_v0_1_0.md -> e3_ligandability_pipeline-0.1.1
+copying RELEASE_NOTES_v0_1_1.md -> e3_ligandability_pipeline-0.1.1
+copying RELEASE_VALIDATION_SUMMARY_v0_1_1.txt -> e3_ligandability_pipeline-0.1.1
+copying TEST_RESULTS_v0_1_1.txt -> e3_ligandability_pipeline-0.1.1
+copying environment.cluster.yml -> e3_ligandability_pipeline-0.1.1
+copying pyproject.toml -> e3_ligandability_pipeline-0.1.1
+copying requirements-dev.txt -> e3_ligandability_pipeline-0.1.1
+copying requirements.txt -> e3_ligandability_pipeline-0.1.1
+copying run_coverage.sh -> e3_ligandability_pipeline-0.1.1
+copying run_e3_ligandability.sh -> e3_ligandability_pipeline-0.1.1
+copying run_legacy_regression.sh -> e3_ligandability_pipeline-0.1.1
+copying run_tests.sh -> e3_ligandability_pipeline-0.1.1
+copying config/config.cluster.example.yaml -> e3_ligandability_pipeline-0.1.1/config
+copying docs/CLUSTER_RUNBOOK.md -> e3_ligandability_pipeline-0.1.1/docs
+copying docs/LEGACY_AUDIT_AND_RERUN_DECISION.md -> e3_ligandability_pipeline-0.1.1/docs
+copying docs/METHODS_AND_SCIENTIFIC_LIMITS.md -> e3_ligandability_pipeline-0.1.1/docs
+copying docs/OUTPUT_SCHEMA.md -> e3_ligandability_pipeline-0.1.1/docs
+copying docs/TEST_TRACEABILITY.tsv -> e3_ligandability_pipeline-0.1.1/docs
+copying e3_ligandability_pipeline.egg-info/PKG-INFO -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3_ligandability_pipeline.egg-info/SOURCES.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3_ligandability_pipeline.egg-info/dependency_links.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3_ligandability_pipeline.egg-info/entry_points.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3_ligandability_pipeline.egg-info/requires.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3_ligandability_pipeline.egg-info/top_level.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+copying e3ligandability/__init__.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/alphafold.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/cli.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/config.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/fpocket.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/io_utils.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/logging_utils.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/mapping.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/models.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/outputs.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/p2rank.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/pipeline.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/provenance.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/qc.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/regression.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/structure.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying e3ligandability/tools.py -> e3_ligandability_pipeline-0.1.1/e3ligandability
+copying examples/accessions.local_models.example.tsv -> e3_ligandability_pipeline-0.1.1/examples
+copying legacy_reference/LEGACY_FILE_CHECKSUMS.tsv -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/README.md -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/download_models.py -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/fpocket_inherited_environment.yaml -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/get_pLDDT_scores.py -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/get_pocket_pLDDT_scores.py -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/plot_pLDDT_dist.py -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying legacy_reference/run_p2rank_rescore.sh -> e3_ligandability_pipeline-0.1.1/legacy_reference
+copying scripts/e3_ligandability.py -> e3_ligandability_pipeline-0.1.1/scripts
+copying scripts/slurm_e3_ligandability_job.sh -> e3_ligandability_pipeline-0.1.1/scripts
+copying scripts/submit_e3_ligandability_slurm.sh -> e3_ligandability_pipeline-0.1.1/scripts
+copying tests/test_additional_coverage.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_alphafold.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_config_io.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_defensive_branches.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_pipeline_cli_regression.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_release_contract.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_release_coverage.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_structure_pockets.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/test_tools_outputs_qc.py -> e3_ligandability_pipeline-0.1.1/tests
+copying tests/fixtures/model.cif -> e3_ligandability_pipeline-0.1.1/tests/fixtures
+copying tests/fixtures/pocket1_atm.cif -> e3_ligandability_pipeline-0.1.1/tests/fixtures
+copying tests/fixtures/pocket_sparse_fpocket_4_2_2.cif -> e3_ligandability_pipeline-0.1.1/tests/fixtures
+copying e3_ligandability_pipeline.egg-info/SOURCES.txt -> e3_ligandability_pipeline-0.1.1/e3_ligandability_pipeline.egg-info
+Writing e3_ligandability_pipeline-0.1.1/setup.cfg
+Creating tar archive
+removing 'e3_ligandability_pipeline-0.1.1' (and everything under it)
+* Building wheel from sdist
+* Creating isolated environment: venv+pip...
+* Installing packages in isolated environment:
+  - setuptools>=75
+  - wheel
+* Getting build dependencies for wheel...
+running egg_info
+writing e3_ligandability_pipeline.egg-info/PKG-INFO
+writing dependency_links to e3_ligandability_pipeline.egg-info/dependency_links.txt
+writing entry points to e3_ligandability_pipeline.egg-info/entry_points.txt
+writing requirements to e3_ligandability_pipeline.egg-info/requires.txt
+writing top-level names to e3_ligandability_pipeline.egg-info/top_level.txt
+reading manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+writing manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+* Building wheel...
+running bdist_wheel
+running build
+running build_py
+creating build/lib/e3ligandability
+copying e3ligandability/__init__.py -> build/lib/e3ligandability
+copying e3ligandability/alphafold.py -> build/lib/e3ligandability
+copying e3ligandability/cli.py -> build/lib/e3ligandability
+copying e3ligandability/config.py -> build/lib/e3ligandability
+copying e3ligandability/fpocket.py -> build/lib/e3ligandability
+copying e3ligandability/io_utils.py -> build/lib/e3ligandability
+copying e3ligandability/logging_utils.py -> build/lib/e3ligandability
+copying e3ligandability/mapping.py -> build/lib/e3ligandability
+copying e3ligandability/models.py -> build/lib/e3ligandability
+copying e3ligandability/outputs.py -> build/lib/e3ligandability
+copying e3ligandability/p2rank.py -> build/lib/e3ligandability
+copying e3ligandability/pipeline.py -> build/lib/e3ligandability
+copying e3ligandability/provenance.py -> build/lib/e3ligandability
+copying e3ligandability/qc.py -> build/lib/e3ligandability
+copying e3ligandability/regression.py -> build/lib/e3ligandability
+copying e3ligandability/structure.py -> build/lib/e3ligandability
+copying e3ligandability/tools.py -> build/lib/e3ligandability
+running egg_info
+writing e3_ligandability_pipeline.egg-info/PKG-INFO
+writing dependency_links to e3_ligandability_pipeline.egg-info/dependency_links.txt
+writing entry points to e3_ligandability_pipeline.egg-info/entry_points.txt
+writing requirements to e3_ligandability_pipeline.egg-info/requires.txt
+writing top-level names to e3_ligandability_pipeline.egg-info/top_level.txt
+reading manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+writing manifest file 'e3_ligandability_pipeline.egg-info/SOURCES.txt'
+installing to build/bdist.linux-x86_64/wheel
+running install
+running install_lib
+creating build/bdist.linux-x86_64/wheel
+creating build/bdist.linux-x86_64/wheel/e3ligandability
+copying build/lib/e3ligandability/__init__.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/alphafold.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/cli.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/config.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/fpocket.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/io_utils.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/logging_utils.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/mapping.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/models.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/outputs.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/p2rank.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/pipeline.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/provenance.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/qc.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/regression.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/structure.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+copying build/lib/e3ligandability/tools.py -> build/bdist.linux-x86_64/wheel/./e3ligandability
+running install_egg_info
+Copying e3_ligandability_pipeline.egg-info to build/bdist.linux-x86_64/wheel/./e3_ligandability_pipeline-0.1.1-py3.13.egg-info
+running install_scripts
+creating build/bdist.linux-x86_64/wheel/e3_ligandability_pipeline-0.1.1.dist-info/WHEEL
+creating '/mnt/data/e3_ligandability_pipeline_v0_1_1/dist/.tmp-ywnefu3v/e3_ligandability_pipeline-0.1.1-py3-none-any.whl' and adding 'build/bdist.linux-x86_64/wheel' to it
+adding 'e3ligandability/__init__.py'
+adding 'e3ligandability/alphafold.py'
+adding 'e3ligandability/cli.py'
+adding 'e3ligandability/config.py'
+adding 'e3ligandability/fpocket.py'
+adding 'e3ligandability/io_utils.py'
+adding 'e3ligandability/logging_utils.py'
+adding 'e3ligandability/mapping.py'
+adding 'e3ligandability/models.py'
+adding 'e3ligandability/outputs.py'
+adding 'e3ligandability/p2rank.py'
+adding 'e3ligandability/pipeline.py'
+adding 'e3ligandability/provenance.py'
+adding 'e3ligandability/qc.py'
+adding 'e3ligandability/regression.py'
+adding 'e3ligandability/structure.py'
+adding 'e3ligandability/tools.py'
+adding 'e3_ligandability_pipeline-0.1.1.dist-info/METADATA'
+adding 'e3_ligandability_pipeline-0.1.1.dist-info/WHEEL'
+adding 'e3_ligandability_pipeline-0.1.1.dist-info/entry_points.txt'
+adding 'e3_ligandability_pipeline-0.1.1.dist-info/top_level.txt'
+adding 'e3_ligandability_pipeline-0.1.1.dist-info/RECORD'
+removing build/bdist.linux-x86_64/wheel
+Successfully built e3_ligandability_pipeline-0.1.1.tar.gz and e3_ligandability_pipeline-0.1.1-py3-none-any.whl

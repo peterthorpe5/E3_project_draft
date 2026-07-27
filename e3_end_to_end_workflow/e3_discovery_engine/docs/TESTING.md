@@ -1,0 +1,82 @@
+# Testing strategy
+
+## Test layers
+
+### Unit tests
+
+Every Python function or class method defined under `src/e3_discovery` is mapped
+to one or more test files in `tests/FUNCTION_TEST_MATRIX.tsv`. A contract test
+parses the source abstract syntax tree and fails if a function is not mapped.
+Tests include normal behaviour, invalid inputs, empty files, duplicate IDs,
+sidecar files, atomic-write cleanup and external-command failures.
+
+### Integration tests
+
+Integration tests construct real Parquet inputs, build a DuckDB resource, query
+curated tables, validate counts and inspect FASTA exports.
+
+### Synthetic end-to-end test
+
+A complete Python-managed workflow is executed from sample/seed preparation
+through cluster conversion, strict filtering, DuckDB construction and
+provenance. This test requires no DIAMOND executable and therefore runs in all
+CI/development environments.
+
+### External DIAMOND end-to-end test
+
+An opt-in test creates a tiny DIAMOND database, runs DeepClust and realignment,
+then builds the final resource. It is skipped unless `RUN_DIAMOND_E2E=1` and a
+compatible `diamond` executable is available.
+
+## Commands
+
+```bash
+./run_tests.sh
+```
+
+The script performs compilation, PEP8 checking, unit/integration/end-to-end
+execution and coverage reporting.
+
+```bash
+E3_DIAMOND_E2E_DIR="${PWD}/test_outputs/diamond_e2e" \
+RUN_DIAMOND_E2E=1 python -m unittest \
+  tests.end_to_end.test_external_diamond_pipeline -v
+```
+
+## Validation boundary
+
+Passing the Python suite proves the data handling and resource logic against
+controlled fixtures. It does not replace a full production run with the pinned
+DIAMOND/Snakemake environment and intended input dataset.
+
+When `E3_DIAMOND_E2E_DIR` is set, commands, logs and intermediate files are
+retained at that path. External-tool exceptions also include a bounded tail of
+the relevant log so failures remain diagnosable even when temporary directories
+are cleaned.
+
+## Release 0.1.3 check summary
+
+The bundled offline suite contains 133 tests. In the release environment, 131
+pass and two are deliberately skipped unless `RUN_DIAMOND_E2E=1` and a real
+DIAMOND executable are available. The real-DIAMOND end-to-end test is retained
+as a mandatory pre-production quality gate. Source coverage is 99%.
+
+## DIAMOND output-format regression coverage
+
+The test suite covers headerless two-column DeepClust output, multiple header
+spellings, DIAMOND comment lines, malformed column counts, query/subject and
+centroid/member realignment headers, and valid zero-row realignment tables.
+An integration test confirms
+that the DuckDB resource can still be built when no pairwise realignments are
+reported.
+
+## Version 0.1.12 resource-monitor and evidence-separation tests
+
+The release suite now verifies that the process-tree monitor samples the parent
+Python process and a child process with an explicit memory allocation. It also
+round-trips resource TSV files, ignores hidden artefacts, aggregates repeated
+records and creates the peak-RAM figures.
+
+Resource integration tests verify the explicit all-seed, strict-seed,
+non-strict-seed and strict non-seed candidate tables, automatic scientific TSV
+summaries, and the realignment-content validation contract.

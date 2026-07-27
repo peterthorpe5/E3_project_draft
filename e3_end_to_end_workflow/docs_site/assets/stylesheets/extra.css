@@ -1,0 +1,18 @@
+:root {
+  --md-primary-fg-color: #0f5f65;
+  --md-accent-fg-color: #b45309;
+}
+
+.md-typeset h1 {
+  color: #0f5f65;
+  font-weight: 700;
+}
+
+.md-typeset table:not([class]) th {
+  background: #0f5f65;
+  color: #ffffff;
+}
+
+.md-typeset code {
+  word-break: normal;
+}

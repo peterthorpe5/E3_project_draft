@@ -1,0 +1,17 @@
+name: e3_ligandability
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - duckdb>=1.4,<2
+  - gemmi>=0.7,<1
+  - pyarrow>=18,<25
+  - pyyaml>=6,<7
+  - requests>=2.32,<3
+  - fpocket=4.2.2
+  - openjdk=17
+  - pip
+  - pip:
+      - coverage>=7.6,<8
+      - pycodestyle>=2.12,<3
