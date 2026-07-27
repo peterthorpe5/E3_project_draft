@@ -6,11 +6,12 @@ cd "${SCRIPT_DIR}"
 export PYTHONPATH="${SCRIPT_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${TMPDIR:-/tmp}/e3_workflow_cache_${UID}}"
 mkdir -p -- "${XDG_CACHE_HOME}"
+unset PYTEST_ADDOPTS
 python -m compileall -q src tests
 python -m pycodestyle src tests --max-line-length=100
 python -m pydocstyle src/e3workflow
 python -m coverage erase
-python -m coverage run --branch -m pytest -q
+python -m coverage run --branch -m pytest -q "${SCRIPT_DIR}/tests"
 python -m coverage report --fail-under=90
 bash -n \
     run_e3_end_to_end.sh \

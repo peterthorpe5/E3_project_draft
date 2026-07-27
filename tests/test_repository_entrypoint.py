@@ -115,6 +115,25 @@ class RepositoryEntrypointTests(unittest.TestCase):
             self.assertNotIn("python <<", shell)
             self.assertNotIn("python - <<", shell)
 
+    def test_pytest_launchers_are_package_scoped(self) -> None:
+        """Pytest launchers must not collect sibling packages accidentally."""
+
+        package_names = (
+            "e3_end_to_end_workflow",
+            "e3_python_app",
+            "e3_structural_alignment",
+        )
+        for package_name in package_names:
+            script = (
+                self.repository_root / package_name / "run_tests.sh"
+            ).read_text(encoding="utf-8")
+            self.assertIn("unset PYTEST_ADDOPTS", script, package_name)
+            self.assertRegex(
+                script,
+                r"pytest[^\n]*\"\$\{SCRIPT_DIR\}/tests\"",
+                package_name,
+            )
+
     def test_fresh_launcher_reports_version_and_limits_jobs(self) -> None:
         """The clean-room launcher must expose its release and enforce the ten-job cap."""
         version = subprocess.run(
