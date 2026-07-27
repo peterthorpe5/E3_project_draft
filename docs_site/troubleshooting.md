@@ -1,5 +1,31 @@
 # Troubleshooting
 
+## Installed command reports an older release
+
+An extracted source tree and the command on `PATH` are separate. Diagnose both from the
+master package directory:
+
+```bash
+conda run --name e3_end_to_end_workflow \
+    e3-workflow diagnose-install \
+    --source-root "$(pwd)" \
+    --require-source-match
+```
+
+If the command still reports `0.7.6`, replace that environment's editable installation:
+
+```bash
+conda run --name e3_end_to_end_workflow \
+    python -m pip install \
+    --no-deps \
+    --force-reinstall \
+    --editable "$(pwd)"
+```
+
+Do not install from a nested `E3_project_draft/E3_project_draft` copy. Release v0.9.1 has
+one repository root and the launchers stop before execution if the source and command do
+not match.
+
 ## Controller is pending
 
 ```bash
@@ -58,6 +84,21 @@ Tool and parameter keys use lower-case letters, numbers and underscores.
 Check the Expression Atlas resource manifest, identifier aliases and species naming.
 Publish an explicit unavailable state when no suitable experiment or mapping exists.
 Never replace it with zero expression.
+
+## Stage 07 ends after its preamble
+
+The last line in `07_expression.snakemake.log` may only be Snakemake's generic failure
+summary. Identify the scientific child job and inspect its scheduler record:
+
+```bash
+sacct --jobs JOB_ID \
+    --format=JobIDRaw,JobName,State,ExitCode,Elapsed,ReqMem,MaxRSS,NodeList,Reason
+```
+
+Version 0.9.1 scans only expression partitions for selected group-member species, reduces
+measurements to candidate genes before alias expansion, materialises mapping summaries once,
+and gives DuckDB a bounded memory limit plus disk spill directory. Resume the same immutable
+configuration after installing v0.9.1; do not delete the completed Stage 00–05 directories.
 
 ## Domain annotation is missing
 

@@ -12,7 +12,14 @@ conda run \
     --name e3_end_to_end_workflow \
     python -m pip install \
     --no-deps \
+    --force-reinstall \
     --editable e3_end_to_end_workflow
+
+conda run \
+    --name e3_end_to_end_workflow \
+    e3-workflow diagnose-install \
+    --source-root "$(pwd)/e3_end_to_end_workflow" \
+    --require-source-match
 ```
 
 Run the tests before a real submission:

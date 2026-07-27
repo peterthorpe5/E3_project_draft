@@ -1016,6 +1016,84 @@ def _parquet_list_literal(paths: Sequence[Path]) -> str:
     return "[" + ", ".join(quote_literal(path) for path in paths) + "]"
 
 
+def _expression_paths_for_species(
+    *,
+    manifest_records: Sequence[Mapping[str, str]],
+    selected_species: Iterable[str],
+) -> tuple[Path, ...]:
+    """Return only expression partitions needed by selected orthology-group members.
+
+    Args:
+        manifest_records: Validated Expression Atlas resource-manifest records.
+        selected_species: Species labels present among selected group members.
+
+    Returns:
+        Sorted, de-duplicated paths for relevant ``atlas_expression_long`` partitions.
+    """
+    species_keys = {
+        str(species).strip().upper()
+        for species in selected_species
+        if str(species).strip()
+    }
+    return tuple(
+        sorted(
+            {
+                Path(record["path"])
+                for record in manifest_records
+                if record["resource_type"] == "atlas_expression_long"
+                and record["species_column"].strip().upper() in species_keys
+            }
+        )
+    )
+
+
+def _configure_expression_duckdb(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    config: WorkflowConfig,
+    stage_root: Path,
+) -> tuple[int, Path]:
+    """Bound DuckDB memory and enable disk spilling within the atomic stage directory.
+
+    DuckDB's memory limit does not include every allocation made by DuckDB, Python or linked
+    libraries. Reserving one quarter of the Slurm request prevents the analytical engine from
+    deliberately approaching the scheduler's hard cgroup limit.
+
+    Args:
+        connection: Open DuckDB connection used by Stage 07.
+        config: Validated workflow configuration.
+        stage_root: Atomic Stage 07 working directory.
+
+    Returns:
+        Configured memory limit in MiB and the spill-directory path.
+    """
+    stage = config.stage("07_expression")
+    memory_limit_mb = max(256, stage.memory_mb * 3 // 4)
+    spill_directory = (Path(stage_root) / "duckdb_spill").resolve()
+    spill_directory.mkdir(parents=True, exist_ok=True)
+    connection.execute(f"SET threads = {stage.threads}")
+    connection.execute(f"SET memory_limit = '{memory_limit_mb}MB'")
+    connection.execute(f"SET temp_directory = {quote_literal(spill_directory)}")
+    connection.execute("SET preserve_insertion_order = false")
+    return memory_limit_mb, spill_directory
+
+
+def _create_empty_expression_view(
+    *, connection: duckdb.DuckDBPyConnection
+) -> None:
+    """Create a typed empty Atlas relation when selected species lack a compatible partition."""
+    connection.execute(
+        "CREATE TEMP VIEW atlas_expression AS SELECT "
+        "CAST(NULL AS VARCHAR) AS experiment_accession, "
+        "CAST(NULL AS VARCHAR) AS species_column, "
+        "CAST(NULL AS VARCHAR) AS gene_id, "
+        "CAST(NULL AS VARCHAR) AS gene_name, "
+        "CAST(NULL AS VARCHAR) AS sample_or_condition, "
+        "CAST(NULL AS DOUBLE) AS expression_value, "
+        "CAST(NULL AS VARCHAR) AS expression_unit WHERE FALSE"
+    )
+
+
 def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     """Map candidate protein aliases to Atlas genes and quantify expression breadth."""
     manifest_path = config.resources.expression_manifest
@@ -1027,12 +1105,25 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         allowed_resource_types=EXPRESSION_RESOURCE_TYPES,
         verify_checksums=True,
     )
-    expression_paths = [
+    all_expression_paths = [
         Path(record["path"])
         for record in manifest_records
         if record["resource_type"] == "atlas_expression_long"
     ]
+    if not all_expression_paths:
+        raise StageError(
+            "Expression resource manifest contains no atlas_expression_long files"
+        )
     members = _domain_group_members(config=config)
+    selected_species = {
+        str(member["species_column"]).strip()
+        for member in members
+        if str(member["species_column"]).strip()
+    }
+    expression_paths = _expression_paths_for_species(
+        manifest_records=manifest_records,
+        selected_species=selected_species,
+    )
     accessions = sorted(
         {
             str(member["member_accession"]).strip().upper()
@@ -1051,6 +1142,12 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "No selected group-member identifiers were available for expression mapping"
         )
     tables = stage_root / "tables"
+    LOGGER.info(
+        "Expression partition pruning selected %s of %s expression files for %s member species",
+        len(expression_paths),
+        len(all_expression_paths),
+        len(selected_species),
+    )
     write_records(
         tsv_path=tables / "candidate_identifier_aliases.tsv",
         parquet_path=tables / "candidate_identifier_aliases.parquet",
@@ -1069,15 +1166,30 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         records=aliases,
     )
     connection = duckdb.connect(":memory:")
+    memory_limit_mb = 0
+    spill_directory = Path(stage_root) / "duckdb_spill"
     try:
+        memory_limit_mb, spill_directory = _configure_expression_duckdb(
+            connection=connection,
+            config=config,
+            stage_root=stage_root,
+        )
+        LOGGER.info(
+            "DuckDB expression engine configured with threads=%s, memory_limit_mb=%s and "
+            "spill_directory=%s",
+            config.stage("07_expression").threads,
+            memory_limit_mb,
+            spill_directory,
+        )
         _create_alias_table(connection=connection, aliases=aliases)
-        expression_sql = (
+        schema_sql = (
             "SELECT * FROM read_parquet("
-            + _parquet_list_literal(expression_paths)
+            + _parquet_list_literal(all_expression_paths)
             + ", union_by_name=true, hive_partitioning=true)"
         )
         expression_columns = {
-            str(row[0]) for row in connection.execute(f"DESCRIBE {expression_sql}").fetchall()
+            str(row[0])
+            for row in connection.execute(f"DESCRIBE {schema_sql}").fetchall()
         }
         required = {
             "experiment_accession",
@@ -1091,7 +1203,40 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         missing = sorted(required.difference(expression_columns))
         if missing:
             raise StageError("Expression Parquet is missing columns: " + ", ".join(missing))
-        connection.execute(f"CREATE TEMP VIEW atlas_expression AS {expression_sql}")
+        if expression_paths:
+            expression_sql = (
+                "SELECT * FROM read_parquet("
+                + _parquet_list_literal(expression_paths)
+                + ", union_by_name=true, hive_partitioning=true)"
+            )
+            connection.execute(
+                f"CREATE TEMP VIEW atlas_expression AS {expression_sql}"
+            )
+        else:
+            _create_empty_expression_view(connection=connection)
+        connection.execute(
+            "CREATE TEMP TABLE candidate_identifier_keys AS "
+            "SELECT DISTINCT upper(species_column) AS species_key, "
+            "upper(identifier_value) AS identifier_key FROM candidate_aliases "
+            "WHERE identifier_value <> ''"
+        )
+        connection.execute(
+            "CREATE TEMP TABLE atlas_candidate_genes AS SELECT DISTINCT species_key, "
+            "gene_id, gene_name FROM (SELECT "
+            "upper(CAST(e.species_column AS VARCHAR)) AS species_key, "
+            "CAST(e.gene_id AS VARCHAR) AS gene_id, "
+            "CAST(e.gene_name AS VARCHAR) AS gene_name "
+            "FROM atlas_expression e JOIN candidate_identifier_keys k "
+            "ON upper(CAST(e.species_column AS VARCHAR)) = k.species_key "
+            "AND upper(CAST(e.gene_id AS VARCHAR)) = k.identifier_key "
+            "UNION ALL SELECT "
+            "upper(CAST(e.species_column AS VARCHAR)) AS species_key, "
+            "CAST(e.gene_id AS VARCHAR) AS gene_id, "
+            "CAST(e.gene_name AS VARCHAR) AS gene_name "
+            "FROM atlas_expression e JOIN candidate_identifier_keys k "
+            "ON upper(CAST(e.species_column AS VARCHAR)) = k.species_key "
+            "AND upper(COALESCE(CAST(e.gene_name AS VARCHAR), '')) = k.identifier_key)"
+        )
         connection.execute(
             "CREATE TEMP TABLE alias_gene_matches AS "
             "SELECT DISTINCT a.cluster_id, a.primary_group_type, a.primary_group_id, "
@@ -1099,10 +1244,10 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "a.identifier_value, "
             "a.mapping_tier, CAST(e.gene_id AS VARCHAR) AS gene_id, "
             "CAST(e.gene_name AS VARCHAR) AS gene_name "
-            "FROM candidate_aliases a JOIN atlas_expression e "
-            "ON upper(CAST(e.species_column AS VARCHAR)) = upper(a.species_column) "
-            "AND (upper(CAST(e.gene_id AS VARCHAR)) = upper(a.identifier_value) "
-            "OR upper(COALESCE(CAST(e.gene_name AS VARCHAR), '')) = upper(a.identifier_value))"
+            "FROM candidate_aliases a JOIN atlas_candidate_genes e "
+            "ON e.species_key = upper(a.species_column) "
+            "AND (upper(e.gene_id) = upper(a.identifier_value) "
+            "OR upper(COALESCE(e.gene_name, '')) = upper(a.identifier_value))"
         )
         mapping_query = (
             "WITH candidates AS (SELECT DISTINCT cluster_id, primary_group_type, "
@@ -1141,12 +1286,14 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "FROM candidates c LEFT JOIN summaries s USING (cluster_id, primary_group_type, "
             "primary_group_id, member_accession, member_identifier, species_column)"
         )
+        connection.execute(
+            f"CREATE TEMP TABLE candidate_mapping AS {mapping_query}"
+        )
         copy_query_to_parquet(
             connection=connection,
-            query=mapping_query,
+            query="SELECT * FROM candidate_mapping",
             path=tables / "candidate_expression_mapping.parquet",
         )
-        connection.execute(f"CREATE TEMP VIEW candidate_mapping AS {mapping_query}")
         summary_query = (
             "WITH unique_mapping AS (SELECT cluster_id, primary_group_type, primary_group_id, "
             "member_accession, member_identifier, species_column, "
@@ -1189,23 +1336,29 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "LEFT JOIN evidence e USING (cluster_id, primary_group_type, primary_group_id, "
             "member_accession, member_identifier, species_column)"
         )
+        connection.execute(
+            f"CREATE TEMP TABLE candidate_expression_summary AS {summary_query}"
+        )
         copy_query_to_parquet(
             connection=connection,
-            query=summary_query,
+            query="SELECT * FROM candidate_expression_summary",
             path=tables / "candidate_expression_summary.parquet",
         )
         mapping_rows = connection.execute(
-            mapping_query + " ORDER BY cluster_id, species_column, member_accession"
+            "SELECT * FROM candidate_mapping "
+            "ORDER BY cluster_id, species_column, member_accession"
         ).fetchall()
         mapping_columns = [str(item[0]) for item in connection.description]
         summary_rows = connection.execute(
-            summary_query + " ORDER BY cluster_id, species_column, member_accession"
+            "SELECT * FROM candidate_expression_summary "
+            "ORDER BY cluster_id, species_column, member_accession"
         ).fetchall()
         summary_columns = [str(item[0]) for item in connection.description]
     except duckdb.Error as exc:
         raise StageError(f"Expression mapping failed: {exc}") from exc
     finally:
         connection.close()
+    shutil.rmtree(spill_directory, ignore_errors=True)
     write_tsv(
         tables / "candidate_expression_mapping.tsv",
         (dict(zip(mapping_columns, row)) for row in mapping_rows),
@@ -1241,6 +1394,26 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                         if record["resource_type"] == "atlas_expression_long"
                     }
                 ),
+                "target_member_species_count": len(selected_species),
+                "expression_manifest_file_count": len(all_expression_paths),
+                "expression_scanned_file_count": len(expression_paths),
+                "expression_skipped_file_count": (
+                    len(all_expression_paths) - len(expression_paths)
+                ),
+                "expression_scanned_species_count": len(
+                    {
+                        record["species_column"]
+                        for record in manifest_records
+                        if record["resource_type"] == "atlas_expression_long"
+                        and Path(record["path"]) in expression_paths
+                    }
+                ),
+                "duckdb_threads": config.stage("07_expression").threads,
+                "duckdb_memory_limit_mb": memory_limit_mb,
+                "partition_pruning_policy": (
+                    "scan only checksum-validated expression partitions matching "
+                    "selected group-member species"
+                ),
                 "interpretation": (
                     "expression is transcript evidence; values from different units or "
                     "experiments are not treated as directly comparable abundance measurements"
@@ -1255,6 +1428,14 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "unique_expression_mapping_count",
             "broad_expression_supported_count",
             "expression_species_count",
+            "target_member_species_count",
+            "expression_manifest_file_count",
+            "expression_scanned_file_count",
+            "expression_skipped_file_count",
+            "expression_scanned_species_count",
+            "duckdb_threads",
+            "duckdb_memory_limit_mb",
+            "partition_pruning_policy",
             "interpretation",
         ),
     )

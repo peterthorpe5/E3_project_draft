@@ -23,6 +23,9 @@ from e3workflow.ligandability import (
 from e3workflow.prioritisation import score_candidate
 from e3workflow.errors import StageError
 from e3workflow.production import (
+    _configure_expression_duckdb,
+    _create_empty_expression_view,
+    _expression_paths_for_species,
     find_one,
     find_orthology_table,
     iter_fasta,
@@ -175,6 +178,7 @@ def test_expression_maps_full_selected_group_members(
     for species, gene in (
         ("Arabidopsis_thaliana", "AT1G31090"),
         ("Oryza_sativa", "LOC_Os01g01010"),
+        ("Zea_mays", "IRRELEVANT_GENE"),
     ):
         write_parquet(
             expression_root
@@ -213,6 +217,88 @@ def test_expression_maps_full_selected_group_members(
     assert all(
         row["broad_expression_supported"].lower() == "true" for row in summaries
     )
+    _, validation_rows = read_tsv(
+        stage_root / "qc" / "expression_validation.tsv"
+    )
+    validation = validation_rows[0]
+    assert validation["target_member_species_count"] == "2"
+    assert validation["expression_manifest_file_count"] == "3"
+    assert validation["expression_scanned_file_count"] == "2"
+    assert validation["expression_skipped_file_count"] == "1"
+    assert validation["expression_scanned_species_count"] == "2"
+    assert validation["duckdb_memory_limit_mb"] == "6000"
+    assert not (stage_root / "duckdb_spill").exists()
+
+
+def test_expression_partition_selection_and_duckdb_limits(
+    synthetic_config: Path, tmp_path: Path
+) -> None:
+    """Stage 07 prunes irrelevant species and reserves memory for process overhead."""
+    first = tmp_path / "first.parquet"
+    second = tmp_path / "second.parquet"
+    records = [
+        {
+            "resource_type": "atlas_expression_long",
+            "species_column": "Species_a",
+            "path": str(first),
+        },
+        {
+            "resource_type": "atlas_expression_long",
+            "species_column": "Species_b",
+            "path": str(second),
+        },
+        {
+            "resource_type": "atlas_sample_metadata_long",
+            "species_column": "Species_a",
+            "path": str(tmp_path / "metadata.parquet"),
+        },
+    ]
+    assert _expression_paths_for_species(
+        manifest_records=records,
+        selected_species={"species_a", ""},
+    ) == (first,)
+
+    config = load_config(synthetic_config)
+    stage_root = tmp_path / "stage"
+    connection = duckdb.connect(":memory:")
+    try:
+        memory_limit_mb, spill_directory = _configure_expression_duckdb(
+            connection=connection,
+            config=config,
+            stage_root=stage_root,
+        )
+        assert memory_limit_mb == 6000
+        assert spill_directory.is_dir()
+        assert connection.execute(
+            "SELECT current_setting('threads')"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT current_setting('preserve_insertion_order')"
+        ).fetchone()[0] is False
+    finally:
+        connection.close()
+
+
+def test_empty_expression_view_preserves_the_atlas_contract() -> None:
+    """A species without a resource partition must remain queryable as missing evidence."""
+    connection = duckdb.connect(":memory:")
+    try:
+        _create_empty_expression_view(connection=connection)
+        description = connection.execute("DESCRIBE atlas_expression").fetchall()
+        assert [str(row[0]) for row in description] == [
+            "experiment_accession",
+            "species_column",
+            "gene_id",
+            "gene_name",
+            "sample_or_condition",
+            "expression_value",
+            "expression_unit",
+        ]
+        assert connection.execute(
+            "SELECT count(*) FROM atlas_expression"
+        ).fetchone()[0] == 0
+    finally:
+        connection.close()
 
 
 def test_missing_domain_annotation_is_not_a_biological_negative(

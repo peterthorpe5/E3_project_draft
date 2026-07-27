@@ -76,6 +76,46 @@ def test_main_shell_entrypoints_contain_no_embedded_python(package_root: Path) -
         assert "python -c" not in shell
 
 
+def test_runner_rejects_stale_installed_version(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """The runner must stop before work when PATH exposes an older installation."""
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    fake_workflow = binary_directory / "e3-workflow"
+    fake_workflow.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${1-}" == "--version" ]]; then
+    printf 'e3-workflow 0.7.6\\n'
+    exit 0
+fi
+printf 'Unexpected invocation\\n' >&2
+exit 99
+""",
+        encoding="utf-8",
+    )
+    fake_workflow.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
+    result = subprocess.run(
+        [str(package_root / "run_e3_end_to_end.sh"), "--check-install"],
+        cwd=package_root,
+        check=False,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "source package is 0.9.1" in result.stderr
+    assert "PATH resolves e3-workflow 0.7.6" in result.stderr
+    assert str(fake_workflow) in result.stderr
+
+
 def test_detached_launcher_contract(package_root: Path) -> None:
     """The cluster launcher must detach, lock, log and guard nested execution."""
 
@@ -130,7 +170,10 @@ def test_slurm_controller_submission_and_duplicate_guard(
         """#!/usr/bin/env bash
 set -Eeuo pipefail
 case "$1" in
-    validate)
+    --version)
+        printf 'e3-workflow 0.9.1\\n'
+        ;;
+    diagnose-install|validate)
         exit 0
         ;;
     run-root)
@@ -147,7 +190,25 @@ esac
     fake_workflow.chmod(0o755)
 
     fake_conda = binary_directory / "conda"
-    fake_conda.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_conda.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+while (($#)); do
+    case "$1" in
+        run|--no-capture-output)
+            shift
+            ;;
+        --name)
+            shift 2
+            ;;
+        *)
+            exec "$@"
+            ;;
+    esac
+done
+""",
+        encoding="utf-8",
+    )
     fake_conda.chmod(0o755)
 
     fake_sbatch = binary_directory / "sbatch"
@@ -259,7 +320,10 @@ set -Eeuo pipefail
 command_name="$1"
 shift
 case "${command_name}" in
-    validate|control|record-invocation)
+    --version)
+        printf 'e3-workflow 0.9.1\\n'
+        ;;
+    diagnose-install|validate|control|record-invocation)
         exit 0
         ;;
     plan)

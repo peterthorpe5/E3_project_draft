@@ -178,6 +178,16 @@ def test_resource_and_report_cli_dispatch(
         "validate_fresh_config",
         lambda **_kwargs: {"status": "valid"},
     )
+    monkeypatch.setattr(
+        cli,
+        "diagnose_installation",
+        lambda **_kwargs: {"status": "INSTALLED"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "require_matching_source",
+        lambda **_kwargs: {"status": "MATCHED_SOURCE"},
+    )
     assert main(["cache-domain-annotations", "--config", str(synthetic_config)]) == 0
     assert (
         main(
@@ -254,6 +264,19 @@ def test_resource_and_report_cli_dispatch(
         )
         == 0
     )
+    assert main(["diagnose-install"]) == 0
+    assert (
+        main(
+            [
+                "diagnose-install",
+                "--source-root",
+                str(tmp_path),
+                "--require-source-match",
+            ]
+        )
+        == 0
+    )
+    assert main(["diagnose-install", "--require-source-match"]) == 2
     with pytest.raises(WorkflowError, match="stage list"):
         render_plan({"mode": "x", "run_root": "x"})
     with pytest.raises(WorkflowError, match="invalid stage"):

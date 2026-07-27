@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.9.0` supports two equally explicit production strategies:
+Version `0.9.1` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -85,6 +85,10 @@ terminal stops the controller, so use the Slurm-controller mode on the Dundee cl
 
 `submit_e3_end_to_end.sh` remains as a legacy alternative for sites that permit a detached
 login-node controller. It is no longer the recommended Dundee mode.
+
+All launchers verify that the active `e3-workflow` command imports this exact source tree before
+they validate or submit a run. This prevents an older editable install from silently executing
+against a newer checkout.
 
 To migrate an older controller that was started inside an interactive `srun` or through the legacy
 login-node launcher, stop that controller cleanly first and allow Snakemake to account for its
@@ -219,9 +223,26 @@ cd e3_end_to_end_workflow
 conda env create --file environment.yml
 conda activate e3_end_to_end_workflow
 python -m pip install --no-deps --editable .
+e3-workflow diagnose-install \
+    --source-root "$(pwd)" \
+    --require-source-match
+./run_e3_end_to_end.sh --check-install
 ./run_tests.sh
 ./run_e3_end_to_end.sh --dry-run
 ```
+
+When replacing an older editable install, use:
+
+```bash
+conda run --name e3_end_to_end_workflow \
+    python -m pip install \
+    --no-deps \
+    --force-reinstall \
+    --editable "$(pwd)"
+```
+
+Running `./run_e3_end_to_end.sh --version` reports both the source release and the command resolved
+from `PATH`; it no longer prints a hard-coded value that can conceal an older installation.
 
 The environment pins OrthoFinder exactly because its output contract is part of the scientific
 provenance. Recreate the environment from `environment.yml`; do not borrow `orthofinder` from a

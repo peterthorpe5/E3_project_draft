@@ -1,9 +1,0 @@
-.coverage
-.ruff_cache/
-*.egg-info/
-__pycache__/
-*.py[cod]
-build/
-dist/
-logs/
-slurm_logs/

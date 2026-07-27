@@ -1,9 +1,0 @@
-__pycache__/
-*.py[cod]
-.coverage
-coverage.xml
-htmlcov/
-build/
-dist/
-*.egg-info/
-config/config.cluster.yaml
