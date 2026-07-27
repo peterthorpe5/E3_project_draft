@@ -1,0 +1,2 @@
+accession	evidence_type	source	e3_category	ubiquitin_go_term	exclusion_go_term	organism	taxon_id	sequence_md5	source_value	source_column	source_row	source_path
+Q9SA03	curated_known_E3_seed	controlled_source	F-box	Ubiquitin GO term		Arabidopsis thaliana	3702	REPLACE_WITH_MD5	Q9SA03	entry	REPLACE_WITH_ROW	REPLACE_WITH_SOURCE_PATH

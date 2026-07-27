@@ -1,0 +1,10 @@
+pfam_accession	domain_name	e3_family	evidence_role	interpretation	source_url
+PF00097	Zinc finger, C3HC4 type (RING finger)	RING	direct_catalytic_or_recruitment_support	RING-type E3-family support; architecture and annotation still require review	https://www.ebi.ac.uk/interpro/entry/pfam/PF00097
+PF00632	HECT domain	HECT	direct_catalytic_support	HECT-type E3-family support; the hit alone does not establish activity	https://www.ebi.ac.uk/interpro/entry/pfam/PF00632
+PF00646	F-box domain	F-box	substrate_receptor_support	SCF F-box substrate-receptor support; the hit alone does not establish substrate specificity	https://www.ebi.ac.uk/interpro/entry/pfam/PF00646
+PF04564	U-box domain	U-box	direct_catalytic_or_recruitment_support	U-box E3-family support; architecture and annotation still require review	https://www.ebi.ac.uk/interpro/entry/pfam/PF04564
+PF22605	IBR domain	RBR	family_architecture_support	IBR-between-RINGs support for an RBR-family architecture; the IBR hit alone is not catalytic proof	https://www.ebi.ac.uk/interpro/entry/pfam/PF22605
+PF00888	Cullin family	Cullin-RING complex	ubiquitin_ligase_scaffold_support	Cullin scaffold support for a cullin-RING E3 complex; the hit does not identify a substrate receptor	https://www.ebi.ac.uk/interpro/entry/pfam/PF00888
+PF10557	Cullin protein neddylation domain	Cullin-RING complex	ubiquitin_ligase_scaffold_support	Cullin C-terminal neddylation-domain support; complete architecture and complex membership require review	https://www.ebi.ac.uk/interpro/entry/pfam/PF10557
+PF07525	SOCS box	SOCS-box complex	substrate_receptor_complex_support	SOCS-box support for recruitment into a cullin E3 complex; substrate specificity and activity remain unvalidated	https://www.ebi.ac.uk/interpro/entry/pfam/PF07525
+PF17211	VHL box domain	VHL-box complex	substrate_receptor_complex_support	VHL-box support for Cul2/Cul5 E3-complex recruitment; substrate specificity and activity remain unvalidated	https://www.ebi.ac.uk/interpro/entry/pfam/PF17211

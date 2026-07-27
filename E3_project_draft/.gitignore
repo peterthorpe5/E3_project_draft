@@ -1,0 +1,7 @@
+site/
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.snakemake/
+test_runs/

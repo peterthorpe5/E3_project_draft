@@ -1,0 +1,78 @@
+site_name: ARIA plant E3 project
+site_description: Reproducible discovery, orthology, expression and ligandability workflow
+site_author: Peter Thorpe and collaborators
+site_url: https://peterthorpe5.github.io/E3_project_draft/
+repo_url: https://github.com/peterthorpe5/E3_project_draft
+repo_name: peterthorpe5/E3_project_draft
+edit_uri: edit/main/docs_site/
+docs_dir: docs_site
+site_dir: site
+copyright: Peter Thorpe and collaborators
+
+theme:
+  name: material
+  language: en
+  icon:
+    logo: material/dna
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Start here:
+      - Quick start: quick-start.md
+      - Complete fresh run: fresh-run.md
+      - Slurm operation: slurm.md
+      - Local operation: local.md
+  - Configure:
+      - Master configuration: configuration.md
+      - Parameter sweeps: parameter-sweeps.md
+      - Add new data: new-dataset.md
+  - Understand:
+      - Workflow stages: workflow-stages.md
+      - Component packages: packages.md
+      - Outputs and interpretation: outputs.md
+  - Maintain:
+      - Troubleshooting: troubleshooting.md
+      - Testing and development: development.md
+      - Publish these docs: github-pages.md
