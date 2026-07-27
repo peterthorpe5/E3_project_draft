@@ -1,0 +1,331 @@
+"""Conda environment contract tests."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+import yaml
+
+
+def test_environment_pins_workflow_and_orthology_engines(package_root: Path) -> None:
+    """The package environment must provide reproducible workflow engines."""
+
+    environment = yaml.safe_load((package_root / "environment.yml").read_text(encoding="utf-8"))
+    assert environment["name"] == "e3_end_to_end_workflow"
+    assert environment["channels"] == ["conda-forge", "bioconda", "nodefaults"]
+    dependencies = environment["dependencies"]
+    assert "duckdb>=1.4,<2" in dependencies
+    assert "psutil>=6,<8" in dependencies
+    assert "snakemake>=9,<10" in dependencies
+    assert "snakemake-executor-plugin-slurm" in dependencies
+    assert "orthofinder=2.5.5" in dependencies
+    assert "mafft>=7.5,<8" in dependencies
+
+
+def test_profiles_drop_completed_job_metadata(package_root: Path) -> None:
+    """Restart state must remain with manifests and tokens rather than stale rule metadata."""
+
+    for profile_name in ("local", "slurm"):
+        path = package_root / "profiles" / profile_name / "config.v8+.yaml"
+        profile = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert profile["rerun-incomplete"] is True
+        assert profile["drop-metadata"] is True
+
+
+def test_fresh_template_respects_dundee_walltime_limit(package_root: Path) -> None:
+    """Every template stage must remain within the Dundee 72-hour maximum."""
+
+    template = yaml.safe_load(
+        (package_root / "config" / "production.cluster.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    for stage_name, stage in template["stages"].items():
+        assert stage["runtime_minutes"] <= 4320, stage_name
+
+
+def test_wrapper_safely_clears_completed_output_markers(package_root: Path) -> None:
+    """A complete run must clear declared output markers after DAG success."""
+
+    wrapper = (package_root / "run_e3_end_to_end.sh").read_text(encoding="utf-8")
+    assert "--cleanup-metadata" in wrapper
+    assert '[[ -z "${TARGET}" ]] || FULL_DAG_COMPLETION="false"' in wrapper
+    assert '--nolock|--keep-going)' in wrapper
+    assert "POSTPROCESSING_OUTPUTS" in wrapper
+    assert "metadata was not present" in wrapper
+    assert "for cleanup_attempt in 1 2 3" in wrapper
+    assert "filesystem-latency retry" in wrapper
+    assert '"${RUN_ROOT}/${stage_name}/stage_manifest.json"' in wrapper
+    assert '"${RUN_ROOT}/${stage_name}/report/stage_report.html"' in wrapper
+
+
+def test_main_shell_entrypoints_contain_no_embedded_python(package_root: Path) -> None:
+    """User-facing shells must delegate Python work to installed, tested commands."""
+
+    for name in (
+        "run_e3_end_to_end.sh",
+        "submit_e3_end_to_end.sh",
+        "submit_e3_controller_slurm.sh",
+        "scripts/slurm_e3_controller_job.sh",
+    ):
+        shell = (package_root / name).read_text(encoding="utf-8")
+        assert "python <<" not in shell
+        assert "python - <<" not in shell
+        assert "python -c" not in shell
+
+
+def test_detached_launcher_contract(package_root: Path) -> None:
+    """The cluster launcher must detach, lock, log and guard nested execution."""
+
+    launcher = (package_root / "submit_e3_end_to_end.sh").read_text(encoding="utf-8")
+    assert "nohup setsid flock" in launcher
+    assert "controller.lock" in launcher
+    assert "controller.pid.tsv" in launcher
+    assert "submission_${TIMESTAMP}.log" in launcher
+    assert "--status" in launcher
+    assert "--foreground" in launcher
+    assert "SLURM_JOB_ID" in launcher
+    assert "RUNNER_ARGS+=(--profile slurm)" in launcher
+
+
+def test_slurm_controller_launcher_contract(package_root: Path) -> None:
+    """The batch controller must use Slurm, Conda, locks and durable metadata."""
+
+    launcher = (package_root / "submit_e3_controller_slurm.sh").read_text(
+        encoding="utf-8"
+    )
+    job = (package_root / "scripts" / "slurm_e3_controller_job.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "sbatch" in launcher
+    assert "controller.slurm.tsv" in launcher
+    assert "controller_submission.lock" in launcher
+    assert "--controller-runtime" in launcher
+    assert "--controller-memory-mb" in launcher
+    assert "--status" in launcher
+    assert "squeue" in launcher
+    assert "sacct" in launcher
+    assert "conda-executable" in launcher
+    assert "flock --nonblock 9" in job
+    assert "--allow-inside-slurm" in job
+    assert "--profile" in job
+    assert "slurm" in job
+
+
+def test_slurm_controller_submission_and_duplicate_guard(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """A controller submission must record its job and reject an active duplicate."""
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    run_root = tmp_path / "run"
+    argument_record = tmp_path / "sbatch_arguments.bin"
+
+    fake_workflow = binary_directory / "e3-workflow"
+    fake_workflow.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+case "$1" in
+    validate)
+        exit 0
+        ;;
+    run-root)
+        printf '%s\\n' "${FAKE_RUN_ROOT}"
+        ;;
+    *)
+        printf 'Unexpected e3-workflow command: %s\\n' "$1" >&2
+        exit 2
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_workflow.chmod(0o755)
+
+    fake_conda = binary_directory / "conda"
+    fake_conda.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_conda.chmod(0o755)
+
+    fake_sbatch = binary_directory / "sbatch"
+    fake_sbatch.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\\0' "$@" >"${FAKE_SBATCH_ARGUMENT_RECORD}"
+printf '98765;test-cluster\\n'
+""",
+        encoding="utf-8",
+    )
+    fake_sbatch.chmod(0o755)
+
+    fake_squeue = binary_directory / "squeue"
+    fake_squeue.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "${FAKE_SLURM_STATE:-}" == "active" ]]; then
+    printf 'RUNNING\\n'
+fi
+""",
+        encoding="utf-8",
+    )
+    fake_squeue.chmod(0o755)
+
+    fake_sacct = binary_directory / "sacct"
+    fake_sacct.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    fake_sacct.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
+    environment["FAKE_RUN_ROOT"] = str(run_root)
+    environment["FAKE_SBATCH_ARGUMENT_RECORD"] = str(argument_record)
+    environment.pop("SLURM_JOB_ID", None)
+
+    launcher = package_root / "submit_e3_controller_slurm.sh"
+    configuration = package_root / "config" / "synthetic.yaml"
+    result = subprocess.run(
+        [
+            str(launcher),
+            "--config",
+            str(configuration),
+            "--account",
+            "science_account",
+            "--partition",
+            "science_partition",
+            "--controller-memory-mb",
+            "6000",
+            "--controller-runtime",
+            "2-00:00:00",
+            "--max-jobs",
+            "7",
+            "--resume",
+        ],
+        cwd=package_root,
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert "Controller job: 98765" in result.stdout
+    arguments = argument_record.read_bytes().decode("utf-8").rstrip("\0").split("\0")
+    assert "--account" in arguments
+    assert arguments[arguments.index("--account") + 1] == "science_account"
+    assert "--partition" in arguments
+    assert arguments[arguments.index("--partition") + 1] == "science_partition"
+    assert "--mem" in arguments
+    assert arguments[arguments.index("--mem") + 1] == "6000M"
+    assert "--time" in arguments
+    assert arguments[arguments.index("--time") + 1] == "2-00:00:00"
+    assert "--max-jobs" in arguments
+    assert arguments[arguments.index("--max-jobs") + 1] == "7"
+    assert "--resume" in arguments
+
+    metadata = run_root / "workflow_control" / "controller.slurm.tsv"
+    rows = metadata.read_text(encoding="utf-8").splitlines()
+    assert rows[0].startswith("job_id\tsubmitted_at_utc")
+    assert rows[1].startswith("98765\t")
+
+    duplicate_environment = environment.copy()
+    duplicate_environment["FAKE_SLURM_STATE"] = "active"
+    duplicate = subprocess.run(
+        [str(launcher), "--config", str(configuration)],
+        cwd=package_root,
+        check=False,
+        env=duplicate_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert duplicate.returncode == 3
+    assert "already active" in duplicate.stderr
+
+
+def test_bounded_slurm_target_precedes_variadic_resources(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """A bounded target must not be consumed as a default-resource expression."""
+
+    binary_directory = tmp_path / "bin"
+    binary_directory.mkdir()
+    run_root = tmp_path / "run"
+    argument_record = tmp_path / "snakemake_arguments.bin"
+
+    fake_workflow = binary_directory / "e3-workflow"
+    fake_workflow.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+command_name="$1"
+shift
+case "${command_name}" in
+    validate|control|record-invocation)
+        exit 0
+        ;;
+    plan)
+        printf 'Synthetic plan\\n'
+        ;;
+    stage-target)
+        stage_name=""
+        while (($#)); do
+            if [[ "$1" == "--stage" ]]; then
+                stage_name="$2"
+                break
+            fi
+            shift
+        done
+        printf '%s/%s/stage_manifest.json\\n' "${FAKE_RUN_ROOT}" "${stage_name}"
+        ;;
+    *)
+        printf 'Unexpected fake e3-workflow command: %s\\n' "${command_name}" >&2
+        exit 2
+        ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_workflow.chmod(0o755)
+
+    fake_snakemake = binary_directory / "snakemake"
+    fake_snakemake.write_text(
+        """#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\\0' "$@" >"${FAKE_SNAKEMAKE_ARGUMENT_RECORD}"
+""",
+        encoding="utf-8",
+    )
+    fake_snakemake.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_directory}:{environment['PATH']}"
+    environment["FAKE_RUN_ROOT"] = str(run_root)
+    environment["FAKE_SNAKEMAKE_ARGUMENT_RECORD"] = str(argument_record)
+    environment.pop("SLURM_JOB_ID", None)
+
+    subprocess.run(
+        [
+            str(package_root / "run_e3_end_to_end.sh"),
+            "--config",
+            str(package_root / "config" / "synthetic.yaml"),
+            "--profile",
+            "slurm",
+            "--stop-after",
+            "05_orthology",
+        ],
+        cwd=package_root,
+        check=True,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    arguments = argument_record.read_bytes().decode("utf-8").rstrip("\0").split("\0")
+    target = str(run_root / "05_orthology" / "stage_manifest.json")
+    resource_index = arguments.index("--default-resources")
+    assert arguments.index(target) < resource_index
+    assert arguments[resource_index + 1:resource_index + 5] == [
+        "slurm_account=barton",
+        "slurm_partition=general",
+        "mem_mb=8000",
+        "runtime=60",
+    ]

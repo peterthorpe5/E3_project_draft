@@ -1,0 +1,3 @@
+accession	evidence_type	source	e3_category	ubiquitin_go_term	exclusion_go_term	organism	taxon_id	sequence_md5	source_value	source_column	source_row	source_path
+Q9SA03	curated_test_seed	synthetic_fixture	F-box	Ubiquitin GO term		Arabidopsis thaliana	3702	11111111111111111111111111111111	Q9SA03	entry	2	synthetic_fixture
+P38398	curated_test_seed	synthetic_fixture	RING	Ubiquitin GO term		Homo sapiens	9606	22222222222222222222222222222222	P38398	entry	3	synthetic_fixture

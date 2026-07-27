@@ -1,0 +1,3 @@
+species_id	scientific_name	fasta_path	fasta_sha256	include
+arabidopsis_thaliana	Arabidopsis thaliana	../tests/fixtures/arabidopsis.faa	4acc439eb2009d5950be86dd70db52463a4a7485488e22b225a58a9ea3cd0aa0	true
+homo_sapiens	Homo sapiens	../tests/fixtures/human.faa	8d6dacab5be22e44537459af06cbad134021a2ab255a7bf0b26d10dd978e6808	true
