@@ -20,6 +20,7 @@ from e3workflow.config import (
 )
 from e3workflow.control import initialise_stage_tokens, stage_manifest_target
 from e3workflow.errors import WorkflowError
+from e3workflow.fresh import validate_fresh_config
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 from e3workflow.reporting import generate_run_report, record_workflow_invocation
 from e3workflow.production import cache_domain_annotations
@@ -30,6 +31,7 @@ from e3workflow.resources import (
 )
 from e3workflow.runner import execute_stage
 from e3workflow.seed_evidence import build_seed_evidence
+from e3workflow.sweeps import compare_sweep, prepare_sweep
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +41,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--config", type=Path, required=True)
+    validate_fresh = subparsers.add_parser("validate-fresh")
+    validate_fresh.add_argument("--config", type=Path, required=True)
+    validate_fresh.add_argument("--allow-existing-run", action="store_true")
     plan = subparsers.add_parser("plan")
     plan.add_argument("--config", type=Path, required=True)
     plan.add_argument("--human", action="store_true")
@@ -86,6 +91,14 @@ def build_parser() -> argparse.ArgumentParser:
     ligandability_manifest = subparsers.add_parser("build-ligandability-manifest")
     ligandability_manifest.add_argument("--root", type=Path, action="append", required=True)
     ligandability_manifest.add_argument("--output", type=Path, required=True)
+    prepare_sweep_parser = subparsers.add_parser("prepare-sweep")
+    prepare_sweep_parser.add_argument("--sweep-config", type=Path, required=True)
+    prepare_sweep_parser.add_argument("--output-dir", type=Path, required=True)
+    prepare_sweep_parser.add_argument("--force", action="store_true")
+    compare_sweep_parser = subparsers.add_parser("compare-sweep")
+    compare_sweep_parser.add_argument("--manifest", type=Path, required=True)
+    compare_sweep_parser.add_argument("--output-dir", type=Path, required=True)
+    compare_sweep_parser.add_argument("--allow-incomplete", action="store_true")
     return parser
 
 
@@ -105,6 +118,7 @@ def validate_command(config_path: Path) -> dict[str, object]:
         "mode": config.mode,
         "run_root": str(config.run_root),
         "configuration_digest": config.digest,
+        "configuration_schema_version": config.schema_version,
         "proteomes": len(proteomes),
         "seeds": len(seeds),
         "shortlist_rows": len(shortlist),
@@ -119,6 +133,8 @@ def plan_command(config_path: Path) -> dict[str, object]:
         "mode": config.mode,
         "run_root": str(config.run_root),
         "production_eligible": config.mode == "production",
+        "configuration_schema_version": config.schema_version,
+        "tools": config.tool_records(),
         "reporting": {
             "stage_reports": True,
             "complete_run_report": True,
@@ -218,6 +234,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "validate":
             payload = validate_command(args.config)
+        elif args.command == "validate-fresh":
+            payload = validate_fresh_config(
+                config_path=args.config,
+                allow_existing_run=args.allow_existing_run,
+            )
         elif args.command == "plan":
             payload = plan_command(args.config)
             if args.human:
@@ -283,6 +304,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_path=args.output,
             )
             payload = {"status": "complete", "manifest": str(destination)}
+        elif args.command == "prepare-sweep":
+            payload = prepare_sweep(
+                sweep_config=args.sweep_config,
+                output_dir=args.output_dir,
+                force=args.force,
+            )
+        elif args.command == "compare-sweep":
+            payload = compare_sweep(
+                manifest=args.manifest,
+                output_dir=args.output_dir,
+                allow_incomplete=args.allow_incomplete,
+            )
         else:
             raise WorkflowError(f"Unsupported command: {args.command}")
         print(json.dumps(payload, indent=2, sort_keys=True))

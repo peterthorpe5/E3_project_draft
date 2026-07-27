@@ -146,12 +146,24 @@ def test_external_orthology_command_materialises_master_contract(
         encoding="utf-8",
     )
     raw = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    raw["schema_version"] = 2
+    raw["tools"] = {
+        "fake_orthology": {
+            "executable": sys.executable,
+            "expected_version": "test",
+            "parameters": {"component_script": str(fake_component)},
+        }
+    }
     expected_outputs = [
         "orthology/tables/candidate_membership_mapping.parquet",
         "orthology/qc/validation_checks.tsv",
     ]
     raw["stages"]["05_orthology"].update(
-        command=[sys.executable, str(fake_component), "{stage_dir}"],
+        command=[
+            "{tool_fake_orthology_executable}",
+            "{tool_fake_orthology_component_script}",
+            "{stage_dir}",
+        ],
         expected_outputs=expected_outputs,
     )
     synthetic_config.write_text(

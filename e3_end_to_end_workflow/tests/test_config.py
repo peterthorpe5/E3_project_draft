@@ -93,19 +93,36 @@ def test_reuse_and_fresh_templates_expose_evidence_strategy(package_root: Path) 
     assert reused.stage("06_domains").evidence_mode == "download"
     assert fresh.stage("02_discovery").evidence_mode == "generate"
     assert fresh.stage("04_orthofinder").evidence_mode == "generate"
+    assert fresh.stage("07_expression").evidence_mode == "generate"
     assert fresh.stage("09_ligandability").evidence_mode == "generate"
     assert reused.stage("09b_structural_alignment").evidence_mode == "disabled"
-    assert fresh.stage("09b_structural_alignment").evidence_mode == "disabled"
+    assert fresh.stage("09b_structural_alignment").evidence_mode == "generate"
+    assert fresh.stage("09b_structural_alignment").enabled is True
     assert reused.analysis.structural_alignment.usalign_executable == "USalign"
     assert reused.analysis.structural_alignment.tmalign_executable == "TMalign"
     assert reused.analysis.structural_alignment.use_for_prioritisation is False
     assert len(reused.analysis.prioritisation.target_species) == 12
+    assert fresh.schema_version == 2
+    assert fresh.tool("orthofinder").expected_version == "2.5.5"
+    assert fresh.tool("orthofinder").parameter("search_threads") == 32
+    assert (
+        fresh.tool_command_values()["tool_orthofinder_analysis_threads"]
+        == "32"
+    )
+    assert fresh.tool("structural_alignment").conda_environment == (
+        "e3_structural_alignment"
+    )
+    with pytest.raises(ConfigurationError, match="Unknown tool"):
+        fresh.tool("missing")
+    with pytest.raises(ConfigurationError, match="Unknown parameter"):
+        fresh.tool("orthofinder").parameter("missing")
 
 
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (lambda data: data.update(schema_version=2), "schema_version"),
+        (lambda data: data.update(schema_version=3), "schema_version"),
+        (lambda data: data.update(schema_version=True), "schema_version"),
         (lambda data: data["run"].update(mode="invalid"), "run.mode"),
         (lambda data: data["run"].update(name="../bad"), "run.name"),
         (lambda data: data["run"].update(project_root=""), "project_root"),
@@ -193,6 +210,12 @@ def test_reuse_and_fresh_templates_expose_evidence_strategy(package_root: Path) 
             lambda data: data.update(reporting=[]),
             "reporting must be a YAML mapping",
         ),
+        (
+            lambda data: data.setdefault("analysis", {})
+            .setdefault("expression", {})
+            .update(minimum_expression_value=float("inf")),
+            "must be finite",
+        ),
     ],
 )
 def test_invalid_configuration_branches(
@@ -217,6 +240,73 @@ def test_missing_and_non_mapping_config(tmp_path: Path) -> None:
         path.write_text(text, encoding="utf-8")
         with pytest.raises(ConfigurationError):
             load_config(path)
+
+
+@pytest.mark.parametrize(
+    ("tools", "message"),
+    [
+        ([], "tools must be a YAML mapping"),
+        ({"Bad-Name": {}}, "tools key must match"),
+        ({"orthofinder": []}, "must be a YAML mapping"),
+        ({"orthofinder": {"executable": ""}}, "executable"),
+        (
+            {"orthofinder": {"parameters": {"Bad-Name": 1}}},
+            "parameters key must match",
+        ),
+        (
+            {"orthofinder": {"parameters": {"threads": [1, 2]}}},
+            "must be one non-empty string",
+        ),
+        (
+            {"orthofinder": {"parameters": {"threshold": float("inf")}}},
+            "must be finite",
+        ),
+        (
+            {"orthofinder": {"parameters": {"label": "bad\tvalue"}}},
+            "must not contain tabs",
+        ),
+        (
+            {"orthofinder": {"unknown": "value"}},
+            "Unknown settings",
+        ),
+    ],
+)
+def test_invalid_tool_configuration(
+    synthetic_config: Path,
+    tools: object,
+    message: str,
+) -> None:
+    """Tool registry errors must fail before stage execution."""
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    data["schema_version"] = 2
+    data["tools"] = tools
+    synthetic_config.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match=message):
+        load_config(synthetic_config)
+
+
+def test_path_base_preserves_relative_inputs_after_config_generation(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """A generated config can retain the base file's relative-path semantics."""
+    original = load_config(synthetic_config)
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    generated_dir = tmp_path / "generated"
+    generated_dir.mkdir()
+    data["schema_version"] = 2
+    data["path_base"] = str(synthetic_config.parent)
+    generated = generated_dir / "run.yaml"
+    generated.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+    loaded = load_config(generated)
+    assert loaded.proteomes_manifest == original.proteomes_manifest
+    assert loaded.path_base == synthetic_config.parent.resolve()
 
 
 def test_production_requires_external_commands(synthetic_config: Path) -> None:

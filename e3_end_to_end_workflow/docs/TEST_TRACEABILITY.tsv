@@ -15,4 +15,4 @@ e3workflow.runner	format_command; validate_upstream; validate_expected_outputs; 
 e3workflow.reporting	summarise_output; summarise_declared_outputs; write_stage_report; record_workflow_invocation; generate_run_report	test_reporting.py; test_runner_e2e.py; test_cli.py
 e3workflow.seed_evidence	derive_seed_evidence; default_provenance_path; build_seed_evidence	test_seed_evidence.py
 e3workflow.cli	build_parser; validate_command; plan_command; render_plan; validate_stage_range; run_root_command; resource commands; main	test_cli.py; test_runner_e2e.py; test_seed_evidence.py; test_scientific_utilities.py
-shell_entrypoints	run_e3_end_to_end.sh named controls, bounded-target/resource argument safety; submit_e3_end_to_end.sh detached controller, logging, duplicate protection and argument forwarding	test_environment.py; test_runner_e2e.py
+shell_entrypoints	run_e3_end_to_end.sh named controls and bounded-target/resource safety; submit_e3_controller_slurm.sh Slurm controller, Conda execution, logging, scheduler status, duplicate protection and argument forwarding; submit_e3_end_to_end.sh legacy detached controller	test_environment.py; test_runner_e2e.py

@@ -38,13 +38,14 @@ Options:
   --target TARGET        Advanced explicit Snakemake target.
   --dry-run              Validate and print the DAG without executing jobs.
   --unlock               Unlock the configured working directory and exit.
-  --allow-inside-slurm   Advanced override for an intentionally nested controller.
+  --allow-inside-slurm   Internal override used by submit_e3_controller_slurm.sh.
   --version              Show the package version and exit.
   --help                 Show this help text.
 
-Use submit_e3_end_to_end.sh for normal detached cluster execution. This foreground runner always
-launches the package Snakefile. Independent branches run concurrently when dependencies and
-resources permit. --start-at never bypasses missing prerequisites.
+Use submit_e3_controller_slurm.sh for durable cluster execution, or use this runner with
+--profile local on a non-Slurm workstation. This foreground runner always launches the package
+Snakefile. Independent branches run concurrently when dependencies and resources permit.
+--start-at never bypasses missing prerequisites.
 EOF
 }
 
@@ -126,7 +127,7 @@ while (($#)); do
             shift
             ;;
         --version)
-            printf 'e3-end-to-end-workflow 0.7.6\n'
+            printf 'e3-end-to-end-workflow 0.9.0\n'
             exit 0
             ;;
         --help|-h)
@@ -191,7 +192,7 @@ if [[ "${PROFILE}" == "${SCRIPT_DIR}/profiles/slurm" && -n "${SLURM_JOB_ID:-}" &
         "${ALLOW_INSIDE_SLURM}" == "false" ]]; then
     printf 'ERROR: refusing to launch the Snakemake Slurm controller inside Slurm job %s.\n' \
         "${SLURM_JOB_ID}" >&2
-    printf 'Use submit_e3_end_to_end.sh from a login node for detached execution.\n' >&2
+    printf 'Use submit_e3_controller_slurm.sh from a login node for batch execution.\n' >&2
     exit 2
 fi
 

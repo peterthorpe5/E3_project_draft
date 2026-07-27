@@ -1,7 +1,7 @@
 # Copy to an immutable run-specific file and replace each CHANGE_ME path.
 # This profile deliberately reuses reviewed authorities while rebuilding all downstream joins,
 # rankings, conserved-pocket calculations, reports and application resources.
-schema_version: 1
+schema_version: 2
 run:
   name: grant_aligned_full_reuse_v0_1_0_20260722
   mode: production
@@ -22,6 +22,21 @@ inputs:
   domain_annotation_manifest: ""
   domain_cache_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_resource_cache/interpro
   e3_domain_catalogue: ../data/e3_domain_catalogue.tsv
+tools:
+  orthology:
+    executable: python
+    expected_version: 0.1.4
+    conda_environment: e3_orthology
+    parameters:
+      module: e3orthology
+      expected_species_count: 60
+      threads: 8
+  structural_alignment:
+    executable: bash
+    expected_version: 0.1.2
+    conda_environment: e3_structural_alignment
+    parameters:
+      threads: 16
 analysis:
   domains:
     mode: interpro_api_cache
@@ -156,10 +171,10 @@ stages:
       - run
       - --no-capture-output
       - --name
-      - e3_orthology
-      - python
+      - "{tool_orthology_conda_environment}"
+      - "{tool_orthology_executable}"
       - -m
-      - e3orthology
+      - "{tool_orthology_module}"
       - --project-root
       - "{project_root}"
       - --orthofinder-results-dir
@@ -177,9 +192,9 @@ stages:
       - --run-name
       - orthology
       - --expected-species-count
-      - "60"
+      - "{tool_orthology_expected_species_count}"
       - --threads
-      - "{threads}"
+      - "{tool_orthology_threads}"
       - --resume
     expected_outputs:
       - orthology/tables/candidate_membership_mapping.parquet
@@ -252,8 +267,8 @@ stages:
       - run
       - --no-capture-output
       - --name
-      - e3_structural_alignment
-      - bash
+      - "{tool_structural_alignment_conda_environment}"
+      - "{tool_structural_alignment_executable}"
       - "{project_root}/e3_structural_alignment/run_e3_structural_alignment.sh"
       - --selected-pockets
       - "{selected_pockets}"
@@ -270,7 +285,7 @@ stages:
       - --tmalign-executable
       - "{tmalign_executable}"
       - --threads
-      - "{threads}"
+      - "{tool_structural_alignment_threads}"
       - --distance-threshold-angstrom
       - "{structural_distance_threshold_angstrom}"
       - --maximum-centroid-distance-angstrom

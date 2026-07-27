@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.7.6` supports two equally explicit production strategies:
+Version `0.9.0` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -31,15 +31,23 @@ already known to the project and fails closed only for the ligandability resourc
 must be built from the retained result roots. The future fresh template uses explicit
 `CHANGE_ME` adapter paths and never treats a placeholder as a default.
 
+Schema version 2 adds a central `tools` mapping for external executables, reviewed versions, Conda
+environments and scalar component parameters. Stage argv templates use named values such as
+`{tool_orthofinder_search_threads}`. The resolved tool registry is recorded in stage provenance.
+The `prepare-sweep` and `compare-sweep` commands create immutable threshold experiments and
+tab-separated sensitivity summaries. The repository-root `run_e3_pipeline_fresh.sh` rejects
+previous-analysis authorities and submits the complete generation DAG through a Slurm-owned
+controller.
+
 ## How to start
 
-Normal cluster use is one detached command from a login node:
+Normal cluster use submits the Snakemake controller itself as a small Slurm job:
 
 ```bash
 cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow
 conda activate e3_end_to_end_workflow
 
-./submit_e3_end_to_end.sh \
+./submit_e3_controller_slurm.sh \
     --config config/my_immutable_run.yaml \
     --max-jobs 50 \
     --account barton \
@@ -47,26 +55,43 @@ conda activate e3_end_to_end_workflow
     --resume
 ```
 
-The command returns after confirming the controller process, run directory and durable log. It does
-not require the mosh terminal to remain open. The lightweight Snakemake controller stays detached on
-the login node; Snakemake submits scientific rules to Slurm. This avoids the unsupported nested
-pattern in which Snakemake itself runs inside an interactive or batch Slurm allocation.
+The command returns as soon as Slurm accepts the controller. The terminal can close immediately.
+The controller uses one CPU and 4 GB by default, holds the per-run lock and submits the
+stage-specific scientific jobs through the Snakemake Slurm executor. It runs through
+`conda run`, so it does not depend on interactive `conda activate` state surviving inside the batch
+shell. The default controller walltime is three days and can be changed with
+`--controller-runtime`; it must cover the complete orchestration period.
 
 Check it later with:
 
 ```bash
-./submit_e3_end_to_end.sh --config config/my_immutable_run.yaml --status
+./submit_e3_controller_slurm.sh --config config/my_immutable_run.yaml --status
 squeue -u "${USER}"
-tail -f /path/reported/by/the/submission/command.log
+tail -F /path/reported/by/the/submission/command.log
 ```
 
-To migrate an older controller that was started inside an interactive `srun`, interrupt Snakemake
-cleanly in that terminal first (normally `Ctrl+C`) and allow it to cancel or account for submitted
-children. Check `squeue -u "${USER}"` and do not launch a replacement while jobs belonging to that
-same workflow invocation remain active. From a login node, rerun the same immutable configuration
-through `submit_e3_end_to_end.sh --resume`; complete checksum-valid stages are reused and incomplete
-staging directories are not accepted as completed work. Do not cancel an unrelated validation job
-merely because it belongs to the same Unix account.
+For a workstation without Slurm, use the local profile:
+
+```bash
+./run_e3_end_to_end.sh \
+    --config config/my_immutable_run.yaml \
+    --profile local \
+    --threads 8 \
+    --resume
+```
+
+The local command stays in the foreground and uses the supplied total CPU budget. Closing that
+terminal stops the controller, so use the Slurm-controller mode on the Dundee cluster.
+
+`submit_e3_end_to_end.sh` remains as a legacy alternative for sites that permit a detached
+login-node controller. It is no longer the recommended Dundee mode.
+
+To migrate an older controller that was started inside an interactive `srun` or through the legacy
+login-node launcher, stop that controller cleanly first and allow Snakemake to account for its
+submitted children. Check `squeue -u "${USER}"` and do not launch a replacement while stage jobs
+belonging to that invocation remain active. Resume the same immutable configuration through
+`submit_e3_controller_slurm.sh --resume`; complete checksum-valid stages are reused and incomplete
+staging directories are not accepted as completed work.
 
 Resuming an interrupted analysis and upgrading its scientific schema are different operations. The
 same immutable YAML/run name is appropriate for completing the original analysis. To obtain newly
@@ -93,15 +118,15 @@ Before the first submission, create an immutable run YAML:
 ```bash
 e3-workflow validate --config config/my_immutable_run.yaml
 e3-workflow plan --config config/my_immutable_run.yaml --human
-./submit_e3_end_to_end.sh \
+./submit_e3_controller_slurm.sh \
     --config config/my_immutable_run.yaml \
-    --foreground \
     --dry-run
 ```
 
-`submit_e3_end_to_end.sh` prevents a second controller for the same run. The foreground
-`run_e3_end_to_end.sh` remains available for local tests and diagnostics, but normal cluster
-execution should use the detached launcher.
+Both cluster launchers share the same per-run lock. The Slurm launcher additionally records the
+controller job in `workflow_control/controller.slurm.tsv` and checks `squeue`/`sacct` before
+accepting another submission. The foreground `run_e3_end_to_end.sh` remains available for local
+tests and diagnostics.
 
 ## DAG and package ownership
 
@@ -236,8 +261,8 @@ Both modes use the same validation and submission interface:
 ```bash
 e3-workflow validate --config /path/to/run.yaml
 e3-workflow plan --config /path/to/run.yaml
-./run_e3_end_to_end.sh --config /path/to/run.yaml --profile slurm --dry-run
-./submit_e3_end_to_end.sh \
+./run_e3_end_to_end.sh --config /path/to/run.yaml --profile local --dry-run
+./submit_e3_controller_slurm.sh \
     --config /path/to/run.yaml \
     --max-jobs 50 \
     --resume

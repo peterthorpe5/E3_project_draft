@@ -650,6 +650,7 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 ),
                 "threads": str(stage.threads),
             }
+            values.update(config.tool_command_values())
             argv = format_command(stage.command, values)
             execution.update(
                 {
@@ -728,7 +729,9 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "finished_at_utc": utc_now(),
             "runner_wall_seconds": runner_wall_seconds,
             "configuration": str(config.source_path),
+            "configuration_schema_version": config.schema_version,
             "configuration_digest": config.digest,
+            "tool_configuration": config.tool_records(),
             "package_version": __version__,
             "purpose": purpose,
             "rationale": rationale,

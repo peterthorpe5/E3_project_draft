@@ -32,7 +32,9 @@ isolated output directories and checksum-bound manifests.
 
 | File | Use |
 |---|---|
-| `e3_end_to_end_workflow/submit_e3_end_to_end.sh` | Normal detached cluster submission. Returns immediately and lets Snakemake submit scientific jobs to Slurm. |
+| `run_e3_pipeline.sh` | Main repository-root launcher. Selects Slurm-controller or local execution with `--mode`. |
+| `e3_end_to_end_workflow/submit_e3_controller_slurm.sh` | Recommended cluster submission. The Snakemake controller is itself a Slurm job and survives logout. |
+| `e3_end_to_end_workflow/submit_e3_end_to_end.sh` | Legacy detached login-node controller for sites that explicitly permit it. |
 | `e3_end_to_end_workflow/run_e3_end_to_end.sh` | Foreground/local runner and diagnostic entry point. Do not run it inside Slurm unless deliberately overriding the safeguard. |
 | `e3_end_to_end_workflow/config/grant_aligned_reuse.cluster.template.yaml` | Starting template for the reviewed-results workflow using the authoritative 60-proteome `Results_Feb26` archive. |
 | `e3_end_to_end_workflow/config/production.cluster.template.yaml` | Starting template for a new, larger species/proteome panel. |
@@ -60,11 +62,13 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_7_2.md` | Versioned history. `v0.7.2` is the current release note. |
+| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_0.md` | Versioned history. `v0.9.0` is the current release note. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |
-| `submit_e3_end_to_end.sh` | Detached login-node controller launcher with duplicate-run protection and durable logs. |
+| `submit_e3_controller_slurm.sh` | Slurm controller launcher with scheduler status, Conda execution, duplicate-run protection and durable logs. |
+| `scripts/slurm_e3_controller_job.sh` | Internal batch job that holds the run lock and invokes Snakemake through the configured Conda environment. |
+| `submit_e3_end_to_end.sh` | Legacy detached login-node controller. |
 | `run_e3_end_to_end.sh` | Foreground Snakemake runner; resolves named stage controls and never embeds Python source. |
 | `run_tests.sh` | Full Python, shell, style, coverage and Snakemake validation. |
 | `.gitignore` | Package-local generated-file exclusions. |

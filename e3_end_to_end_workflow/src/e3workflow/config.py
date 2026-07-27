@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -31,6 +33,7 @@ STAGE_NAMES = (
 EVIDENCE_MODES = frozenset(
     {"validate", "prepare", "reuse", "generate", "download", "derive", "synthetic", "disabled"}
 )
+CONFIG_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 INTERNAL_PRODUCTION_STAGES = frozenset(
     {
         "00_inputs",
@@ -253,6 +256,54 @@ class StageConfig:
 
 
 @dataclass(frozen=True)
+class ToolConfig:
+    """One external tool's centrally controlled execution parameters.
+
+    Attributes:
+        name: Stable lower-case tool identifier.
+        executable: Executable or repository-relative launcher used by stage commands.
+        expected_version: Optional reviewed version string recorded in provenance.
+        conda_environment: Optional Conda environment name used by command adapters.
+        parameters: Ordered scalar parameter names and values exposed to command templates.
+    """
+
+    name: str
+    executable: str
+    expected_version: str | None
+    conda_environment: str | None
+    parameters: tuple[tuple[str, str | int | float | bool], ...]
+
+    def parameter(self, name: str) -> str | int | float | bool:
+        """Return one named parameter or fail with a configuration error."""
+        for parameter_name, value in self.parameters:
+            if parameter_name == name:
+                return value
+        raise ConfigurationError(f"Unknown parameter for tool {self.name}: {name}")
+
+    def command_values(self) -> dict[str, str]:
+        """Return documented command-template values for this tool."""
+        prefix = f"tool_{self.name}_"
+        values = {
+            f"{prefix}executable": self.executable,
+            f"{prefix}expected_version": self.expected_version or "",
+            f"{prefix}conda_environment": self.conda_environment or "",
+        }
+        for parameter_name, value in self.parameters:
+            values[f"{prefix}{parameter_name}"] = _render_scalar(value)
+        return values
+
+    def as_record(self) -> dict[str, Any]:
+        """Return a JSON-serialisable provenance record."""
+        return {
+            "name": self.name,
+            "executable": self.executable,
+            "expected_version": self.expected_version,
+            "conda_environment": self.conda_environment,
+            "parameters": dict(self.parameters),
+        }
+
+
+@dataclass(frozen=True)
 class BenchmarkConfig:
     """Validated resource-monitoring settings.
 
@@ -384,7 +435,9 @@ class AnalysisConfig:
 class WorkflowConfig:
     """Fully resolved top-level workflow configuration."""
 
+    schema_version: int
     source_path: Path
+    path_base: Path
     project_root: Path
     output_root: Path
     run_name: str
@@ -396,6 +449,7 @@ class WorkflowConfig:
     reporting: ReportingConfig
     resources: ResourceConfig
     analysis: AnalysisConfig
+    tools: tuple[ToolConfig, ...]
     stages: tuple[StageConfig, ...]
     digest: str
 
@@ -410,6 +464,24 @@ class WorkflowConfig:
             if stage.name == name:
                 return stage
         raise ConfigurationError(f"Unknown stage: {name}")
+
+    def tool(self, name: str) -> ToolConfig:
+        """Return a centrally configured external tool."""
+        for tool in self.tools:
+            if tool.name == name:
+                return tool
+        raise ConfigurationError(f"Unknown tool: {name}")
+
+    def tool_command_values(self) -> dict[str, str]:
+        """Return all tool settings exposed to external argv templates."""
+        values: dict[str, str] = {}
+        for tool in self.tools:
+            values.update(tool.command_values())
+        return values
+
+    def tool_records(self) -> list[dict[str, Any]]:
+        """Return all centrally configured tools as provenance records."""
+        return [tool.as_record() for tool in self.tools]
 
 
 def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ...]:
@@ -531,6 +603,8 @@ def _number(
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ConfigurationError(f"{label} must be numeric")
     parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ConfigurationError(f"{label} must be finite")
     if minimum is not None and parsed < minimum:
         raise ConfigurationError(f"{label} must be at least {minimum}")
     if maximum is not None and parsed > maximum:
@@ -550,6 +624,104 @@ def _non_empty_string(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigurationError(f"{label} must be a non-empty string")
     return value.strip()
+
+
+def _render_scalar(value: str | int | float | bool) -> str:
+    """Render a validated scalar consistently for an argv placeholder."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _optional_string(value: Any, label: str) -> str | None:
+    """Validate an optional non-empty string."""
+    if value is None or value == "":
+        return None
+    return _non_empty_string(value, label)
+
+
+def _config_key(value: Any, label: str) -> str:
+    """Validate a stable lower-case YAML key used in command placeholders."""
+    if not isinstance(value, str) or CONFIG_KEY.fullmatch(value) is None:
+        raise ConfigurationError(
+            f"{label} must match {CONFIG_KEY.pattern}; use lower-case letters, numbers "
+            "and underscores"
+        )
+    return value
+
+
+def _tool_scalar(value: Any, label: str) -> str | int | float | bool:
+    """Validate a tool parameter that can be represented by one argv token."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and any(character in value for character in "\t\r\n"):
+        raise ConfigurationError(f"{label} must not contain tabs or line breaks")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ConfigurationError(f"{label} must be finite")
+    if isinstance(value, (str, int, float)) and not (
+        isinstance(value, str) and not value.strip()
+    ):
+        return value
+    raise ConfigurationError(
+        f"{label} must be one non-empty string, integer, number or boolean"
+    )
+
+
+def _tool_configs(root: Mapping[str, Any]) -> tuple[ToolConfig, ...]:
+    """Build the central registry of external tool executables and parameters."""
+    raw_tools = _mapping(root.get("tools", {}), "tools")
+    configured: list[ToolConfig] = []
+    for raw_name in sorted(raw_tools):
+        name = _config_key(raw_name, "tools key")
+        item = _mapping(raw_tools[raw_name], f"tools.{name}")
+        executable = _non_empty_string(
+            item.get("executable", name),
+            f"tools.{name}.executable",
+        )
+        expected_version = _optional_string(
+            item.get("expected_version"),
+            f"tools.{name}.expected_version",
+        )
+        conda_environment = _optional_string(
+            item.get("conda_environment"),
+            f"tools.{name}.conda_environment",
+        )
+        raw_parameters = _mapping(
+            item.get("parameters", {}),
+            f"tools.{name}.parameters",
+        )
+        parameters = []
+        for raw_parameter_name in sorted(raw_parameters):
+            parameter_name = _config_key(
+                raw_parameter_name,
+                f"tools.{name}.parameters key",
+            )
+            parameters.append(
+                (
+                    parameter_name,
+                    _tool_scalar(
+                        raw_parameters[raw_parameter_name],
+                        f"tools.{name}.parameters.{parameter_name}",
+                    ),
+                )
+            )
+        unknown_fields = set(item).difference(
+            {"executable", "expected_version", "conda_environment", "parameters"}
+        )
+        if unknown_fields:
+            raise ConfigurationError(
+                f"Unknown settings for tools.{name}: {', '.join(sorted(unknown_fields))}"
+            )
+        configured.append(
+            ToolConfig(
+                name=name,
+                executable=executable,
+                expected_version=expected_version,
+                conda_environment=conda_environment,
+                parameters=tuple(parameters),
+            )
+        )
+    return tuple(configured)
 
 
 def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
@@ -912,8 +1084,13 @@ def load_config(path: Path) -> WorkflowConfig:
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Could not read configuration {source}: {exc}") from exc
     root = _mapping(raw, "configuration")
-    if root.get("schema_version") != 1:
-        raise ConfigurationError("schema_version must be the integer 1")
+    schema_version = root.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version not in {1, 2}
+    ):
+        raise ConfigurationError("schema_version must be the integer 1 or 2")
     run = _mapping(root.get("run"), "run")
     inputs = _mapping(root.get("inputs"), "inputs")
     mode = run.get("mode")
@@ -922,13 +1099,20 @@ def load_config(path: Path) -> WorkflowConfig:
     run_name = run.get("name")
     if not isinstance(run_name, str) or not run_name or "/" in run_name or run_name in {".", ".."}:
         raise ConfigurationError("run.name must be a safe, non-empty directory name")
-    base = source.parent
+    configured_path_base = root.get("path_base")
+    path_base = (
+        _resolve_path(configured_path_base, source.parent, "path_base")
+        if configured_path_base is not None
+        else source.parent
+    )
+    base = path_base
     project_root = _resolve_path(run.get("project_root"), base, "run.project_root")
     output_root = _resolve_path(run.get("output_root"), base, "run.output_root")
     raw_stages = _mapping(root.get("stages"), "stages")
     raw_benchmarking = _mapping(root.get("benchmarking", {}), "benchmarking")
     raw_reporting = _mapping(root.get("reporting", {}), "reporting")
     analysis_config = _analysis_config(root)
+    tool_configs = _tool_configs(root)
     sample_interval = raw_benchmarking.get("sample_interval_seconds", 5.0)
     collect_slurm = raw_benchmarking.get("collect_slurm_accounting", True)
     if (
@@ -1039,7 +1223,9 @@ def load_config(path: Path) -> WorkflowConfig:
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")
     return WorkflowConfig(
+        schema_version=schema_version,
         source_path=source,
+        path_base=path_base,
         project_root=project_root,
         output_root=output_root,
         run_name=run_name,
@@ -1100,6 +1286,7 @@ def load_config(path: Path) -> WorkflowConfig:
             ),
         ),
         analysis=analysis_config,
+        tools=tool_configs,
         stages=tuple(stages),
         digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
     )

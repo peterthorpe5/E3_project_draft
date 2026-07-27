@@ -1,4 +1,4 @@
-# plant E3 project
+# ARIA plant E3 project
 
 This repository contains the modular discovery, orthology, expression, structural analysis,
 integration and reporting software for the PT_E3_6 / ARIA plant E3 project. The packages remain

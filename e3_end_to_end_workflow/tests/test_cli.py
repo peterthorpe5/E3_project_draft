@@ -25,6 +25,8 @@ def test_parser_plan_and_validate(synthetic_config: Path) -> None:
     with pytest.raises(SystemExit, match="0"):
         build_parser().parse_args(["--version"])
     assert plan_command(synthetic_config)["production_eligible"] is False
+    assert plan_command(synthetic_config)["configuration_schema_version"] == 1
+    assert plan_command(synthetic_config)["tools"] == []
     assert "Independent branches" in render_plan(plan_command(synthetic_config))
     assert "HTML reports" in render_plan(plan_command(synthetic_config))
     assert validate_command(synthetic_config)["proteomes"] == 2
@@ -161,6 +163,21 @@ def test_resource_and_report_cli_dispatch(
         "generate_run_report",
         lambda **_kwargs: {"status": "complete"},
     )
+    monkeypatch.setattr(
+        cli,
+        "prepare_sweep",
+        lambda **_kwargs: {"status": "complete"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "compare_sweep",
+        lambda **_kwargs: {"status": "complete"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "validate_fresh_config",
+        lambda **_kwargs: {"status": "valid"},
+    )
     assert main(["cache-domain-annotations", "--config", str(synthetic_config)]) == 0
     assert (
         main(
@@ -200,6 +217,43 @@ def test_resource_and_report_cli_dispatch(
     )
     assert main(["aggregate-benchmarks", "--config", str(synthetic_config)]) == 0
     assert main(["generate-report", "--config", str(synthetic_config)]) == 0
+    assert (
+        main(
+            [
+                "prepare-sweep",
+                "--sweep-config",
+                str(tmp_path / "sweep.yaml"),
+                "--output-dir",
+                str(tmp_path / "generated"),
+                "--force",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "compare-sweep",
+                "--manifest",
+                str(tmp_path / "manifest.tsv"),
+                "--output-dir",
+                str(tmp_path / "comparison"),
+                "--allow-incomplete",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "validate-fresh",
+                "--config",
+                str(synthetic_config),
+                "--allow-existing-run",
+            ]
+        )
+        == 0
+    )
     with pytest.raises(WorkflowError, match="stage list"):
         render_plan({"mode": "x", "run_root": "x"})
     with pytest.raises(WorkflowError, match="invalid stage"):
