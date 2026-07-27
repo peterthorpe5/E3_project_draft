@@ -180,7 +180,7 @@ CONTROLLER_PARTITION="${CONTROLLER_PARTITION:-${CHILD_PARTITION}}"
 validate_scheduler_name "--controller-account" "${CONTROLLER_ACCOUNT}"
 validate_scheduler_name "--controller-partition" "${CONTROLLER_PARTITION}"
 
-for command_name in flock; do
+for command_name in e3-workflow flock; do
     command -v "${command_name}" >/dev/null || {
         printf 'ERROR: required command is not on PATH: %s\n' "${command_name}" >&2
         exit 2
@@ -195,21 +195,11 @@ fi
 }
 CONDA_DIRECTORY="$(cd -- "$(dirname -- "${CONDA_EXECUTABLE}")" && pwd -P)"
 CONDA_EXECUTABLE="${CONDA_DIRECTORY}/$(basename -- "${CONDA_EXECUTABLE}")"
-CONDA_RUN=(
-    "${CONDA_EXECUTABLE}"
-    run
-    --no-capture-output
-    --name
-    "${CONDA_ENVIRONMENT}"
-)
 
 CONFIG_DIRECTORY="$(cd -- "$(dirname -- "${CONFIG}")" && pwd -P)"
 CONFIG="${CONFIG_DIRECTORY}/$(basename -- "${CONFIG}")"
-"${CONDA_RUN[@]}" e3-workflow diagnose-install \
-    --source-root "${SCRIPT_DIR}" \
-    --require-source-match >/dev/null
-"${CONDA_RUN[@]}" e3-workflow validate --config "${CONFIG}" >/dev/null
-RUN_ROOT="$("${CONDA_RUN[@]}" e3-workflow run-root --config "${CONFIG}")"
+e3-workflow validate --config "${CONFIG}" >/dev/null
+RUN_ROOT="$(e3-workflow run-root --config "${CONFIG}")"
 RUN_NAME="$(basename -- "${RUN_ROOT}")"
 CONTROL_DIRECTORY="${RUN_ROOT}/workflow_control"
 LOG_DIRECTORY="${RUN_ROOT}/workflow_logs"

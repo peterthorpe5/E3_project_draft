@@ -12,16 +12,9 @@ reports.
 cd e3_end_to_end_workflow
 conda env create --file environment.yml
 conda run --name e3_end_to_end_workflow \
-    python -m pip install --no-deps --force-reinstall --editable .
-conda run --name e3_end_to_end_workflow \
-    e3-workflow diagnose-install \
-    --source-root "$(pwd)" \
-    --require-source-match
+    python -m pip install --no-deps --editable .
 conda run --name e3_end_to_end_workflow ./run_tests.sh
 ```
-
-The source-root check verifies the release number, imported module and installed console
-command. Run it after moving the checkout or replacing an older editable installation.
 
 ## `e3_discovery_engine`
 

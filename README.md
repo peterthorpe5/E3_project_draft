@@ -21,9 +21,8 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.9.1 retains the schema-v2 tool registry, parameter sweeps, fresh-run launcher and
-searchable manual introduced in v0.9.0. It additionally repairs Stage 07 Expression Atlas scaling,
-introduces source-to-install provenance checks and restores one unambiguous repository root.
+Version 0.9.0 adds a schema-v2 central tool registry, immutable parameter-sweep generation and
+comparison, a strict fresh-run launcher, and a searchable GitHub Pages manual under `docs_site/`.
 
 ## Sixty-second cluster quick start
 
@@ -160,11 +159,7 @@ cd /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow
 
 conda env create --file environment.yml
 conda run --name e3_end_to_end_workflow \
-    python -m pip install --no-deps --force-reinstall --editable .
-conda run --name e3_end_to_end_workflow \
-    e3-workflow diagnose-install \
-    --source-root "$(pwd)" \
-    --require-source-match
+    python -m pip install --no-deps --editable .
 conda run --name e3_end_to_end_workflow ./run_tests.sh
 ```
 

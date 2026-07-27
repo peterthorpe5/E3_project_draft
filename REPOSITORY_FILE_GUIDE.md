@@ -49,8 +49,7 @@ isolated output directories and checksum-bound manifests.
 | `LICENSE` | Repository licence. |
 | `E3_MASTER_WORKFLOW_AND_PYTHON_APP_HANDOVER_v0_1_0.md` | Historical handover describing the earlier master-workflow and Python-app state. Use current package READMEs and release notes for present behaviour. |
 | `REPOSITORY_FILE_GUIDE.md` | This cross-package map. |
-| `START_HERE_v0_9_1.txt` | Short release, installation and recovery entry point. |
-| `RELEASE_VALIDATION_v0_9_1.md` | Checks completed for the current release and the remaining cluster acceptance boundary. |
+| `.DS_Store` and package-level `.DS_Store` files | macOS metadata accidentally retained in Git. They are not inputs and must never be used as provenance. |
 
 ## `e3_end_to_end_workflow`
 
@@ -63,7 +62,7 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_1.md` | Versioned history. `v0.9.1` is the current release note. |
+| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_0.md` | Versioned history. `v0.9.0` is the current release note. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |
@@ -112,8 +111,7 @@ collects resource measurements and creates the integrated release.
 | Module | Responsibility |
 |---|---|
 | `src/e3workflow/__init__.py`, `__main__.py` | Package version and module entry point. |
-| `cli.py` | Named subcommands for validation, plans, stage execution, run-root resolution, manifests, reports and installation diagnosis. |
-| `diagnostics.py` | Exact active-Python, command, distribution-version and source-root provenance checks. |
+| `cli.py` | Named subcommands for validation, plans, stage execution, run-root resolution, manifests and reports. |
 | `config.py` | Schema validation, stage ordering, dependencies, resources, scientific thresholds and configuration digest. |
 | `control.py` | Configuration-bound stage tokens used by resume, force and start-at controls. |
 | `runner.py` | Stage execution, subprocess streaming, upstream checksum validation, temporary staging and atomic publication. |

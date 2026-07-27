@@ -42,8 +42,7 @@ Use the reported controller job ID with:
 
 ```bash
 squeue --jobs JOB_ID
-sacct --jobs JOB_ID \
-    --format=JobIDRaw,JobName,State,ExitCode,Elapsed,ReqMem,MaxRSS,NodeList,Reason
+sacct --jobs JOB_ID --format=JobID,State,Elapsed,MaxRSS,ExitCode
 ```
 
 Persistent logs are under:
@@ -59,9 +58,6 @@ tail -F RUN_ROOT/workflow_logs/07_expression.snakemake.log
 ```
 
 The `.snakemake/slurm_logs` tree belongs to the executor and may be transient.
-The final Snakemake message only reports that at least one job failed. Use the child job's
-`sacct` row and worker log to distinguish an out-of-memory kill, walltime, cancellation and
-an application exception.
 
 ## Concurrency
 

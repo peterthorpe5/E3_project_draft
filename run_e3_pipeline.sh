@@ -5,10 +5,6 @@ set -Eeuo pipefail
 
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"
-readonly RELEASE_VERSION="$(
-    awk -F '"' '/^version = "[0-9][0-9.]*"$/ {print $2; exit}' \
-        "${WORKFLOW_ROOT}/pyproject.toml"
-)"
 MODE="slurm"
 CONFIG=""
 STATUS_ONLY="false"
@@ -80,7 +76,7 @@ while (($#)); do
             exit 2
             ;;
         --version)
-            printf 'E3 project launcher %s\n' "${RELEASE_VERSION:-UNKNOWN}"
+            printf 'E3 project launcher 0.9.0\n'
             exit 0
             ;;
         --help|-h)
