@@ -5,6 +5,10 @@ set -Eeuo pipefail
 
 readonly REPOSITORY_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly MASTER_LAUNCHER="${REPOSITORY_ROOT}/run_e3_pipeline.sh"
+readonly RELEASE_VERSION="$(
+    awk -F '"' '/^version = "[0-9][0-9.]*"$/ {print $2; exit}' \
+        "${REPOSITORY_ROOT}/e3_end_to_end_workflow/pyproject.toml"
+)"
 CONFIG=""
 MODE="slurm"
 THREADS="32"
@@ -95,7 +99,7 @@ while (($#)); do
             shift
             ;;
         --version)
-            printf 'E3 fresh pipeline launcher 0.9.0\n'
+            printf 'E3 fresh pipeline launcher %s\n' "${RELEASE_VERSION:-UNKNOWN}"
             exit 0
             ;;
         --help|-h)

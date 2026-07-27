@@ -20,6 +20,9 @@ The Slurm mode submits the Snakemake controller as a batch job. The workflow con
 after logout and submits scientific stage jobs only when their dependencies are valid.
 Workstations without Slurm use `--mode local`.
 
+The current master-workflow release is **v0.9.1**. It includes bounded, partition-pruned
+Expression Atlas processing and rejects a stale installed command before a real run starts.
+
 ## What to read
 
 - [Quick start](quick-start.md) for installation and first execution.

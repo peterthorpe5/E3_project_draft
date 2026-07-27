@@ -4,6 +4,10 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SOURCE_VERSION="$(
+    awk -F '"' '/^version = "[0-9][0-9.]*"$/ {print $2; exit}' \
+        "${SCRIPT_DIR}/pyproject.toml"
+)"
 CONFIG="${SCRIPT_DIR}/config/synthetic.yaml"
 PROFILE="local"
 THREADS="4"
@@ -17,6 +21,7 @@ DRY_RUN="false"
 UNLOCK="false"
 RESUME="true"
 ALLOW_INSIDE_SLURM="false"
+CHECK_INSTALL_ONLY="false"
 declare -a FORCE_STAGES=()
 declare -a EXTRA_ARGS=()
 
@@ -39,7 +44,8 @@ Options:
   --dry-run              Validate and print the DAG without executing jobs.
   --unlock               Unlock the configured working directory and exit.
   --allow-inside-slurm   Internal override used by submit_e3_controller_slurm.sh.
-  --version              Show the package version and exit.
+  --check-install        Verify the active command comes from this exact source tree.
+  --version              Show source and installed package versions, then exit.
   --help                 Show this help text.
 
 Use submit_e3_controller_slurm.sh for durable cluster execution, or use this runner with
@@ -47,6 +53,35 @@ Use submit_e3_controller_slurm.sh for durable cluster execution, or use this run
 Snakefile. Independent branches run concurrently when dependencies and resources permit.
 --start-at never bypasses missing prerequisites.
 EOF
+}
+
+check_installation() {
+    local installed_output
+    local installed_version
+    [[ -n "${SOURCE_VERSION}" ]] || {
+        printf 'ERROR: could not read project.version from %s/pyproject.toml.\n' \
+            "${SCRIPT_DIR}" >&2
+        exit 2
+    }
+    command -v e3-workflow >/dev/null || {
+        printf 'ERROR: e3-workflow is not on PATH. Install this exact source tree with:\n' >&2
+        printf '  python -m pip install --no-deps --force-reinstall --editable %q\n' \
+            "${SCRIPT_DIR}" >&2
+        exit 2
+    }
+    installed_output="$(e3-workflow --version)"
+    installed_version="${installed_output##* }"
+    if [[ "${installed_version}" != "${SOURCE_VERSION}" ]]; then
+        printf 'ERROR: source package is %s but PATH resolves e3-workflow %s at %s.\n' \
+            "${SOURCE_VERSION}" "${installed_version}" "$(command -v e3-workflow)" >&2
+        printf 'Reinstall this exact source tree in the workflow Conda environment:\n' >&2
+        printf '  conda run --name e3_end_to_end_workflow python -m pip install '\
+'--no-deps --force-reinstall --editable %q\n' "${SCRIPT_DIR}" >&2
+        exit 2
+    fi
+    e3-workflow diagnose-install \
+        --source-root "${SCRIPT_DIR}" \
+        --require-source-match
 }
 
 require_option_value() {
@@ -126,8 +161,20 @@ while (($#)); do
             ALLOW_INSIDE_SLURM="true"
             shift
             ;;
+        --check-install)
+            CHECK_INSTALL_ONLY="true"
+            shift
+            ;;
         --version)
-            printf 'e3-end-to-end-workflow 0.9.0\n'
+            printf 'Source e3-end-to-end-workflow %s at %s\n' \
+                "${SOURCE_VERSION:-UNKNOWN}" "${SCRIPT_DIR}"
+            if command -v e3-workflow >/dev/null; then
+                printf 'Installed '
+                e3-workflow --version
+                printf 'Command %s\n' "$(command -v e3-workflow)"
+            else
+                printf 'Installed e3-workflow NOT_FOUND\n'
+            fi
             exit 0
             ;;
         --help|-h)
@@ -147,6 +194,12 @@ while (($#)); do
     esac
 done
 
+if [[ "${CHECK_INSTALL_ONLY}" == "true" ]]; then
+    check_installation
+    exit 0
+fi
+check_installation >/dev/null
+
 [[ -f "${CONFIG}" ]] || {
     printf 'ERROR: config not found: %s\n' "${CONFIG}" >&2
     exit 2
@@ -165,11 +218,6 @@ done
 }
 [[ "${SLURM_PARTITION}" =~ ^[A-Za-z0-9._-]+$ ]] || {
     printf 'ERROR: --partition contains unsafe characters.\n' >&2
-    exit 2
-}
-command -v e3-workflow >/dev/null || {
-    printf 'ERROR: install this package first: python -m pip install -e %s\n' \
-        "${SCRIPT_DIR}" >&2
     exit 2
 }
 command -v snakemake >/dev/null || {

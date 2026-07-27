@@ -19,6 +19,7 @@ from e3workflow.config import (
     stage_purpose,
 )
 from e3workflow.control import initialise_stage_tokens, stage_manifest_target
+from e3workflow.diagnostics import diagnose_installation, require_matching_source
 from e3workflow.errors import WorkflowError
 from e3workflow.fresh import validate_fresh_config
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
@@ -99,6 +100,9 @@ def build_parser() -> argparse.ArgumentParser:
     compare_sweep_parser.add_argument("--manifest", type=Path, required=True)
     compare_sweep_parser.add_argument("--output-dir", type=Path, required=True)
     compare_sweep_parser.add_argument("--allow-incomplete", action="store_true")
+    diagnostics = subparsers.add_parser("diagnose-install")
+    diagnostics.add_argument("--source-root", type=Path)
+    diagnostics.add_argument("--require-source-match", action="store_true")
     return parser
 
 
@@ -316,6 +320,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 allow_incomplete=args.allow_incomplete,
             )
+        elif args.command == "diagnose-install":
+            if args.require_source_match:
+                if args.source_root is None:
+                    raise WorkflowError(
+                        "--require-source-match requires --source-root"
+                    )
+                payload = require_matching_source(source_root=args.source_root)
+            else:
+                payload = diagnose_installation(source_root=args.source_root)
         else:
             raise WorkflowError(f"Unsupported command: {args.command}")
         print(json.dumps(payload, indent=2, sort_keys=True))

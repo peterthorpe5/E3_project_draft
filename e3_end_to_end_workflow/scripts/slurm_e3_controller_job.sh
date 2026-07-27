@@ -93,6 +93,9 @@ CONDA_RUN=(
     --name
     "${CONDA_ENVIRONMENT}"
 )
+"${CONDA_RUN[@]}" e3-workflow diagnose-install \
+    --source-root "${SCRIPT_DIR}" \
+    --require-source-match >/dev/null
 "${CONDA_RUN[@]}" e3-workflow validate --config "${CONFIG}" >/dev/null
 RUN_ROOT="$("${CONDA_RUN[@]}" e3-workflow run-root --config "${CONFIG}")"
 CONTROL_DIRECTORY="${RUN_ROOT}/workflow_control"
