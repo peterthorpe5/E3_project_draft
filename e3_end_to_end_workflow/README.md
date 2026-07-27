@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.9.3` supports two equally explicit production strategies:
+Version `0.9.4` supports two equally explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -132,8 +132,10 @@ controller job in `workflow_control/controller.slurm.tsv`. Duplicate prevention 
 only: an active controller blocks submission, an absent or terminal prior controller permits a
 safe resume, and a failed or unrecognised scheduler query fails closed. The optional `sacct`
 lookup is used only for bounded historical enrichment by `--status`; accounting availability
-cannot block a new controller submission. The foreground `run_e3_end_to_end.sh` remains
-available for local tests and diagnostics.
+cannot block a new controller submission. The static `MinJobAge` compatibility check is
+advisory when `scontrol` is unavailable, while any successfully observed value below 120 seconds
+still blocks submission. The foreground `run_e3_end_to_end.sh` remains available for local tests
+and diagnostics.
 
 ## DAG and package ownership
 

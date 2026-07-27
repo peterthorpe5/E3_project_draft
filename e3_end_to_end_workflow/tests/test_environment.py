@@ -121,7 +121,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.9.3" in result.stderr
+    assert "source package is 0.9.4" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -182,7 +182,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.9.3\\n'
+        printf 'e3-workflow 0.9.4\\n'
         ;;
     diagnose-install|diagnose-slurm-executor|validate)
         exit 0
@@ -250,7 +250,8 @@ case "${FAKE_SLURM_STATE:-inactive}" in
         exit 1
         ;;
     hanging)
-        sleep 10
+        trap '' TERM
+        sleep 30
         ;;
     terminal)
         printf 'COMPLETED\\n'
@@ -284,7 +285,7 @@ case "${FAKE_SACCT_MODE:-completed}" in
         exit 1
         ;;
     hanging)
-        sleep 10
+        sleep 30
         ;;
     *)
         printf 'Unexpected fake accounting mode\\n' >&2
@@ -304,8 +305,12 @@ case "${FAKE_SCONTROL_MODE:-available}" in
     available)
         printf 'MinJobAge = %s sec\\n' "${FAKE_MIN_JOB_AGE:-300}"
         ;;
+    failed)
+        printf 'scheduler configuration unavailable\\n' >&2
+        exit 1
+        ;;
     hanging)
-        sleep 10
+        sleep 30
         ;;
     *)
         printf 'Unexpected fake scontrol mode\\n' >&2
@@ -326,6 +331,9 @@ esac
 
     launcher = package_root / "submit_e3_controller_slurm.sh"
     configuration = package_root / "config" / "synthetic.yaml"
+    launcher_text = launcher.read_text(encoding="utf-8")
+    assert launcher_text.count("timeout --signal=KILL") == 3
+    assert "--kill-after" not in launcher_text
     unsafe_environment = environment.copy()
     unsafe_environment["FAKE_MIN_JOB_AGE"] = "60"
     unsafe = subprocess.run(
@@ -338,6 +346,7 @@ esac
     )
     assert unsafe.returncode == 2
     assert "requires at least 120 seconds" in unsafe.stderr
+    assert "stopped unexpectedly" not in unsafe.stderr
 
     result = subprocess.run(
         [
@@ -451,10 +460,11 @@ esac
         capture_output=True,
         text=True,
     )
-    assert time.monotonic() - started_at < 3
+    assert time.monotonic() - started_at < 5
     assert hanging_squeue.returncode == 3
     assert "squeue could not determine" in hanging_squeue.stderr
     assert "refusing to submit" in hanging_squeue.stderr
+    assert "stopped unexpectedly" not in hanging_squeue.stderr
 
     terminal_squeue_environment = environment.copy()
     terminal_squeue_environment["FAKE_SLURM_STATE"] = "terminal"
@@ -522,7 +532,7 @@ esac
         capture_output=True,
         text=True,
     )
-    assert time.monotonic() - started_at < 3
+    assert time.monotonic() - started_at < 5
     assert "Controller: NOT_IN_QUEUE" in status_timeout.stdout
     assert "Accounting: UNAVAILABLE_OR_NO_RECORD" in status_timeout.stdout
 
@@ -544,11 +554,28 @@ esac
         capture_output=True,
         text=True,
     )
-    assert time.monotonic() - started_at < 3
-    assert scontrol_timeout.returncode == 2
-    assert "scontrol could not report MinJobAge within 1 seconds" in (
+    assert time.monotonic() - started_at < 5
+    assert scontrol_timeout.returncode == 0, scontrol_timeout.stderr
+    assert "scontrol could not verify MinJobAge within 1 seconds" in (
         scontrol_timeout.stderr
     )
+    assert "Controller job: 98765" in scontrol_timeout.stdout
+    assert "stopped unexpectedly" not in scontrol_timeout.stderr
+
+    failed_scontrol_environment = environment.copy()
+    failed_scontrol_environment["FAKE_SCONTROL_MODE"] = "failed"
+    failed_scontrol = subprocess.run(
+        [str(launcher), "--config", str(configuration), "--resume"],
+        cwd=package_root,
+        check=False,
+        env=failed_scontrol_environment,
+        capture_output=True,
+        text=True,
+    )
+    assert failed_scontrol.returncode == 0, failed_scontrol.stderr
+    assert "scontrol could not verify MinJobAge" in failed_scontrol.stderr
+    assert "Controller job: 98765" in failed_scontrol.stdout
+    assert "stopped unexpectedly" not in failed_scontrol.stderr
 
     rejected_submission_environment = environment.copy()
     rejected_submission_environment["FAKE_SBATCH_MODE"] = "rejected"
@@ -563,6 +590,7 @@ esac
     assert rejected_submission.returncode == 42
     assert "scheduler rejected submission" in rejected_submission.stderr
     assert "sbatch rejected" in rejected_submission.stderr
+    assert "stopped unexpectedly" not in rejected_submission.stderr
 
     metadata.write_text(
         "job_id\tsubmitted_at_utc\trun_name\tconfiguration\n",
@@ -599,7 +627,7 @@ def test_slurm_spool_copy_uses_explicit_source_root(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.9.3\\n'
+        printf 'e3-workflow 0.9.4\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -720,7 +748,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.9.3\\n'
+        printf 'e3-workflow 0.9.4\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

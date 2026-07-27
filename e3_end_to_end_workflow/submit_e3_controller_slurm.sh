@@ -57,8 +57,7 @@ Controller allocation:
                                 e3_end_to_end_workflow).
   --conda-executable PATH       Conda executable (default: CONDA_EXE or PATH).
   --scheduler-query-timeout-seconds INT
-                                Maximum time for each squeue, scontrol or
-                                optional sacct query (default: 15).
+                                Hard limit for each scheduler query (default: 15).
   --status                      Report the submitted controller job state.
   --help                        Show this help text.
   --version                     Show the package version.
@@ -98,29 +97,37 @@ validate_squeue_retention() {
     local suffix
     local unit
     local seconds
+    if ! command -v scontrol >/dev/null; then
+        printf 'WARNING: scontrol is unavailable; Slurm MinJobAge could not be verified. '\
+'Continuing because this advisory query is not required for submission.\n' >&2
+        return 0
+    fi
     if configuration_line="$(
-        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+        timeout --signal=KILL "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
             scontrol show config 2>/dev/null |
             awk '$1 == "MinJobAge" {print $3, $4; exit}'
     )"; then
         :
     else
-        printf 'ERROR: scontrol could not report MinJobAge within %s seconds.\n' \
+        printf 'WARNING: scontrol could not verify MinJobAge within %s seconds. '\
+'Continuing because this advisory query is not required for submission.\n' \
             "${SCHEDULER_QUERY_TIMEOUT_SECONDS}" >&2
-        return 2
+        return 0
     fi
     [[ -n "${configuration_line}" ]] || {
-        printf 'ERROR: could not read MinJobAge from scontrol show config.\n' >&2
-        return 2
+        printf 'WARNING: scontrol did not report MinJobAge. Continuing because this '\
+'advisory query is not required for submission.\n' >&2
+        return 0
     }
     read -r count unit <<<"${configuration_line}"
     if [[ "${count}" =~ ^([0-9]+)([A-Za-z]*)$ ]]; then
         count="${BASH_REMATCH[1]}"
         suffix="${BASH_REMATCH[2],,}"
     else
-        printf 'ERROR: unsupported Slurm MinJobAge value: %s\n' \
+        printf 'WARNING: unsupported Slurm MinJobAge value: %s. Continuing because this '\
+'advisory query is not required for submission.\n' \
             "${configuration_line}" >&2
-        return 2
+        return 0
     fi
     [[ -n "${suffix}" ]] || suffix="${unit,,}"
     case "${suffix}" in
@@ -134,8 +141,9 @@ validate_squeue_retention() {
             seconds="$((count * 3600))"
             ;;
         *)
-            printf 'ERROR: unsupported Slurm MinJobAge unit: %s\n' "${suffix}" >&2
-            return 2
+            printf 'WARNING: unsupported Slurm MinJobAge unit: %s. Continuing because '\
+'this advisory query is not required for submission.\n' "${suffix}" >&2
+            return 0
             ;;
     esac
     if ((seconds < MINIMUM_SQUEUE_RETENTION_SECONDS)); then
@@ -333,7 +341,7 @@ query_squeue_state() {
         return 2
     }
     if output="$(
-        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+        timeout --signal=KILL "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
             squeue --noheader --jobs "${job_id}" --format '%T' 2>&1
     )"; then
         state="$(awk 'NF {print $1; exit}' <<<"${output}")"
@@ -353,7 +361,7 @@ query_sacct_state() {
     command -v sacct >/dev/null || return 1
     command -v timeout >/dev/null || return 1
     if output="$(
-        timeout --signal=TERM --kill-after=5s "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
+        timeout --signal=KILL "${SCHEDULER_QUERY_TIMEOUT_SECONDS}s" \
             sacct --noheader --parsable2 --jobs "${job_id}" \
             --format State 2>/dev/null
     )"; then
@@ -439,13 +447,18 @@ fi
 
 "${CONDA_RUN[@]}" e3-workflow diagnose-slurm-executor \
     --require-compatible >/dev/null
-for command_name in sbatch squeue scontrol timeout; do
+for command_name in sbatch squeue timeout; do
     command -v "${command_name}" >/dev/null || {
         printf 'ERROR: required Slurm command is not on PATH: %s\n' "${command_name}" >&2
         exit 2
     }
 done
-validate_squeue_retention
+if validate_squeue_retention; then
+    :
+else
+    RETENTION_STATUS="$?"
+    exit "${RETENTION_STATUS}"
+fi
 [[ -x "${CONTROLLER_JOB}" ]] || {
     printf 'ERROR: controller job script is not executable: %s\n' "${CONTROLLER_JOB}" >&2
     exit 2
