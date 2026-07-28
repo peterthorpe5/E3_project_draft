@@ -17,9 +17,12 @@ from e3workflow.distributed import (
     TASK_MARKER_FIELDS,
     _archive_partial,
     _copy_parquet_union,
+    _publish_rebased_asset_manifest,
     _read_marker,
+    _relative_component_asset_path,
     _run_component,
     _validate_reusable_marker,
+    _validate_structural_summary_evidence,
     aggregate_ligandability_shards,
     aggregate_structural_alignment_shards,
     ligandability_task_count,
@@ -358,6 +361,80 @@ def test_distributed_marker_and_union_defensive_contracts(
         )
 
 
+def test_rebased_asset_manifest_rejects_invalid_publication_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stable asset publication must reject malformed paths, metadata and files."""
+    for path, message in (
+        ("/tmp/no-component-directory/model.cif", "exactly one"),
+        ("/tmp/component_output", "unsafe suffix"),
+    ):
+        with pytest.raises(StageError, match=message):
+            _relative_component_asset_path(recorded_path=path)
+    with pytest.raises(StageError, match="no asset records"):
+        _publish_rebased_asset_manifest(
+            roots=[],
+            destination=tmp_path / "empty" / "asset_manifest.parquet",
+        )
+
+    task_root = tmp_path / "task_0000"
+    source = (
+        task_root
+        / "component_output"
+        / "tables"
+        / "parquet"
+        / "asset_manifest.parquet"
+    )
+    source.parent.mkdir(parents=True)
+    source.write_text("fixture", encoding="utf-8")
+    marker = task_root / "task_complete.tsv"
+    marker.write_text(
+        "\t".join(TASK_MARKER_FIELDS)
+        + "\nligandability\t0\tCOMPLETE\tdigest\tQ1\t"
+        + str(task_root / "component_output")
+        + "\tnow\n",
+        encoding="utf-8",
+    )
+    model = task_root / "component_output" / "models" / "Q1.cif"
+    model.parent.mkdir(parents=True)
+    model.write_text("data_model\n", encoding="utf-8")
+    base_row = {
+        "accession": "Q1",
+        "action": "downloaded",
+        "bytes": model.stat().st_size,
+        "path": "/old/.task_0000.running.uuid/component_output/models/Q1.cif",
+        "sha256": sha256_file(model),
+        "url": "https://example.invalid/Q1.cif",
+    }
+    cases = (
+        ({**base_row, "accession": "Q2"}, "does not match"),
+        ({**base_row, "path": base_row["path"].replace("Q1.cif", "missing.cif")}, "missing"),
+        ({**base_row, "bytes": "invalid"}, "invalid byte count"),
+        ({**base_row, "bytes": model.stat().st_size + 1}, "size changed"),
+        ({**base_row, "sha256": "0" * 64}, "checksum changed"),
+    )
+    for index, (row, message) in enumerate(cases):
+        monkeypatch.setattr(
+            "e3workflow.distributed._table_records",
+            lambda _path, selected=row: [selected],
+        )
+        with pytest.raises(StageError, match=message):
+            _publish_rebased_asset_manifest(
+                roots=[task_root],
+                destination=tmp_path / f"case_{index}" / "asset_manifest.parquet",
+            )
+    monkeypatch.setattr(
+        "e3workflow.distributed._table_records",
+        lambda _path: [base_row, dict(base_row)],
+    )
+    with pytest.raises(StageError, match="Duplicate"):
+        _publish_rebased_asset_manifest(
+            roots=[task_root],
+            destination=tmp_path / "duplicate" / "asset_manifest.parquet",
+        )
+
+
 def _fake_ligandability_component(*, argv: tuple[str, ...], **_kwargs: Any) -> None:
     """Publish the minimum complete ligandability component contract."""
     output = Path(argv[argv.index("--output-dir") + 1])
@@ -371,6 +448,27 @@ def _fake_ligandability_component(*, argv: tuple[str, ...], **_kwargs: Any) -> N
                 parquet_root / f"{dataset}.parquet",
                 "accession VARCHAR, status VARCHAR, stage VARCHAR, message VARCHAR",
                 [(accession, "SUCCESS", "complete", "")],
+            )
+        elif dataset == "asset_manifest":
+            model = output / "models" / accession / f"{accession}.cif"
+            model.parent.mkdir(parents=True)
+            model.write_text("data_fixture\n", encoding="utf-8")
+            _write_parquet(
+                parquet_root / f"{dataset}.parquet",
+                (
+                    "accession VARCHAR, action VARCHAR, bytes BIGINT, path VARCHAR, "
+                    "sha256 VARCHAR, url VARCHAR"
+                ),
+                [
+                    (
+                        accession,
+                        "downloaded",
+                        model.stat().st_size,
+                        str(model),
+                        sha256_file(model),
+                        f"https://example.invalid/{accession}.cif",
+                    )
+                ],
             )
         else:
             _write_parquet(
@@ -438,6 +536,26 @@ def test_ligandability_scatter_resume_and_aggregation(
     assert "successful_accession_count" in fields
     assert records[0]["successful_accession_count"] == "1"
     assert records[0]["maximum_concurrent_jobs"] == "100"
+    asset_path = (
+        stage_root
+        / "generated_ligandability"
+        / "tables"
+        / "parquet"
+        / "asset_manifest.parquet"
+    )
+    connection = duckdb.connect(":memory:")
+    try:
+        published_path = Path(
+            connection.execute(
+                f"SELECT path FROM read_parquet({quote_literal(asset_path)})"
+            ).fetchone()[0]
+        )
+    finally:
+        connection.close()
+    assert ".running." not in str(published_path)
+    assert "/task_0000/component_output/" in str(published_path)
+    assert published_path.is_file()
+    assert published_path.read_text(encoding="utf-8") == "data_fixture\n"
 
 
 def _fake_structural_component(*, argv: tuple[str, ...], **_kwargs: Any) -> None:
@@ -459,10 +577,11 @@ def _fake_structural_component(*, argv: tuple[str, ...], **_kwargs: Any) -> None
         (
             "cluster_id VARCHAR, primary_group_id VARCHAR, "
             "reference_accession VARCHAR, aligned_species_count INTEGER, "
+            "selected_accession_count INTEGER, model_available_accession_count INTEGER, "
             "group_support_fraction DOUBLE, mean_minimum_tm_score DOUBLE, "
             "mean_pocket_overlap_fraction DOUBLE, alignment_status VARCHAR"
         ),
-        [("cluster_1", "OG1", "Q00001", 2, 1.0, 0.9, 0.8, "PASS")],
+        [("cluster_1", "OG1", "Q00001", 2, 2, 2, 1.0, 0.9, 0.8, "PASS")],
     )
     interactive = output / "interactive"
     (interactive / "assets").mkdir(parents=True)
@@ -547,6 +666,36 @@ def test_structural_scatter_and_aggregate_preserve_browser_assets(
     assert "ORTHOGROUP:OG1" in (
         output / "interactive" / "structural_alignment_browser.html"
     ).read_text(encoding="utf-8")
+
+
+def test_structural_validation_rejects_zero_resolved_models() -> None:
+    """Completed task markers cannot conceal a zero-model Stage 09b result."""
+    with pytest.raises(StageError, match="resolved zero structural models"):
+        _validate_structural_summary_evidence(
+            summaries=[
+                {
+                    "selected_accession_count": 12,
+                    "model_available_accession_count": 0,
+                }
+            ]
+        )
+    with pytest.raises(StageError, match="no evolutionary group"):
+        _validate_structural_summary_evidence(
+            summaries=[
+                {
+                    "selected_accession_count": 2,
+                    "model_available_accession_count": 1,
+                }
+            ]
+        )
+    assert _validate_structural_summary_evidence(
+        summaries=[
+            {
+                "selected_accession_count": 2,
+                "model_available_accession_count": 2,
+            }
+        ]
+    )["resolved_comparable_group_count"] == 1
 
 
 def test_component_runner_reports_process_failures(tmp_path: Path) -> None:

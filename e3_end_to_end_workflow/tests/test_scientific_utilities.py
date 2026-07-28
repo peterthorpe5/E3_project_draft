@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -18,6 +19,8 @@ from e3workflow.ligandability import (
     _chemical_conservation,
     _column_expression,
     _connected_components,
+    _candidate_group_sequence_authority,
+    _load_candidate_group_sequences,
     _load_sequences,
     _manifest_union_query,
     _pairwise_overlaps,
@@ -298,3 +301,173 @@ def test_prepared_sequence_loading_and_bad_parquet(
     bad.write_text("bad", encoding="utf-8")
     with pytest.raises(StageError, match="Could not read Parquet"):
         _read_query(bad)
+
+
+def test_stage05_sequence_authority_precedes_fasta_fallbacks(
+    synthetic_config: Path,
+) -> None:
+    """Stage 09 must use checksum-validated candidate sequences published by Stage 05."""
+    config = load_config(synthetic_config)
+    sequence = "MACDEFGH"
+    root = config.run_root / "05_orthology" / "orthology" / "tables"
+    write_records(
+        tsv_path=root / "candidate_group_member_sequences.tsv",
+        parquet_path=root / "candidate_group_member_sequences.parquet",
+        fieldnames=(
+            "parsed_accession",
+            "protein_sequence",
+            "sequence_length",
+            "sequence_sha256",
+        ),
+        records=[
+            {
+                "parsed_accession": "Q9SA03",
+                "protein_sequence": sequence,
+                "sequence_length": len(sequence),
+                "sequence_sha256": hashlib.sha256(sequence.encode("ascii")).hexdigest(),
+            }
+        ],
+        column_types={"sequence_length": "BIGINT"},
+    )
+    assert _load_sequences(config, {"Q9SA03", "ABSENT"}) == {"Q9SA03": sequence}
+
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute(
+            f"COPY (SELECT * REPLACE ('wrong' AS sequence_sha256) FROM read_parquet("
+            f"{quote_literal(root / 'candidate_group_member_sequences.parquet')})) "
+            f"TO {quote_literal(root / 'invalid.parquet')} (FORMAT PARQUET)"
+        )
+    finally:
+        connection.close()
+    (root / "candidate_group_member_sequences.parquet").replace(
+        root / "candidate_group_member_sequences.valid.parquet"
+    )
+    (root / "invalid.parquet").replace(
+        root / "candidate_group_member_sequences.parquet"
+    )
+    with pytest.raises(StageError, match="checksum disagrees"):
+        _load_sequences(config, {"Q9SA03"})
+
+
+def test_stage05_sequence_authority_rejects_malformed_records(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """Stage 05 sequence selection must reject ambiguity and corrupt record fields."""
+    config = load_config(synthetic_config)
+    first = (
+        config.run_root
+        / "05_orthology"
+        / "orthology"
+        / "tables"
+        / "candidate_group_member_sequences.parquet"
+    )
+    second = (
+        config.run_root
+        / "05_orthology"
+        / "tables"
+        / "candidate_group_member_sequences.parquet"
+    )
+    for path in (first, second):
+        write_records(
+            tsv_path=path.with_suffix(".tsv"),
+            parquet_path=path,
+            fieldnames=(
+                "parsed_accession",
+                "protein_sequence",
+                "sequence_length",
+                "sequence_sha256",
+            ),
+            records=[],
+            column_types={"sequence_length": "BIGINT"},
+        )
+    with pytest.raises(StageError, match="more than one"):
+        _candidate_group_sequence_authority(config)
+    second.unlink()
+
+    missing_column = tmp_path / "missing_column.parquet"
+    write_records(
+        tsv_path=tmp_path / "missing_column.tsv",
+        parquet_path=missing_column,
+        fieldnames=("parsed_accession",),
+        records=[],
+    )
+    with pytest.raises(StageError, match="missing columns"):
+        _load_candidate_group_sequences(path=missing_column, accessions={"Q1"})
+    assert _load_candidate_group_sequences(path=first, accessions=set()) == {}
+    assert _load_sequences(config, set()) == {}
+
+    valid_digest = hashlib.sha256(b"MACD").hexdigest()
+    cases = (
+        ("incomplete", "Q1", "", 0, "", "incomplete"),
+        ("length", "Q1", "MACD", 5, valid_digest, "length disagrees"),
+    )
+    for name, accession, sequence, length, digest, message in cases:
+        path = tmp_path / f"{name}.parquet"
+        write_records(
+            tsv_path=tmp_path / f"{name}.tsv",
+            parquet_path=path,
+            fieldnames=(
+                "parsed_accession",
+                "protein_sequence",
+                "sequence_length",
+                "sequence_sha256",
+            ),
+            records=[
+                {
+                    "parsed_accession": accession,
+                    "protein_sequence": sequence,
+                    "sequence_length": length,
+                    "sequence_sha256": digest,
+                }
+            ],
+            column_types={"sequence_length": "BIGINT"},
+        )
+        with pytest.raises(StageError, match=message):
+            _load_candidate_group_sequences(path=path, accessions={"Q1"})
+
+    conflict = tmp_path / "conflict.parquet"
+    first_sequence = "MACD"
+    second_sequence = "MACE"
+    write_records(
+        tsv_path=tmp_path / "conflict.tsv",
+        parquet_path=conflict,
+        fieldnames=(
+            "parsed_accession",
+            "protein_sequence",
+            "sequence_length",
+            "sequence_sha256",
+        ),
+        records=[
+            {
+                "parsed_accession": "Q1",
+                "protein_sequence": sequence,
+                "sequence_length": len(sequence),
+                "sequence_sha256": hashlib.sha256(sequence.encode("ascii")).hexdigest(),
+            }
+            for sequence in (first_sequence, second_sequence)
+        ],
+        column_types={"sequence_length": "BIGINT"},
+    )
+    with pytest.raises(StageError, match="conflicting"):
+        _load_candidate_group_sequences(path=conflict, accessions={"Q1"})
+
+
+def test_orthofinder_sequence_fallback_rejects_invalid_sources(
+    synthetic_config: Path,
+) -> None:
+    """Low-level fallback files must remain explicit and fail closed when malformed."""
+    config = load_config(synthetic_config)
+    working = config.run_root / "04_orthofinder" / "Results" / "WorkingDirectory"
+    working.mkdir(parents=True)
+    (working / "SequenceIDs.txt").write_text("malformed\n", encoding="utf-8")
+    with pytest.raises(StageError, match="Malformed SequenceIDs"):
+        _load_sequences(config, {"Q9SA03"})
+
+    (working / "SequenceIDs.txt").write_text(
+        "0_0: sp|Q9SA03|FB27_ARATH\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(StageError, match="working FASTA is missing"):
+        _load_sequences(config, {"Q9SA03"})

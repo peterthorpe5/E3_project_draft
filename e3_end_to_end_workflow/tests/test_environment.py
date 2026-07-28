@@ -85,6 +85,15 @@ def test_main_shell_entrypoints_contain_no_embedded_python(package_root: Path) -
         assert "python -c" not in shell
 
 
+def test_quality_gate_uses_an_isolated_synthetic_run(package_root: Path) -> None:
+    """Repeated release tests must not reuse checksum tokens from an older configuration."""
+    shell = (package_root / "run_tests.sh").read_text(encoding="utf-8")
+    assert 'mktemp -d "${TMPDIR:-/tmp}/e3_workflow_tests.XXXXXX"' in shell
+    assert 'SYNTHETIC_CONFIG="$(mktemp ' in shell
+    assert '--config "${SYNTHETIC_CONFIG}"' in shell
+    assert "test_runs/synthetic_e2e_v0_7_0" not in shell
+
+
 def test_runner_rejects_stale_installed_version(
     package_root: Path,
     tmp_path: Path,
@@ -120,7 +129,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.10.1" in result.stderr
+    assert "source package is 0.10.2" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -181,7 +190,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.10.1\\n'
+        printf 'e3-workflow 0.10.2\\n'
         ;;
     diagnose-install|diagnose-slurm-executor|validate)
         exit 0
@@ -640,7 +649,7 @@ def test_slurm_spool_copy_uses_explicit_source_root(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.10.1\\n'
+        printf 'e3-workflow 0.10.2\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -761,7 +770,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.10.1\\n'
+        printf 'e3-workflow 0.10.2\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

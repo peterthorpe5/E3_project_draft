@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -26,7 +27,9 @@ from e3workflow.resources import (
     LIGANDABILITY_DATASETS,
     build_ligandability_manifest,
 )
-from e3workflow.tabular import quote_literal
+from e3workflow.tabular import quote_literal, write_records
+
+LOGGER = logging.getLogger("e3workflow.distributed")
 
 TASK_MARKER_FIELDS = (
     "task_kind",
@@ -43,6 +46,15 @@ STRUCTURAL_DATASETS = (
     "pocket_comparisons",
     "pocket_residue_matches",
     "structural_alignment_summary",
+)
+
+ASSET_MANIFEST_FIELDS = (
+    "accession",
+    "action",
+    "bytes",
+    "path",
+    "sha256",
+    "url",
 )
 
 
@@ -354,6 +366,124 @@ def _copy_parquet_union(*, sources: Sequence[Path], destination: Path) -> None:
     temporary.replace(destination)
 
 
+def _relative_component_asset_path(*, recorded_path: str) -> Path:
+    """Return the safe suffix below a shard's component-output directory.
+
+    Args:
+        recorded_path: Absolute component path written before atomic shard publication.
+
+    Returns:
+        Relative path below the unique ``component_output`` directory.
+
+    Raises:
+        StageError: If the recorded path is empty, ambiguous or unsafe.
+    """
+    supplied = Path(recorded_path)
+    positions = [
+        index for index, part in enumerate(supplied.parts) if part == "component_output"
+    ]
+    if len(positions) != 1:
+        raise StageError(
+            "Ligandability asset path does not contain exactly one "
+            f"component_output directory: {recorded_path}"
+        )
+    relative = Path(*supplied.parts[positions[0] + 1:])
+    if not relative.parts or relative.is_absolute() or ".." in relative.parts:
+        raise StageError(f"Ligandability asset path has an unsafe suffix: {recorded_path}")
+    return relative
+
+
+def _publish_rebased_asset_manifest(
+    *,
+    roots: Sequence[Path],
+    destination: Path,
+) -> int:
+    """Publish stable shard asset paths after validating size and checksum.
+
+    Component manifests are produced inside a temporary
+    ``.task_NNNN.running.UUID`` directory. Atomic publication renames that
+    directory to ``task_NNNN``; therefore every recorded path must be rebased
+    onto the stable shard root before downstream structural analysis.
+
+    Args:
+        roots: Completed stable ligandability shard roots.
+        destination: Aggregate asset-manifest Parquet path.
+
+    Returns:
+        Number of validated assets published.
+
+    Raises:
+        StageError: If an asset record, path, size or checksum is invalid.
+    """
+    records: list[dict[str, Any]] = []
+    seen_paths: set[Path] = set()
+    for task_root in roots:
+        source = (
+            task_root
+            / "component_output"
+            / "tables"
+            / "parquet"
+            / "asset_manifest.parquet"
+        )
+        if not source.is_file():
+            continue
+        marker = _read_marker(task_root)
+        if marker is None:
+            raise StageError(f"Ligandability shard has no completion marker: {task_root}")
+        for row in _table_records(source):
+            accession = str(row.get("accession") or "").strip()
+            if not accession or accession != marker["entity_id"]:
+                raise StageError(
+                    "Ligandability asset accession does not match its stable shard: "
+                    f"{accession!r} versus {marker['entity_id']!r}"
+                )
+            relative = _relative_component_asset_path(
+                recorded_path=str(row.get("path") or "")
+            )
+            stable_root = (task_root / "component_output").resolve()
+            stable_path = (stable_root / relative).resolve()
+            if not stable_path.is_relative_to(stable_root):
+                raise StageError(f"Ligandability asset escapes its shard: {stable_path}")
+            if stable_path in seen_paths:
+                raise StageError(f"Duplicate ligandability asset path: {stable_path}")
+            seen_paths.add(stable_path)
+            if not stable_path.is_file():
+                raise StageError(f"Published ligandability asset is missing: {stable_path}")
+            try:
+                expected_size = int(row.get("bytes"))
+            except (TypeError, ValueError) as exc:
+                raise StageError(
+                    f"Ligandability asset has an invalid byte count: {stable_path}"
+                ) from exc
+            if stable_path.stat().st_size != expected_size:
+                raise StageError(f"Ligandability asset size changed: {stable_path}")
+            expected_digest = str(row.get("sha256") or "").strip().lower()
+            if sha256_file(stable_path) != expected_digest:
+                raise StageError(f"Ligandability asset checksum changed: {stable_path}")
+            records.append(
+                {
+                    "accession": accession,
+                    "action": row.get("action", ""),
+                    "bytes": expected_size,
+                    "path": stable_path,
+                    "sha256": expected_digest,
+                    "url": row.get("url", ""),
+                }
+            )
+    if not records:
+        raise StageError("Generated ligandability shards published no asset records")
+    records.sort(key=lambda row: (str(row["accession"]), str(row["path"])))
+    count = write_records(
+        tsv_path=destination.parent.parent / "asset_manifest.tsv",
+        parquet_path=destination,
+        fieldnames=ASSET_MANIFEST_FIELDS,
+        records=records,
+        column_types={"bytes": "BIGINT"},
+    )
+    LOGGER.info("Published %d checksum-validated stable ligandability assets", count)
+    return count
+
+
 def aggregate_ligandability_shards(
     *,
     config: WorkflowConfig,
@@ -380,6 +510,12 @@ def aggregate_ligandability_shards(
     aggregate_root = stage_root / "generated_ligandability"
     parquet_root = aggregate_root / "tables" / "parquet"
     for dataset in sorted(LIGANDABILITY_DATASETS):
+        if dataset == "asset_manifest":
+            _publish_rebased_asset_manifest(
+                roots=complete_roots,
+                destination=parquet_root / "asset_manifest.parquet",
+            )
+            continue
         sources = _parquet_sources(roots=complete_roots, dataset=dataset)
         if sources:
             _copy_parquet_union(
@@ -711,6 +847,63 @@ def _table_records(path: Path) -> list[dict[str, Any]]:
         connection.close()
 
 
+def _validate_structural_summary_evidence(
+    *,
+    summaries: Sequence[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Require at least one real model-resolved structural comparison group.
+
+    Args:
+        summaries: Aggregated group-level structural summary records.
+
+    Returns:
+        Counts used by the Stage 09b validation report.
+
+    Raises:
+        StageError: If the summaries omit required counts or contain no
+            model-resolved group capable of pairwise comparison.
+    """
+    required = {"selected_accession_count", "model_available_accession_count"}
+    selected_total = 0
+    resolved_total = 0
+    selected_comparable_groups = 0
+    resolved_comparable_groups = 0
+    for row in summaries:
+        missing = sorted(required.difference(row))
+        if missing:
+            raise StageError(
+                "Structural summary is missing validation columns: "
+                + ", ".join(missing)
+            )
+        try:
+            selected = int(row["selected_accession_count"])
+            resolved = int(row["model_available_accession_count"])
+        except (TypeError, ValueError) as exc:
+            raise StageError("Structural summary contains invalid model counts") from exc
+        if selected < 0 or resolved < 0 or resolved > selected:
+            raise StageError("Structural summary contains inconsistent model counts")
+        selected_total += selected
+        resolved_total += resolved
+        selected_comparable_groups += selected >= 2
+        resolved_comparable_groups += resolved >= 2
+    if selected_total > 0 and resolved_total == 0:
+        raise StageError(
+            "Stage 09b resolved zero structural models despite selected Stage 09 "
+            "accessions; check published asset-manifest paths"
+        )
+    if selected_comparable_groups > 0 and resolved_comparable_groups == 0:
+        raise StageError(
+            "Stage 09b resolved no evolutionary group with at least two structural "
+            "models; no pairwise structural comparison is possible"
+        )
+    return {
+        "selected_accession_instance_count": selected_total,
+        "resolved_model_instance_count": resolved_total,
+        "selected_comparable_group_count": selected_comparable_groups,
+        "resolved_comparable_group_count": resolved_comparable_groups,
+    }
+
+
 def _write_structural_summary_html(
     *,
     path: Path,
@@ -799,6 +992,7 @@ def aggregate_structural_alignment_shards(
         finally:
             connection.close()
     summaries = _table_records(tables / "structural_alignment_summary.parquet")
+    evidence_counts = _validate_structural_summary_evidence(summaries=summaries)
     _write_structural_summary_html(
         path=output_root / "reports" / "structural_alignment_summary.html",
         summaries=summaries,
@@ -848,6 +1042,7 @@ def aggregate_structural_alignment_shards(
                     row["status"] == "SKIPPED_UNUSED_SLOT" for row in markers
                 ),
                 "summary_group_count": len(summaries),
+                **evidence_counts,
                 "maximum_concurrent_jobs": 100,
                 "cores_per_task": config.analysis.structural_alignment.shard_threads,
                 "status": "PASS",
@@ -858,6 +1053,10 @@ def aggregate_structural_alignment_shards(
             "completed_group_task_count",
             "skipped_unused_slot_count",
             "summary_group_count",
+            "selected_accession_instance_count",
+            "resolved_model_instance_count",
+            "selected_comparable_group_count",
+            "resolved_comparable_group_count",
             "maximum_concurrent_jobs",
             "cores_per_task",
             "status",
@@ -886,6 +1085,7 @@ def aggregate_structural_alignment_shards(
             "finished_at_utc": utc_now(),
             "task_count": len(complete_roots),
             "summary_group_count": len(summaries),
+            "structural_evidence_counts": evidence_counts,
             "datasets": {
                 dataset: {
                     "path": str(tables / f"{dataset}.parquet"),

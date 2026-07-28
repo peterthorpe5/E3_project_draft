@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import logging
 import math
@@ -352,10 +353,148 @@ def _read_query(path: Path, query: str = "SELECT * FROM source") -> list[dict[st
         connection.close()
 
 
+def _candidate_group_sequence_authority(config: WorkflowConfig) -> Path | None:
+    """Return the published Stage 05 candidate-group sequence authority when present.
+
+    Args:
+        config: Validated workflow configuration.
+
+    Returns:
+        The unique direct Stage 05 sequence table, or ``None`` when Stage 05 has not
+        been materialised in a small unit-test fixture.
+
+    Raises:
+        StageError: If both supported public layouts contain an authority.
+    """
+    root = config.run_root / "05_orthology"
+    candidates = [
+        root / "orthology" / "tables" / "candidate_group_member_sequences.parquet",
+        root / "tables" / "candidate_group_member_sequences.parquet",
+    ]
+    present = [path for path in candidates if path.is_file()]
+    if len(present) > 1:
+        raise StageError(
+            "Stage 05 exposes more than one candidate-group sequence authority: "
+            + "; ".join(str(path) for path in present)
+        )
+    return present[0] if present else None
+
+
+def _load_candidate_group_sequences(
+    *,
+    path: Path,
+    accessions: set[str],
+) -> dict[str, str]:
+    """Load and checksum-validate requested sequences from the Stage 05 authority.
+
+    Args:
+        path: Candidate-group member sequence Parquet produced by Stage 05.
+        accessions: Exact parsed accessions required by Stage 09.
+
+    Returns:
+        Exact protein sequences keyed by accession.
+
+    Raises:
+        StageError: If the authority is malformed or contains conflicting sequences.
+    """
+    required = {
+        "parsed_accession",
+        "protein_sequence",
+        "sequence_length",
+        "sequence_sha256",
+    }
+    missing = sorted(required.difference(parquet_columns(path=path)))
+    if missing:
+        raise StageError(
+            "Stage 05 candidate-group sequence authority is missing columns: "
+            + ", ".join(missing)
+        )
+    if not accessions:
+        return {}
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute("CREATE TEMP TABLE requested(accession VARCHAR PRIMARY KEY)")
+        connection.executemany(
+            "INSERT INTO requested VALUES (?)",
+            [(accession,) for accession in sorted(accessions)],
+        )
+        rows = connection.execute(
+            "SELECT CAST(source.parsed_accession AS VARCHAR), "
+            "CAST(source.protein_sequence AS VARCHAR), "
+            "TRY_CAST(source.sequence_length AS BIGINT), "
+            "LOWER(CAST(source.sequence_sha256 AS VARCHAR)) "
+            f"FROM read_parquet({quote_literal(path)}) AS source "
+            "INNER JOIN requested "
+            "ON CAST(source.parsed_accession AS VARCHAR) = requested.accession"
+        ).fetchall()
+    except duckdb.Error as exc:
+        raise StageError(
+            f"Could not read Stage 05 candidate-group sequences from {path}: {exc}"
+        ) from exc
+    finally:
+        connection.close()
+    sequences: dict[str, str] = {}
+    for accession_value, sequence_value, length_value, digest_value in rows:
+        accession = str(accession_value or "").strip()
+        sequence = str(sequence_value or "").strip()
+        digest = str(digest_value or "").strip()
+        if not accession or not sequence or length_value is None or not digest:
+            raise StageError(
+                f"Stage 05 candidate-group sequence record is incomplete for {accession!r}"
+            )
+        if int(length_value) != len(sequence):
+            raise StageError(
+                f"Stage 05 sequence length disagrees with the sequence for {accession}"
+            )
+        observed_digest = hashlib.sha256(sequence.encode("ascii")).hexdigest()
+        if observed_digest != digest:
+            raise StageError(
+                f"Stage 05 sequence checksum disagrees with the sequence for {accession}"
+            )
+        if accession in sequences and sequences[accession] != sequence:
+            raise StageError(
+                f"Stage 05 contains conflicting candidate sequences for {accession}"
+            )
+        sequences[accession] = sequence
+    return sequences
+
+
 def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, str]:
-    """Load requested sequences from fresh proteomes or reused OrthoFinder working files."""
+    """Load exact requested sequences from published authorities in priority order.
+
+    Stage 05 is authoritative for candidate-group members because it already
+    reconciles OrthoFinder identifiers and validates each protein sequence. Fresh
+    prepared proteomes and the reused OrthoFinder working directory remain
+    fallbacks for workflows that do not publish that table.
+
+    Args:
+        config: Validated workflow configuration.
+        accessions: Exact parsed candidate accessions requested by Stage 09.
+
+    Returns:
+        Available exact protein sequences keyed by accession.
+    """
+    requested = {str(accession).strip() for accession in accessions if str(accession).strip()}
+    if not requested:
+        return {}
     prepared = config.run_root / "01_prepared_proteomes" / "prepared_proteomes.tsv"
     sequences: dict[str, str] = {}
+    candidate_authority = _candidate_group_sequence_authority(config)
+    if candidate_authority is not None:
+        sequences.update(
+            _load_candidate_group_sequences(
+                path=candidate_authority,
+                accessions=requested,
+            )
+        )
+        LOGGER.info(
+            "Loaded %d/%d requested sequences from the Stage 05 authority",
+            len(sequences),
+            len(requested),
+        )
+    missing_accessions = requested.difference(sequences)
+    if not missing_accessions:
+        return sequences
     if prepared.is_file():
         _, rows = read_tsv(prepared)
         for row in rows:
@@ -365,7 +504,7 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                 / row["prepared_fasta_relative_path"]
             )
             for header, sequence in iter_fasta(path=fasta):
-                for accession in accessions.intersection(
+                for accession in missing_accessions.intersection(
                     parse_fasta_identifier(header=header)
                 ):
                     if accession in sequences and sequences[accession] != sequence:
@@ -373,13 +512,18 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                             f"Conflicting prepared sequences for accession {accession}"
                         )
                     sequences[accession] = sequence
+        missing_accessions = requested.difference(sequences)
+        LOGGER.info(
+            "Loaded %d/%d requested sequences after prepared-proteome fallback",
+            len(sequences),
+            len(requested),
+        )
+    if not missing_accessions:
         return sequences
     working = config.run_root / "04_orthofinder" / "Results" / "WorkingDirectory"
     sequence_ids = working / "SequenceIDs.txt"
     if not sequence_ids.is_file():
-        raise StageError(
-            "Neither prepared proteomes nor reused OrthoFinder SequenceIDs.txt are available"
-        )
+        return sequences
     internal_to_accession: dict[str, str] = {}
     with sequence_ids.open("r", encoding="utf-8") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
@@ -391,7 +535,7 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                 raise StageError(
                     f"Malformed SequenceIDs.txt row at {sequence_ids}:{line_number}"
                 )
-            matches = accessions.intersection(
+            matches = missing_accessions.intersection(
                 parse_fasta_identifier(header=raw_identifier)
             )
             if len(matches) > 1:
@@ -400,7 +544,13 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                 )
             if matches:
                 internal_to_accession[internal_id] = next(iter(matches))
-    for fasta in sorted(working.glob("Species*.fa")):
+    species_indices = sorted(
+        {internal_id.split("_", maxsplit=1)[0] for internal_id in internal_to_accession}
+    )
+    fasta_paths = [working / f"Species{index}.fa" for index in species_indices]
+    for fasta in fasta_paths:
+        if not fasta.is_file():
+            raise StageError(f"OrthoFinder working FASTA is missing: {fasta}")
         for header, sequence in iter_fasta(path=fasta):
             internal_id = header.split(maxsplit=1)[0]
             accession = internal_to_accession.get(internal_id)
@@ -411,6 +561,11 @@ def _load_sequences(config: WorkflowConfig, accessions: set[str]) -> dict[str, s
                     f"Conflicting OrthoFinder sequences for accession {accession}"
                 )
             sequences[accession] = sequence
+    LOGGER.info(
+        "Loaded %d/%d requested sequences after OrthoFinder fallback",
+        len(sequences),
+        len(requested),
+    )
     return sequences
 
 
@@ -1041,6 +1196,12 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         )
     requested_accessions = {str(record["candidate_accession"]) for record in selected}
     sequences = _load_sequences(config=config, accessions=requested_accessions)
+    if requested_accessions and not sequences:
+        raise StageError(
+            "Stage 09 resolved zero exact FASTA sequences for "
+            f"{len(requested_accessions)} selected accessions; candidate-group "
+            "sequence conservation cannot be assessed"
+        )
     mapping_records = _read_query(
         path=copied["pocket_residue_mappings"],
         query=(
@@ -1089,6 +1250,10 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
                 "prediction_unavailable_count": sum(
                     not bool(row["prediction_available"]) for row in status
                 ),
+                "sequence_available_accession_count": len(sequences),
+                "sequence_unavailable_accession_count": len(
+                    requested_accessions.difference(sequences)
+                ),
                 "group_conservation_summary_count": len(summaries),
                 "pocket_sequence_coordinate_count": len(sequence_coordinates),
                 "exact_pocket_sequence_coordinate_count": sum(
@@ -1111,6 +1276,8 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
             "requested_accession_count",
             "selected_pocket_count",
             "prediction_unavailable_count",
+            "sequence_available_accession_count",
+            "sequence_unavailable_accession_count",
             "group_conservation_summary_count",
             "pocket_sequence_coordinate_count",
             "exact_pocket_sequence_coordinate_count",

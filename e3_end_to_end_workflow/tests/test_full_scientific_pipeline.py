@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -327,7 +328,7 @@ def test_downloaded_evidence_to_app_ready_release(
                 "0_0",
                 "Q9SA03",
                 8,
-                "fixture",
+                hashlib.sha256(b"MACDEFGH").hexdigest(),
                 "MACDEFGH",
             ),
             (
@@ -339,7 +340,7 @@ def test_downloaded_evidence_to_app_ready_release(
                 "0_1",
                 "Q00002",
                 8,
-                "fixture",
+                hashlib.sha256(b"MACDEFGH").hexdigest(),
                 "MACDEFGH",
             ),
         ],
