@@ -41,7 +41,7 @@ from e3workflow.io_utils import (
     write_tsv,
 )
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
-from e3workflow.reporting import summarise_declared_outputs, write_stage_report
+from e3workflow.reporting import summarise_outputs, write_stage_report
 from e3workflow.prioritisation import run_prestructure_stage
 from e3workflow.production import (
     run_candidate_evidence_stage,
@@ -537,10 +537,17 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             stage.memory_mb,
             stage.runtime_minutes,
         )
-        logger.info(
-            "Expected outputs: %s",
-            ", ".join(stage.expected_outputs) or "explicit skipped-stage record",
-        )
+        if stage.enabled:
+            logger.info(
+                "Expected outputs: %s",
+                ", ".join(stage.expected_outputs),
+            )
+        else:
+            logger.info(
+                "Configured scientific outputs are inactive while this stage is disabled: %s",
+                ", ".join(stage.expected_outputs) or "none",
+            )
+            logger.info("Expected skipped-stage output: SKIPPED.tsv")
         logger.info(
             "Benchmarking: process-tree CPU, memory, I/O, processes and threads every %.3f s; "
             "the run summary also records broader runner timing and optional Slurm accounting.",
@@ -685,7 +692,16 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             run_internal_stage(config, stage_name, staging)
         if stage.enabled:
             validate_expected_outputs(staging, stage.expected_outputs)
-        logger.info("Validated %d declared outputs.", len(stage.expected_outputs))
+            report_paths = stage.expected_outputs
+            logger.info("Validated %d declared outputs.", len(stage.expected_outputs))
+        else:
+            report_paths = ("SKIPPED.tsv",)
+            validate_expected_outputs(staging, report_paths)
+            logger.info(
+                "Validated the explicit skipped-stage record; configured scientific output "
+                "count=%d (inactive).",
+                len(stage.expected_outputs),
+            )
         resource_usage, resource_samples = monitor.stop(
             return_code=stage_return_code,
             status=status,
@@ -708,10 +724,10 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
         )
         logger.info("Freezing the stage log before calculating the checksum inventory.")
         close_logger(logger)
-        result_summaries = summarise_declared_outputs(
+        result_summaries = summarise_outputs(
             config=config,
-            stage_name=stage_name,
             stage_root=staging,
+            relative_paths=report_paths,
         )
         outputs_before_report = inventory_files(
             staging,
@@ -750,8 +766,12 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
             "benchmark": resource_usage.as_record(),
             "execution": execution,
             "validation": {
-                "declared_output_count": len(stage.expected_outputs),
-                "declared_outputs_validated": True,
+                "configured_output_count": len(stage.expected_outputs),
+                "declared_output_count": (
+                    len(stage.expected_outputs) if stage.enabled else 0
+                ),
+                "declared_outputs_validated": stage.enabled,
+                "skipped_record_validated": not stage.enabled,
                 "upstream_manifests_validated": len(dependencies),
             },
             "result_summaries": result_summaries,

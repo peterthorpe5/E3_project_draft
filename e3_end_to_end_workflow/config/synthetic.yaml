@@ -60,7 +60,8 @@ stages:
     enabled: false
     required: false
     evidence_mode: disabled
-    expected_outputs: []
+    expected_outputs:
+      - structural_alignment/tables/structural_alignments.parquet
   10_integrated_resource:
     enabled: true
     required: true

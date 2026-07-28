@@ -316,20 +316,33 @@ def test_upstream_manifest_tampering(
 
 
 def test_disabled_optional_stage(synthetic_config: Path) -> None:
-    """An optional disabled stage is explicit and remains in lineage."""
+    """A disabled stage reports its skip record, not inactive scientific outputs."""
 
     import yaml
 
     raw = yaml.safe_load(synthetic_config.read_text())
     raw["stages"]["01_prepared_proteomes"].update(
-        enabled=False, required=False, expected_outputs=[]
+        enabled=False,
+        required=False,
+        expected_outputs=["inactive/tables/prepared_proteomes.parquet"],
     )
     synthetic_config.write_text(yaml.safe_dump(raw), encoding="utf-8")
     config = load_config(synthetic_config)
     initialise_stage_tokens(config)
     execute_stage(config, "00_inputs")
     manifest = execute_stage(config, "01_prepared_proteomes")
-    assert json.loads(manifest.read_text())["status"] == "skipped_optional"
+    payload = json.loads(manifest.read_text())
+    assert payload["status"] == "skipped_optional"
+    assert payload["validation"] == {
+        "configured_output_count": 1,
+        "declared_output_count": 0,
+        "declared_outputs_validated": False,
+        "skipped_record_validated": True,
+        "upstream_manifests_validated": 1,
+    }
+    assert [item["path"] for item in payload["result_summaries"]] == ["SKIPPED.tsv"]
+    assert payload["result_summaries"][0]["row_count"] == 1
+    assert not (manifest.parent / "inactive").exists()
     assert (manifest.parent / "report" / "stage_report.html").is_file()
 
 

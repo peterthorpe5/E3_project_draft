@@ -468,11 +468,22 @@ def summarise_output(
     return record
 
 
-def summarise_declared_outputs(
-    *, config: WorkflowConfig, stage_name: str, stage_root: Path
+def summarise_outputs(
+    *,
+    config: WorkflowConfig,
+    stage_root: Path,
+    relative_paths: Sequence[str],
 ) -> list[dict[str, Any]]:
-    """Summarise every validated output explicitly declared for a stage."""
-    stage = config.stage(stage_name)
+    """Summarise validated stage outputs or an explicit skipped-stage record.
+
+    Args:
+        config: Validated workflow configuration.
+        stage_root: Temporary stage directory containing the outputs.
+        relative_paths: Validated paths relative to ``stage_root``.
+
+    Returns:
+        Bounded, JSON-serialisable summaries in configured order.
+    """
     return [
         summarise_output(
             stage_root=stage_root,
@@ -480,7 +491,7 @@ def summarise_declared_outputs(
             preview_rows=config.reporting.preview_rows,
             max_columns=config.reporting.max_table_columns,
         )
-        for relative_path in stage.expected_outputs
+        for relative_path in relative_paths
     ]
 
 
@@ -788,6 +799,7 @@ def write_stage_report(
     command = str(execution.get("display_command", ""))
     dependencies = stage_dependencies(stage_name)
     status = str(stage_summary.get("status", "unknown"))
+    skipped_optional = status == "skipped_optional"
     synthetic_warning = (
         '<p class="synthetic">SYNTHETIC TEST RUN — NOT A SCIENTIFIC RESULT</p>'
         if config.mode == "synthetic"
@@ -795,7 +807,15 @@ def write_stage_report(
     )
     cards = _cards(
         (
-            ("Status", status, "Published only after declared outputs passed validation."),
+            (
+                "Status",
+                status,
+                (
+                    "Published after the explicit skipped-stage record passed validation."
+                    if skipped_optional
+                    else "Published only after declared outputs passed validation."
+                ),
+            ),
             ("Wall time", f"{_number(benchmark.get('wall_seconds')):,.2f} s", "Monitored scope."),
             ("CPU time", f"{_number(benchmark.get('total_cpu_seconds')):,.2f} s", "User + system."),
             (
@@ -803,7 +823,15 @@ def write_stage_report(
                 f"{_number(benchmark.get('peak_rss_mb')):,.2f} MiB",
                 "Sampled process tree.",
             ),
-            ("Outputs", str(len(result_summaries)), "Declared result contract."),
+            (
+                "Outputs",
+                str(len(result_summaries)),
+                (
+                    "Explicit skipped-stage record."
+                    if skipped_optional
+                    else "Declared result contract."
+                ),
+            ),
             (
                 "Published files",
                 str(len(output_inventory)),
