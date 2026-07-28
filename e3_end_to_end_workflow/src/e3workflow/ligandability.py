@@ -74,6 +74,26 @@ POCKET_CONSERVATION_FIELDS = (
     "interpretation",
 )
 
+POCKET_CONSERVATION_COLUMN_TYPES = {
+    "structured_accession_count": "BIGINT",
+    "structured_species_count": "BIGINT",
+    "conserved_component_accession_count": "BIGINT",
+    "conserved_component_species_count": "BIGINT",
+    "conserved_component_fraction": "DOUBLE",
+    "aligned_region_start": "BIGINT",
+    "aligned_region_end": "BIGINT",
+    "mean_pairwise_region_overlap": "DOUBLE",
+    "median_pairwise_region_overlap": "DOUBLE",
+    "mean_chemical_group_conservation": "DOUBLE",
+    "minimum_druggability_score": "DOUBLE",
+    "mean_druggability_score": "DOUBLE",
+    "all_assessed_members_pass_druggability": "BOOLEAN",
+    "mean_pocket_plddt_fraction": "DOUBLE",
+    "all_assessed_members_pass_mapping": "BOOLEAN",
+    "predictor_agreement_fraction": "DOUBLE",
+    "conserved_pocket_score": "DOUBLE",
+}
+
 POCKET_MEMBER_FIELDS = (
     "cluster_id",
     "primary_group_id",
@@ -1011,6 +1031,7 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         parquet_path=stage_root / "tables" / "pocket_conservation_summary.parquet",
         fieldnames=POCKET_CONSERVATION_FIELDS,
         records=summaries,
+        column_types=POCKET_CONSERVATION_COLUMN_TYPES,
     )
     write_records(
         tsv_path=stage_root / "tables" / "pocket_conservation_members.tsv",

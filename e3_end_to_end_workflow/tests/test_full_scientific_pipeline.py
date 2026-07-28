@@ -12,8 +12,12 @@ from typing import Any, Sequence
 import duckdb
 
 from e3workflow.config import load_config
-from e3workflow.integration import run_app_ready_stage, run_integrated_stage
-from e3workflow.ligandability import run_ligandability_stage
+from e3workflow.integration import _final_query, run_app_ready_stage, run_integrated_stage
+from e3workflow.ligandability import (
+    POCKET_CONSERVATION_COLUMN_TYPES,
+    POCKET_CONSERVATION_FIELDS,
+    run_ligandability_stage,
+)
 from e3workflow.prioritisation import run_prestructure_stage
 from e3workflow.production import run_domain_stage, run_expression_stage
 from e3workflow.resources import (
@@ -21,6 +25,7 @@ from e3workflow.resources import (
     build_expression_manifest,
     build_ligandability_manifest,
 )
+from e3workflow.tabular import write_records
 
 
 def _write_parquet(
@@ -110,6 +115,101 @@ def _annotation(accession: str) -> dict[str, Any]:
         ],
         "error": "",
     }
+
+
+def test_final_query_accepts_legacy_empty_varchar_conservation_table(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """Stage 10 must accept empty Stage 09 Parquet files created before typed schemas."""
+    prestructure = tmp_path / "prestructure.parquet"
+    _write_parquet(
+        prestructure,
+        (
+            "cluster_id VARCHAR, primary_group_type VARCHAR, primary_group_id VARCHAR, "
+            "orthofinder_orthogroup_ids VARCHAR, "
+            "orthofinder_hierarchical_group_ids VARCHAR, candidate_accessions VARCHAR, "
+            "prestructure_score DOUBLE, target_species_total BIGINT, "
+            "target_species_fraction DOUBLE, mandatory_species_fraction DOUBLE, "
+            "domain_species_fraction DOUBLE, expression_species_fraction DOUBLE, "
+            "grant_aligned_stringent_pass BOOLEAN, evidence_completeness_fraction DOUBLE, "
+            "inclusion_reasons VARCHAR, exclusion_reasons VARCHAR, missing_evidence VARCHAR, "
+            "profile_name VARCHAR"
+        ),
+        [
+            (
+                "cluster_legacy_empty",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                "OG0001",
+                "N0.HOG0001",
+                "Q9SA03",
+                0.8,
+                2,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                True,
+                1.0,
+                "fixture",
+                "",
+                "structural evidence unavailable",
+                "fixture_profile",
+            )
+        ],
+    )
+    conservation = tmp_path / "legacy_empty_conservation.parquet"
+    _write_parquet(
+        conservation,
+        ", ".join(f"{field} VARCHAR" for field in POCKET_CONSERVATION_FIELDS),
+        [],
+    )
+
+    query = _final_query(
+        config=load_config(synthetic_config),
+        prestructure=prestructure,
+        conservation=conservation,
+        alignment_summary=None,
+    )
+    connection = duckdb.connect(":memory:")
+    try:
+        row = connection.execute(
+            "SELECT conservation_status, structural_species_fraction, "
+            "three_dimensional_alignment_status, grant_aligned_final_pass "
+            f"FROM ({query}) AS final"
+        ).fetchone()
+    finally:
+        connection.close()
+
+    assert row == ("NO_STRUCTURAL_EVIDENCE", 0.0, "NOT_ASSESSED", False)
+
+
+def test_empty_conservation_output_has_typed_parquet_schema(tmp_path: Path) -> None:
+    """New empty Stage 09 outputs must retain their scientific column types."""
+    parquet_path = tmp_path / "pocket_conservation_summary.parquet"
+    write_records(
+        tsv_path=tmp_path / "pocket_conservation_summary.tsv",
+        parquet_path=parquet_path,
+        fieldnames=POCKET_CONSERVATION_FIELDS,
+        records=[],
+        column_types=POCKET_CONSERVATION_COLUMN_TYPES,
+    )
+    connection = duckdb.connect(":memory:")
+    try:
+        schema = {
+            str(row[0]): str(row[1])
+            for row in connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)",
+                [str(parquet_path)],
+            ).fetchall()
+        }
+    finally:
+        connection.close()
+
+    assert schema["structured_species_count"] == "BIGINT"
+    assert schema["conserved_component_fraction"] == "DOUBLE"
+    assert schema["all_assessed_members_pass_mapping"] == "BOOLEAN"
 
 
 def test_downloaded_evidence_to_app_ready_release(
