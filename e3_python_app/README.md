@@ -42,6 +42,9 @@ Environment equivalents are `E3_RESOURCE_DUCKDB`, `E3_RESOURCE_PARQUET`,
 
 The reporter provides:
 
+- a dedicated Final recommendations view containing the top-20 review
+  shortlist, strict grant-aligned predictions, evolutionary-group scorecard,
+  contributors, representative audit and exclusion reasons;
 - a grant overview separating Milestone 1 conservation evidence from Milestone
   2 conserved structural/chemical starting space;
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
@@ -56,6 +59,8 @@ The reporter provides:
 The integrated DuckDB remains the complete authority. The single master Parquet
 contains one wide row per candidate group, while one-to-many group members,
 pockets, domain hits and residue matches remain detailed DuckDB relations.
+The structural-completion release also publishes the decision-facing workbook
+and normalised tables under `10_integrated_resource/final_results`.
 
 ## Install and validate
 

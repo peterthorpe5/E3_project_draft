@@ -5,11 +5,15 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.9.7` supports two equally explicit production strategies:
+Version `0.10.0` supports three explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
-  conserved-pocket comparison, report and application resource; and
+  conserved-pocket comparison, report and application resource;
+- **structural completion** for the grant decision: import the completed pre-structure stages from
+  an immutable parent run, select one auditable representative per target species and evolutionary
+  group, scatter ligandability and US-align/TM-align jobs, and publish a top-20 Excel/HTML
+  scorecard without silently changing the reviewed rank; and
 - **fresh scalable execution** for a future, larger proteome panel: prepare an arbitrary manifest
   of proteomes and run configured component adapters under the same output contracts.
 
@@ -40,6 +44,15 @@ previous-analysis authorities and submits the complete generation DAG through a 
 controller.
 
 ## How to start
+
+For the grant structural-completion run, use the supplied immutable
+`config/grant_aligned_structural_completion_top20_v0_10_0_20260728.cluster.yaml`.
+It imports checksum-validated Stages 02-08 from the completed v0.9.7 parent,
+selects at most 600 auditable primary structures across the top 50 distinct
+evolutionary groups, and scatters four-core ligandability and structural jobs.
+Submit with `--max-jobs 100`. The existing parent run is read-only and the new
+results are written under the separate
+`grant_aligned_structural_completion_top20_v0_10_0_20260728` run name.
 
 Normal cluster use submits the Snakemake controller itself as a small Slurm job:
 

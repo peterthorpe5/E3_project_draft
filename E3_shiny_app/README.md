@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.4.0 is the grant-focused R reporter for the PT_E3_6 workflow. It is a
+Version 0.4.0 is the grant-focused R reporter for the PT_E3_7 workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -8,22 +8,25 @@ while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
 The main sections follow the evidence path required by the grant:
 
-1. **Candidates** – combined discovery, conservation, domain, expression and
+1. **Final recommendations** – the top-20 review shortlist, strict
+   grant-aligned predictions, group-level scorecard, DeepClust contributors,
+   representative audit and explicit exclusion reasons.
+2. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-2. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
+3. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
    species membership, member accessions and candidate-relevant sequences.
-3. **Domains** – catalogued E3-associated domain support and explicit annotation
+4. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-4. **Expression evidence** – identifier mapping and broad Expression Atlas
+5. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives.
-5. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+6. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-6. **Pocket conservation** – conserved pocket-bearing alignment regions and
+7. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-7. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+8. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation.
-8. **Provenance and QC** – release metadata, relation catalogue and source paths.
+9. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`

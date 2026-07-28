@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -11,7 +12,7 @@ import duckdb
 
 from e3workflow.config import WorkflowConfig
 from e3workflow.errors import StageError
-from e3workflow.io_utils import write_tsv
+from e3workflow.io_utils import read_tsv, write_tsv
 from e3workflow.orthology_groups import (
     candidate_mapping_rows,
     choose_primary_groups,
@@ -19,7 +20,7 @@ from e3workflow.orthology_groups import (
 )
 from e3workflow.production import find_one, find_orthology_table, split_accessions
 from e3workflow.resources import EXPRESSION_RESOURCE_TYPES, read_resource_manifest
-from e3workflow.tabular import quote_literal, write_records
+from e3workflow.tabular import parquet_columns, quote_literal, write_records
 
 PRESTRUCTURE_FIELDS = (
     "computational_rank",
@@ -77,13 +78,80 @@ PRESTRUCTURE_FIELDS = (
 )
 
 STRUCTURE_ACCESSION_FIELDS = (
+    "evolutionary_group_rank",
+    "evolutionary_group_key",
     "computational_rank",
     "cluster_id",
     "primary_group_type",
     "primary_group_id",
     "candidate_accession",
     "species_column",
+    "raw_identifier",
+    "parsed_entry",
+    "review_status",
+    "mapping_status",
+    "sequence_length",
+    "group_reference_length",
+    "length_ratio",
+    "likely_full_length",
+    "alternative_accession_count",
     "prestructure_score",
+    "selection_reason",
+)
+
+EVOLUTIONARY_GROUP_PREFIX_FIELDS = (
+    "evolutionary_group_rank",
+    "evolutionary_group_key",
+    "primary_group_type",
+    "primary_group_id",
+    "lead_cluster_id",
+    "lead_computational_rank",
+    "contributing_deepclust_cluster_count",
+    "contributing_deepclust_cluster_ids",
+    "best_prestructure_score",
+    "mean_prestructure_score",
+    "minimum_prestructure_score",
+)
+
+EVOLUTIONARY_GROUP_FIELDS = EVOLUTIONARY_GROUP_PREFIX_FIELDS + tuple(
+    f"lead_{field}"
+    for field in PRESTRUCTURE_FIELDS
+    if field
+    not in {
+        "cluster_id",
+        "primary_group_type",
+        "primary_group_id",
+        "computational_rank",
+        "prestructure_score",
+    }
+)
+
+EVOLUTIONARY_CONTRIBUTOR_FIELDS = (
+    "evolutionary_group_rank",
+    "evolutionary_group_key",
+) + PRESTRUCTURE_FIELDS
+
+REPRESENTATIVE_AUDIT_FIELDS = (
+    "evolutionary_group_rank",
+    "evolutionary_group_key",
+    "cluster_id",
+    "primary_group_type",
+    "primary_group_id",
+    "species_column",
+    "candidate_accession",
+    "raw_identifier",
+    "parsed_entry",
+    "review_status",
+    "mapping_status",
+    "is_input_candidate",
+    "sequence_length",
+    "group_reference_length",
+    "length_ratio",
+    "likely_full_length",
+    "alternative_accession_count",
+    "representative_selected",
+    "selection_rank_within_species",
+    "selection_status",
     "selection_reason",
 )
 
@@ -99,6 +167,362 @@ REVIEW_FIELDS = (
     "review_date",
     "review_comments",
 )
+
+
+def _evolutionary_group_key(record: Mapping[str, Any]) -> str:
+    """Return a stable key that does not conflate DeepClust and OrthoFinder."""
+    return f"{record['primary_group_type']}:{record['primary_group_id']}"
+
+
+def build_evolutionary_group_records(
+    records: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Aggregate cluster rankings into distinct evolutionary candidate groups.
+
+    The original DeepClust rows remain unchanged in the contributor table. A
+    deterministic lead cluster supplies the display-level evidence for each
+    distinct primary OrthoFinder group.
+    """
+    grouped: dict[tuple[str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    for record in records:
+        group_type = str(record.get("primary_group_type", ""))
+        group_id = str(record.get("primary_group_id", ""))
+        if group_type and group_id:
+            grouped[(group_type, group_id)].append(record)
+    ordered_groups = sorted(
+        grouped.items(),
+        key=lambda item: (
+            min(int(row["computational_rank"]) for row in item[1]),
+            item[0][0],
+            item[0][1],
+        ),
+    )
+    groups: list[dict[str, Any]] = []
+    contributors: list[dict[str, Any]] = []
+    for group_rank, ((group_type, group_id), members) in enumerate(
+        ordered_groups,
+        start=1,
+    ):
+        ordered_members = sorted(
+            members,
+            key=lambda row: (
+                int(row["computational_rank"]),
+                -float(row["prestructure_score"]),
+                str(row["cluster_id"]),
+            ),
+        )
+        lead = ordered_members[0]
+        scores = [float(row["prestructure_score"]) for row in ordered_members]
+        group_key = _evolutionary_group_key(lead)
+        group_record: dict[str, Any] = {
+            "evolutionary_group_rank": group_rank,
+            "evolutionary_group_key": group_key,
+            "primary_group_type": group_type,
+            "primary_group_id": group_id,
+            "lead_cluster_id": lead["cluster_id"],
+            "lead_computational_rank": lead["computational_rank"],
+            "contributing_deepclust_cluster_count": len(ordered_members),
+            "contributing_deepclust_cluster_ids": ";".join(
+                str(row["cluster_id"]) for row in ordered_members
+            ),
+            "best_prestructure_score": max(scores),
+            "mean_prestructure_score": statistics.mean(scores),
+            "minimum_prestructure_score": min(scores),
+        }
+        for field in PRESTRUCTURE_FIELDS:
+            if field in {
+                "cluster_id",
+                "primary_group_type",
+                "primary_group_id",
+                "computational_rank",
+                "prestructure_score",
+            }:
+                continue
+            group_record[f"lead_{field}"] = lead.get(field)
+        groups.append(group_record)
+        for member in ordered_members:
+            contributors.append(
+                {
+                    "evolutionary_group_rank": group_rank,
+                    "evolutionary_group_key": group_key,
+                    **{field: member.get(field) for field in PRESTRUCTURE_FIELDS},
+                }
+            )
+    return groups, contributors
+
+
+def _representative_sort_key(record: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Return a conservative deterministic full-length representative order."""
+    ratio = float(record["length_ratio"])
+    reviewed = "reviewed" in str(record.get("review_status", "")).lower()
+    mapped = "mapped" in str(record.get("mapping_status", "")).lower()
+    return (
+        not bool(record["likely_full_length"]),
+        not reviewed,
+        not bool(record.get("is_input_candidate", False)),
+        not mapped,
+        abs(math.log(ratio)) if ratio > 0 else math.inf,
+        -int(record["sequence_length"]),
+        str(record["candidate_accession"]),
+        str(record["raw_identifier"]),
+    )
+
+
+def derive_structural_representatives(
+    *,
+    config: WorkflowConfig,
+    stage_root: Path,
+) -> None:
+    """Derive one auditable representative per target species and group."""
+    tables = stage_root / "tables"
+    ranking_path = tables / "computational_prestructure_ranking.parquet"
+    member_path = find_orthology_table(
+        root=config.run_root / "05_orthology",
+        name="candidate_group_member_sequences.parquet",
+    )
+    available_member_columns = set(parquet_columns(member_path))
+    required_member_columns = {
+        "cluster_id",
+        "record_type",
+        "group_id",
+        "species",
+        "parsed_accession",
+        "sequence_length",
+    }
+    missing_member_columns = sorted(
+        required_member_columns.difference(available_member_columns)
+    )
+    if missing_member_columns:
+        raise StageError(
+            "Candidate-group member table is missing required representative "
+            f"selection columns: {', '.join(missing_member_columns)}"
+        )
+    optional_expressions = {
+        "raw_identifier": (
+            "raw_identifier"
+            if "raw_identifier" in available_member_columns
+            else "CAST(parsed_accession AS VARCHAR) AS raw_identifier"
+        ),
+        "parsed_entry": (
+            "parsed_entry"
+            if "parsed_entry" in available_member_columns
+            else "''::VARCHAR AS parsed_entry"
+        ),
+        "review_status": (
+            "review_status"
+            if "review_status" in available_member_columns
+            else "''::VARCHAR AS review_status"
+        ),
+        "mapping_status": (
+            "mapping_status"
+            if "mapping_status" in available_member_columns
+            else "''::VARCHAR AS mapping_status"
+        ),
+        "is_input_candidate": (
+            "is_input_candidate"
+            if "is_input_candidate" in available_member_columns
+            else "FALSE::BOOLEAN AS is_input_candidate"
+        ),
+    }
+    connection = duckdb.connect(":memory:")
+    try:
+        ranked = _records_from_query(
+            connection=connection,
+            query=(
+                "SELECT * FROM read_parquet("
+                f"{quote_literal(ranking_path)}) ORDER BY computational_rank"
+            ),
+        )
+        member_rows = _records_from_query(
+            connection=connection,
+            query=(
+                "SELECT cluster_id, record_type, group_id, species, "
+                f"{optional_expressions['raw_identifier']}, parsed_accession, "
+                f"{optional_expressions['parsed_entry']}, "
+                f"{optional_expressions['review_status']}, "
+                f"{optional_expressions['mapping_status']}, "
+                f"{optional_expressions['is_input_candidate']}, "
+                "sequence_length FROM read_parquet("
+                f"{quote_literal(member_path)})"
+            ),
+        )
+    except duckdb.Error as exc:
+        raise StageError(f"Could not derive structural representatives: {exc}") from exc
+    finally:
+        connection.close()
+    groups, contributors = build_evolutionary_group_records(ranked)
+    selected_groups = {
+        (str(row["primary_group_type"]), str(row["primary_group_id"])): row
+        for row in groups
+        if int(row["evolutionary_group_rank"])
+        <= config.analysis.prioritisation.structure_group_limit
+    }
+    candidates_by_group_species: dict[
+        tuple[str, str, str],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+    target_species = set(config.analysis.prioritisation.target_species)
+    for member in member_rows:
+        group_key = (str(member["record_type"]), str(member["group_id"]))
+        species = str(member["species"])
+        accession = str(member.get("parsed_accession", "")).strip()
+        if group_key not in selected_groups or species not in target_species:
+            continue
+        if not accession:
+            continue
+        candidates_by_group_species[(group_key[0], group_key[1], species)].append(
+            dict(member)
+        )
+    reference_lengths: dict[tuple[str, str], float] = {}
+    for group_key in selected_groups:
+        species_maxima = [
+            max(
+                int(row["sequence_length"])
+                for row in candidates
+            )
+            for (record_type, group_id, _species), candidates in
+            candidates_by_group_species.items()
+            if (record_type, group_id) == group_key and candidates
+        ]
+        reference_lengths[group_key] = (
+            float(statistics.median(species_maxima)) if species_maxima else 0.0
+        )
+    audit_rows: list[dict[str, Any]] = []
+    selected_rows: list[dict[str, Any]] = []
+    for (group_type, group_id, species), raw_candidates in sorted(
+        candidates_by_group_species.items()
+    ):
+        group = selected_groups[(group_type, group_id)]
+        reference_length = reference_lengths[(group_type, group_id)]
+        deduplicated: dict[str, dict[str, Any]] = {}
+        for candidate in raw_candidates:
+            accession = str(candidate["parsed_accession"])
+            existing = deduplicated.get(accession)
+            if existing is None or int(candidate["sequence_length"]) > int(
+                existing["sequence_length"]
+            ):
+                deduplicated[accession] = candidate
+        prepared: list[dict[str, Any]] = []
+        for candidate in deduplicated.values():
+            sequence_length = int(candidate["sequence_length"])
+            ratio = (
+                sequence_length / reference_length if reference_length > 0 else 0.0
+            )
+            prepared.append(
+                {
+                    **candidate,
+                    "candidate_accession": candidate["parsed_accession"],
+                    "species_column": species,
+                    "group_reference_length": reference_length,
+                    "length_ratio": ratio,
+                    "likely_full_length": 0.75 <= ratio <= 1.35,
+                }
+            )
+        ordered = sorted(prepared, key=_representative_sort_key)
+        alternative_count = max(0, len(ordered) - 1)
+        for selection_rank, candidate in enumerate(ordered, start=1):
+            selected = selection_rank == 1
+            status = (
+                "SELECTED_PRIMARY_REPRESENTATIVE"
+                if selected
+                else "RETAINED_ALTERNATIVE_NOT_SELECTED"
+            )
+            reason = (
+                "one deterministic likely-full-length representative per target "
+                "species and evolutionary candidate group"
+                if candidate["likely_full_length"]
+                else (
+                    "best available accession selected but its length is outside "
+                    "the conservative group-relative full-length interval"
+                )
+            )
+            audit = {
+                "evolutionary_group_rank": group["evolutionary_group_rank"],
+                "evolutionary_group_key": group["evolutionary_group_key"],
+                "cluster_id": group["lead_cluster_id"],
+                "primary_group_type": group_type,
+                "primary_group_id": group_id,
+                "species_column": species,
+                "candidate_accession": candidate["candidate_accession"],
+                "raw_identifier": candidate.get("raw_identifier", ""),
+                "parsed_entry": candidate.get("parsed_entry", ""),
+                "review_status": candidate.get("review_status", ""),
+                "mapping_status": candidate.get("mapping_status", ""),
+                "is_input_candidate": candidate.get("is_input_candidate", False),
+                "sequence_length": candidate["sequence_length"],
+                "group_reference_length": reference_length,
+                "length_ratio": candidate["length_ratio"],
+                "likely_full_length": candidate["likely_full_length"],
+                "alternative_accession_count": alternative_count,
+                "representative_selected": selected,
+                "selection_rank_within_species": selection_rank,
+                "selection_status": status,
+                "selection_reason": reason,
+            }
+            audit_rows.append(audit)
+            if selected:
+                selected_rows.append(
+                    {
+                        field: (
+                            group["lead_computational_rank"]
+                            if field == "computational_rank"
+                            else group["best_prestructure_score"]
+                            if field == "prestructure_score"
+                            else audit.get(field, "")
+                        )
+                        for field in STRUCTURE_ACCESSION_FIELDS
+                    }
+                )
+    write_records(
+        tsv_path=tables / "evolutionary_candidate_group_ranking.tsv",
+        parquet_path=tables / "evolutionary_candidate_group_ranking.parquet",
+        fieldnames=EVOLUTIONARY_GROUP_FIELDS,
+        records=groups,
+    )
+    write_records(
+        tsv_path=tables / "evolutionary_group_cluster_contributors.tsv",
+        parquet_path=tables / "evolutionary_group_cluster_contributors.parquet",
+        fieldnames=EVOLUTIONARY_CONTRIBUTOR_FIELDS,
+        records=contributors,
+    )
+    write_records(
+        tsv_path=tables / "structural_representative_selection_audit.tsv",
+        parquet_path=tables / "structural_representative_selection_audit.parquet",
+        fieldnames=REPRESENTATIVE_AUDIT_FIELDS,
+        records=audit_rows,
+    )
+    write_records(
+        tsv_path=tables / "structural_analysis_accessions.tsv",
+        parquet_path=tables / "structural_analysis_accessions.parquet",
+        fieldnames=STRUCTURE_ACCESSION_FIELDS,
+        records=selected_rows,
+    )
+    write_tsv(
+        tables / "ligandability_accessions.tsv",
+        [
+            {
+                "accession": row["candidate_accession"],
+                "evolutionary_group_rank": row["evolutionary_group_rank"],
+                "evolutionary_group_key": row["evolutionary_group_key"],
+                "cluster_id": row["cluster_id"],
+                "primary_group_type": row["primary_group_type"],
+                "primary_group_id": row["primary_group_id"],
+                "species_column": row["species_column"],
+                "sequence_length": row["sequence_length"],
+            }
+            for row in selected_rows
+        ],
+        (
+            "accession",
+            "evolutionary_group_rank",
+            "evolutionary_group_key",
+            "cluster_id",
+            "primary_group_type",
+            "primary_group_id",
+            "species_column",
+            "sequence_length",
+        ),
+    )
 
 
 def safe_fraction(numerator: float, denominator: float) -> float:
@@ -574,10 +998,23 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         (row["cluster_id"], row["candidate_accession"]): row for row in structural_rows
     }
     write_records(
-        tsv_path=tables / "structural_analysis_accessions.tsv",
-        parquet_path=tables / "structural_analysis_accessions.parquet",
-        fieldnames=STRUCTURE_ACCESSION_FIELDS,
+        tsv_path=tables / "structural_analysis_accessions_all_members.tsv",
+        parquet_path=tables / "structural_analysis_accessions_all_members.parquet",
+        fieldnames=(
+            "computational_rank",
+            "cluster_id",
+            "primary_group_type",
+            "primary_group_id",
+            "candidate_accession",
+            "species_column",
+            "prestructure_score",
+            "selection_reason",
+        ),
         records=[unique_structural[key] for key in sorted(unique_structural)],
+    )
+    derive_structural_representatives(config=config, stage_root=stage_root)
+    _, selected_representatives = read_tsv(
+        tables / "structural_analysis_accessions.tsv"
     )
     review_rows = [
         {
@@ -607,7 +1044,10 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "computational_structure_group_count": sum(
                     bool(row["computational_structure_selected"]) for row in ranked
                 ),
-                "structural_accession_count": len(unique_structural),
+                "all_member_structural_accession_count": len(unique_structural),
+                "selected_structural_representative_count": len(
+                    selected_representatives
+                ),
                 "score_minimum": min(
                     (float(row["prestructure_score"]) for row in ranked),
                     default=math.nan,

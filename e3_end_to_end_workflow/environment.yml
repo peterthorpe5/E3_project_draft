@@ -7,6 +7,7 @@ dependencies:
   - python>=3.11,<3.14
   - pip
   - duckdb>=1.4,<2
+  - openpyxl>=3.1,<4
   - pyyaml>=6,<7
   - psutil>=6,<8
   - packaging>=24,<27

@@ -215,6 +215,7 @@ def render_app() -> None:
             tabs = st.tabs(
                 [
                     "Overview",
+                    "Final recommendations",
                     "Candidates",
                     "Orthology",
                     "Domains",
@@ -230,8 +231,9 @@ def render_app() -> None:
             with tabs[0]:
                 _render_overview(connection=connection, config=config)
             for tab, section in zip(
-                tabs[1:8],
+                tabs[1:9],
                 (
+                    "final_recommendations",
                     "candidates",
                     "orthology",
                     "domains",
@@ -247,15 +249,15 @@ def render_app() -> None:
                         config=config,
                         section=section,
                     )
-            with tabs[8]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[9]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[10]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[10]:
+            with tabs[11]:
                 _render_section(
                     connection=connection,
                     config=config,

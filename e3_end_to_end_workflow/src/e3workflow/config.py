@@ -31,7 +31,17 @@ STAGE_NAMES = (
 )
 
 EVIDENCE_MODES = frozenset(
-    {"validate", "prepare", "reuse", "generate", "download", "derive", "synthetic", "disabled"}
+    {
+        "validate",
+        "prepare",
+        "reuse",
+        "parent_reuse",
+        "generate",
+        "download",
+        "derive",
+        "synthetic",
+        "disabled",
+    }
 )
 CONFIG_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
 INTERNAL_PRODUCTION_STAGES = frozenset(
@@ -45,6 +55,7 @@ INTERNAL_PRODUCTION_STAGES = frozenset(
         "07_expression",
         "08_shortlist_gate",
         "09_ligandability",
+        "09b_structural_alignment",
         "10_integrated_resource",
         "11_app_ready",
     }
@@ -373,6 +384,11 @@ class LigandabilityAnalysisConfig:
     """Pocket selection and conserved-region analysis settings."""
 
     mode: str
+    component_config: Path | None
+    conda_environment: str
+    shard_threads: int
+    shard_memory_mb: int
+    shard_runtime_minutes: int
     mafft_executable: str
     minimum_druggability_score: float
     minimum_mapping_fraction: float
@@ -384,6 +400,10 @@ class LigandabilityAnalysisConfig:
 class StructuralAlignmentAnalysisConfig:
     """Three-dimensional structural-superposition and pocket-comparison settings."""
 
+    conda_environment: str
+    shard_threads: int
+    shard_memory_mb: int
+    shard_runtime_minutes: int
     usalign_executable: str
     tmalign_executable: str
     distance_threshold_angstrom: float
@@ -394,6 +414,7 @@ class StructuralAlignmentAnalysisConfig:
     minimum_structural_chemical_group_conservation: float
     minimum_group_support_fraction: float
     use_for_prioritisation: bool
+    require_for_final_recommendation: bool
     prioritisation_weight: float
 
 
@@ -442,6 +463,7 @@ class WorkflowConfig:
     output_root: Path
     run_name: str
     mode: str
+    parent_run_root: Path | None
     proteomes_manifest: Path
     seeds_manifest: Path
     shortlist_manifest: Path
@@ -548,14 +570,19 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
     if config.stage("07_expression").enabled and not config.stage("07_expression").command:
         _append_resource(inputs, "expression_manifest", config.resources.expression_manifest)
         _append_resource(inputs, "inherited_sqlite", config.resources.inherited_sqlite)
-    if config.stage("09_ligandability").enabled and not config.stage(
-        "09_ligandability"
-    ).command:
-        _append_resource(
-            inputs,
-            "ligandability_manifest",
-            config.resources.ligandability_manifest,
-        )
+    if config.stage("09_ligandability").enabled:
+        if config.analysis.ligandability.mode == "generate":
+            _append_resource(
+                inputs,
+                "ligandability_component_config",
+                config.analysis.ligandability.component_config,
+            )
+        elif not config.stage("09_ligandability").command:
+            _append_resource(
+                inputs,
+                "ligandability_manifest",
+                config.resources.ligandability_manifest,
+            )
     if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         inputs.append(("shortlist", config.shortlist_manifest))
     return tuple(dict(inputs).items())
@@ -724,7 +751,7 @@ def _tool_configs(root: Mapping[str, Any]) -> tuple[ToolConfig, ...]:
     return tuple(configured)
 
 
-def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
+def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
     """Build validated domain, expression, pocket and prioritisation settings."""
     analysis = _mapping(root.get("analysis", {}), "analysis")
     domains = _mapping(analysis.get("domains", {}), "analysis.domains")
@@ -780,9 +807,10 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
     mode = _non_empty_string(
         ligandability.get("mode", "reuse_only"), "analysis.ligandability.mode"
     )
-    if mode not in {"reuse_only", "reuse_then_run_missing"}:
+    if mode not in {"reuse_only", "reuse_then_run_missing", "generate"}:
         raise ConfigurationError(
-            "analysis.ligandability.mode must be reuse_only or reuse_then_run_missing"
+            "analysis.ligandability.mode must be reuse_only, "
+            "reuse_then_run_missing or generate"
         )
     domain_mode = _non_empty_string(
         domains.get("mode", "interpro_api_cache"), "analysis.domains.mode"
@@ -798,6 +826,15 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
     if not isinstance(use_for_prioritisation, bool):
         raise ConfigurationError(
             "analysis.structural_alignment.use_for_prioritisation must be a boolean"
+        )
+    require_for_final_recommendation = structural_alignment.get(
+        "require_for_final_recommendation",
+        False,
+    )
+    if not isinstance(require_for_final_recommendation, bool):
+        raise ConfigurationError(
+            "analysis.structural_alignment.require_for_final_recommendation "
+            "must be a boolean"
         )
     max_retries = domains.get("max_retries", 4)
     if not isinstance(max_retries, int) or isinstance(max_retries, bool) or max_retries < 0:
@@ -888,6 +925,27 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
         ),
         ligandability=LigandabilityAnalysisConfig(
             mode=mode,
+            component_config=_optional_path(
+                ligandability.get("component_config"),
+                base,
+                "analysis.ligandability.component_config",
+            ),
+            conda_environment=_non_empty_string(
+                ligandability.get("conda_environment", "e3_ligandability"),
+                "analysis.ligandability.conda_environment",
+            ),
+            shard_threads=_positive_integer(
+                ligandability.get("shard_threads", 4),
+                "analysis.ligandability.shard_threads",
+            ),
+            shard_memory_mb=_positive_integer(
+                ligandability.get("shard_memory_mb", 16_000),
+                "analysis.ligandability.shard_memory_mb",
+            ),
+            shard_runtime_minutes=_positive_integer(
+                ligandability.get("shard_runtime_minutes", 720),
+                "analysis.ligandability.shard_runtime_minutes",
+            ),
             mafft_executable=_non_empty_string(
                 ligandability.get("mafft_executable", "mafft"),
                 "analysis.ligandability.mafft_executable",
@@ -917,6 +975,25 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
             ),
         ),
         structural_alignment=StructuralAlignmentAnalysisConfig(
+            conda_environment=_non_empty_string(
+                structural_alignment.get(
+                    "conda_environment",
+                    "e3_structural_alignment",
+                ),
+                "analysis.structural_alignment.conda_environment",
+            ),
+            shard_threads=_positive_integer(
+                structural_alignment.get("shard_threads", 4),
+                "analysis.structural_alignment.shard_threads",
+            ),
+            shard_memory_mb=_positive_integer(
+                structural_alignment.get("shard_memory_mb", 8_000),
+                "analysis.structural_alignment.shard_memory_mb",
+            ),
+            shard_runtime_minutes=_positive_integer(
+                structural_alignment.get("shard_runtime_minutes", 240),
+                "analysis.structural_alignment.shard_runtime_minutes",
+            ),
             usalign_executable=_non_empty_string(
                 structural_alignment.get("usalign_executable", "USalign"),
                 "analysis.structural_alignment.usalign_executable",
@@ -979,6 +1056,7 @@ def _analysis_config(root: Mapping[str, Any]) -> AnalysisConfig:
                 maximum=1.0,
             ),
             use_for_prioritisation=use_for_prioritisation,
+            require_for_final_recommendation=require_for_final_recommendation,
             prioritisation_weight=_number(
                 structural_alignment.get("prioritisation_weight", 0.25),
                 "analysis.structural_alignment.prioritisation_weight",
@@ -1108,10 +1186,15 @@ def load_config(path: Path) -> WorkflowConfig:
     base = path_base
     project_root = _resolve_path(run.get("project_root"), base, "run.project_root")
     output_root = _resolve_path(run.get("output_root"), base, "run.output_root")
+    parent_run_root = _optional_path(
+        run.get("parent_run_root"),
+        base,
+        "run.parent_run_root",
+    )
     raw_stages = _mapping(root.get("stages"), "stages")
     raw_benchmarking = _mapping(root.get("benchmarking", {}), "benchmarking")
     raw_reporting = _mapping(root.get("reporting", {}), "reporting")
-    analysis_config = _analysis_config(root)
+    analysis_config = _analysis_config(root, base)
     tool_configs = _tool_configs(root)
     sample_interval = raw_benchmarking.get("sample_interval_seconds", 5.0)
     collect_slurm = raw_benchmarking.get("collect_slurm_accounting", True)
@@ -1170,6 +1253,8 @@ def load_config(path: Path) -> WorkflowConfig:
         if mode == "production" and evidence_mode == "generate" and not command and name not in {
             "01_prepared_proteomes",
             "06_domains",
+            "09_ligandability",
+            "09b_structural_alignment",
         }:
             raise ConfigurationError(
                 f"Fresh generation requires an argv command for production stage: {name}"
@@ -1192,6 +1277,7 @@ def load_config(path: Path) -> WorkflowConfig:
             and enabled
             and not command
             and name not in INTERNAL_PRODUCTION_STAGES
+            and evidence_mode != "parent_reuse"
         )
         if missing_production_command:
             raise ConfigurationError(f"Production stage requires an argv command: {name}")
@@ -1212,6 +1298,23 @@ def load_config(path: Path) -> WorkflowConfig:
                 runtime_minutes,
             )
         )
+    parent_reuse_stages = [
+        stage.name for stage in stages if stage.evidence_mode == "parent_reuse"
+    ]
+    if parent_reuse_stages and parent_run_root is None:
+        raise ConfigurationError(
+            "run.parent_run_root is required when a stage uses parent_reuse"
+        )
+    unsupported_parent_reuse = [
+        name
+        for name in parent_reuse_stages
+        if STAGE_NAMES.index(name) > STAGE_NAMES.index("08_shortlist_gate")
+    ]
+    if unsupported_parent_reuse:
+        raise ConfigurationError(
+            "parent_reuse is supported only through 08_shortlist_gate: "
+            + ", ".join(unsupported_parent_reuse)
+        )
     structural_stage = next(
         stage for stage in stages if stage.name == "09b_structural_alignment"
     )
@@ -1219,6 +1322,14 @@ def load_config(path: Path) -> WorkflowConfig:
         raise ConfigurationError(
             "analysis.structural_alignment.use_for_prioritisation requires the "
             "09b_structural_alignment stage to be enabled"
+        )
+    if (
+        analysis_config.structural_alignment.require_for_final_recommendation
+        and not structural_stage.enabled
+    ):
+        raise ConfigurationError(
+            "analysis.structural_alignment.require_for_final_recommendation "
+            "requires the 09b_structural_alignment stage to be enabled"
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")
@@ -1230,6 +1341,7 @@ def load_config(path: Path) -> WorkflowConfig:
         output_root=output_root,
         run_name=run_name,
         mode=mode,
+        parent_run_root=parent_run_root,
         proteomes_manifest=_resolve_path(
             inputs.get("proteomes_manifest"), base, "inputs.proteomes_manifest"
         ),

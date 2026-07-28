@@ -4,12 +4,37 @@ from pathlib import Path
 
 from e3workflow.config import STAGE_NAMES, controlled_input_paths, load_config, stage_dependencies
 from e3workflow.control import stage_token_path
+from e3workflow.distributed import (
+    ligandability_task_count,
+    structural_alignment_task_count,
+)
 
 
 CONFIG_PATH = Path(workflow.configfiles[0]).resolve()
 E3_CONFIG = load_config(CONFIG_PATH)
 RUN_ROOT = E3_CONFIG.run_root
-STAGE_PATTERN = "|".join(STAGE_NAMES)
+DISTRIBUTED_LIGANDABILITY = (
+    E3_CONFIG.mode == "production"
+    and E3_CONFIG.stage("09_ligandability").enabled
+    and E3_CONFIG.analysis.ligandability.mode == "generate"
+)
+DISTRIBUTED_STRUCTURAL_ALIGNMENT = (
+    E3_CONFIG.mode == "production"
+    and E3_CONFIG.stage("09b_structural_alignment").enabled
+    and E3_CONFIG.stage("09b_structural_alignment").evidence_mode == "generate"
+)
+GENERIC_STAGE_NAMES = [
+    stage
+    for stage in STAGE_NAMES
+    if not (
+        (stage == "09_ligandability" and DISTRIBUTED_LIGANDABILITY)
+        or (
+            stage == "09b_structural_alignment"
+            and DISTRIBUTED_STRUCTURAL_ALIGNMENT
+        )
+    )
+]
+STAGE_PATTERN = "|".join(GENERIC_STAGE_NAMES)
 STAGE_MANIFESTS = [
     str(RUN_ROOT / stage_name / "stage_manifest.json")
     for stage_name in STAGE_NAMES
@@ -23,6 +48,13 @@ BENCHMARK_MANIFEST = BENCHMARK_ROOT / "benchmark_manifest.json"
 REPORT_ROOT = RUN_ROOT / "reports"
 RUN_REPORT = REPORT_ROOT / "e3_workflow_summary.html"
 REPORT_MANIFEST = REPORT_ROOT / "report_manifest.json"
+LIGANDABILITY_TASKS = [
+    f"{index:04d}" for index in range(ligandability_task_count(E3_CONFIG))
+]
+STRUCTURAL_ALIGNMENT_TASKS = [
+    f"{index:04d}"
+    for index in range(structural_alignment_task_count(E3_CONFIG))
+]
 
 
 def stage_inputs(wildcards):
@@ -110,6 +142,165 @@ rule aggregate_benchmarks:
         e3-workflow aggregate-benchmarks --config {params.config:q} \
             --output-dir {params.output_dir:q} 2>&1 | tee {log:q}
         """
+
+
+if DISTRIBUTED_LIGANDABILITY:
+    rule run_ligandability_shard:
+        input:
+            stage08=str(RUN_ROOT / "08_shortlist_gate" / "stage_manifest.json"),
+            token=str(stage_token_path(E3_CONFIG, "09_ligandability"))
+        output:
+            marker=str(
+                RUN_ROOT
+                / ".work_cache"
+                / "09_ligandability"
+                / "task_{task}"
+                / "task_complete.tsv"
+            )
+        params:
+            config=str(CONFIG_PATH),
+            task_index=lambda wildcards: int(wildcards.task)
+        threads:
+            E3_CONFIG.analysis.ligandability.shard_threads
+        resources:
+            mem_mb=E3_CONFIG.analysis.ligandability.shard_memory_mb,
+            runtime=E3_CONFIG.analysis.ligandability.shard_runtime_minutes
+        log:
+            str(RUN_ROOT / "workflow_logs" / "09_ligandability_shards" / "{task}.log")
+        conda:
+            "../environment.yml"
+        wildcard_constraints:
+            task="\\d{4}"
+        shell:
+            """
+            set -o pipefail
+            e3-workflow run-ligandability-shard --config {params.config:q} \
+                --task-index {params.task_index} 2>&1 | tee {log:q}
+            """
+
+
+    rule aggregate_ligandability_shards:
+        input:
+            stage08=str(RUN_ROOT / "08_shortlist_gate" / "stage_manifest.json"),
+            token=str(stage_token_path(E3_CONFIG, "09_ligandability")),
+            markers=expand(
+                str(
+                    RUN_ROOT
+                    / ".work_cache"
+                    / "09_ligandability"
+                    / "task_{task}"
+                    / "task_complete.tsv"
+                ),
+                task=LIGANDABILITY_TASKS,
+            )
+        output:
+            manifest=str(RUN_ROOT / "09_ligandability" / "stage_manifest.json"),
+            report=str(RUN_ROOT / "09_ligandability" / "report" / "stage_report.html")
+        params:
+            config=str(CONFIG_PATH)
+        threads:
+            E3_CONFIG.stage("09_ligandability").threads
+        resources:
+            mem_mb=E3_CONFIG.stage("09_ligandability").memory_mb,
+            runtime=E3_CONFIG.stage("09_ligandability").runtime_minutes
+        log:
+            str(RUN_ROOT / "workflow_logs" / "09_ligandability.aggregate.log")
+        conda:
+            "../environment.yml"
+        shell:
+            """
+            set -o pipefail
+            e3-workflow run-stage --config {params.config:q} \
+                --stage 09_ligandability --verbose 2>&1 | tee {log:q}
+            """
+
+
+if DISTRIBUTED_STRUCTURAL_ALIGNMENT:
+    rule run_structural_alignment_shard:
+        input:
+            stage09=str(RUN_ROOT / "09_ligandability" / "stage_manifest.json"),
+            token=str(stage_token_path(E3_CONFIG, "09b_structural_alignment"))
+        output:
+            marker=str(
+                RUN_ROOT
+                / ".work_cache"
+                / "09b_structural_alignment"
+                / "task_{task}"
+                / "task_complete.tsv"
+            )
+        params:
+            config=str(CONFIG_PATH),
+            task_index=lambda wildcards: int(wildcards.task)
+        threads:
+            E3_CONFIG.analysis.structural_alignment.shard_threads
+        resources:
+            mem_mb=E3_CONFIG.analysis.structural_alignment.shard_memory_mb,
+            runtime=E3_CONFIG.analysis.structural_alignment.shard_runtime_minutes
+        log:
+            str(
+                RUN_ROOT
+                / "workflow_logs"
+                / "09b_structural_alignment_shards"
+                / "{task}.log"
+            )
+        conda:
+            "../environment.yml"
+        wildcard_constraints:
+            task="\\d{4}"
+        shell:
+            """
+            set -o pipefail
+            e3-workflow run-structural-alignment-shard \
+                --config {params.config:q} --task-index {params.task_index} \
+                2>&1 | tee {log:q}
+            """
+
+
+    rule aggregate_structural_alignment_shards:
+        input:
+            stage09=str(RUN_ROOT / "09_ligandability" / "stage_manifest.json"),
+            token=str(stage_token_path(E3_CONFIG, "09b_structural_alignment")),
+            markers=expand(
+                str(
+                    RUN_ROOT
+                    / ".work_cache"
+                    / "09b_structural_alignment"
+                    / "task_{task}"
+                    / "task_complete.tsv"
+                ),
+                task=STRUCTURAL_ALIGNMENT_TASKS,
+            )
+        output:
+            manifest=str(
+                RUN_ROOT / "09b_structural_alignment" / "stage_manifest.json"
+            ),
+            report=str(
+                RUN_ROOT
+                / "09b_structural_alignment"
+                / "report"
+                / "stage_report.html"
+            )
+        params:
+            config=str(CONFIG_PATH)
+        threads:
+            E3_CONFIG.stage("09b_structural_alignment").threads
+        resources:
+            mem_mb=E3_CONFIG.stage("09b_structural_alignment").memory_mb,
+            runtime=E3_CONFIG.stage("09b_structural_alignment").runtime_minutes
+        log:
+            str(
+                RUN_ROOT
+                / "workflow_logs"
+                / "09b_structural_alignment.aggregate.log"
+            )
+        conda:
+            "../environment.yml"
+        shell:
+            """
+            set -o pipefail
+            e3-workflow run-stage --config {params.config:q} \
+                --stage 09b_structural_alignment --verbose 2>&1 | tee {log:q}
+            """
 
 
 rule run_stage:

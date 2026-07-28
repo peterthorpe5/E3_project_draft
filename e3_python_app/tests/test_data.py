@@ -36,6 +36,10 @@ def test_identifier_and_capability_classification() -> None:
     with pytest.raises(AppError, match="Unsafe"):
         quote_identifier("bad; DROP TABLE x")
     assert infer_capability("hogs", []) == "orthology"
+    assert infer_capability(
+        "top_20_computational_review_shortlist",
+        [],
+    ) == "final_recommendations"
     assert infer_capability("structural_alignment_summary", []) == "structural_alignment"
     assert infer_capability("pocket_conservation_summary", []) == "pocket_conservation"
     assert infer_capability("scores", ["fpocket_score"]) == "ligandability"
@@ -208,6 +212,21 @@ def test_sections_and_column_defaults(resource_db: Path) -> None:
         columns = relation_columns(connection, "candidate_master_results")
         selected = default_columns("candidates", columns)
         assert {"cluster_id", "final_score"}.issubset(selected)
+        final_defaults = default_columns(
+            "final_recommendations",
+            (
+                "final_evolutionary_rank",
+                "boss_review_status",
+                "primary_group_id",
+                "missing_evidence",
+            ),
+        )
+        assert final_defaults == [
+            "final_evolutionary_rank",
+            "boss_review_status",
+            "primary_group_id",
+            "missing_evidence",
+        ]
         with pytest.raises(AppError, match="Unknown result section"):
             relations_for_section(connection, "missing")
 

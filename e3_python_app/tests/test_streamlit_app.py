@@ -16,7 +16,8 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 11
+    assert len(app.tabs) == 12
+    assert app.tabs[1].label == "Final recommendations"
     assert len(app.multiselect) >= 8
     assert any("Columns to display" in item.label for item in app.multiselect)
     app.text_input[0].set_value("Q9SA03").run()
@@ -40,7 +41,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 11
+    assert len(app.tabs) == 12
 
 
 def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: Path) -> None:

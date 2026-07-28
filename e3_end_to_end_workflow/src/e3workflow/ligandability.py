@@ -134,6 +134,8 @@ STRUCTURAL_STATUS_FIELDS = (
     "primary_group_id",
     "candidate_accession",
     "species_column",
+    "evidence_source",
+    "prediction_available",
     "reused_prediction_available",
     "selected_pocket_available",
     "status",
@@ -896,27 +898,51 @@ def re_safe_filename(value: str) -> str:
 
 
 def _structural_status(
-    *, requested: Sequence[Mapping[str, Any]], selected: Sequence[Mapping[str, Any]]
+    *,
+    requested: Sequence[Mapping[str, Any]],
+    selected: Sequence[Mapping[str, Any]],
+    evidence_source: str = "reused_controlled_resource",
 ) -> list[dict[str, Any]]:
-    """Report explicit missing and available reused predictions for every request."""
+    """Report explicit missing and available predictions for every request."""
     selected_accessions = {str(record["candidate_accession"]) for record in selected}
+    reused = evidence_source == "reused_controlled_resource"
     return [
         {
             "cluster_id": record["cluster_id"],
             "primary_group_id": record["primary_group_id"],
             "candidate_accession": record["candidate_accession"],
             "species_column": record["species_column"],
-            "reused_prediction_available": record["candidate_accession"] in selected_accessions,
+            "evidence_source": evidence_source,
+            "prediction_available": record["candidate_accession"] in selected_accessions,
+            "reused_prediction_available": (
+                reused and record["candidate_accession"] in selected_accessions
+            ),
             "selected_pocket_available": record["candidate_accession"] in selected_accessions,
             "status": (
-                "REUSED_POCKET_SELECTED"
+                (
+                    "REUSED_POCKET_SELECTED"
+                    if reused
+                    else "GENERATED_POCKET_SELECTED"
+                )
                 if record["candidate_accession"] in selected_accessions
-                else "MISSING_REUSED_PREDICTION"
+                else (
+                    "MISSING_REUSED_PREDICTION"
+                    if reused
+                    else "GENERATED_PREDICTION_UNAVAILABLE"
+                )
             ),
             "reason": (
-                "best_available_reused_pocket_selected"
+                (
+                    "best_available_reused_pocket_selected"
+                    if reused
+                    else "best_available_generated_pocket_selected"
+                )
                 if record["candidate_accession"] in selected_accessions
-                else "no_matching_accession_in_controlled_ligandability_resources"
+                else (
+                    "no_matching_accession_in_controlled_ligandability_resources"
+                    if reused
+                    else "no_qualifying_generated_model_and_pocket_evidence"
+                )
             ),
         }
         for record in requested
@@ -924,8 +950,18 @@ def _structural_status(
 
 
 def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
-    """Reuse pocket predictions and measure conserved aligned pocket regions."""
-    manifest_path = config.resources.ligandability_manifest
+    """Acquire pocket predictions and measure conserved aligned pocket regions."""
+    if config.analysis.ligandability.mode == "generate":
+        from e3workflow.distributed import aggregate_ligandability_shards
+
+        manifest_path = aggregate_ligandability_shards(
+            config=config,
+            stage_root=stage_root,
+        )
+        evidence_source = "generated_distributed_campaign"
+    else:
+        manifest_path = config.resources.ligandability_manifest
+        evidence_source = "reused_controlled_resource"
     if manifest_path is None:
         raise StageError("inputs.ligandability_manifest is required")
     records = read_resource_manifest(
@@ -984,7 +1020,11 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         selected_tsv_rows,
         SELECTED_POCKET_FIELDS,
     )
-    status = _structural_status(requested=requested, selected=selected)
+    status = _structural_status(
+        requested=requested,
+        selected=selected,
+        evidence_source=evidence_source,
+    )
     write_records(
         tsv_path=stage_root / "tables" / "structural_prediction_status.tsv",
         parquet_path=stage_root / "tables" / "structural_prediction_status.parquet",
@@ -1044,9 +1084,9 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         [
             {
                 "requested_accession_count": len(requested),
-                "selected_reused_pocket_count": len(selected),
-                "missing_reused_prediction_count": sum(
-                    row["status"] == "MISSING_REUSED_PREDICTION" for row in status
+                "selected_pocket_count": len(selected),
+                "prediction_unavailable_count": sum(
+                    not bool(row["prediction_available"]) for row in status
                 ),
                 "group_conservation_summary_count": len(summaries),
                 "pocket_sequence_coordinate_count": len(sequence_coordinates),
@@ -1059,6 +1099,7 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
                     for row in summaries
                 ),
                 "mode": config.analysis.ligandability.mode,
+                "evidence_source": evidence_source,
                 "interpretation": (
                     "AlphaFold confidence and FPocket/P2Rank predictions support prioritisation; "
                     "they do not prove binding or degradation"
@@ -1067,13 +1108,14 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         ],
         (
             "requested_accession_count",
-            "selected_reused_pocket_count",
-            "missing_reused_prediction_count",
+            "selected_pocket_count",
+            "prediction_unavailable_count",
             "group_conservation_summary_count",
             "pocket_sequence_coordinate_count",
             "exact_pocket_sequence_coordinate_count",
             "conserved_region_supported_count",
             "mode",
+            "evidence_source",
             "interpretation",
         ),
     )

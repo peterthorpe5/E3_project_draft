@@ -1,6 +1,21 @@
 #' Grant-facing result-section definitions and bounded query helpers.
 
 result_section_specs <- list(
+  final_recommendations = list(
+    title = "Final computational recommendations",
+    question = paste(
+      "Which distinct evolutionary candidate groups should be reviewed in the",
+      "top 20, which pass every enabled grant-aligned gate, and why?"
+    ),
+    relations = c(
+      "top_20_computational_review_shortlist",
+      "grant_aligned_predicted_candidates",
+      "final_evolutionary_candidate_prioritisation",
+      "final_evolutionary_group_cluster_contributors",
+      "final_candidate_exclusion_audit",
+      "candidate_master_results"
+    )
+  ),
   candidates = list(
     title = "Candidate prioritisation",
     question = paste(
@@ -165,6 +180,17 @@ relations_for_result_section <- function(relation_names, section) {
 #' @return Default selected columns.
 default_result_columns <- function(section, available) {
   preferences <- list(
+    final_recommendations = c(
+      "final_evolutionary_rank", "structurally_supported_rank",
+      "boss_review_status", "grant_aligned_prediction_status",
+      "evolutionary_group_key", "primary_group_type", "primary_group_id",
+      "contributing_deepclust_cluster_count",
+      "contributing_deepclust_cluster_ids",
+      "lead_cluster_id", "final_score", "target_species_fraction",
+      "domain_species_fraction", "expression_species_fraction",
+      "selected_pocket_count", "structural_species_fraction",
+      "inclusion_reasons", "exclusion_reasons", "missing_evidence"
+    ),
     candidates = c(
       "final_rank", "recommendation_status", "cluster_id",
       "primary_group_id", "orthofinder_orthogroup_ids",

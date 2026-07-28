@@ -65,6 +65,10 @@ ui <- bslib::page_sidebar(
       grant_overview_ui("grant_overview")
     ),
     bslib::nav_panel(
+      "Final recommendations",
+      result_section_ui("final_recommendation_results", "final_recommendations")
+    ),
+    bslib::nav_panel(
       "Candidates",
       result_section_ui("candidate_results", "candidates")
     ),
@@ -150,6 +154,12 @@ server <- function(input, output, session) {
     resource_source = app_config$resource_source
   )
 
+  result_section_server(
+    "final_recommendation_results",
+    "final_recommendations",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
   result_section_server(
     "candidate_results",
     "candidates",

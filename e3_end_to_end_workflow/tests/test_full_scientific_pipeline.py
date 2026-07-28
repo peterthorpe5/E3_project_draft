@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import duckdb
+from openpyxl import load_workbook
 
 from e3workflow.config import load_config
 from e3workflow.integration import _final_query, run_app_ready_stage, run_integrated_stage
@@ -612,10 +613,30 @@ def test_downloaded_evidence_to_app_ready_release(
         config.run_root
         / "10_integrated_resource/reports/final_computational_prioritisation.html"
     ).is_file()
+    final_root = config.run_root / "10_integrated_resource/final_results"
+    assert (final_root / "top_20_computational_review_shortlist.parquet").is_file()
+    assert (final_root / "grant_aligned_predicted_candidates.parquet").is_file()
+    workbook = load_workbook(
+        final_root / "final_candidate_recommendations.xlsx",
+        read_only=False,
+        data_only=False,
+    )
+    try:
+        assert "Top_20_Review" in workbook.sheetnames
+        assert "Evolutionary_Groups" in workbook.sheetnames
+        assert all(
+            worksheet.freeze_panes == "A2"
+            for worksheet in workbook.worksheets
+        )
+    finally:
+        workbook.close()
     assert (config.run_root / "11_app_ready/app_release_manifest.json").is_file()
     assert (
         config.run_root / "11_app_ready/config/python_app_master_parquet.env"
     ).is_file()
     assert "E3_MAX_TABLE_ROWS=10000" in (
+        config.run_root / "11_app_ready/config/python_app.env"
+    ).read_text(encoding="utf-8")
+    assert "E3_FINAL_RESULTS_DIR=" in (
         config.run_root / "11_app_ready/config/python_app.env"
     ).read_text(encoding="utf-8")

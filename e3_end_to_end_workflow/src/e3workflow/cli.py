@@ -25,6 +25,10 @@ from e3workflow.diagnostics import (
     require_compatible_slurm_executor,
     require_matching_source,
 )
+from e3workflow.distributed import (
+    run_ligandability_shard,
+    run_structural_alignment_shard,
+)
 from e3workflow.errors import WorkflowError
 from e3workflow.fresh import validate_fresh_config
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
@@ -68,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     stage.add_argument("--config", type=Path, required=True)
     stage.add_argument("--stage", choices=STAGE_NAMES, required=True)
     stage.add_argument("--verbose", action="store_true")
+    ligandability_shard = subparsers.add_parser("run-ligandability-shard")
+    ligandability_shard.add_argument("--config", type=Path, required=True)
+    ligandability_shard.add_argument("--task-index", type=int, required=True)
+    structural_shard = subparsers.add_parser("run-structural-alignment-shard")
+    structural_shard.add_argument("--config", type=Path, required=True)
+    structural_shard.add_argument("--task-index", type=int, required=True)
     benchmarks = subparsers.add_parser("aggregate-benchmarks")
     benchmarks.add_argument("--config", type=Path, required=True)
     benchmarks.add_argument("--output-dir", type=Path)
@@ -271,6 +281,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "run-stage":
             manifest = execute_stage(load_config(args.config), args.stage, args.verbose)
             payload = {"stage_manifest": str(manifest)}
+        elif args.command == "run-ligandability-shard":
+            payload = run_ligandability_shard(
+                config=load_config(args.config),
+                task_index=args.task_index,
+            )
+        elif args.command == "run-structural-alignment-shard":
+            payload = run_structural_alignment_shard(
+                config=load_config(args.config),
+                task_index=args.task_index,
+            )
         elif args.command == "aggregate-benchmarks":
             config = load_config(path=args.config)
             payload = aggregate_run_benchmarks(

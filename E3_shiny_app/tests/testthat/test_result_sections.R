@@ -1,5 +1,6 @@
 testthat::test_that("grant-facing relation classification is stable", {
   relations <- c(
+    "top_20_computational_review_shortlist",
     "candidate_master_results",
     "candidate_group_member_sequences",
     "domain_summary",
@@ -8,6 +9,14 @@ testthat::test_that("grant-facing relation classification is stable", {
     "pocket_conservation_summary",
     "structural_alignment_summary",
     "resource_metadata"
+  )
+  testthat::expect_equal(
+    relations_for_result_section(relations, "final_recommendations"),
+    "top_20_computational_review_shortlist"
+  )
+  testthat::expect_equal(
+    infer_result_section("grant_aligned_predicted_candidates"),
+    "final_recommendations"
   )
   testthat::expect_equal(
     relations_for_result_section(relations, "orthology"),
@@ -40,6 +49,13 @@ testthat::test_that("each result section chooses only available default columns"
   testthat::expect_equal(
     default_result_columns("domains", c("one", "two")),
     c("one", "two")
+  )
+  testthat::expect_equal(
+    default_result_columns(
+      "final_recommendations",
+      c("final_evolutionary_rank", "boss_review_status", "other")
+    ),
+    c("final_evolutionary_rank", "boss_review_status")
   )
 })
 

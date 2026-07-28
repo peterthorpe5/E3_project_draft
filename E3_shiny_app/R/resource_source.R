@@ -8,7 +8,20 @@
 canonical_result_relations <- c(
   e3_candidate_master_results = "candidate_master_results",
   final_candidate_prioritisation = "final_candidate_prioritisation",
+  top_20_computational_review_shortlist =
+    "top_20_computational_review_shortlist",
+  grant_aligned_predicted_candidates =
+    "grant_aligned_predicted_candidates",
+  final_evolutionary_candidate_prioritisation =
+    "final_evolutionary_candidate_prioritisation",
+  final_evolutionary_group_cluster_contributors =
+    "final_evolutionary_group_cluster_contributors",
+  final_candidate_exclusion_audit = "final_candidate_exclusion_audit",
   computational_prestructure_ranking = "prestructure_ranking",
+  evolutionary_candidate_group_ranking =
+    "evolutionary_candidate_group_ranking",
+  evolutionary_group_cluster_contributors =
+    "evolutionary_group_cluster_contributors",
   e3_cluster_candidate_evidence = "candidate_evidence",
   candidate_membership_mapping = "candidate_orthology",
   candidate_cluster_orthology_summary = "candidate_orthology_summary",
@@ -21,6 +34,8 @@ canonical_result_relations <- c(
   candidate_expression_mapping = "candidate_expression_mapping",
   candidate_expression_summary = "candidate_expression_summary",
   structural_analysis_accessions = "structural_analysis_accessions",
+  structural_representative_selection_audit =
+    "structural_representative_selection_audit",
   selected_pockets = "selected_pockets",
   structural_prediction_status = "structural_prediction_status",
   pocket_conservation_summary = "pocket_conservation_summary",

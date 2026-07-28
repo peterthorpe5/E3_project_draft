@@ -29,6 +29,21 @@ ACCESSION_COLUMNS = (
 )
 
 SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
+    "final_recommendations": {
+        "title": "Final computational recommendations",
+        "description": (
+            "Which distinct evolutionary candidate groups should be reviewed in "
+            "the top 20, which pass every enabled grant-aligned gate, and why?"
+        ),
+        "relations": (
+            "top_20_computational_review_shortlist",
+            "grant_aligned_predicted_candidates",
+            "final_evolutionary_candidate_prioritisation",
+            "final_evolutionary_group_cluster_contributors",
+            "final_candidate_exclusion_audit",
+            "candidate_master_results",
+        ),
+    },
     "candidates": {
         "title": "Candidate prioritisation",
         "description": (
@@ -134,7 +149,24 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
 CANONICAL_PARQUET_RELATIONS = {
     "e3_candidate_master_results": "candidate_master_results",
     "final_candidate_prioritisation": "final_candidate_prioritisation",
+    "top_20_computational_review_shortlist": (
+        "top_20_computational_review_shortlist"
+    ),
+    "grant_aligned_predicted_candidates": "grant_aligned_predicted_candidates",
+    "final_evolutionary_candidate_prioritisation": (
+        "final_evolutionary_candidate_prioritisation"
+    ),
+    "final_evolutionary_group_cluster_contributors": (
+        "final_evolutionary_group_cluster_contributors"
+    ),
+    "final_candidate_exclusion_audit": "final_candidate_exclusion_audit",
     "computational_prestructure_ranking": "prestructure_ranking",
+    "evolutionary_candidate_group_ranking": (
+        "evolutionary_candidate_group_ranking"
+    ),
+    "evolutionary_group_cluster_contributors": (
+        "evolutionary_group_cluster_contributors"
+    ),
     "e3_cluster_candidate_evidence": "candidate_evidence",
     "candidate_membership_mapping": "candidate_orthology",
     "candidate_cluster_orthology_summary": "candidate_orthology_summary",
@@ -147,6 +179,9 @@ CANONICAL_PARQUET_RELATIONS = {
     "candidate_expression_mapping": "candidate_expression_mapping",
     "candidate_expression_summary": "candidate_expression_summary",
     "structural_analysis_accessions": "structural_analysis_accessions",
+    "structural_representative_selection_audit": (
+        "structural_representative_selection_audit"
+    ),
     "selected_pockets": "selected_pockets",
     "structural_prediction_status": "structural_prediction_status",
     "pocket_conservation_summary": "pocket_conservation_summary",
@@ -372,6 +407,15 @@ def infer_capability(relation: str, columns: Sequence[str]) -> str:
     """Classify a relation for navigation without changing scientific content."""
     text = " ".join([relation, *columns]).lower()
     for capability, terms in (
+        (
+            "final_recommendations",
+            (
+                "top_20_computational_review_shortlist",
+                "grant_aligned_predicted_candidates",
+                "final_evolutionary_candidate_prioritisation",
+                "final_candidate_exclusion_audit",
+            ),
+        ),
         ("structural_alignment", ("structural_alignment", "tm_score", "centroid_distance")),
         ("pocket_conservation", ("pocket_conservation", "pocket_sequence_coordinate")),
         ("orthology", ("orthogroup", "hog")),
@@ -409,6 +453,27 @@ def relations_for_section(
 def default_columns(section: str, available: Sequence[str]) -> list[str]:
     """Choose concise grant-facing defaults while keeping every column selectable."""
     preferences = {
+        "final_recommendations": (
+            "final_evolutionary_rank",
+            "structurally_supported_rank",
+            "boss_review_status",
+            "grant_aligned_prediction_status",
+            "evolutionary_group_key",
+            "primary_group_type",
+            "primary_group_id",
+            "contributing_deepclust_cluster_count",
+            "contributing_deepclust_cluster_ids",
+            "lead_cluster_id",
+            "final_score",
+            "target_species_fraction",
+            "domain_species_fraction",
+            "expression_species_fraction",
+            "selected_pocket_count",
+            "structural_species_fraction",
+            "inclusion_reasons",
+            "exclusion_reasons",
+            "missing_evidence",
+        ),
         "candidates": (
             "final_rank",
             "recommendation_status",

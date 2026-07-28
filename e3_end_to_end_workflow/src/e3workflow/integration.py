@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -12,14 +13,23 @@ import duckdb
 from e3workflow import __version__
 from e3workflow.config import WorkflowConfig
 from e3workflow.errors import StageError
-from e3workflow.io_utils import atomic_write_json, sha256_file, utc_now, write_tsv
+from e3workflow.excel_reporting import create_final_results_workbook
+from e3workflow.io_utils import (
+    atomic_write_json,
+    inventory_files,
+    sha256_file,
+    utc_now,
+    write_tsv,
+)
 from e3workflow.production import find_one, find_orthology_table
 from e3workflow.tabular import quote_identifier, quote_literal
 
 FINAL_FIELDS = (
     "final_rank",
     "stringent_rank",
+    "structurally_supported_rank",
     "recommendation_status",
+    "grant_aligned_prediction_status",
     "cluster_id",
     "primary_group_type",
     "primary_group_id",
@@ -51,6 +61,7 @@ FINAL_FIELDS = (
     "mean_pocket_plddt_fraction",
     "predictor_agreement_fraction",
     "grant_aligned_prestructure_pass",
+    "grant_aligned_base_pass",
     "grant_aligned_final_pass",
     "conservation_status",
     "inclusion_reasons",
@@ -76,7 +87,19 @@ RESOURCE_SECTIONS = {
     "candidate_expression_mapping": ("expression", "candidate_group_member"),
     "candidate_expression_summary": ("expression", "candidate_group_member"),
     "prestructure_ranking": ("prioritisation", "candidate"),
+    "evolutionary_candidate_group_ranking": (
+        "prioritisation",
+        "evolutionary_candidate_group",
+    ),
+    "evolutionary_group_cluster_contributors": (
+        "prioritisation",
+        "evolutionary_group_cluster_contributor",
+    ),
     "structural_analysis_accessions": ("ligandability", "candidate_group_member"),
+    "structural_representative_selection_audit": (
+        "ligandability",
+        "candidate_group_member",
+    ),
     "selected_pockets": ("ligandability", "pocket"),
     "structural_prediction_status": ("ligandability", "candidate_group_member"),
     "pocket_conservation_summary": ("pocket_conservation", "candidate"),
@@ -88,6 +111,26 @@ RESOURCE_SECTIONS = {
     "structural_alignment_summary": ("structural_alignment", "candidate"),
     "final_candidate_prioritisation": ("prioritisation", "candidate"),
     "candidate_master_results": ("prioritisation", "candidate"),
+    "final_evolutionary_candidate_prioritisation": (
+        "final_recommendations",
+        "evolutionary_candidate_group",
+    ),
+    "top_20_computational_review_shortlist": (
+        "final_recommendations",
+        "evolutionary_candidate_group",
+    ),
+    "grant_aligned_predicted_candidates": (
+        "final_recommendations",
+        "evolutionary_candidate_group",
+    ),
+    "final_evolutionary_group_cluster_contributors": (
+        "final_recommendations",
+        "evolutionary_group_cluster_contributor",
+    ),
+    "final_candidate_exclusion_audit": (
+        "final_recommendations",
+        "evolutionary_candidate_group",
+    ),
     "resource_metadata": ("provenance", "release"),
     "resource_relation_catalog": ("provenance", "relation"),
 }
@@ -120,6 +163,11 @@ def _final_query(
         )
     )
     use_alignment = "true" if structural_alignment.use_for_prioritisation else "false"
+    require_alignment = (
+        "true"
+        if structural_alignment.require_for_final_recommendation
+        else "false"
+    )
     return (
         "WITH pre AS (SELECT * FROM read_parquet("
         f"{quote_literal(prestructure)})), pockets AS (SELECT * FROM read_parquet("
@@ -183,7 +231,7 @@ def _final_query(
         f"{1.0 - structural_alignment.prioritisation_weight} + "
         "three_dimensional_pocket_score * "
         f"{structural_alignment.prioritisation_weight} ELSE base_structural_score END AS "
-        "structural_score FROM scores), decisions AS (SELECT *, prestructure_score * "
+        "structural_score FROM scores), base_decisions AS (SELECT *, prestructure_score * "
         f"{settings.prestructure_final_weight} + structural_score * "
         f"{settings.structural_final_weight} AS final_score, "
         "CAST(grant_aligned_stringent_pass AS BOOLEAN) AS grant_aligned_prestructure_pass, "
@@ -191,9 +239,11 @@ def _final_query(
         "'CONSERVED_REGION_SUPPORTED' AND minimum_druggability_score >= "
         f"{ligandability.minimum_druggability_score} AND all_assessed_members_pass_druggability "
         "AND all_assessed_members_pass_mapping AND structural_species_fraction >= "
-        f"{settings.minimum_structural_species_fraction} AND (NOT {use_alignment} OR "
-        "three_dimensional_alignment_status = 'CONSERVED_3D_POCKET_SUPPORTED') THEN true ELSE "
-        "false END AS "
+        f"{settings.minimum_structural_species_fraction} THEN true ELSE false END AS "
+        "grant_aligned_base_pass FROM refined_scores), decisions AS (SELECT *, "
+        "CASE WHEN grant_aligned_base_pass AND (NOT "
+        f"{require_alignment} OR three_dimensional_alignment_status = "
+        "'CONSERVED_3D_POCKET_SUPPORTED') THEN true ELSE false END AS "
         "grant_aligned_final_pass, concat_ws(';', CASE WHEN conservation_status <> "
         "'CONSERVED_REGION_SUPPORTED' THEN 'conserved_pocket_region_not_supported' END, CASE "
         "WHEN minimum_druggability_score < "
@@ -204,18 +254,25 @@ def _final_query(
         "CASE WHEN structural_species_fraction < "
         f"{settings.minimum_structural_species_fraction} THEN "
         "'structural_species_fraction_below_threshold' END, CASE WHEN "
-        f"{use_alignment} AND three_dimensional_alignment_status <> "
+        f"{require_alignment} AND three_dimensional_alignment_status <> "
         "'CONSERVED_3D_POCKET_SUPPORTED' THEN 'three_dimensional_pocket_not_supported' END) AS "
-        "structural_exclusion_reasons FROM refined_scores), ranked AS (SELECT *, "
+        "structural_exclusion_reasons FROM base_decisions), ranked AS (SELECT *, "
         "row_number() OVER (ORDER BY "
-        "grant_aligned_final_pass DESC, final_score DESC, evidence_completeness_fraction DESC, "
-        "cluster_id) AS final_rank, CASE WHEN grant_aligned_final_pass THEN row_number() OVER "
+        "grant_aligned_base_pass DESC, final_score DESC, evidence_completeness_fraction DESC, "
+        "cluster_id) AS final_rank, CASE WHEN grant_aligned_base_pass THEN row_number() OVER "
+        "(PARTITION BY grant_aligned_base_pass ORDER BY final_score DESC, cluster_id) END AS "
+        "stringent_rank, CASE WHEN grant_aligned_final_pass THEN row_number() OVER "
         "(PARTITION BY grant_aligned_final_pass ORDER BY final_score DESC, cluster_id) END AS "
-        "stringent_rank FROM decisions) SELECT final_rank, stringent_rank, CASE WHEN "
-        "grant_aligned_final_pass AND stringent_rank <= "
+        "structurally_supported_rank FROM decisions) SELECT final_rank, stringent_rank, "
+        "structurally_supported_rank, CASE WHEN "
+        "grant_aligned_final_pass AND structurally_supported_rank <= "
         f"{settings.final_candidate_limit} THEN 'PRIORITY_RECOMMENDATION' WHEN "
         "grant_aligned_final_pass THEN 'STRINGENT_PASS_OUTSIDE_TOP_LIMIT' ELSE "
-        "'FURTHER_EVIDENCE_OR_REVIEW_REQUIRED' END AS recommendation_status, cluster_id, "
+        "'FURTHER_EVIDENCE_OR_REVIEW_REQUIRED' END AS recommendation_status, CASE WHEN "
+        "grant_aligned_final_pass THEN 'GRANT_ALIGNED_PREDICTED_CANDIDATE' WHEN "
+        "three_dimensional_alignment_status = 'NOT_ASSESSED' THEN "
+        "'STRUCTURAL_EVIDENCE_NOT_ASSESSED' ELSE 'NOT_GRANT_ALIGNED_PREDICTED_CANDIDATE' END AS "
+        "grant_aligned_prediction_status, cluster_id, "
         "primary_group_type, primary_group_id, orthofinder_orthogroup_ids, "
         "orthofinder_hierarchical_group_ids, candidate_accessions, prestructure_score, "
         "ligandability_score, pocket_conservation_score, three_dimensional_pocket_score, "
@@ -230,7 +287,8 @@ def _final_query(
         "mean_pairwise_region_overlap, mean_chemical_group_conservation, "
         "mean_pocket_plddt_fraction, predictor_agreement_fraction, "
         "grant_aligned_prestructure_pass, "
-        "grant_aligned_final_pass, conservation_status, inclusion_reasons, exclusion_reasons, "
+        "grant_aligned_base_pass, grant_aligned_final_pass, conservation_status, "
+        "inclusion_reasons, exclusion_reasons, "
         "missing_evidence, structural_exclusion_reasons, profile_name, "
         "'computational evidence prioritisation; experimental E3 activity, binding and "
         "degradation remain unvalidated' AS interpretation FROM ranked ORDER BY final_rank"
@@ -254,6 +312,28 @@ def _copy_query_tsv(
     except duckdb.Error as exc:
         temporary.unlink(missing_ok=True)
         raise StageError(f"Could not publish TSV query {destination}: {exc}") from exc
+
+
+def _copy_query_parquet(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    query: str,
+    path: Path,
+) -> None:
+    """Atomically publish a DuckDB query as compressed Parquet."""
+    destination = Path(path).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.partial")
+    temporary.unlink(missing_ok=True)
+    try:
+        connection.execute(
+            f"COPY ({query}) TO {quote_literal(temporary)} "
+            "(FORMAT PARQUET, COMPRESSION ZSTD)"
+        )
+        temporary.replace(destination)
+    except duckdb.Error as exc:
+        temporary.unlink(missing_ok=True)
+        raise StageError(f"Could not publish Parquet query {destination}: {exc}") from exc
 
 
 def _create_table_from_parquet(
@@ -361,6 +441,95 @@ def _candidate_master_query(
     )
 
 
+def _final_evolutionary_query(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+) -> str:
+    """Build one decision row per distinct evolutionary candidate group."""
+    group_columns = _relation_columns(
+        connection=connection,
+        relation="evolutionary_candidate_group_ranking",
+    )
+    master_columns = _relation_columns(
+        connection=connection,
+        relation="candidate_master_results",
+    )
+    selections = [
+        "row_number() OVER (ORDER BY master.final_rank, "
+        "groups.evolutionary_group_rank, groups.evolutionary_group_key) "
+        "AS final_evolutionary_rank"
+    ]
+    for column in group_columns:
+        output_name = (
+            "prestructure_evolutionary_group_rank"
+            if column == "evolutionary_group_rank"
+            else column
+        )
+        selections.append(
+            f"groups.{quote_identifier(column)} AS {quote_identifier(output_name)}"
+        )
+    excluded_master = {
+        "cluster_id",
+        "primary_group_type",
+        "primary_group_id",
+    }
+    group_output_names = {
+        (
+            "prestructure_evolutionary_group_rank"
+            if column == "evolutionary_group_rank"
+            else column
+        )
+        for column in group_columns
+    }
+    for column in master_columns:
+        if column in excluded_master or column in group_output_names:
+            continue
+        selections.append(f"master.{quote_identifier(column)}")
+    return (
+        "SELECT "
+        + ", ".join(selections)
+        + " FROM evolutionary_candidate_group_ranking AS groups "
+        "JOIN candidate_master_results AS master "
+        "ON master.cluster_id = groups.lead_cluster_id "
+        "ORDER BY final_evolutionary_rank"
+    )
+
+
+def _final_contributor_query(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+) -> str:
+    """Build final cluster detail without conflating contributor and group rows."""
+    contributor_columns = _relation_columns(
+        connection=connection,
+        relation="evolutionary_group_cluster_contributors",
+    )
+    master_columns = _relation_columns(
+        connection=connection,
+        relation="candidate_master_results",
+    )
+    selections = [
+        f"contributors.{quote_identifier(column)}"
+        for column in contributor_columns
+    ]
+    contributor_set = set(contributor_columns)
+    for column in master_columns:
+        if column in contributor_set:
+            continue
+        selections.append(
+            f"master.{quote_identifier(column)} AS "
+            f"{quote_identifier(f'final_{column}')}"
+        )
+    return (
+        "SELECT "
+        + ", ".join(selections)
+        + " FROM evolutionary_group_cluster_contributors AS contributors "
+        "LEFT JOIN candidate_master_results AS master USING (cluster_id) "
+        "ORDER BY contributors.evolutionary_group_rank, "
+        "contributors.computational_rank, contributors.cluster_id"
+    )
+
+
 def _write_resource_relation_catalog(
     *,
     connection: duckdb.DuckDBPyConnection,
@@ -389,6 +558,11 @@ def _write_resource_relation_catalog(
     for relation_name in (
         "final_candidate_prioritisation",
         "candidate_master_results",
+        "final_evolutionary_candidate_prioritisation",
+        "top_20_computational_review_shortlist",
+        "grant_aligned_predicted_candidates",
+        "final_evolutionary_group_cluster_contributors",
+        "final_candidate_exclusion_audit",
         "resource_metadata",
         "resource_relation_catalog",
     ):
@@ -424,9 +598,24 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ("candidate_expression_summary", "07_expression", "candidate_expression_summary.parquet"),
         ("prestructure_ranking", "08_shortlist_gate", "computational_prestructure_ranking.parquet"),
         (
+            "evolutionary_candidate_group_ranking",
+            "08_shortlist_gate",
+            "evolutionary_candidate_group_ranking.parquet",
+        ),
+        (
+            "evolutionary_group_cluster_contributors",
+            "08_shortlist_gate",
+            "evolutionary_group_cluster_contributors.parquet",
+        ),
+        (
             "structural_analysis_accessions",
             "08_shortlist_gate",
             "structural_analysis_accessions.parquet",
+        ),
+        (
+            "structural_representative_selection_audit",
+            "08_shortlist_gate",
+            "structural_representative_selection_audit.parquet",
         ),
         ("selected_pockets", "09_ligandability", "selected_pockets.parquet"),
         (
@@ -679,6 +868,43 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             + _candidate_master_query(connection=connection)
         )
         connection.execute(
+            "CREATE TABLE final_evolutionary_candidate_prioritisation AS "
+            + _final_evolutionary_query(connection=connection)
+        )
+        connection.execute(
+            "CREATE TABLE final_evolutionary_group_cluster_contributors AS "
+            + _final_contributor_query(connection=connection)
+        )
+        connection.execute(
+            "CREATE TABLE top_20_computational_review_shortlist AS SELECT *, "
+            "CASE WHEN grant_aligned_final_pass THEN "
+            "'STRUCTURALLY_SUPPORTED_FOR_BOSS_REVIEW' ELSE "
+            "'BOSS_REVIEW_WITH_EXPLICIT_EVIDENCE_GAPS' END AS boss_review_status "
+            "FROM final_evolutionary_candidate_prioritisation "
+            "ORDER BY final_evolutionary_rank LIMIT ?",
+            [config.analysis.prioritisation.final_candidate_limit],
+        )
+        connection.execute(
+            "CREATE TABLE grant_aligned_predicted_candidates AS SELECT * "
+            "FROM final_evolutionary_candidate_prioritisation "
+            "WHERE grant_aligned_final_pass "
+            "ORDER BY final_evolutionary_rank LIMIT ?",
+            [config.analysis.prioritisation.final_candidate_limit],
+        )
+        connection.execute(
+            "CREATE TABLE final_candidate_exclusion_audit AS SELECT "
+            "final_evolutionary_rank, evolutionary_group_key, primary_group_type, "
+            "primary_group_id, lead_cluster_id, contributing_deepclust_cluster_count, "
+            "contributing_deepclust_cluster_ids, grant_aligned_prediction_status, "
+            "grant_aligned_prestructure_pass, grant_aligned_base_pass, "
+            "grant_aligned_final_pass, conservation_status, "
+            "three_dimensional_position_status, three_dimensional_alignment_status, "
+            "inclusion_reasons, exclusion_reasons, missing_evidence, "
+            "structural_exclusion_reasons FROM "
+            "final_evolutionary_candidate_prioritisation "
+            "WHERE NOT grant_aligned_final_pass ORDER BY final_evolutionary_rank"
+        )
+        connection.execute(
             "CREATE TABLE resource_metadata AS SELECT ? AS resource_name, ? AS package_version, "
             "? AS run_name, ? AS configuration_digest, ? AS scoring_profile, ? AS created_at",
             [
@@ -698,6 +924,16 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "SELECT * FROM final_candidate_prioritisation ORDER BY final_rank"
         ).fetchall()
         final_columns = [str(item[0]) for item in connection.description]
+        evolutionary_group_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM final_evolutionary_candidate_prioritisation"
+            ).fetchone()[0]
+        )
+        top_20_review_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM top_20_computational_review_shortlist"
+            ).fetchone()[0]
+        )
         _copy_query_tsv(
             connection=connection,
             query="SELECT * FROM final_candidate_prioritisation ORDER BY final_rank",
@@ -711,6 +947,45 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         connection.execute(
             "COPY candidate_master_results TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
             [str(master_parquet)],
+        )
+        final_root = stage_root / "final_results"
+        final_queries = {
+            "final_evolutionary_candidate_prioritisation": (
+                "SELECT * FROM final_evolutionary_candidate_prioritisation "
+                "ORDER BY final_evolutionary_rank"
+            ),
+            "top_20_computational_review_shortlist": (
+                "SELECT * FROM top_20_computational_review_shortlist "
+                "ORDER BY final_evolutionary_rank"
+            ),
+            "grant_aligned_predicted_candidates": (
+                "SELECT * FROM grant_aligned_predicted_candidates "
+                "ORDER BY final_evolutionary_rank"
+            ),
+            "final_evolutionary_group_cluster_contributors": (
+                "SELECT * FROM final_evolutionary_group_cluster_contributors "
+                "ORDER BY evolutionary_group_rank, computational_rank, cluster_id"
+            ),
+            "final_candidate_exclusion_audit": (
+                "SELECT * FROM final_candidate_exclusion_audit "
+                "ORDER BY final_evolutionary_rank"
+            ),
+        }
+        for basename, query in final_queries.items():
+            _copy_query_tsv(
+                connection=connection,
+                query=query,
+                path=final_root / f"{basename}.tsv",
+            )
+            _copy_query_parquet(
+                connection=connection,
+                query=query,
+                path=final_root / f"{basename}.parquet",
+            )
+        workbook_path = create_final_results_workbook(
+            connection=connection,
+            config=config,
+            output_path=final_root / "final_candidate_recommendations.xlsx",
         )
         connection.execute("CHECKPOINT")
     except duckdb.Error as exc:
@@ -728,6 +1003,22 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         raise StageError("Final integrated prioritisation contains no candidate rows")
     report_path = stage_root / "reports" / "final_computational_prioritisation.html"
     write_prioritisation_report(config=config, records=records, path=report_path)
+    final_report = stage_root / "final_results" / "final_computational_prioritisation.html"
+    shutil.copy2(report_path, final_report)
+    final_readme = stage_root / "final_results" / "README.txt"
+    final_readme.write_text(
+        (
+            "ARIA plant E3 final structural-completion results\n\n"
+            "Start with final_candidate_recommendations.xlsx or "
+            "final_computational_prioritisation.html.\n"
+            "The top-20 review table is intended to let project leads select ten "
+            "experimental priorities. A row is a distinct evolutionary candidate "
+            "group; contributing DeepClust clusters remain in the separate contributor "
+            "table. These are computational predictions and do not establish E3 "
+            "activity, binding or degradation.\n"
+        ),
+        encoding="utf-8",
+    )
     summary = {
         "run_name": config.run_name,
         "profile_name": config.analysis.prioritisation.profile_name,
@@ -742,15 +1033,34 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             record["recommendation_status"] == "PRIORITY_RECOMMENDATION"
             for record in records
         ),
+        "evolutionary_candidate_group_count": evolutionary_group_count,
+        "top_20_review_count": top_20_review_count,
         "database_sha256": sha256_file(database_path),
         "master_parquet_sha256": sha256_file(
             stage_root / "tables" / MASTER_PARQUET_NAME
         ),
         "report_sha256": sha256_file(report_path),
+        "excel_sha256": sha256_file(workbook_path),
         "interpretation": (
             "computational recommendations requiring human and experimental validation"
         ),
     }
+    atomic_write_json(
+        stage_root / "final_results" / "final_results_manifest.json",
+        {
+            "status": "complete",
+            "run_name": config.run_name,
+            "configuration_digest": config.digest,
+            "generated_at_utc": utc_now(),
+            "top_review_limit": config.analysis.prioritisation.final_candidate_limit,
+            "row_granularity": "distinct evolutionary candidate group",
+            "outputs": inventory_files(
+                stage_root / "final_results",
+                frozenset({"final_results_manifest.json"}),
+            ),
+            "interpretation": summary["interpretation"],
+        },
+    )
     atomic_write_json(stage_root / "provenance" / "integrated_resource_manifest.json", summary)
     write_tsv(
         stage_root / "qc" / "integrated_resource_validation.tsv",
@@ -762,9 +1072,12 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "prestructure_pass_count",
             "final_stringent_pass_count",
             "priority_recommendation_count",
+            "evolutionary_candidate_group_count",
+            "top_20_review_count",
             "database_sha256",
             "master_parquet_sha256",
             "report_sha256",
+            "excel_sha256",
             "interpretation",
         ),
     )
@@ -777,7 +1090,19 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     report = integrated_stage / "reports" / "final_computational_prioritisation.html"
     final_table = integrated_stage / "tables" / "final_candidate_prioritisation.parquet"
     master_table = integrated_stage / "tables" / MASTER_PARQUET_NAME
-    for path in (database, report, final_table, master_table):
+    final_results = integrated_stage / "final_results"
+    top_20_table = (
+        final_results / "top_20_computational_review_shortlist.parquet"
+    )
+    final_workbook = final_results / "final_candidate_recommendations.xlsx"
+    for path in (
+        database,
+        report,
+        final_table,
+        master_table,
+        top_20_table,
+        final_workbook,
+    ):
         if not path.is_file() or path.stat().st_size == 0:
             raise StageError(f"Application hand-off input is missing or empty: {path}")
     rows = [
@@ -791,6 +1116,9 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "candidate_master_parquet": master_table,
             "candidate_master_parquet_sha256": sha256_file(master_table),
             "final_report_html": report,
+            "final_results_directory": final_results,
+            "top_20_review_parquet": top_20_table,
+            "final_excel_workbook": final_workbook,
             "python_app_root": config.project_root / "e3_python_app",
             "r_shiny_app_root": config.project_root / "E3_shiny_app",
             "read_only_required": "true",
@@ -809,6 +1137,9 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "candidate_master_parquet",
             "candidate_master_parquet_sha256",
             "final_report_html",
+            "final_results_directory",
+            "top_20_review_parquet",
+            "final_excel_workbook",
             "python_app_root",
             "r_shiny_app_root",
             "read_only_required",
@@ -816,7 +1147,11 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     )
     (stage_root / "config").mkdir(parents=True, exist_ok=True)
     (stage_root / "config" / "python_app.env").write_text(
-        f"E3_RESOURCE_DUCKDB={database}\nE3_MAX_TABLE_ROWS=10000\n",
+        (
+            f"E3_RESOURCE_DUCKDB={database}\n"
+            f"E3_FINAL_RESULTS_DIR={final_results}\n"
+            "E3_MAX_TABLE_ROWS=10000\n"
+        ),
         encoding="utf-8",
     )
     (stage_root / "config" / "python_app_master_parquet.env").write_text(
@@ -824,7 +1159,11 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         encoding="utf-8",
     )
     (stage_root / "config" / "shiny_app.env").write_text(
-        f"E3_RESOURCE_DUCKDB={database}\nE3_MAX_TABLE_ROWS=10000\n",
+        (
+            f"E3_RESOURCE_DUCKDB={database}\n"
+            f"E3_FINAL_RESULTS_DIR={final_results}\n"
+            "E3_MAX_TABLE_ROWS=10000\n"
+        ),
         encoding="utf-8",
     )
     (stage_root / "config" / "shiny_app_master_parquet.env").write_text(

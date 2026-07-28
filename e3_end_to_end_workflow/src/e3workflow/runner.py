@@ -29,6 +29,7 @@ from e3workflow.config import (
 from e3workflow.integration import run_app_ready_stage, run_integrated_stage
 from e3workflow.ligandability import run_ligandability_stage
 from e3workflow.control import stage_token_path
+from e3workflow.distributed import aggregate_structural_alignment_shards
 from e3workflow.errors import StageError
 from e3workflow.io_utils import (
     atomic_write_json,
@@ -41,6 +42,7 @@ from e3workflow.io_utils import (
     write_tsv,
 )
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
+from e3workflow.parent_reuse import import_parent_stage
 from e3workflow.reporting import summarise_outputs, write_stage_report
 from e3workflow.prioritisation import run_prestructure_stage
 from e3workflow.production import (
@@ -397,7 +399,13 @@ def _run_synthetic_shortlist(config: WorkflowConfig, stage_root: Path) -> None:
 
 def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path) -> None:
     """Run a safe built-in stage or a clearly labelled synthetic stage."""
-    if stage_name == "00_inputs":
+    if config.stage(stage_name).evidence_mode == "parent_reuse":
+        import_parent_stage(
+            config=config,
+            stage_name=stage_name,
+            stage_root=stage_root,
+        )
+    elif stage_name == "00_inputs":
         _run_internal_inputs(config, stage_root)
     elif stage_name == "01_prepared_proteomes" and config.mode == "production":
         _run_internal_prepared_proteomes(config, stage_root)
@@ -417,6 +425,11 @@ def run_internal_stage(config: WorkflowConfig, stage_name: str, stage_root: Path
         _run_synthetic_shortlist(config=config, stage_root=stage_root)
     elif stage_name == "09_ligandability" and config.mode == "production":
         run_ligandability_stage(config=config, stage_root=stage_root)
+    elif stage_name == "09b_structural_alignment" and config.mode == "production":
+        aggregate_structural_alignment_shards(
+            config=config,
+            stage_root=stage_root,
+        )
     elif stage_name == "10_integrated_resource" and config.mode == "production":
         run_integrated_stage(config=config, stage_root=stage_root)
     elif stage_name == "11_app_ready":
