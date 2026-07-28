@@ -464,6 +464,17 @@ def test_pocket_residues_map_to_exact_fasta_coordinates() -> None:
             "model_insertion_code": "",
             "model_residue_name": "GLY",
         },
+        {
+            "accession": "Q9SA03",
+            "pocket_number": 3,
+            "mapping_status": "MAPPED",
+            "model_label_chain": "A",
+            "model_label_seq_id": "",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": "4",
+            "model_insertion_code": "",
+            "model_residue_name": "ALA",
+        },
     ]
     rows = map_pocket_residues_to_fasta(
         selected_records=selected,
@@ -474,6 +485,8 @@ def test_pocket_residues_map_to_exact_fasta_coordinates() -> None:
     assert rows[0]["fasta_residue"] == "S"
     assert rows[0]["sequence_coordinate_status"] == "MAPPED_EXACT"
     assert rows[1]["sequence_coordinate_status"] == "RESIDUE_IDENTITY_MISMATCH"
+    assert rows[2]["fasta_position"] is None
+    assert rows[2]["sequence_coordinate_status"] == "LABEL_SEQUENCE_ID_UNAVAILABLE"
 
 
 def test_reused_orthofinder_archive_is_validated_and_published(

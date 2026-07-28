@@ -27,7 +27,7 @@ class RepositoryEntrypointTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "E3 project launcher 0.10.0")
+        self.assertEqual(result.stdout.strip(), "E3 project launcher 0.10.1")
 
     def test_help_documents_all_execution_modes(self) -> None:
         """The help text must explain cluster, local and legacy modes."""
@@ -144,7 +144,7 @@ class RepositoryEntrypointTests(unittest.TestCase):
         )
         self.assertEqual(
             version.stdout.strip(),
-            "E3 fresh pipeline launcher 0.10.0",
+            "E3 fresh pipeline launcher 0.10.1",
         )
         configuration = (
             self.repository_root
