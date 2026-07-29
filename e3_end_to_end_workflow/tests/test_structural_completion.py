@@ -7,6 +7,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import duckdb
 import pytest
@@ -237,6 +238,57 @@ def test_parent_reuse_rejects_malformed_or_changed_authorities(
     monkeypatch.setattr("e3workflow.parent_reuse.os.link", fail_link)
     assert _link_or_copy(source, destination) == "copied"
     assert destination.read_bytes() == source.read_bytes()
+
+
+def test_parent_reuse_rejects_missing_root_and_invalid_stage_state(
+    structural_config: WorkflowConfig,
+    tmp_path: Path,
+) -> None:
+    """Parent reuse must reject absent roots, stage mismatches and incomplete stages."""
+    missing_parent = mock.Mock(parent_run_root=None)
+    with pytest.raises(StageError, match="run.parent_run_root"):
+        import_parent_stage(
+            config=missing_parent,
+            stage_name="02_discovery",
+            stage_root=tmp_path / "missing_parent",
+        )
+
+    parent_stage = structural_config.parent_run_root / "02_discovery"
+    parent_stage.mkdir(parents=True)
+    manifest = parent_stage / "stage_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "stage": "03_candidate_evidence",
+                "status": "complete",
+                "outputs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(StageError, match="stage mismatch"):
+        import_parent_stage(
+            config=structural_config,
+            stage_name="02_discovery",
+            stage_root=tmp_path / "stage_mismatch",
+        )
+
+    manifest.write_text(
+        json.dumps(
+            {
+                "stage": "02_discovery",
+                "status": "failed",
+                "outputs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(StageError, match="is not complete"):
+        import_parent_stage(
+            config=structural_config,
+            stage_name="02_discovery",
+            stage_root=tmp_path / "incomplete_stage",
+        )
 
 
 def test_structural_configuration_validation_branches(

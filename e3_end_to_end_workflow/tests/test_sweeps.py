@@ -184,6 +184,46 @@ def test_invalid_sweep_specifications_fail_closed(
         load_sweep_spec(sweep)
 
 
+def test_sweep_loader_rejects_missing_malformed_and_out_of_bounds_specs(
+    package_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Sweep loading must reject unreadable YAML and unsafe run or value bounds."""
+    missing = tmp_path / "missing.yaml"
+    with pytest.raises(ConfigurationError, match="does not exist"):
+        load_sweep_spec(path=missing)
+
+    malformed = tmp_path / "malformed.yaml"
+    malformed.write_text("[", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="Could not read sweep configuration"):
+        load_sweep_spec(path=malformed)
+
+    base = _base_config(package_root=package_root, tmp_path=tmp_path)
+    sweep = _sweep_config(base_config=base, tmp_path=tmp_path)
+    data = yaml.safe_load(sweep.read_text(encoding="utf-8"))
+
+    data["maximum_runs"] = 501
+    sweep.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="cannot exceed 500"):
+        load_sweep_spec(path=sweep)
+
+    data["maximum_runs"] = 10
+    data["parameters"] = "not-a-list"
+    sweep.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="non-empty YAML list"):
+        load_sweep_spec(path=sweep)
+
+    data["parameters"] = [
+        {
+            "path": "analysis.expression.broad_positive_fraction",
+            "values": [""],
+        }
+    ]
+    sweep.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="non-empty string"):
+        load_sweep_spec(path=sweep)
+
+
 def test_absent_parameter_path_is_rejected(
     package_root: Path,
     tmp_path: Path,

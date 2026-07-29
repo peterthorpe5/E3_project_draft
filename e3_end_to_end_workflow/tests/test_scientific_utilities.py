@@ -13,7 +13,7 @@ import pytest
 
 from e3workflow.config import load_config
 from e3workflow.errors import ManifestError, StageError
-from e3workflow.io_utils import sha256_file, write_tsv
+from e3workflow.io_utils import read_tsv, sha256_file, write_tsv
 from e3workflow.ligandability import (
     _alignment_position_map,
     _chemical_conservation,
@@ -31,6 +31,11 @@ from e3workflow.ligandability import (
     quote_identifier_safe,
     re_safe_filename,
     region_overlap,
+)
+from e3workflow.orthology_groups import (
+    candidate_mapping_rows,
+    choose_primary_groups,
+    selected_group_members,
 )
 from e3workflow.resources import (
     RESOURCE_COLUMNS,
@@ -96,6 +101,103 @@ def test_resource_builders_reject_missing_or_incomplete_roots(tmp_path: Path) ->
         )
 
 
+def test_resource_builders_reject_malformed_partitions_and_cache_states(
+    tmp_path: Path,
+) -> None:
+    """Partition layouts and InterPro cache states must satisfy their contracts."""
+    unpartitioned = tmp_path / "unpartitioned"
+    expression_directory = unpartitioned / "atlas_expression_long"
+    expression_directory.mkdir(parents=True)
+    (expression_directory / "expression.parquet").write_bytes(b"not-empty")
+    with pytest.raises(ManifestError, match="not below a species_column partition"):
+        build_expression_manifest(
+            expression_root=unpartitioned,
+            output_path=tmp_path / "unpartitioned.tsv",
+        )
+
+    metadata_only = tmp_path / "metadata_only"
+    metadata_directory = (
+        metadata_only
+        / "atlas_sample_metadata_long"
+        / "species_column=Arabidopsis_thaliana"
+    )
+    metadata_directory.mkdir(parents=True)
+    (metadata_directory / "metadata.parquet").write_bytes(b"not-empty")
+    with pytest.raises(ManifestError, match="no atlas_expression_long"):
+        build_expression_manifest(
+            expression_root=metadata_only,
+            output_path=tmp_path / "metadata_only.tsv",
+        )
+
+    empty_cache = tmp_path / "empty_cache"
+    empty_cache.mkdir()
+    with pytest.raises(ManifestError, match="No terminal InterPro cache"):
+        build_domain_cache_manifest(
+            cache_root=empty_cache,
+            output_path=tmp_path / "empty_cache.tsv",
+        )
+
+    empty_accession_cache = tmp_path / "empty_accession_cache"
+    empty_accession_cache.mkdir()
+    (empty_accession_cache / "empty.json").write_text(
+        json.dumps(
+            {
+                "requested_accession": "",
+                "retrieval_status": "NOT_FOUND",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ManifestError, match="Empty or duplicate accession"):
+        build_domain_cache_manifest(
+            cache_root=empty_accession_cache,
+            output_path=tmp_path / "empty_accession.tsv",
+        )
+
+    transient_cache = tmp_path / "transient_cache"
+    transient_cache.mkdir()
+    (transient_cache / "P12345.json").write_text(
+        json.dumps(
+            {
+                "requested_accession": "P12345",
+                "retrieval_status": "TRANSIENT_ERROR",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ManifestError, match="Non-terminal InterPro cache status"):
+        build_domain_cache_manifest(
+            cache_root=transient_cache,
+            output_path=tmp_path / "transient.tsv",
+        )
+
+
+def test_resource_builders_find_nested_ligandability_tables(tmp_path: Path) -> None:
+    """Nested reusable runs must be found without duplicating their datasets."""
+    root = tmp_path / "ligandability"
+    parquet_root = root / "completed_run" / "tables" / "parquet"
+    parquet_root.mkdir(parents=True)
+    for dataset in (
+        "model_quality",
+        "joined_pockets",
+        "pocket_residue_mappings",
+        "pocket_quality",
+        "not_a_supported_dataset",
+    ):
+        (parquet_root / f"{dataset}.parquet").write_bytes(b"not-empty")
+    output = build_ligandability_manifest(
+        roots=[root, root],
+        output_path=tmp_path / "ligandability.tsv",
+    )
+    _, records = read_tsv(output)
+    assert {record["dataset"] for record in records} == {
+        "model_quality",
+        "joined_pockets",
+        "pocket_residue_mappings",
+        "pocket_quality",
+    }
+
+
 def test_resource_manifest_validation_states(tmp_path: Path) -> None:
     """Manifest schema, resource type, checksums and inclusion are validated independently."""
     resource = tmp_path / "resource.bin"
@@ -130,6 +232,45 @@ def test_resource_manifest_validation_states(tmp_path: Path) -> None:
         read_resource_manifest(path=manifest)
 
 
+def test_resource_manifest_rejects_bad_identity_paths_and_digests(
+    tmp_path: Path,
+) -> None:
+    """Each included resource must have one identity, readable path and valid digest."""
+    missing_manifest = tmp_path / "missing.tsv"
+    with pytest.raises(ManifestError, match="does not exist"):
+        read_resource_manifest(path=missing_manifest)
+
+    resource = tmp_path / "resource.bin"
+    resource.write_bytes(b"resource")
+    base = {
+        "resource_id": "duplicate",
+        "resource_type": "type_a",
+        "species_column": "",
+        "dataset": "data",
+        "path": resource.name,
+        "sha256": sha256_file(resource),
+        "include": "true",
+    }
+    manifest = tmp_path / "manifest.tsv"
+    write_tsv(manifest, [base, base], RESOURCE_COLUMNS)
+    with pytest.raises(ManifestError, match="duplicate resource_id"):
+        read_resource_manifest(path=manifest)
+
+    missing = dict(base, resource_id="missing", path="absent.bin")
+    write_tsv(manifest, [missing], RESOURCE_COLUMNS)
+    with pytest.raises(ManifestError, match="resource is missing or empty"):
+        read_resource_manifest(path=manifest)
+
+    invalid_digest = dict(base, resource_id="bad-digest", sha256="invalid")
+    write_tsv(manifest, [invalid_digest], RESOURCE_COLUMNS)
+    with pytest.raises(ManifestError, match="Invalid sha256"):
+        read_resource_manifest(path=manifest)
+
+    write_tsv(manifest, [base], RESOURCE_COLUMNS)
+    records = read_resource_manifest(path=manifest, verify_checksums=False)
+    assert records[0]["path"] == str(resource.resolve())
+
+
 def test_tabular_helpers_cover_empty_and_error_contracts(tmp_path: Path) -> None:
     """SQL quoting and atomic Parquet publication fail closed."""
     assert quote_identifier("valid_name") == '"valid_name"'
@@ -155,8 +296,18 @@ def test_tabular_helpers_cover_empty_and_error_contracts(tmp_path: Path) -> None
         parquet_columns(tmp_path / "missing.parquet")
     bad = tmp_path / "bad.parquet"
     bad.write_text("not parquet", encoding="utf-8")
+    with pytest.raises(StageError, match="Could not inspect"):
+        parquet_columns(bad)
     with pytest.raises(StageError, match="Could not count"):
         parquet_row_count(bad)
+    with pytest.raises(StageError, match="Could not publish Parquet"):
+        write_records(
+            tsv_path=tmp_path / "invalid_type.tsv",
+            parquet_path=tmp_path / "invalid_type.parquet",
+            fieldnames=("value",),
+            records=[],
+            column_types={"value": "NOT A VALID DUCKDB TYPE"},
+        )
     connection = duckdb.connect(":memory:")
     try:
         with pytest.raises(StageError, match="Could not publish query"):
@@ -167,6 +318,41 @@ def test_tabular_helpers_cover_empty_and_error_contracts(tmp_path: Path) -> None
             )
     finally:
         connection.close()
+
+
+def test_orthology_group_helpers_reject_unusable_or_unreadable_inputs(
+    tmp_path: Path,
+) -> None:
+    """Unusable group records and unreadable Parquets must remain explicit."""
+    selected, grouped = choose_primary_groups(
+        mapping_rows=[
+            {
+                "cluster_id": "cluster_1",
+                "record_type": "UNSUPPORTED",
+                "group_id": "group_1",
+                "candidate_accession": "Q9SA03",
+                "species": "",
+            }
+        ]
+    )
+    assert selected == {}
+    assert list(grouped) == ["cluster_1"]
+
+    with pytest.raises(StageError, match="Could not read candidate orthology mappings"):
+        candidate_mapping_rows(path=tmp_path / "missing_mapping.parquet")
+
+    with pytest.raises(StageError, match="Could not expand selected OrthoFinder groups"):
+        selected_group_members(
+            selected={
+                "cluster_1": {
+                    "record_type": "ORTHOGROUP",
+                    "group_id": "OG0000001",
+                }
+            },
+            orthogroup_membership=tmp_path / "missing_orthogroups.parquet",
+            hierarchical_membership=tmp_path / "missing_hierarchical.parquet",
+            target_species=("Arabidopsis_thaliana",),
+        )
 
 
 def test_ligandability_helpers_and_missing_structure_state(

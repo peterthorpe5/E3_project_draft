@@ -41,6 +41,7 @@ omit = ["*/__main__.py"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 90
+precision = 2
 
 [tool.pycodestyle]
 max-line-length = 100

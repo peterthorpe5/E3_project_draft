@@ -51,6 +51,9 @@ def test_atomic_json_and_text(tmp_path: Path) -> None:
     bad.write_text("[", encoding="utf-8")
     with pytest.raises(WorkflowError):
         read_json(bad)
+    bad.write_text("[]", encoding="utf-8")
+    with pytest.raises(WorkflowError, match="Expected a JSON object"):
+        read_json(bad)
 
 
 def test_atomic_writer_cleans_failed_temporary_file(tmp_path: Path, monkeypatch: object) -> None:
