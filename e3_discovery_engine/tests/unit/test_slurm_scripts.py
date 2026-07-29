@@ -1,6 +1,7 @@
 """Static contracts for the University of Dundee Slurm driver scripts."""
 
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -41,17 +42,56 @@ class SlurmScriptContractTests(unittest.TestCase):
         self.assertIn('PARTITION="general"', text)
         self.assertIn('SLURM_MEMORY="256G"', text)
         self.assertIn('DIAMOND_MEMORY="220G"', text)
-        self.assertIn('WALLTIME="7-00:00:00"', text)
+        self.assertIn('WALLTIME="5-00:00:00"', text)
+        self.assertNotIn('WALLTIME="7-00:00:00"', text)
+        self.assertIn("validate_walltime", text)
+        self.assertIn("must not exceed the Dundee cluster limit", text)
         self.assertIn('MIN_RESULTS_FREE_GIB=150', text)
         self.assertIn('MIN_SCRATCH_FREE_GIB=100', text)
         self.assertIn("validate-full-cluster-inputs", text)
         self.assertIn("source_input_preflight.json", text)
         self.assertIn("24.7.1", text)
 
+    def test_submission_rejects_walltime_above_cluster_limit(self):
+        """Reject a wall-time above five days before attempting submission."""
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(SCRIPTS / "submit_full_onekp_slurm.sh"),
+                "--time",
+                "5-00:00:01",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("must not exceed", result.stderr)
+
+    def test_top_level_driver_rejects_walltime_above_cluster_limit(self):
+        """Apply the same five-day limit at the production driver boundary."""
+
+        result = subprocess.run(
+            [
+                "bash",
+                str(ROOT / "run_e3_discovery_engine_full_onekp_cluster.sh"),
+                "--time",
+                "7-00:00:00",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("must not exceed", result.stderr)
+
     def test_worker_generates_onekp_metadata_configuration(self):
         """Require generated config, 1KP parser use and job-local scratch."""
 
         text = self.read_script("slurm_full_onekp_job.sh")
+        self.assertIn("#SBATCH --time=5-00:00:00", text)
+        self.assertNotIn("#SBATCH --time=7-00:00:00", text)
         self.assertIn("create-full-cluster-config", text)
         self.assertIn("SLURM_TMPDIR", text)
         self.assertIn("full_onekp_plus.cluster.config.yaml", text)

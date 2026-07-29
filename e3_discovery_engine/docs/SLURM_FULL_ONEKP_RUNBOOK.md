@@ -32,7 +32,8 @@ account:   barton
 partition: general
 ```
 
-The submission script requests one node, 32 CPUs, 256 GiB RAM and seven days.
+The submission script requests one node, 32 CPUs, 256 GiB RAM and five days,
+which is the Dundee cluster maximum.
 DIAMOND is limited to 220 GiB so that the Python process, operating system and
 other workflow stages retain headroom. These are conservative starting values,
 not measured full-run requirements. The submitted job records actual peak RAM,
@@ -110,7 +111,7 @@ Equivalent explicit command:
   --cpus 32 \
   --memory 256G \
   --diamond-memory 220G \
-  --time 7-00:00:00 \
+  --time 5-00:00:00 \
   --conda-env e3_discovery \
   --min-results-free-gib 150 \
   --min-scratch-free-gib 100

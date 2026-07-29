@@ -41,7 +41,7 @@ PARTITION="general"
 CPUS=32
 SLURM_MEMORY="256G"
 DIAMOND_MEMORY="220G"
-WALLTIME="7-00:00:00"
+WALLTIME="5-00:00:00"
 MIN_RESULTS_FREE_GIB=150
 MIN_SCRATCH_FREE_GIB=100
 SCRATCH_BASE=""
@@ -69,7 +69,7 @@ Slurm and DIAMOND options:
   --cpus INTEGER                Default: 32.
   --memory VALUE                Slurm memory. Default: 256G.
   --diamond-memory VALUE        DIAMOND limit. Default: 220G.
-  --time VALUE                  Default: 7-00:00:00.
+  --time VALUE                  Maximum and default: 5-00:00:00.
   --min-results-free-gib N      Default: 150.
   --min-scratch-free-gib N      Default: 100.
   --scratch-base PATH           Optional fast node-local scratch base.
@@ -89,6 +89,34 @@ USAGE
 die() {
     printf 'ERROR: %s\n' "$1" >&2
     exit 2
+}
+
+validate_walltime() {
+    local supplied_value="$1"
+    local days=0
+    local hours=0
+    local minutes=0
+    local seconds=0
+    local total_seconds=0
+    if [[ "${supplied_value}" =~ ^([0-9]+)-([0-9]{1,2}):([0-9]{2}):([0-9]{2})$ ]]; then
+        days=$((10#${BASH_REMATCH[1]}))
+        hours=$((10#${BASH_REMATCH[2]}))
+        minutes=$((10#${BASH_REMATCH[3]}))
+        seconds=$((10#${BASH_REMATCH[4]}))
+        ((hours < 24)) || die "--time day-hour format requires hours below 24"
+    elif [[ "${supplied_value}" =~ ^([0-9]+):([0-9]{2}):([0-9]{2})$ ]]; then
+        hours=$((10#${BASH_REMATCH[1]}))
+        minutes=$((10#${BASH_REMATCH[2]}))
+        seconds=$((10#${BASH_REMATCH[3]}))
+    else
+        die "--time must use Slurm D-HH:MM:SS or HH:MM:SS format"
+    fi
+    ((minutes < 60 && seconds < 60)) || \
+        die "--time minutes and seconds must each be below 60"
+    total_seconds=$((days * 86400 + hours * 3600 + minutes * 60 + seconds))
+    ((total_seconds > 0)) || die "--time must be greater than zero"
+    ((total_seconds <= 432000)) || \
+        die "--time must not exceed the Dundee cluster limit of 5-00:00:00"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -171,6 +199,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+validate_walltime "${WALLTIME}"
 [[ "${RUN_TAG}" =~ ^[A-Za-z0-9._-]+$ ]] || \
     die "--run-tag may contain only letters, digits, '.', '_' and '-'"
 for positive_integer in \

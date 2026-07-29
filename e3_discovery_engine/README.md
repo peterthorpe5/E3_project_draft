@@ -408,7 +408,7 @@ Check progress:
 ```
 
 The submission defaults to 32 CPUs, 256 GiB Slurm memory, a 220 GiB DIAMOND
-limit and seven days. It also requires at least 150 GiB free in persistent
+limit and five days, matching the Dundee cluster maximum. It also requires at least 150 GiB free in persistent
 results storage and 100 GiB free in the selected job-scratch filesystem before
 expensive work starts. All values can be overridden on the command line. Large
 persistent results are kept below

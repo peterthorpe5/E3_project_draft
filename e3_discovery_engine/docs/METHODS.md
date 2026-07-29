@@ -218,7 +218,7 @@ assigning all 1KP sequences to one artificial sample.
 
 The full analysis is submitted as a single Slurm job on the Dundee `general`
 partition under the `barton` account. The default request is one node, 32 CPUs,
-256 GiB RAM and seven days, with DIAMOND limited to 220 GiB. The request is a
+256 GiB RAM and five days, with DIAMOND limited to 220 GiB. The request is a
 conservative starting allocation rather than a claim about observed use.
 DIAMOND temporary products and path aliases use job-local scratch; validated
 scientific products are written to persistent project storage.
