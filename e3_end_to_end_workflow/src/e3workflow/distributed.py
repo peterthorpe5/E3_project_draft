@@ -46,6 +46,10 @@ STRUCTURAL_DATASETS = (
     "pocket_comparisons",
     "pocket_residue_matches",
     "structural_alignment_summary",
+    "structural_pocket_sensitivity_comparisons",
+    "structural_pocket_sensitivity_residue_matches",
+    "structural_pocket_sensitivity_member_summary",
+    "structural_pocket_sensitivity_group_summary",
 )
 
 ASSET_MANIFEST_FIELDS = (
@@ -303,6 +307,20 @@ def run_ligandability_shard(
             log_path=staging / "component.log",
             working_directory=config.project_root,
         )
+        component_manifest = (
+            output_directory / "provenance" / "run_manifest.json"
+        )
+        if component_manifest.is_file():
+            _rebase_component_manifest(
+                manifest_path=component_manifest,
+                temporary_root=staging,
+                stable_root=task_root,
+            )
+        else:
+            LOGGER.warning(
+                "Legacy ligandability component produced no JSON run manifest: %s",
+                output_directory,
+            )
         _publish_marker(
             root=staging,
             config=config,
@@ -482,6 +500,49 @@ def _publish_rebased_asset_manifest(
     )
     LOGGER.info("Published %d checksum-validated stable ligandability assets", count)
     return count
+
+
+def _rebase_component_manifest(
+    *,
+    manifest_path: Path,
+    temporary_root: Path,
+    stable_root: Path,
+) -> None:
+    """Replace temporary shard paths in a component provenance manifest.
+
+    Args:
+        manifest_path: Component JSON manifest to update before publication.
+        temporary_root: Temporary shard directory embedded in input paths.
+        stable_root: Final immutable shard directory.
+
+    Raises:
+        StageError: If the component manifest cannot be decoded.
+    """
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StageError(
+            f"Could not read component provenance manifest: {manifest_path}"
+        ) from exc
+
+    temporary = str(temporary_root)
+    stable = str(stable_root)
+
+    def rebase(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(temporary, stable)
+        if isinstance(value, list):
+            return [rebase(item) for item in value]
+        if isinstance(value, dict):
+            return {key: rebase(item) for key, item in value.items()}
+        return value
+
+    atomic_write_json(manifest_path, rebase(payload))
+    LOGGER.info(
+        "Rebased temporary component paths in %s onto %s",
+        manifest_path,
+        stable_root,
+    )
 
 
 def aggregate_ligandability_shards(
@@ -685,7 +746,24 @@ def _prepare_structural_task_inputs(
         raise StageError(f"Structural group contains no selected accessions: {group['entity_id']}")
     mappings = destination / "pocket_residue_mappings.parquet"
     coordinates = destination / "pocket_sequence_coordinates.parquet"
+    ranked_pockets = destination / "ranked_member_pockets.parquet"
+    ranked_coordinates = (
+        destination / "ranked_pocket_sequence_coordinates.parquet"
+    )
     assets = destination / "asset_manifest.parquet"
+    ranked_pocket_source = stage09 / "ranked_member_pockets.parquet"
+    if not ranked_pocket_source.is_file():
+        ranked_pocket_source = selected_source
+        LOGGER.warning(
+            "Ranked member pockets are unavailable; using strict rank-one "
+            "pockets for backward-compatible structural analysis"
+        )
+    _filter_parquet(
+        source=ranked_pocket_source,
+        destination=ranked_pockets,
+        accessions=accessions,
+        accession_column="candidate_accession",
+    )
     _filter_parquet(
         source=stage09 / "reused_pocket_residue_mappings.parquet",
         destination=mappings,
@@ -698,6 +776,19 @@ def _prepare_structural_task_inputs(
         accessions=accessions,
         accession_column="candidate_accession",
     )
+    ranked_coordinate_source = (
+        stage09 / "ranked_pocket_sequence_coordinates.parquet"
+    )
+    if not ranked_coordinate_source.is_file():
+        ranked_coordinate_source = (
+            stage09 / "pocket_sequence_coordinates.parquet"
+        )
+    _filter_parquet(
+        source=ranked_coordinate_source,
+        destination=ranked_coordinates,
+        accessions=accessions,
+        accession_column="candidate_accession",
+    )
     _filter_parquet(
         source=stage09 / "reused_asset_manifest.parquet",
         destination=assets,
@@ -706,8 +797,10 @@ def _prepare_structural_task_inputs(
     )
     return {
         "selected_pockets": selected_path,
+        "ranked_pockets": ranked_pockets,
         "pocket_residue_mappings": mappings,
         "pocket_sequence_coordinates": coordinates,
+        "ranked_pocket_sequence_coordinates": ranked_coordinates,
         "asset_manifest": assets,
     }
 
@@ -775,10 +868,14 @@ def run_structural_alignment_shard(
         "run",
         "--selected-pockets",
         str(inputs["selected_pockets"]),
+        "--ranked-pockets",
+        str(inputs["ranked_pockets"]),
         "--pocket-residue-mappings",
         str(inputs["pocket_residue_mappings"]),
         "--pocket-sequence-coordinates",
         str(inputs["pocket_sequence_coordinates"]),
+        "--ranked-pocket-sequence-coordinates",
+        str(inputs["ranked_pocket_sequence_coordinates"]),
         "--asset-manifest",
         str(inputs["asset_manifest"]),
         "--output-dir",
@@ -789,6 +886,8 @@ def run_structural_alignment_shard(
         settings.tmalign_executable,
         "--threads",
         str(settings.shard_threads),
+        "--member-pocket-top-k",
+        str(settings.member_pocket_top_k),
         "--distance-threshold-angstrom",
         str(settings.distance_threshold_angstrom),
         "--maximum-centroid-distance-angstrom",
@@ -811,6 +910,20 @@ def run_structural_alignment_shard(
             log_path=staging / "component.log",
             working_directory=config.project_root,
         )
+        component_manifest = (
+            output_directory / "provenance" / "run_manifest.json"
+        )
+        if component_manifest.is_file():
+            _rebase_component_manifest(
+                manifest_path=component_manifest,
+                temporary_root=staging,
+                stable_root=task_root,
+            )
+        else:
+            LOGGER.warning(
+                "Legacy structural component produced no JSON run manifest: %s",
+                output_directory,
+            )
         _publish_marker(
             root=staging,
             config=config,
@@ -972,6 +1085,7 @@ def aggregate_structural_alignment_shards(
             complete_roots.append(task_root)
     output_root = stage_root / "structural_alignment"
     tables = output_root / "tables"
+    published_datasets = []
     for dataset in STRUCTURAL_DATASETS:
         sources = [
             root / "component_output" / "tables" / f"{dataset}.parquet"
@@ -979,6 +1093,13 @@ def aggregate_structural_alignment_shards(
         ]
         sources = [source for source in sources if source.is_file()]
         if not sources:
+            if dataset.startswith("structural_pocket_sensitivity_"):
+                LOGGER.warning(
+                    "Legacy structural shards did not produce optional "
+                    "sensitivity dataset %s",
+                    dataset,
+                )
+                continue
             raise StageError(f"No structural shard produced {dataset}.parquet")
         destination = tables / f"{dataset}.parquet"
         _copy_parquet_union(sources=sources, destination=destination)
@@ -991,6 +1112,7 @@ def aggregate_structural_alignment_shards(
             )
         finally:
             connection.close()
+        published_datasets.append(dataset)
     summaries = _table_records(tables / "structural_alignment_summary.parquet")
     evidence_counts = _validate_structural_summary_evidence(summaries=summaries)
     _write_structural_summary_html(
@@ -1077,6 +1199,12 @@ def aggregate_structural_alignment_shards(
         }
         for row in markers
     ]
+    published_tables = (
+        config.run_root
+        / "09b_structural_alignment"
+        / "structural_alignment"
+        / "tables"
+    )
     atomic_write_json(
         output_root / "provenance" / "run_manifest.json",
         {
@@ -1088,10 +1216,12 @@ def aggregate_structural_alignment_shards(
             "structural_evidence_counts": evidence_counts,
             "datasets": {
                 dataset: {
-                    "path": str(tables / f"{dataset}.parquet"),
+                    "path": str(
+                        published_tables / f"{dataset}.parquet"
+                    ),
                     "sha256": sha256_file(tables / f"{dataset}.parquet"),
                 }
-                for dataset in STRUCTURAL_DATASETS
+                for dataset in published_datasets
             },
             "shards": input_inventory,
         },

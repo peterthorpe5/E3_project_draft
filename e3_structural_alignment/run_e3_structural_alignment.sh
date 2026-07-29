@@ -17,12 +17,15 @@ Required options:
   --output-dir PATH
 
 Typical optional controls:
+  --ranked-pockets PATH
   --pocket-sequence-coordinates PATH
+  --ranked-pocket-sequence-coordinates PATH
   --usalign-executable PATH
   --tmalign-executable PATH
   --skip-usalign
   --skip-tmalign
   --threads INTEGER
+  --member-pocket-top-k INTEGER
   --distance-threshold-angstrom FLOAT
   --maximum-centroid-distance-angstrom FLOAT
   --minimum-pocket-overlap-fraction FLOAT

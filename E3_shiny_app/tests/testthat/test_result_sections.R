@@ -1,6 +1,9 @@
 testthat::test_that("grant-facing relation classification is stable", {
   relations <- c(
+    "top_computational_review_shortlist",
+    "top_50_computational_review_shortlist",
     "top_20_computational_review_shortlist",
+    "gate_sensitivity_summary",
     "candidate_master_results",
     "candidate_group_member_sequences",
     "domain_summary",
@@ -12,7 +15,12 @@ testthat::test_that("grant-facing relation classification is stable", {
   )
   testthat::expect_equal(
     relations_for_result_section(relations, "final_recommendations"),
-    "top_20_computational_review_shortlist"
+    c(
+      "top_computational_review_shortlist",
+      "top_50_computational_review_shortlist",
+      "top_20_computational_review_shortlist",
+      "gate_sensitivity_summary"
+    )
   )
   testthat::expect_equal(
     infer_result_section("grant_aligned_predicted_candidates"),

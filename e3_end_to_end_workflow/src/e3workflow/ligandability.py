@@ -49,6 +49,11 @@ SELECTED_POCKET_FIELDS = (
     "source_resource_id",
 )
 
+RANKED_POCKET_FIELDS = (
+    "selection_rank",
+    "is_strict_selected",
+) + SELECTED_POCKET_FIELDS
+
 POCKET_CONSERVATION_FIELDS = (
     "cluster_id",
     "primary_group_type",
@@ -244,8 +249,23 @@ def build_selected_pockets(
     joined_pockets: Path,
     pocket_quality: Path,
     output_path: Path,
+    maximum_rank: int = 1,
 ) -> None:
-    """Select one best-supported reused pocket per requested candidate accession."""
+    """Select ranked reused pockets per requested candidate accession.
+
+    Args:
+        config: Validated workflow configuration.
+        structural_accessions: Candidate accessions selected for structure work.
+        joined_pockets: Reused or generated joined pocket evidence.
+        pocket_quality: Residue-mapping and confidence evidence per pocket.
+        output_path: Destination Parquet table.
+        maximum_rank: Maximum deterministic pocket rank retained per accession.
+
+    Raises:
+        StageError: If inputs are invalid or the ranked table cannot be built.
+    """
+    if maximum_rank < 1:
+        raise StageError("maximum_rank must be a positive integer")
     joined_columns = set(parquet_columns(path=joined_pockets))
     quality_columns = set(parquet_columns(path=pocket_quality))
     for required, observed, label in (
@@ -328,12 +348,31 @@ def build_selected_pockets(
             "passes_druggability_threshold AND passes_mapping_threshold AND "
             "passes_pocket_confidence_threshold THEN 'SELECTED_HIGH_CONFIDENCE' ELSE "
             "'SELECTED_BEST_AVAILABLE_BELOW_ONE_OR_MORE_THRESHOLDS' END AS "
-            "structural_evidence_status, source_resource_id FROM candidates "
-            "WHERE selection_rank = 1"
+            "structural_evidence_status, source_resource_id, selection_rank, "
+            "selection_rank = 1 AS is_strict_selected FROM candidates "
+            f"WHERE selection_rank <= {maximum_rank}"
         )
         copy_query_to_parquet(connection=connection, query=query, path=output_path)
     except duckdb.Error as exc:
         raise StageError(f"Could not select reused ligandability pockets: {exc}") from exc
+    finally:
+        connection.close()
+
+
+def _copy_strict_selected_pockets(*, ranked_path: Path, output_path: Path) -> None:
+    """Publish rank-one pockets while retaining explicit rank provenance."""
+    connection = duckdb.connect(":memory:")
+    try:
+        copy_query_to_parquet(
+            connection=connection,
+            query=(
+                f"SELECT * FROM read_parquet({quote_literal(ranked_path)}) "
+                "WHERE selection_rank = 1 ORDER BY cluster_id, candidate_accession"
+            ),
+            path=output_path,
+        )
+    except duckdb.Error as exc:
+        raise StageError(f"Could not publish strict selected pockets: {exc}") from exc
     finally:
         connection.close()
 
@@ -1151,13 +1190,26 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
     structural_accessions = find_one(
         root=config.run_root / "08_shortlist_gate", name="structural_analysis_accessions.parquet"
     )
-    selected_path = stage_root / "tables" / "selected_pockets.parquet"
+    ranked_path = stage_root / "tables" / "ranked_member_pockets.parquet"
     build_selected_pockets(
         config=config,
         structural_accessions=structural_accessions,
         joined_pockets=copied["joined_pockets"],
         pocket_quality=copied["pocket_quality"],
+        output_path=ranked_path,
+        maximum_rank=config.analysis.structural_alignment.member_pocket_top_k,
+    )
+    selected_path = stage_root / "tables" / "selected_pockets.parquet"
+    _copy_strict_selected_pockets(
+        ranked_path=ranked_path,
         output_path=selected_path,
+    )
+    ranked = _read_query(
+        path=ranked_path,
+        query=(
+            "SELECT * FROM source ORDER BY cluster_id, candidate_accession, "
+            "selection_rank"
+        ),
     )
     selected = _read_query(
         path=selected_path,
@@ -1175,6 +1227,14 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         stage_root / "tables" / "selected_pockets.tsv",
         selected_tsv_rows,
         SELECTED_POCKET_FIELDS,
+    )
+    write_tsv(
+        stage_root / "tables" / "ranked_member_pockets.tsv",
+        [
+            {field: record.get(field, "") for field in RANKED_POCKET_FIELDS}
+            for record in ranked
+        ],
+        RANKED_POCKET_FIELDS,
     )
     status = _structural_status(
         requested=requested,
@@ -1215,11 +1275,24 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         mapping_records=mapping_records,
         sequences=sequences,
     )
+    ranked_sequence_coordinates = map_pocket_residues_to_fasta(
+        selected_records=ranked,
+        mapping_records=mapping_records,
+        sequences=sequences,
+    )
     write_records(
         tsv_path=stage_root / "tables" / "pocket_sequence_coordinates.tsv",
         parquet_path=stage_root / "tables" / "pocket_sequence_coordinates.parquet",
         fieldnames=POCKET_SEQUENCE_COORDINATE_FIELDS,
         records=sequence_coordinates,
+    )
+    write_records(
+        tsv_path=stage_root / "tables" / "ranked_pocket_sequence_coordinates.tsv",
+        parquet_path=(
+            stage_root / "tables" / "ranked_pocket_sequence_coordinates.parquet"
+        ),
+        fieldnames=POCKET_SEQUENCE_COORDINATE_FIELDS,
+        records=ranked_sequence_coordinates,
     )
     summaries, members = measure_pocket_conservation(
         config=config,
@@ -1247,6 +1320,10 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
             {
                 "requested_accession_count": len(requested),
                 "selected_pocket_count": len(selected),
+                "ranked_member_pocket_count": len(ranked),
+                "member_pocket_top_k": (
+                    config.analysis.structural_alignment.member_pocket_top_k
+                ),
                 "prediction_unavailable_count": sum(
                     not bool(row["prediction_available"]) for row in status
                 ),
@@ -1256,6 +1333,9 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
                 ),
                 "group_conservation_summary_count": len(summaries),
                 "pocket_sequence_coordinate_count": len(sequence_coordinates),
+                "ranked_pocket_sequence_coordinate_count": len(
+                    ranked_sequence_coordinates
+                ),
                 "exact_pocket_sequence_coordinate_count": sum(
                     row["sequence_coordinate_status"] == "MAPPED_EXACT"
                     for row in sequence_coordinates
@@ -1275,11 +1355,14 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
         (
             "requested_accession_count",
             "selected_pocket_count",
+            "ranked_member_pocket_count",
+            "member_pocket_top_k",
             "prediction_unavailable_count",
             "sequence_available_accession_count",
             "sequence_unavailable_accession_count",
             "group_conservation_summary_count",
             "pocket_sequence_coordinate_count",
+            "ranked_pocket_sequence_coordinate_count",
             "exact_pocket_sequence_coordinate_count",
             "conserved_region_supported_count",
             "mode",

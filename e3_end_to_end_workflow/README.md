@@ -5,15 +5,18 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.10.2` supports three explicit production strategies:
+Version `0.11.0` supports three explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
   conserved-pocket comparison, report and application resource;
 - **structural completion** for the grant decision: import the completed pre-structure stages from
   an immutable parent run, select one auditable representative per target species and evolutionary
-  group, scatter ligandability and US-align/TM-align jobs, and publish a top-20 Excel/HTML
-  scorecard without silently changing the reviewed rank; and
+  group, scatter ligandability and US-align/TM-align jobs, and publish an ordered, configurable
+  top-review Excel/HTML scorecard without silently changing the reviewed rank;
+- **Milestone-1 sensitivity closure**: preserve the stringent rank-one result while comparing
+  each reference pocket with the top five member pockets, require both aligners to support the
+  same alternative pocket, publish gate scenarios and expose the ordered top 50 for review; and
 - **fresh scalable execution** for a future, larger proteome panel: prepare an arbitrary manifest
   of proteomes and run configured component adapters under the same output contracts.
 
@@ -177,20 +180,24 @@ recommendation for human review, not a pre-existing signed approval falsely repr
 
 ## Integrated resource and application sources
 
-Stage 10 publishes two complementary authorities:
+Stage 10 publishes three complementary decision and application resources:
 
 - `duckdb/e3_integrated_resource.duckdb` contains every normalised result
   relation, including one-to-many OrthoFinder members and sequences, domain
   hits, expression mappings, pockets, FASTA coordinates and structural residue
   matches.
+- `final_results/final_evolutionary_candidate_prioritisation.parquet` is the
+  definitive one-row-per-evolutionary-group decision table.
 - `tables/e3_candidate_master_results.parquet` contains one wide row per
-  candidate group. It combines the final prioritisation, additional
-  pre-structure metrics, all prefixed discovery-evidence fields and useful
-  detailed-relation counts.
+  candidate/DeepClust cluster. It is a portable compatibility summary combining
+  prioritisation, pre-structure metrics, prefixed discovery-evidence fields and
+  useful detailed-relation counts.
 
-The wide Parquet is the requested portable one-file hand-off. It does not
-replace the detailed DuckDB: forcing multiple members, pockets and residues into
-one flat candidate row would either duplicate candidates or discard evidence.
+The evolutionary-group table is the final group-level decision authority. The
+cluster-level master Parquet remains useful for portable discovery review, but
+does not replace either that table or the detailed DuckDB: forcing multiple
+members, pockets and residues into one flat row would either duplicate records
+or discard evidence.
 
 Both the R Shiny and Python reporters can open:
 

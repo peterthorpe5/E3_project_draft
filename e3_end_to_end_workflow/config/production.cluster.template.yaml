@@ -57,7 +57,7 @@ tools:
       threads: 32
   structural_alignment:
     executable: bash
-    expected_version: 0.1.2
+    expected_version: 0.2.0
     conda_environment: e3_structural_alignment
     parameters:
       threads: 32

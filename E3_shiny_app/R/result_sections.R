@@ -5,10 +5,15 @@ result_section_specs <- list(
     title = "Final computational recommendations",
     question = paste(
       "Which distinct evolutionary candidate groups should be reviewed in the",
-      "top 20, which pass every enabled grant-aligned gate, and why?"
+      "ordered top 50, which pass every grant-aligned gate, and how sensitive",
+      "are those decisions to the documented alternative gates?"
     ),
     relations = c(
+      "top_computational_review_shortlist",
+      "top_50_computational_review_shortlist",
       "top_20_computational_review_shortlist",
+      "gate_sensitivity_summary",
+      "gate_sensitivity_detail",
       "grant_aligned_predicted_candidates",
       "final_evolutionary_candidate_prioritisation",
       "final_evolutionary_group_cluster_contributors",
@@ -73,6 +78,7 @@ result_section_specs <- list(
     ),
     relations = c(
       "selected_pockets",
+      "ranked_member_pockets",
       "structural_prediction_status",
       "structural_analysis_accessions",
       "candidate_master_results"
@@ -88,6 +94,7 @@ result_section_specs <- list(
       "pocket_conservation_summary",
       "pocket_conservation_members",
       "pocket_sequence_coordinates",
+      "ranked_pocket_sequence_coordinates",
       "candidate_master_results"
     )
   ),
@@ -99,6 +106,10 @@ result_section_specs <- list(
     ),
     relations = c(
       "structural_alignment_summary",
+      "structural_pocket_sensitivity_group_summary",
+      "structural_pocket_sensitivity_member_summary",
+      "structural_pocket_sensitivity_comparisons",
+      "structural_pocket_sensitivity_residue_matches",
       "structural_pocket_comparisons",
       "structural_pocket_residue_matches",
       "structural_alignments",

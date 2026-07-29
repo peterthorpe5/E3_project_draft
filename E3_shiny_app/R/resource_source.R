@@ -8,8 +8,14 @@
 canonical_result_relations <- c(
   e3_candidate_master_results = "candidate_master_results",
   final_candidate_prioritisation = "final_candidate_prioritisation",
+  top_computational_review_shortlist =
+    "top_computational_review_shortlist",
+  top_50_computational_review_shortlist =
+    "top_50_computational_review_shortlist",
   top_20_computational_review_shortlist =
     "top_20_computational_review_shortlist",
+  gate_sensitivity_detail = "gate_sensitivity_detail",
+  gate_sensitivity_summary = "gate_sensitivity_summary",
   grant_aligned_predicted_candidates =
     "grant_aligned_predicted_candidates",
   final_evolutionary_candidate_prioritisation =
@@ -37,14 +43,25 @@ canonical_result_relations <- c(
   structural_representative_selection_audit =
     "structural_representative_selection_audit",
   selected_pockets = "selected_pockets",
+  ranked_member_pockets = "ranked_member_pockets",
   structural_prediction_status = "structural_prediction_status",
   pocket_conservation_summary = "pocket_conservation_summary",
   pocket_conservation_members = "pocket_conservation_members",
   pocket_sequence_coordinates = "pocket_sequence_coordinates",
+  ranked_pocket_sequence_coordinates =
+    "ranked_pocket_sequence_coordinates",
   structural_alignments = "structural_alignments",
   pocket_comparisons = "structural_pocket_comparisons",
   pocket_residue_matches = "structural_pocket_residue_matches",
-  structural_alignment_summary = "structural_alignment_summary"
+  structural_alignment_summary = "structural_alignment_summary",
+  structural_pocket_sensitivity_comparisons =
+    "structural_pocket_sensitivity_comparisons",
+  structural_pocket_sensitivity_residue_matches =
+    "structural_pocket_sensitivity_residue_matches",
+  structural_pocket_sensitivity_member_summary =
+    "structural_pocket_sensitivity_member_summary",
+  structural_pocket_sensitivity_group_summary =
+    "structural_pocket_sensitivity_group_summary"
 )
 
 #' Resolve exactly one E3 result source.

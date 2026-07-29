@@ -40,6 +40,11 @@ def test_identifier_and_capability_classification() -> None:
         "top_20_computational_review_shortlist",
         [],
     ) == "final_recommendations"
+    assert infer_capability(
+        "top_50_computational_review_shortlist",
+        [],
+    ) == "final_recommendations"
+    assert infer_capability("gate_sensitivity_summary", []) == "final_recommendations"
     assert infer_capability("structural_alignment_summary", []) == "structural_alignment"
     assert infer_capability("pocket_conservation_summary", []) == "pocket_conservation"
     assert infer_capability("scores", ["fpocket_score"]) == "ligandability"
@@ -57,6 +62,11 @@ def test_relation_queries(resource_db: Path) -> None:
         assert "candidates" in relations
         assert relation_columns(connection, "candidates") == ["accession", "organism", "score"]
         assert relation_count(connection, "candidates") == 2
+        assert relations_for_section(connection, "final_recommendations")[:3] == [
+            "top_computational_review_shortlist",
+            "top_50_computational_review_shortlist",
+            "gate_sensitivity_summary",
+        ]
         assert len(preview_relation(connection, "candidates", 1)) == 1
         assert list(
             preview_selected_columns(

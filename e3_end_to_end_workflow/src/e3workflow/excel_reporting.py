@@ -26,9 +26,14 @@ PASS_FILL = PatternFill(fill_type="solid", fgColor="E2F0D9")
 
 WORKBOOK_RELATIONS = (
     (
-        "Top_20_Review",
-        "top_20_computational_review_shortlist",
-        "Boss-facing top-20 computational review set.",
+        "Top_Review",
+        "top_computational_review_shortlist",
+        "Ordered boss-facing computational review set.",
+    ),
+    (
+        "Gate_Sensitivity",
+        "gate_sensitivity_summary",
+        "Named exploratory gate scenarios; strict primary decisions remain unchanged.",
     ),
     (
         "Predicted_Candidates",
@@ -385,7 +390,7 @@ def create_final_results_workbook(
     temporary.replace(destination)
     try:
         verified = load_workbook(destination, read_only=False, data_only=False)
-        if "README" not in verified.sheetnames or "Top_20_Review" not in verified.sheetnames:
+        if "README" not in verified.sheetnames or "Top_Review" not in verified.sheetnames:
             raise StageError("Final Excel workbook lacks required sheets")
         for worksheet in verified.worksheets:
             if worksheet.freeze_panes != "A2":

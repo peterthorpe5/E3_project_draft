@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -23,6 +24,8 @@ from e3workflow.io_utils import (
 )
 from e3workflow.production import find_one, find_orthology_table
 from e3workflow.tabular import quote_identifier, quote_literal
+
+LOGGER = logging.getLogger("e3workflow.integration")
 
 FINAL_FIELDS = (
     "final_rank",
@@ -101,14 +104,35 @@ RESOURCE_SECTIONS = {
         "candidate_group_member",
     ),
     "selected_pockets": ("ligandability", "pocket"),
+    "ranked_member_pockets": ("ligandability", "ranked_pocket"),
     "structural_prediction_status": ("ligandability", "candidate_group_member"),
     "pocket_conservation_summary": ("pocket_conservation", "candidate"),
     "pocket_conservation_members": ("pocket_conservation", "candidate_group_member"),
     "pocket_sequence_coordinates": ("pocket_conservation", "pocket_residue"),
+    "ranked_pocket_sequence_coordinates": (
+        "pocket_conservation",
+        "ranked_pocket_residue",
+    ),
     "structural_alignments": ("structural_alignment", "structure_pair"),
     "structural_pocket_comparisons": ("structural_alignment", "structure_pair"),
     "structural_pocket_residue_matches": ("structural_alignment", "pocket_residue_pair"),
     "structural_alignment_summary": ("structural_alignment", "candidate"),
+    "structural_pocket_sensitivity_comparisons": (
+        "structural_alignment_sensitivity",
+        "structure_pocket_pair",
+    ),
+    "structural_pocket_sensitivity_residue_matches": (
+        "structural_alignment_sensitivity",
+        "pocket_residue_pair",
+    ),
+    "structural_pocket_sensitivity_member_summary": (
+        "structural_alignment_sensitivity",
+        "candidate_group_member",
+    ),
+    "structural_pocket_sensitivity_group_summary": (
+        "structural_alignment_sensitivity",
+        "evolutionary_candidate_group",
+    ),
     "final_candidate_prioritisation": ("prioritisation", "candidate"),
     "candidate_master_results": ("prioritisation", "candidate"),
     "final_evolutionary_candidate_prioritisation": (
@@ -118,6 +142,18 @@ RESOURCE_SECTIONS = {
     "top_20_computational_review_shortlist": (
         "final_recommendations",
         "evolutionary_candidate_group",
+    ),
+    "top_computational_review_shortlist": (
+        "final_recommendations",
+        "evolutionary_candidate_group",
+    ),
+    "gate_sensitivity_detail": (
+        "final_recommendations",
+        "scenario_by_evolutionary_candidate_group",
+    ),
+    "gate_sensitivity_summary": (
+        "final_recommendations",
+        "scenario",
     ),
     "grant_aligned_predicted_candidates": (
         "final_recommendations",
@@ -286,6 +322,8 @@ def _final_query(
         "expression_species_fraction, structural_species_fraction, minimum_druggability_score, "
         "mean_pairwise_region_overlap, mean_chemical_group_conservation, "
         "mean_pocket_plddt_fraction, predictor_agreement_fraction, "
+        "all_assessed_members_pass_druggability, "
+        "all_assessed_members_pass_mapping, "
         "grant_aligned_prestructure_pass, "
         "grant_aligned_base_pass, grant_aligned_final_pass, conservation_status, "
         "inclusion_reasons, exclusion_reasons, "
@@ -362,6 +400,20 @@ def _relation_columns(
     for column in columns:
         quote_identifier(column)
     return columns
+
+
+def _relation_exists(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+) -> bool:
+    """Return whether one table or view exists in the current DuckDB."""
+    row = connection.execute(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_name = ?",
+        [relation],
+    ).fetchone()
+    return bool(row and int(row[0]) == 1)
 
 
 def _candidate_master_query(
@@ -459,6 +511,35 @@ def _final_evolutionary_query(
         "groups.evolutionary_group_rank, groups.evolutionary_group_key) "
         "AS final_evolutionary_rank"
     ]
+    has_sensitivity = _relation_exists(
+        connection=connection,
+        relation="structural_pocket_sensitivity_group_summary",
+    )
+    if has_sensitivity:
+        selections.extend(
+            (
+                "sensitivity.member_pocket_top_k",
+                "sensitivity.sensitivity_group_position_support_fraction",
+                "sensitivity.sensitivity_group_support_fraction",
+                "sensitivity.position_rescued_accession_count",
+                "sensitivity.conservation_rescued_accession_count",
+                "sensitivity.sensitivity_position_alignment_status",
+                "sensitivity.sensitivity_alignment_status",
+            )
+        )
+    else:
+        selections.extend(
+            (
+                "CAST(NULL AS BIGINT) AS member_pocket_top_k",
+                "CAST(NULL AS DOUBLE) AS "
+                "sensitivity_group_position_support_fraction",
+                "CAST(NULL AS DOUBLE) AS sensitivity_group_support_fraction",
+                "CAST(0 AS BIGINT) AS position_rescued_accession_count",
+                "CAST(0 AS BIGINT) AS conservation_rescued_accession_count",
+                "'NOT_ASSESSED' AS sensitivity_position_alignment_status",
+                "'NOT_ASSESSED' AS sensitivity_alignment_status",
+            )
+        )
     for column in group_columns:
         output_name = (
             "prestructure_evolutionary_group_rank"
@@ -485,13 +566,22 @@ def _final_evolutionary_query(
         if column in excluded_master or column in group_output_names:
             continue
         selections.append(f"master.{quote_identifier(column)}")
+    sensitivity_join = (
+        " LEFT JOIN structural_pocket_sensitivity_group_summary AS sensitivity "
+        "ON sensitivity.cluster_id = groups.lead_cluster_id "
+        "AND sensitivity.primary_group_type = groups.primary_group_type "
+        "AND sensitivity.primary_group_id = groups.primary_group_id "
+        if has_sensitivity
+        else ""
+    )
     return (
         "SELECT "
         + ", ".join(selections)
         + " FROM evolutionary_candidate_group_ranking AS groups "
-        "JOIN candidate_master_results AS master "
-        "ON master.cluster_id = groups.lead_cluster_id "
-        "ORDER BY final_evolutionary_rank"
+        + "JOIN candidate_master_results AS master "
+        + "ON master.cluster_id = groups.lead_cluster_id "
+        + sensitivity_join
+        + "ORDER BY final_evolutionary_rank"
     )
 
 
@@ -530,6 +620,101 @@ def _final_contributor_query(
     )
 
 
+def _create_gate_sensitivity_tables(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    config: WorkflowConfig,
+) -> None:
+    """Materialise named exploratory alternatives to the immutable strict gates.
+
+    Args:
+        connection: Open integrated-resource DuckDB connection.
+        config: Validated workflow configuration supplying release thresholds.
+    """
+    species_threshold = (
+        config.analysis.prioritisation.minimum_structural_species_fraction
+    )
+    connection.execute(
+        "CREATE TEMP TABLE pocket_druggability_fraction AS SELECT "
+        "cluster_id, primary_group_type, primary_group_id, "
+        "AVG(CAST(passes_druggability_threshold AS INTEGER)) "
+        "AS druggability_pass_fraction "
+        "FROM selected_pockets GROUP BY ALL"
+    )
+    common_relaxed = (
+        "final.grant_aligned_prestructure_pass "
+        "AND final.conservation_status = 'CONSERVED_REGION_SUPPORTED' "
+        "AND final.all_assessed_members_pass_mapping "
+        f"AND final.structural_species_fraction >= {species_threshold} "
+        "AND pockets.druggability_pass_fraction >= 0.75"
+    )
+    connection.execute(
+        "CREATE TABLE gate_sensitivity_detail AS "
+        "SELECT 'STRICT_PRIMARY' AS scenario_id, "
+        "'Published gates: all assessed members pass druggability and rank-one "
+        "pockets pass the 3D conservation test' AS scenario_definition, "
+        "final.final_evolutionary_rank, final.evolutionary_group_key, "
+        "final.primary_group_type, final.primary_group_id, "
+        "pockets.druggability_pass_fraction, "
+        "final.three_dimensional_alignment_status AS structural_status, "
+        "final.grant_aligned_final_pass AS scenario_pass "
+        "FROM final_evolutionary_candidate_prioritisation AS final "
+        "LEFT JOIN pocket_druggability_fraction AS pockets "
+        "ON pockets.cluster_id = final.lead_cluster_id "
+        "AND pockets.primary_group_type = final.primary_group_type "
+        "AND pockets.primary_group_id = final.primary_group_id "
+        "UNION ALL SELECT 'DRUGGABILITY_75_PERCENT', "
+        "'At least 75% of assessed members pass druggability; strict rank-one "
+        "3D conservation retained', final.final_evolutionary_rank, "
+        "final.evolutionary_group_key, final.primary_group_type, "
+        "final.primary_group_id, pockets.druggability_pass_fraction, "
+        "final.three_dimensional_alignment_status, "
+        f"COALESCE(({common_relaxed} AND "
+        "final.three_dimensional_alignment_status = "
+        "'CONSERVED_3D_POCKET_SUPPORTED'), false) "
+        "FROM final_evolutionary_candidate_prioritisation AS final "
+        "LEFT JOIN pocket_druggability_fraction AS pockets "
+        "ON pockets.cluster_id = final.lead_cluster_id "
+        "AND pockets.primary_group_type = final.primary_group_type "
+        "AND pockets.primary_group_id = final.primary_group_id "
+        "UNION ALL SELECT 'TOP_K_POCKET', "
+        "'Published druggability gates retained; both aligners must support the "
+        "same top-k member pocket', final.final_evolutionary_rank, "
+        "final.evolutionary_group_key, final.primary_group_type, "
+        "final.primary_group_id, pockets.druggability_pass_fraction, "
+        "final.sensitivity_alignment_status, "
+        "COALESCE((final.grant_aligned_base_pass AND "
+        "final.sensitivity_alignment_status = "
+        "'CONSERVED_3D_POCKET_SUPPORTED'), false) "
+        "FROM final_evolutionary_candidate_prioritisation AS final "
+        "LEFT JOIN pocket_druggability_fraction AS pockets "
+        "ON pockets.cluster_id = final.lead_cluster_id "
+        "AND pockets.primary_group_type = final.primary_group_type "
+        "AND pockets.primary_group_id = final.primary_group_id "
+        "UNION ALL SELECT 'DRUGGABILITY_75_PERCENT_PLUS_TOP_K', "
+        "'At least 75% pass druggability and both aligners support the same top-k "
+        "member pocket', final.final_evolutionary_rank, "
+        "final.evolutionary_group_key, final.primary_group_type, "
+        "final.primary_group_id, pockets.druggability_pass_fraction, "
+        "final.sensitivity_alignment_status, "
+        f"COALESCE(({common_relaxed} AND "
+        "final.sensitivity_alignment_status = "
+        "'CONSERVED_3D_POCKET_SUPPORTED'), false) "
+        "FROM final_evolutionary_candidate_prioritisation AS final "
+        "LEFT JOIN pocket_druggability_fraction AS pockets "
+        "ON pockets.cluster_id = final.lead_cluster_id "
+        "AND pockets.primary_group_type = final.primary_group_type "
+        "AND pockets.primary_group_id = final.primary_group_id"
+    )
+    connection.execute(
+        "CREATE TABLE gate_sensitivity_summary AS SELECT scenario_id, "
+        "MIN(scenario_definition) AS scenario_definition, "
+        "COUNT(*) AS evolutionary_group_count, "
+        "SUM(CAST(scenario_pass AS INTEGER)) AS passing_group_count "
+        "FROM gate_sensitivity_detail GROUP BY scenario_id ORDER BY scenario_id"
+    )
+
+
 def _write_resource_relation_catalog(
     *,
     connection: duckdb.DuckDBPyConnection,
@@ -560,6 +745,9 @@ def _write_resource_relation_catalog(
         "candidate_master_results",
         "final_evolutionary_candidate_prioritisation",
         "top_20_computational_review_shortlist",
+        "top_computational_review_shortlist",
+        "gate_sensitivity_detail",
+        "gate_sensitivity_summary",
         "grant_aligned_predicted_candidates",
         "final_evolutionary_group_cluster_contributors",
         "final_candidate_exclusion_audit",
@@ -619,6 +807,11 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ),
         ("selected_pockets", "09_ligandability", "selected_pockets.parquet"),
         (
+            "ranked_member_pockets",
+            "09_ligandability",
+            "ranked_member_pockets.parquet",
+        ),
+        (
             "structural_prediction_status",
             "09_ligandability",
             "structural_prediction_status.parquet",
@@ -630,50 +823,77 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
             "09_ligandability",
             "pocket_sequence_coordinates.parquet",
         ),
+        (
+            "ranked_pocket_sequence_coordinates",
+            "09_ligandability",
+            "ranked_pocket_sequence_coordinates.parquet",
+        ),
     )
     tables = []
+    optional_v011_relations = {
+        "ranked_member_pockets",
+        "ranked_pocket_sequence_coordinates",
+    }
     for table_name, stage_name, filename in roots_and_names:
         stage_root = config.run_root / stage_name
-        source = (
-            find_orthology_table(root=stage_root, name=filename)
-            if stage_name == "05_orthology"
-            else find_one(root=stage_root, name=filename)
-        )
+        try:
+            source = (
+                find_orthology_table(root=stage_root, name=filename)
+                if stage_name == "05_orthology"
+                else find_one(root=stage_root, name=filename)
+            )
+        except StageError:
+            if table_name not in optional_v011_relations:
+                raise
+            LOGGER.warning(
+                "Optional v0.11 relation is unavailable in a legacy result: %s",
+                table_name,
+            )
+            continue
         tables.append((table_name, source))
     if config.stage("09b_structural_alignment").enabled:
         structural_root = config.run_root / "09b_structural_alignment"
-        tables.extend(
-            [
-                (
-                    "structural_alignments",
-                    find_one(
-                        root=structural_root,
-                        name="structural_alignments.parquet",
-                    ),
-                ),
-                (
-                    "structural_pocket_comparisons",
-                    find_one(
-                        root=structural_root,
-                        name="pocket_comparisons.parquet",
-                    ),
-                ),
-                (
-                    "structural_pocket_residue_matches",
-                    find_one(
-                        root=structural_root,
-                        name="pocket_residue_matches.parquet",
-                    ),
-                ),
-                (
-                    "structural_alignment_summary",
-                    find_one(
-                        root=structural_root,
-                        name="structural_alignment_summary.parquet",
-                    ),
-                ),
-            ]
+        required_structural = (
+            ("structural_alignments", "structural_alignments.parquet"),
+            ("structural_pocket_comparisons", "pocket_comparisons.parquet"),
+            (
+                "structural_pocket_residue_matches",
+                "pocket_residue_matches.parquet",
+            ),
+            (
+                "structural_alignment_summary",
+                "structural_alignment_summary.parquet",
+            ),
         )
+        for table_name, filename in required_structural:
+            tables.append(
+                (
+                    table_name,
+                    find_one(root=structural_root, name=filename),
+                )
+            )
+        optional_structural = (
+            "structural_pocket_sensitivity_comparisons",
+            "structural_pocket_sensitivity_residue_matches",
+            "structural_pocket_sensitivity_member_summary",
+            "structural_pocket_sensitivity_group_summary",
+        )
+        for table_name in optional_structural:
+            filename = table_name + ".parquet"
+            matches = sorted(structural_root.rglob(filename))
+            if len(matches) > 1:
+                raise StageError(
+                    f"Expected at most one {filename!r} below "
+                    f"{structural_root}; observed {len(matches)}"
+                )
+            if matches:
+                tables.append((table_name, matches[0]))
+            else:
+                LOGGER.warning(
+                    "Optional v0.11 structural sensitivity relation is "
+                    "unavailable in a legacy result: %s",
+                    table_name,
+                )
     return tables
 
 
@@ -875,14 +1095,33 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "CREATE TABLE final_evolutionary_group_cluster_contributors AS "
             + _final_contributor_query(connection=connection)
         )
+        top_limit = config.analysis.prioritisation.final_candidate_limit
+        dynamic_top_relation = (
+            f"top_{top_limit}_computational_review_shortlist"
+        )
         connection.execute(
-            "CREATE TABLE top_20_computational_review_shortlist AS SELECT *, "
+            "CREATE TABLE top_computational_review_shortlist AS SELECT *, "
             "CASE WHEN grant_aligned_final_pass THEN "
             "'STRUCTURALLY_SUPPORTED_FOR_BOSS_REVIEW' ELSE "
             "'BOSS_REVIEW_WITH_EXPLICIT_EVIDENCE_GAPS' END AS boss_review_status "
             "FROM final_evolutionary_candidate_prioritisation "
             "ORDER BY final_evolutionary_rank LIMIT ?",
-            [config.analysis.prioritisation.final_candidate_limit],
+            [top_limit],
+        )
+        connection.execute(
+            f"CREATE TABLE {quote_identifier(dynamic_top_relation)} AS "
+            "SELECT * FROM top_computational_review_shortlist "
+            "ORDER BY final_evolutionary_rank"
+        )
+        if dynamic_top_relation != "top_20_computational_review_shortlist":
+            connection.execute(
+                "CREATE TABLE top_20_computational_review_shortlist AS "
+                "SELECT * FROM top_computational_review_shortlist "
+                "ORDER BY final_evolutionary_rank LIMIT 20"
+            )
+        _create_gate_sensitivity_tables(
+            connection=connection,
+            config=config,
         )
         connection.execute(
             "CREATE TABLE grant_aligned_predicted_candidates AS SELECT * "
@@ -929,9 +1168,9 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "SELECT COUNT(*) FROM final_evolutionary_candidate_prioritisation"
             ).fetchone()[0]
         )
-        top_20_review_count = int(
+        top_review_count = int(
             connection.execute(
-                "SELECT COUNT(*) FROM top_20_computational_review_shortlist"
+                "SELECT COUNT(*) FROM top_computational_review_shortlist"
             ).fetchone()[0]
         )
         _copy_query_tsv(
@@ -954,6 +1193,14 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "SELECT * FROM final_evolutionary_candidate_prioritisation "
                 "ORDER BY final_evolutionary_rank"
             ),
+            "top_computational_review_shortlist": (
+                "SELECT * FROM top_computational_review_shortlist "
+                "ORDER BY final_evolutionary_rank"
+            ),
+            dynamic_top_relation: (
+                f"SELECT * FROM {quote_identifier(dynamic_top_relation)} "
+                "ORDER BY final_evolutionary_rank"
+            ),
             "top_20_computational_review_shortlist": (
                 "SELECT * FROM top_20_computational_review_shortlist "
                 "ORDER BY final_evolutionary_rank"
@@ -969,6 +1216,13 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "final_candidate_exclusion_audit": (
                 "SELECT * FROM final_candidate_exclusion_audit "
                 "ORDER BY final_evolutionary_rank"
+            ),
+            "gate_sensitivity_detail": (
+                "SELECT * FROM gate_sensitivity_detail "
+                "ORDER BY scenario_id, final_evolutionary_rank"
+            ),
+            "gate_sensitivity_summary": (
+                "SELECT * FROM gate_sensitivity_summary ORDER BY scenario_id"
             ),
         }
         for basename, query in final_queries.items():
@@ -1011,7 +1265,8 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "ARIA plant E3 final structural-completion results\n\n"
             "Start with final_candidate_recommendations.xlsx or "
             "final_computational_prioritisation.html.\n"
-            "The top-20 review table is intended to let project leads select ten "
+            f"The ordered top-{top_limit} review table is intended to let project "
+            "leads select up to ten "
             "experimental priorities. A row is a distinct evolutionary candidate "
             "group; contributing DeepClust clusters remain in the separate contributor "
             "table. These are computational predictions and do not establish E3 "
@@ -1034,7 +1289,8 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             for record in records
         ),
         "evolutionary_candidate_group_count": evolutionary_group_count,
-        "top_20_review_count": top_20_review_count,
+        "top_review_count": top_review_count,
+        "top_review_limit": top_limit,
         "database_sha256": sha256_file(database_path),
         "master_parquet_sha256": sha256_file(
             stage_root / "tables" / MASTER_PARQUET_NAME
@@ -1052,7 +1308,7 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "run_name": config.run_name,
             "configuration_digest": config.digest,
             "generated_at_utc": utc_now(),
-            "top_review_limit": config.analysis.prioritisation.final_candidate_limit,
+            "top_review_limit": top_limit,
             "row_granularity": "distinct evolutionary candidate group",
             "outputs": inventory_files(
                 stage_root / "final_results",
@@ -1073,7 +1329,8 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "final_stringent_pass_count",
             "priority_recommendation_count",
             "evolutionary_candidate_group_count",
-            "top_20_review_count",
+            "top_review_count",
+            "top_review_limit",
             "database_sha256",
             "master_parquet_sha256",
             "report_sha256",
@@ -1091,16 +1348,18 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     final_table = integrated_stage / "tables" / "final_candidate_prioritisation.parquet"
     master_table = integrated_stage / "tables" / MASTER_PARQUET_NAME
     final_results = integrated_stage / "final_results"
-    top_20_table = (
-        final_results / "top_20_computational_review_shortlist.parquet"
+    top_review_table = (
+        final_results / "top_computational_review_shortlist.parquet"
     )
+    gate_sensitivity = final_results / "gate_sensitivity_summary.parquet"
     final_workbook = final_results / "final_candidate_recommendations.xlsx"
     for path in (
         database,
         report,
         final_table,
         master_table,
-        top_20_table,
+        top_review_table,
+        gate_sensitivity,
         final_workbook,
     ):
         if not path.is_file() or path.stat().st_size == 0:
@@ -1117,7 +1376,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "candidate_master_parquet_sha256": sha256_file(master_table),
             "final_report_html": report,
             "final_results_directory": final_results,
-            "top_20_review_parquet": top_20_table,
+            "top_review_parquet": top_review_table,
+            "gate_sensitivity_parquet": gate_sensitivity,
             "final_excel_workbook": final_workbook,
             "python_app_root": config.project_root / "e3_python_app",
             "r_shiny_app_root": config.project_root / "E3_shiny_app",
@@ -1138,7 +1398,8 @@ def run_app_ready_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "candidate_master_parquet_sha256",
             "final_report_html",
             "final_results_directory",
-            "top_20_review_parquet",
+            "top_review_parquet",
+            "gate_sensitivity_parquet",
             "final_excel_workbook",
             "python_app_root",
             "r_shiny_app_root",

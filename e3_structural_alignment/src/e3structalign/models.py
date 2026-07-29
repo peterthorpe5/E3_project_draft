@@ -8,7 +8,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class SelectedPocket:
-    """One selected pocket and its group-level provenance."""
+    """One selected or sensitivity-ranked pocket and its provenance."""
 
     cluster_id: str
     primary_group_type: str
@@ -21,6 +21,7 @@ class SelectedPocket:
     pocket_plddt_fraction: float | None
     predictor_agreement: bool
     structural_evidence_status: str
+    selection_rank: int = 1
 
 
 @dataclass(frozen=True)

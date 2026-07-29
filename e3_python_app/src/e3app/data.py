@@ -33,10 +33,15 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
         "title": "Final computational recommendations",
         "description": (
             "Which distinct evolutionary candidate groups should be reviewed in "
-            "the top 20, which pass every enabled grant-aligned gate, and why?"
+            "the ordered top 50, which pass every enabled grant-aligned gate, "
+            "how sensitive are decisions to named alternatives, and why?"
         ),
         "relations": (
+            "top_computational_review_shortlist",
+            "top_50_computational_review_shortlist",
             "top_20_computational_review_shortlist",
+            "gate_sensitivity_summary",
+            "gate_sensitivity_detail",
             "grant_aligned_predicted_candidates",
             "final_evolutionary_candidate_prioritisation",
             "final_evolutionary_group_cluster_contributors",
@@ -101,6 +106,7 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
         ),
         "relations": (
             "selected_pockets",
+            "ranked_member_pockets",
             "structural_prediction_status",
             "structural_analysis_accessions",
             "candidate_master_results",
@@ -116,6 +122,7 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "pocket_conservation_summary",
             "pocket_conservation_members",
             "pocket_sequence_coordinates",
+            "ranked_pocket_sequence_coordinates",
             "candidate_master_results",
         ),
     },
@@ -127,6 +134,10 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
         ),
         "relations": (
             "structural_alignment_summary",
+            "structural_pocket_sensitivity_group_summary",
+            "structural_pocket_sensitivity_member_summary",
+            "structural_pocket_sensitivity_comparisons",
+            "structural_pocket_sensitivity_residue_matches",
             "structural_pocket_comparisons",
             "structural_pocket_residue_matches",
             "structural_alignments",
@@ -152,6 +163,14 @@ CANONICAL_PARQUET_RELATIONS = {
     "top_20_computational_review_shortlist": (
         "top_20_computational_review_shortlist"
     ),
+    "top_computational_review_shortlist": (
+        "top_computational_review_shortlist"
+    ),
+    "top_50_computational_review_shortlist": (
+        "top_50_computational_review_shortlist"
+    ),
+    "gate_sensitivity_detail": "gate_sensitivity_detail",
+    "gate_sensitivity_summary": "gate_sensitivity_summary",
     "grant_aligned_predicted_candidates": "grant_aligned_predicted_candidates",
     "final_evolutionary_candidate_prioritisation": (
         "final_evolutionary_candidate_prioritisation"
@@ -183,14 +202,30 @@ CANONICAL_PARQUET_RELATIONS = {
         "structural_representative_selection_audit"
     ),
     "selected_pockets": "selected_pockets",
+    "ranked_member_pockets": "ranked_member_pockets",
     "structural_prediction_status": "structural_prediction_status",
     "pocket_conservation_summary": "pocket_conservation_summary",
     "pocket_conservation_members": "pocket_conservation_members",
     "pocket_sequence_coordinates": "pocket_sequence_coordinates",
+    "ranked_pocket_sequence_coordinates": (
+        "ranked_pocket_sequence_coordinates"
+    ),
     "structural_alignments": "structural_alignments",
     "pocket_comparisons": "structural_pocket_comparisons",
     "pocket_residue_matches": "structural_pocket_residue_matches",
     "structural_alignment_summary": "structural_alignment_summary",
+    "structural_pocket_sensitivity_comparisons": (
+        "structural_pocket_sensitivity_comparisons"
+    ),
+    "structural_pocket_sensitivity_residue_matches": (
+        "structural_pocket_sensitivity_residue_matches"
+    ),
+    "structural_pocket_sensitivity_member_summary": (
+        "structural_pocket_sensitivity_member_summary"
+    ),
+    "structural_pocket_sensitivity_group_summary": (
+        "structural_pocket_sensitivity_group_summary"
+    ),
 }
 
 
@@ -410,7 +445,10 @@ def infer_capability(relation: str, columns: Sequence[str]) -> str:
         (
             "final_recommendations",
             (
+                "top_computational_review_shortlist",
+                "top_50_computational_review_shortlist",
                 "top_20_computational_review_shortlist",
+                "gate_sensitivity",
                 "grant_aligned_predicted_candidates",
                 "final_evolutionary_candidate_prioritisation",
                 "final_candidate_exclusion_audit",

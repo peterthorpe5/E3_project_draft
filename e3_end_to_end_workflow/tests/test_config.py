@@ -118,6 +118,21 @@ def test_reuse_and_fresh_templates_expose_evidence_strategy(package_root: Path) 
         fresh.tool("orthofinder").parameter("missing")
 
 
+def test_milestone_one_sensitivity_profile_is_explicit(package_root: Path) -> None:
+    """The exploratory profile preserves strict evidence and expands review scope."""
+    config = load_config(
+        package_root
+        / "config"
+        / "grant_aligned_structural_sensitivity_top100_v0_11_0_20260729.cluster.yaml"
+    )
+    assert config.analysis.prioritisation.structure_group_limit == 100
+    assert config.analysis.prioritisation.final_candidate_limit == 50
+    assert config.analysis.structural_alignment.member_pocket_top_k == 5
+    assert config.analysis.structural_alignment.require_for_final_recommendation
+    assert not config.analysis.structural_alignment.use_for_prioritisation
+    assert config.run_name.endswith("top100_v0_11_0_20260729")
+
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

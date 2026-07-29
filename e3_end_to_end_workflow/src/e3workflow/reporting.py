@@ -1035,6 +1035,43 @@ def _workflow_metric_map(config: WorkflowConfig) -> dict[str, dict[str, str]]:
     return {row["metric"]: row for row in rows}
 
 
+def _authoritative_evolutionary_group_counts(
+    config: WorkflowConfig,
+) -> tuple[int, int]:
+    """Return total and stringent-pass counts at evolutionary-group granularity."""
+    path = (
+        config.run_root
+        / "08_shortlist_gate"
+        / "tables"
+        / "evolutionary_candidate_group_ranking.parquet"
+    )
+    if not path.is_file():
+        if (
+            config.mode == "synthetic"
+            or config.stage("08_shortlist_gate").evidence_mode == "synthetic"
+        ):
+            return 0, 0
+        raise WorkflowError(
+            f"Authoritative evolutionary-group ranking is missing: {path}"
+        )
+    connection = duckdb.connect(":memory:")
+    try:
+        row = connection.execute(
+            "SELECT COUNT(*), SUM(CAST(grant_aligned_stringent_pass AS INTEGER)) "
+            "FROM read_parquet(?)",
+            [str(path)],
+        ).fetchone()
+    except duckdb.Error as exc:
+        raise WorkflowError(
+            f"Could not count authoritative evolutionary groups: {path}"
+        ) from exc
+    finally:
+        connection.close()
+    if row is None:
+        raise WorkflowError(f"Evolutionary-group ranking is empty: {path}")
+    return int(row[0]), int(row[1] or 0)
+
+
 def _metric_value(metrics: Mapping[str, Mapping[str, str]], name: str) -> str:
     """Return one workflow metric value or an explicit unavailable label."""
     return str(metrics.get(name, {}).get("value", "not available"))
@@ -1121,7 +1158,15 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
         for manifest in manifests
         if manifest.get("status") == "skipped_optional"
     ]
-    application_release_eligible = config.mode == "production" and not skipped_stages
+    incomplete_enabled_stages = [
+        str(manifest["stage"])
+        for manifest in manifests
+        if config.stage(str(manifest["stage"])).enabled
+        and manifest.get("status") != "complete"
+    ]
+    application_release_eligible = (
+        config.mode == "production" and not incomplete_enabled_stages
+    )
     scope_label = "complete configured run" if skipped_stages else "complete workflow"
     skipped_noun = "stage was" if len(skipped_stages) == 1 else "stages were"
     scope_description = (
@@ -1190,6 +1235,9 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
     largest_stage_rss = _number(
         _metric_value(metrics, "maximum_individual_stage_peak_rss_mb")
     )
+    evolutionary_group_count, stringent_group_count = (
+        _authoritative_evolutionary_group_counts(config)
+    )
     summary_cards = _cards(
         (
             (
@@ -1219,6 +1267,16 @@ def generate_run_report(*, config: WorkflowConfig, output_dir: Path) -> dict[str
                     _integer(_metric_value(metrics, "total_published_output_bytes"))
                 ),
                 "Summed checksummed stage files.",
+            ),
+            (
+                "Evolutionary groups",
+                f"{evolutionary_group_count:,}",
+                "Authoritative one-row-per-evolutionary-group ranking.",
+            ),
+            (
+                "Strict pre-structure passes",
+                f"{stringent_group_count:,}",
+                "Counted at evolutionary-group, not DeepClust-cluster, granularity.",
             ),
         )
     )

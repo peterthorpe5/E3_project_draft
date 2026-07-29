@@ -9,9 +9,13 @@ import pytest
 
 from e3structalign.errors import InputValidationError, StructuralAlignmentError
 from e3structalign.io_utils import read_records
+from e3structalign.models import SelectedPocket
 from e3structalign.pipeline import (
     AlignmentSettings,
+    _sensitivity_group_summary,
+    _sensitivity_member_summaries,
     parse_pocket_locators,
+    parse_ranked_pockets,
     parse_selected_pockets,
     resolve_structure_assets,
     run_pipeline,
@@ -55,6 +59,15 @@ def test_complete_pipeline_and_resume(structural_inputs: dict[str, Path]) -> Non
         "SAME_3D_POCKET_POSITION_SUPPORTED"
     )
     assert summaries[0]["mean_structural_chemical_group_conservation"] == 1.0
+    sensitivity = read_records(
+        structural_inputs["output"]
+        / "tables"
+        / "structural_pocket_sensitivity_group_summary.parquet"
+    )
+    assert sensitivity[0]["member_pocket_top_k"] == 1
+    assert sensitivity[0]["sensitivity_alignment_status"] == (
+        "CONSERVED_3D_POCKET_SUPPORTED"
+    )
     residue_matches = read_records(
         structural_inputs["output"] / "tables" / "pocket_residue_matches.parquet"
     )
@@ -136,6 +149,7 @@ def test_selected_pocket_validation() -> None:
         AlignmentSettings(minimum_global_tm_score=2.0),
         AlignmentSettings(usalign_executable=""),
         AlignmentSettings(run_usalign=False, run_tmalign=False),
+        AlignmentSettings(member_pocket_top_k=21),
     ],
 )
 def test_invalid_settings(settings: AlignmentSettings) -> None:
@@ -202,6 +216,155 @@ def test_selected_values_assets_and_locators_validate(
     ]
     locators = parse_pocket_locators(mapping_rows + [mapping_rows[-1]], selected)
     assert len(locators["A"]) == 1
+
+
+def test_top_k_member_pocket_requires_same_candidate_from_both_aligners() -> None:
+    """A lower-ranked pocket rescues a member only with two-aligner agreement."""
+    base = {
+        "cluster_id": "c",
+        "primary_group_type": "ORTHOGROUP",
+        "primary_group_id": "g",
+        "reference_accession": "REF",
+        "mobile_accession": "MEM",
+        "reference_species": "species_1",
+        "mobile_species": "species_2",
+        "status": "ASSESSED",
+        "minimum_tm_score": 0.8,
+        "symmetric_overlap_fraction": 0.8,
+        "centroid_distance_angstrom": 2.0,
+        "three_dimensional_pocket_score": 0.8,
+    }
+    strict_rows = [
+        {
+            **base,
+            "alignment_tool": tool,
+            "mobile_pocket_number": 1,
+            "same_pocket_position_supported": False,
+            "pocket_structure_conserved": False,
+        }
+        for tool in ("US-align", "TM-align")
+    ]
+    sensitivity_rows = []
+    for tool in ("US-align", "TM-align"):
+        sensitivity_rows.extend(
+            (
+                {
+                    **strict_rows[0],
+                    "alignment_tool": tool,
+                    "mobile_pocket_rank": 1,
+                    "strict_selected_mobile_pocket": True,
+                },
+                {
+                    **base,
+                    "alignment_tool": tool,
+                    "mobile_pocket_number": 2,
+                    "mobile_pocket_rank": 2,
+                    "strict_selected_mobile_pocket": False,
+                    "same_pocket_position_supported": True,
+                    "pocket_structure_conserved": True,
+                },
+            )
+        )
+    settings = AlignmentSettings(member_pocket_top_k=5)
+    rows = _sensitivity_member_summaries(
+        sensitivity_comparisons=sensitivity_rows,
+        strict_comparisons=strict_rows,
+        alignment_tools=("US-align", "TM-align"),
+        settings=settings,
+    )
+    assert rows[0]["best_mobile_pocket_number"] == 2
+    assert rows[0]["conservation_rescued_by_alternative_pocket"]
+
+    sensitivity_rows[-1]["pocket_structure_conserved"] = False
+    sensitivity_rows[-1]["same_pocket_position_supported"] = False
+    disagreement = _sensitivity_member_summaries(
+        sensitivity_comparisons=sensitivity_rows,
+        strict_comparisons=strict_rows,
+        alignment_tools=("US-align", "TM-align"),
+        settings=settings,
+    )
+    assert not disagreement[0]["same_pocket_position_supported"]
+    assert not disagreement[0]["pocket_structure_conserved"]
+
+
+def test_top_k_group_summary_preserves_strict_result() -> None:
+    """Group sensitivity reports rescue while retaining strict fractions."""
+    reference = SelectedPocket(
+        cluster_id="c",
+        primary_group_type="ORTHOGROUP",
+        primary_group_id="g",
+        accession="REF",
+        species="species_1",
+        pocket_number=1,
+        druggability_score=0.9,
+        mapping_fraction=1.0,
+        pocket_plddt_fraction=0.9,
+        predictor_agreement=True,
+        structural_evidence_status="HIGH_CONFIDENCE_POCKET",
+    )
+    member = SelectedPocket(
+        cluster_id="c",
+        primary_group_type="ORTHOGROUP",
+        primary_group_id="g",
+        accession="MEM",
+        species="species_2",
+        pocket_number=1,
+        druggability_score=0.8,
+        mapping_fraction=1.0,
+        pocket_plddt_fraction=0.8,
+        predictor_agreement=True,
+        structural_evidence_status="HIGH_CONFIDENCE_POCKET",
+    )
+    summary = _sensitivity_group_summary(
+        records=(reference, member),
+        reference=reference,
+        eligible=(reference, member),
+        strict_summary={
+            "group_position_support_fraction": 0.5,
+            "group_support_fraction": 0.5,
+        },
+        member_summaries=(
+            {
+                "mobile_accession": "MEM",
+                "same_pocket_position_supported": True,
+                "pocket_structure_conserved": True,
+                "position_rescued_by_alternative_pocket": True,
+                "conservation_rescued_by_alternative_pocket": True,
+            },
+        ),
+        settings=AlignmentSettings(member_pocket_top_k=5),
+    )
+    assert summary["strict_group_support_fraction"] == 0.5
+    assert summary["sensitivity_group_support_fraction"] == 1.0
+    assert summary["sensitivity_alignment_status"] == (
+        "CONSERVED_3D_POCKET_SUPPORTED"
+    )
+
+
+def test_ranked_pockets_validate_rank_and_limit() -> None:
+    """Ranked pocket parsing rejects invalid ranks and applies top-k."""
+    base = {
+        "cluster_id": "c",
+        "primary_group_type": "ORTHOGROUP",
+        "primary_group_id": "g",
+        "candidate_accession": "MEM",
+        "species_column": "species",
+        "pocket_number": 1,
+        "selection_rank": 1,
+    }
+    ranked = parse_ranked_pockets(
+        [
+            base,
+            {**base, "pocket_number": 2, "selection_rank": 2},
+        ],
+        maximum_rank=1,
+    )
+    assert [pocket.pocket_number for pocket in ranked] == [1]
+    with pytest.raises(InputValidationError, match="positive"):
+        parse_ranked_pockets(
+            [{**base, "selection_rank": 0}],
+            maximum_rank=5,
+        )
 
 
 def test_force_and_failed_attempt_retention(structural_inputs: dict[str, Path]) -> None:

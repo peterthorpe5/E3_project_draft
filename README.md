@@ -21,9 +21,10 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.9.2 retains the Stage 07 Expression Atlas scaling and installation-provenance repairs
-from v0.9.1. It additionally passes the absolute workflow source root into Slurm controller jobs,
-so Slurm's temporary batch-script copy cannot redirect the controller to `/var/spool/slurmd`.
+Version 0.11.0 adds an immutable 100-group exploratory profile, top-five member-pocket
+sensitivity requiring US-align and TM-align agreement on the same pocket, documented gate
+sensitivity, ordered top-50 review outputs and a release-tested application hand-off. The
+completed v0.10.2 50-group result remains unchanged as the stringent primary analysis.
 
 ## Sixty-second cluster quick start
 
@@ -601,16 +602,19 @@ The `.snakemake/slurm_logs` area is executor-managed and may be transient. Prefe
 
 ## Final outputs
 
-The two main final analytical authorities are:
+The three complementary final analytical resources are:
 
 ```text
 10_integrated_resource/duckdb/e3_integrated_resource.duckdb
+10_integrated_resource/final_results/final_evolutionary_candidate_prioritisation.parquet
 10_integrated_resource/tables/e3_candidate_master_results.parquet
 ```
 
 The DuckDB retains one-to-many group members, sequences, domains, expression mappings, pockets and
-residue-level evidence. The master Parquet provides one wide row per candidate group for portable
-review. TSV is used for human-auditable tables; comma-separated analytical outputs are not used.
+residue-level evidence. The final evolutionary prioritisation Parquet is the definitive
+one-row-per-evolutionary-group decision table. The candidate master Parquet provides one wide row
+per candidate/DeepClust cluster as a portable compatibility summary. TSV is used for
+human-auditable tables; comma-separated analytical outputs are not used.
 
 The complete run also publishes:
 

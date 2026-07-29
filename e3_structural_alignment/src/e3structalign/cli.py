@@ -56,8 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Superpose structures and compare selected pockets.",
     )
     run.add_argument("--selected-pockets", type=Path, required=True)
+    run.add_argument("--ranked-pockets", type=Path)
     run.add_argument("--pocket-residue-mappings", type=Path, required=True)
     run.add_argument("--pocket-sequence-coordinates", type=Path)
+    run.add_argument("--ranked-pocket-sequence-coordinates", type=Path)
     run.add_argument("--asset-manifest", type=Path, required=True)
     run.add_argument("--output-dir", type=Path, required=True)
     run.add_argument("--usalign-executable", default="USalign")
@@ -65,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--skip-usalign", action="store_true")
     run.add_argument("--skip-tmalign", action="store_true")
     run.add_argument("--threads", type=positive_integer, default=4)
+    run.add_argument("--member-pocket-top-k", type=positive_integer, default=1)
     run.add_argument(
         "--distance-threshold-angstrom",
         type=positive_float,
@@ -117,6 +120,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             selected_pockets_path=args.selected_pockets,
             pocket_residue_mappings_path=args.pocket_residue_mappings,
             pocket_sequence_coordinates_path=args.pocket_sequence_coordinates,
+            ranked_pockets_path=args.ranked_pockets,
+            ranked_pocket_sequence_coordinates_path=(
+                args.ranked_pocket_sequence_coordinates
+            ),
             asset_manifest_path=args.asset_manifest,
             output_dir=args.output_dir,
             settings=AlignmentSettings(
@@ -125,6 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 run_usalign=not args.skip_usalign,
                 run_tmalign=not args.skip_tmalign,
                 threads=args.threads,
+                member_pocket_top_k=args.member_pocket_top_k,
                 distance_threshold_angstrom=args.distance_threshold_angstrom,
                 maximum_centroid_distance_angstrom=(
                     args.maximum_centroid_distance_angstrom

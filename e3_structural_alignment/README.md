@@ -14,7 +14,9 @@ questions:
 2. Is the local pocket residue environment structurally and chemically conserved?
 
 A member is counted as supported only when every enabled aligner passes the thresholds relevant to
-the conclusion. The package reports:
+the conclusion. Version 0.2.0 also supports a separate sensitivity analysis: the selected
+reference pocket is compared with the top-k member pockets, and US-align and TM-align must support
+the same member pocket number. This never overwrites the rank-one result. The package reports:
 
 - both length-normalised TM-scores, aligned length, RMSD and sequence identity;
 - the exact matrix and unmodified output from each tool for every comparison;
@@ -61,13 +63,17 @@ The normal entry point uses named options only:
 ```bash
 ./run_e3_structural_alignment.sh \
     --selected-pockets /path/to/selected_pockets.parquet \
+    --ranked-pockets /path/to/ranked_member_pockets.parquet \
     --pocket-residue-mappings /path/to/reused_pocket_residue_mappings.parquet \
     --pocket-sequence-coordinates /path/to/pocket_sequence_coordinates.parquet \
+    --ranked-pocket-sequence-coordinates \
+      /path/to/ranked_pocket_sequence_coordinates.parquet \
     --asset-manifest /path/to/reused_asset_manifest.parquet \
     --output-dir /path/to/structural_alignment_result \
     --usalign-executable USalign \
     --tmalign-executable TMalign \
     --threads 16 \
+    --member-pocket-top-k 5 \
     --distance-threshold-angstrom 4.0 \
     --maximum-centroid-distance-angstrom 8.0 \
     --minimum-pocket-overlap-fraction 0.5 \
@@ -93,6 +99,10 @@ previous directory under a unique `superseded` name.
 - `candidate_accession`
 - `species_column`
 - `pocket_number`
+
+`ranked_pockets` is optional and contains the same identifiers plus `selection_rank`. When it is
+provided, ranks up to `--member-pocket-top-k` are assessed. If it is omitted, the strict selected
+pockets are treated as rank one and the sensitivity result is identical to the primary result.
 
 The residue mapping table must contain `accession`, `pocket_number` and `mapping_status`, plus
 model label and/or author residue identifiers. Only `MAPPED` rows for the selected pocket are used.
@@ -132,7 +142,15 @@ structural_alignment_result/
     ├── pocket_residue_matches.tsv
     ├── pocket_residue_matches.parquet
     ├── structural_alignment_summary.tsv
-    └── structural_alignment_summary.parquet
+    ├── structural_alignment_summary.parquet
+    ├── structural_pocket_sensitivity_comparisons.tsv
+    ├── structural_pocket_sensitivity_comparisons.parquet
+    ├── structural_pocket_sensitivity_residue_matches.tsv
+    ├── structural_pocket_sensitivity_residue_matches.parquet
+    ├── structural_pocket_sensitivity_member_summary.tsv
+    ├── structural_pocket_sensitivity_member_summary.parquet
+    ├── structural_pocket_sensitivity_group_summary.tsv
+    └── structural_pocket_sensitivity_group_summary.parquet
 ```
 
 TSV is the human-readable exchange format; typed Parquet is the integration authority. No

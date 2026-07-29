@@ -8,9 +8,10 @@ while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
 The main sections follow the evidence path required by the grant:
 
-1. **Final recommendations** – the top-20 review shortlist, strict
-   grant-aligned predictions, group-level scorecard, DeepClust contributors,
-   representative audit and explicit exclusion reasons.
+1. **Final recommendations** – the ordered top-50 review shortlist, strict
+   grant-aligned predictions, named gate-sensitivity scenarios, group-level
+   scorecard, DeepClust contributors, representative audit and explicit
+   exclusion reasons.
 2. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
@@ -41,19 +42,22 @@ Choose exactly one E3 result source.
 | Mode | Option | Intended use |
 |---|---|---|
 | Integrated DuckDB | `--resource_duckdb_path` | Production default; candidate summaries plus all detailed one-to-many evidence |
-| Candidate master Parquet | `--resource_parquet_path` | One-file candidate-level hand-off requested by the project lead |
+| Candidate master Parquet | `--resource_parquet_path` | Portable cluster-level compatibility hand-off |
 | Workflow run directory | `--resource_run_dir` | Compatibility mode while stage outputs still exist as many Parquets |
 
 In run-directory mode the app discovers non-superseded `*.parquet` files,
 assigns canonical relation names and registers lazy views in a temporary
 in-memory DuckDB. It never rewrites the workflow result.
 
-The single master Parquet is deliberately one row per candidate group. It
-contains the final ranking, additional pre-structure fields, all prefixed
-discovery evidence and useful detail counts. Protein members, multiple pockets,
-domain hits and residue pairs remain normalised relations in the integrated
-DuckDB because flattening them into one row would either duplicate candidates or
-lose evidence.
+The single master Parquet is deliberately one row per candidate/DeepClust
+cluster. It contains prioritisation, additional pre-structure fields, prefixed
+discovery evidence and useful detail counts. The definitive
+one-row-per-evolutionary-group table is
+`final_results/final_evolutionary_candidate_prioritisation.parquet`, available
+through integrated-DuckDB and run-directory modes. Protein members, multiple
+pockets, domain hits and residue pairs remain normalised relations in the
+integrated DuckDB because flattening them into one row would either duplicate
+records or lose evidence.
 
 ## Start the app
 

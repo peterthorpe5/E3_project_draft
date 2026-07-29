@@ -404,6 +404,7 @@ class StructuralAlignmentAnalysisConfig:
     shard_threads: int
     shard_memory_mb: int
     shard_runtime_minutes: int
+    member_pocket_top_k: int
     usalign_executable: str
     tmalign_executable: str
     distance_threshold_angstrom: float
@@ -993,6 +994,10 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
             shard_runtime_minutes=_positive_integer(
                 structural_alignment.get("shard_runtime_minutes", 240),
                 "analysis.structural_alignment.shard_runtime_minutes",
+            ),
+            member_pocket_top_k=_positive_integer(
+                structural_alignment.get("member_pocket_top_k", 1),
+                "analysis.structural_alignment.member_pocket_top_k",
             ),
             usalign_executable=_non_empty_string(
                 structural_alignment.get("usalign_executable", "USalign"),

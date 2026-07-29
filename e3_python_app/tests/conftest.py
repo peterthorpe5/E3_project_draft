@@ -93,6 +93,23 @@ def resource_db(tmp_path: Path) -> Path:
             "'CONSERVED_3D_POCKET_SUPPORTED', 0.9)"
         )
         connection.execute(
+            "CREATE TABLE top_computational_review_shortlist AS "
+            "SELECT * FROM candidate_master_results ORDER BY final_rank"
+        )
+        connection.execute(
+            "CREATE TABLE top_50_computational_review_shortlist AS "
+            "SELECT * FROM candidate_master_results ORDER BY final_rank"
+        )
+        connection.execute(
+            "CREATE TABLE gate_sensitivity_summary("
+            "scenario_id VARCHAR, evolutionary_group_count INTEGER, "
+            "passing_group_count INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO gate_sensitivity_summary VALUES "
+            "('STRICT_PRIMARY', 1, 1), ('TOP_K_POCKET', 1, 1)"
+        )
+        connection.execute(
             "CREATE TABLE resource_metadata("
             "resource_name VARCHAR, package_version VARCHAR, run_name VARCHAR)"
         )

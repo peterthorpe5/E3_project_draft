@@ -183,6 +183,67 @@ GROUP_SUMMARY_SCHEMA = (
     ("interpretation", "VARCHAR"),
 )
 
+SENSITIVITY_COMPARISON_SCHEMA = POCKET_COMPARISON_SCHEMA + (
+    ("mobile_pocket_rank", "BIGINT"),
+    ("strict_selected_mobile_pocket", "BOOLEAN"),
+    ("member_pocket_top_k", "BIGINT"),
+)
+
+SENSITIVITY_RESIDUE_MATCH_SCHEMA = POCKET_RESIDUE_MATCH_SCHEMA + (
+    ("mobile_pocket_rank", "BIGINT"),
+    ("strict_selected_mobile_pocket", "BOOLEAN"),
+)
+
+SENSITIVITY_MEMBER_SCHEMA = (
+    ("cluster_id", "VARCHAR"),
+    ("primary_group_type", "VARCHAR"),
+    ("primary_group_id", "VARCHAR"),
+    ("reference_accession", "VARCHAR"),
+    ("mobile_accession", "VARCHAR"),
+    ("reference_species", "VARCHAR"),
+    ("mobile_species", "VARCHAR"),
+    ("member_pocket_top_k", "BIGINT"),
+    ("candidate_pocket_count", "BIGINT"),
+    ("strict_selected_pocket_number", "BIGINT"),
+    ("best_mobile_pocket_number", "BIGINT"),
+    ("best_mobile_pocket_rank", "BIGINT"),
+    ("alignment_tools", "VARCHAR"),
+    ("alignment_tool_count", "BIGINT"),
+    ("both_aligners_assessed", "BOOLEAN"),
+    ("same_pocket_position_supported", "BOOLEAN"),
+    ("pocket_structure_conserved", "BOOLEAN"),
+    ("strict_same_pocket_position_supported", "BOOLEAN"),
+    ("strict_pocket_structure_conserved", "BOOLEAN"),
+    ("position_rescued_by_alternative_pocket", "BOOLEAN"),
+    ("conservation_rescued_by_alternative_pocket", "BOOLEAN"),
+    ("best_three_dimensional_pocket_score", "DOUBLE"),
+    ("best_mean_minimum_tm_score", "DOUBLE"),
+    ("best_mean_pocket_overlap_fraction", "DOUBLE"),
+    ("best_median_centroid_distance_angstrom", "DOUBLE"),
+    ("interpretation", "VARCHAR"),
+)
+
+SENSITIVITY_GROUP_SCHEMA = (
+    ("cluster_id", "VARCHAR"),
+    ("primary_group_type", "VARCHAR"),
+    ("primary_group_id", "VARCHAR"),
+    ("reference_accession", "VARCHAR"),
+    ("member_pocket_top_k", "BIGINT"),
+    ("model_available_accession_count", "BIGINT"),
+    ("assessed_member_count", "BIGINT"),
+    ("strict_group_position_support_fraction", "DOUBLE"),
+    ("sensitivity_group_position_support_fraction", "DOUBLE"),
+    ("strict_group_support_fraction", "DOUBLE"),
+    ("sensitivity_group_support_fraction", "DOUBLE"),
+    ("position_rescued_accession_count", "BIGINT"),
+    ("conservation_rescued_accession_count", "BIGINT"),
+    ("sensitivity_position_alignment_status", "VARCHAR"),
+    ("sensitivity_alignment_status", "VARCHAR"),
+    ("sensitivity_position_supported_accessions", "VARCHAR"),
+    ("sensitivity_supported_accessions", "VARCHAR"),
+    ("interpretation", "VARCHAR"),
+)
+
 
 @dataclass(frozen=True)
 class AlignmentSettings:
@@ -193,6 +254,7 @@ class AlignmentSettings:
     run_usalign: bool = True
     run_tmalign: bool = True
     threads: int = 4
+    member_pocket_top_k: int = 1
     distance_threshold_angstrom: float = 4.0
     maximum_centroid_distance_angstrom: float = 8.0
     minimum_pocket_overlap_fraction: float = 0.5
@@ -211,6 +273,10 @@ class AlignmentSettings:
             raise InputValidationError("TM-align executable must be non-empty")
         if self.threads < 1:
             raise InputValidationError("threads must be a positive integer")
+        if not 1 <= self.member_pocket_top_k <= 20:
+            raise InputValidationError(
+                "member_pocket_top_k must be between one and twenty"
+            )
         for label, value in (
             ("distance_threshold_angstrom", self.distance_threshold_angstrom),
             (
@@ -273,8 +339,12 @@ def _boolean(value: Any) -> bool:
     raise InputValidationError(f"Expected Boolean value, observed {value!r}")
 
 
-def parse_selected_pockets(records: Sequence[Mapping[str, Any]]) -> list[SelectedPocket]:
-    """Validate and normalise selected-pocket records."""
+def _parse_pockets(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    unique_by_accession: bool,
+) -> list[SelectedPocket]:
+    """Validate and normalise selected or ranked pocket records."""
     require_columns(
         records,
         (
@@ -288,7 +358,7 @@ def parse_selected_pockets(records: Sequence[Mapping[str, Any]]) -> list[Selecte
         "selected pockets",
     )
     parsed: list[SelectedPocket] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, ...]] = set()
     for row_number, record in enumerate(records, start=2):
         cluster_id = _text(record.get("cluster_id"))
         group_id = _text(record.get("primary_group_id"))
@@ -297,10 +367,22 @@ def parse_selected_pockets(records: Sequence[Mapping[str, Any]]) -> list[Selecte
             raise InputValidationError(
                 f"Selected-pocket row {row_number} has an empty group or accession identifier"
             )
-        key = (cluster_id, accession)
+        selection_rank = _integer(record.get("selection_rank", 1), "selection_rank")
+        if selection_rank < 1:
+            raise InputValidationError("selection_rank must be a positive integer")
+        key = (
+            (cluster_id, accession)
+            if unique_by_accession
+            else (cluster_id, accession, selection_rank)
+        )
         if key in seen:
             raise InputValidationError(
-                f"Duplicate selected pocket for cluster/accession: {cluster_id}/{accession}"
+                "Duplicate pocket record for cluster/accession"
+                + (
+                    f": {cluster_id}/{accession}"
+                    if unique_by_accession
+                    else f"/rank: {cluster_id}/{accession}/{selection_rank}"
+                )
             )
         seen.add(key)
         parsed.append(
@@ -320,9 +402,32 @@ def parse_selected_pockets(records: Sequence[Mapping[str, Any]]) -> list[Selecte
                 structural_evidence_status=_text(
                     record.get("structural_evidence_status")
                 ),
+                selection_rank=selection_rank,
             )
         )
     return parsed
+
+
+def parse_selected_pockets(records: Sequence[Mapping[str, Any]]) -> list[SelectedPocket]:
+    """Validate one strict selected pocket per candidate accession."""
+    return _parse_pockets(records, unique_by_accession=True)
+
+
+def parse_ranked_pockets(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    maximum_rank: int,
+) -> list[SelectedPocket]:
+    """Validate ranked member-pocket candidates for sensitivity analysis."""
+    if maximum_rank < 1:
+        raise InputValidationError("maximum_rank must be a positive integer")
+    parsed = _parse_pockets(records, unique_by_accession=False)
+    ranked: list[SelectedPocket] = []
+    for pocket in parsed:
+        if pocket.selection_rank > maximum_rank:
+            continue
+        ranked.append(pocket)
+    return ranked
 
 
 def resolve_structure_assets(
@@ -417,6 +522,55 @@ def parse_pocket_locators(
     }
 
 
+def parse_ranked_pocket_locators(
+    records: Sequence[Mapping[str, Any]],
+    ranked: Sequence[SelectedPocket],
+) -> dict[tuple[str, int], tuple[ResidueLocator, ...]]:
+    """Return mapped residue locators for every retained member-pocket rank."""
+    require_columns(
+        records,
+        ("accession", "pocket_number", "mapping_status"),
+        "pocket residue mappings",
+    )
+    selected_keys = {
+        (pocket.accession, pocket.pocket_number) for pocket in ranked
+    }
+    locators: dict[tuple[str, int], list[ResidueLocator]] = {}
+    for record in records:
+        accession = _text(record.get("accession"))
+        pocket_number = _integer(record.get("pocket_number"), "pocket_number")
+        key = (accession, pocket_number)
+        if key not in selected_keys:
+            continue
+        if _text(record.get("mapping_status")).upper() != "MAPPED":
+            continue
+        locator = ResidueLocator(
+            label_chain=_text(
+                record.get("model_label_chain") or record.get("label_chain")
+            ),
+            label_seq_id=_text(
+                record.get("model_label_seq_id") or record.get("label_seq_id")
+            ),
+            auth_chain=_text(
+                record.get("model_auth_chain") or record.get("auth_chain")
+            ),
+            auth_seq_id=_text(
+                record.get("model_auth_seq_id") or record.get("auth_seq_id")
+            ),
+            insertion_code=_text(
+                record.get("model_insertion_code") or record.get("insertion_code")
+            ),
+        )
+        if not locator.label_seq_id and not locator.auth_seq_id:
+            continue
+        if locator not in locators.setdefault(key, []):
+            locators[key].append(locator)
+    return {
+        key: tuple(pocket_locators)
+        for key, pocket_locators in locators.items()
+    }
+
+
 def parse_pocket_sequence_coordinates(
     records: Sequence[Mapping[str, Any]],
     selected: Sequence[SelectedPocket],
@@ -494,6 +648,91 @@ def parse_pocket_sequence_coordinates(
             )
         )
         for accession, values in coordinates.items()
+    }
+
+
+def parse_ranked_pocket_sequence_coordinates(
+    records: Sequence[Mapping[str, Any]],
+    ranked: Sequence[SelectedPocket],
+) -> dict[tuple[str, int], tuple[PocketSequenceCoordinate, ...]]:
+    """Return FASTA coordinates keyed by accession and retained pocket number."""
+    if not records:
+        return {}
+    require_columns(
+        records,
+        (
+            "candidate_accession",
+            "pocket_number",
+            "structure_label_chain",
+            "structure_label_seq_id",
+            "structure_auth_chain",
+            "structure_auth_seq_id",
+            "structure_insertion_code",
+            "structure_residue_name",
+            "fasta_position",
+            "fasta_residue",
+            "sequence_coordinate_status",
+        ),
+        "ranked pocket sequence coordinates",
+    )
+    selected_keys = {
+        (pocket.accession, pocket.pocket_number) for pocket in ranked
+    }
+    coordinates: dict[
+        tuple[str, int],
+        list[PocketSequenceCoordinate],
+    ] = {}
+    for record in records:
+        accession = _text(record.get("candidate_accession"))
+        pocket_number = _integer(record.get("pocket_number"), "pocket_number")
+        key = (accession, pocket_number)
+        if key not in selected_keys:
+            continue
+        fasta_position_text = _text(record.get("fasta_position"))
+        coordinate = PocketSequenceCoordinate(
+            accession=accession,
+            pocket_number=pocket_number,
+            locator=ResidueLocator(
+                label_chain=_text(record.get("structure_label_chain")),
+                label_seq_id=_text(record.get("structure_label_seq_id")),
+                auth_chain=_text(record.get("structure_auth_chain")),
+                auth_seq_id=_text(record.get("structure_auth_seq_id")),
+                insertion_code=_text(record.get("structure_insertion_code")),
+            ),
+            structure_residue_name=_text(
+                record.get("structure_residue_name")
+            ).upper(),
+            fasta_position=(
+                _integer(fasta_position_text, "fasta_position")
+                if fasta_position_text
+                else None
+            ),
+            fasta_residue=_text(record.get("fasta_residue")).upper(),
+            sequence_coordinate_status=_text(
+                record.get("sequence_coordinate_status")
+            ).upper(),
+        )
+        if coordinate not in coordinates.setdefault(key, []):
+            coordinates[key].append(coordinate)
+    return {
+        key: tuple(
+            sorted(
+                values,
+                key=lambda value: (
+                    (
+                        value.fasta_position
+                        if value.fasta_position is not None
+                        else 10**12
+                    ),
+                    value.locator.label_chain,
+                    value.locator.label_seq_id,
+                    value.locator.auth_chain,
+                    value.locator.auth_seq_id,
+                    value.locator.insertion_code,
+                ),
+            )
+        )
+        for key, values in coordinates.items()
     }
 
 
@@ -760,6 +999,103 @@ def _reference_rows(
     return alignment, comparison
 
 
+def _assess_pocket_pair(
+    *,
+    reference: SelectedPocket,
+    mobile: SelectedPocket,
+    reference_atoms: Sequence[tuple[ResidueLocator, Any]],
+    mobile_atoms: Sequence[tuple[ResidueLocator, Any]],
+    reference_sequence_coordinates: Sequence[PocketSequenceCoordinate],
+    mobile_sequence_coordinates: Sequence[PocketSequenceCoordinate],
+    transform: Any,
+    minimum_tm_score: float,
+    alignment_tool: str,
+    settings: AlignmentSettings,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Assess one reference pocket against one transformed member pocket."""
+    transformed_mobile = transform_coordinates(
+        coordinates=[atom.coordinate for _locator, atom in mobile_atoms],
+        transform=transform,
+    )
+    geometry = pocket_geometry(
+        reference_coordinates=[
+            atom.coordinate for _locator, atom in reference_atoms
+        ],
+        transformed_mobile_coordinates=transformed_mobile,
+        distance_threshold_angstrom=settings.distance_threshold_angstrom,
+    )
+    residue_rows, residue_evidence = _residue_match_evidence(
+        reference=reference,
+        mobile=mobile,
+        reference_atoms=reference_atoms,
+        mobile_atoms=mobile_atoms,
+        transformed_mobile_coordinates=transformed_mobile,
+        sequence_coordinates={
+            reference.accession: reference_sequence_coordinates,
+            mobile.accession: mobile_sequence_coordinates,
+        },
+        alignment_tool=alignment_tool,
+        settings=settings,
+    )
+    global_tm_pass = minimum_tm_score >= settings.minimum_global_tm_score
+    centroid_pass = (
+        geometry["centroid_distance_angstrom"]
+        <= settings.maximum_centroid_distance_angstrom
+    )
+    overlap_pass = (
+        geometry["symmetric_overlap_fraction"]
+        >= settings.minimum_pocket_overlap_fraction
+    )
+    same_position_supported = global_tm_pass and centroid_pass and overlap_pass
+    pocket_structure_conserved = (
+        same_position_supported
+        and bool(residue_evidence["pocket_residue_conservation_pass"])
+    )
+    comparison = {
+        "cluster_id": reference.cluster_id,
+        "primary_group_type": reference.primary_group_type,
+        "primary_group_id": reference.primary_group_id,
+        "reference_accession": reference.accession,
+        "mobile_accession": mobile.accession,
+        "reference_species": reference.species,
+        "mobile_species": mobile.species,
+        "alignment_tool": alignment_tool,
+        "reference_pocket_number": reference.pocket_number,
+        "mobile_pocket_number": mobile.pocket_number,
+        "reference_pocket_ca_count": len(reference_atoms),
+        "mobile_pocket_ca_count": len(mobile_atoms),
+        "distance_threshold_angstrom": settings.distance_threshold_angstrom,
+        **geometry,
+        "minimum_tm_score": minimum_tm_score,
+        "global_tm_pass": global_tm_pass,
+        "pocket_centroid_pass": centroid_pass,
+        "pocket_overlap_pass": overlap_pass,
+        "same_pocket_position_supported": same_position_supported,
+        **residue_evidence,
+        "pocket_structure_conserved": pocket_structure_conserved,
+        "same_pocket_supported": same_position_supported,
+        "three_dimensional_pocket_score": _three_dimensional_score(
+            minimum_tm_score=minimum_tm_score,
+            overlap_fraction=geometry["symmetric_overlap_fraction"],
+            centroid_distance_angstrom=geometry["centroid_distance_angstrom"],
+            maximum_centroid_distance_angstrom=(
+                settings.maximum_centroid_distance_angstrom
+            ),
+        ),
+        "status": "ASSESSED",
+        "reason": (
+            "same pocket position and local structural conservation pass configured thresholds"
+            if pocket_structure_conserved
+            else (
+                "same pocket position passes but local residue conservation does not"
+                if same_position_supported
+                else "one or more global-superposition or pocket-position thresholds failed"
+            )
+        ),
+    }
+    return comparison, residue_rows
+
+
 def _align_pair(
     *,
     reference: SelectedPocket,
@@ -772,14 +1108,29 @@ def _align_pair(
     sequence_coordinates: Mapping[
         str, Sequence[PocketSequenceCoordinate]
     ],
+    ranked_mobile_pockets: Sequence[SelectedPocket],
+    ranked_atom_records: Mapping[
+        tuple[str, int],
+        Sequence[tuple[ResidueLocator, Any]],
+    ],
+    ranked_sequence_coordinates: Mapping[
+        tuple[str, int],
+        Sequence[PocketSequenceCoordinate],
+    ],
     raw_root: Path,
     output_root: Path,
     alignment_tool: str,
     executable: str,
     version: str,
     settings: AlignmentSettings,
-) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    """Run one mobile-to-reference superposition and pocket comparison."""
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    """Run one superposition, strict comparison and top-k sensitivity set."""
     reference_asset = assets[reference.accession]
     mobile_asset = assets[mobile.accession]
     group_slug = safe_filename(
@@ -803,50 +1154,23 @@ def _align_pair(
         result.tm_score_mobile_normalised,
         result.tm_score_reference_normalised,
     )
-    transformed_mobile = transform_coordinates(
-        coordinates=[
-            atom.coordinate
-            for _locator, atom in atom_records[mobile.accession]
-        ],
-        transform=result.transform,
-    )
-    geometry = pocket_geometry(
-        reference_coordinates=[
-            atom.coordinate
-            for _locator, atom in atom_records[reference.accession]
-        ],
-        transformed_mobile_coordinates=transformed_mobile,
-        distance_threshold_angstrom=settings.distance_threshold_angstrom,
-    )
-    residue_rows, residue_evidence = _residue_match_evidence(
+    comparison, residue_rows = _assess_pocket_pair(
         reference=reference,
         mobile=mobile,
         reference_atoms=atom_records[reference.accession],
         mobile_atoms=atom_records[mobile.accession],
-        transformed_mobile_coordinates=transformed_mobile,
-        sequence_coordinates=sequence_coordinates,
+        reference_sequence_coordinates=sequence_coordinates.get(
+            reference.accession,
+            (),
+        ),
+        mobile_sequence_coordinates=sequence_coordinates.get(
+            mobile.accession,
+            (),
+        ),
+        transform=result.transform,
+        minimum_tm_score=minimum_tm_score,
         alignment_tool=alignment_tool,
         settings=settings,
-    )
-    global_tm_pass = minimum_tm_score >= settings.minimum_global_tm_score
-    centroid_pass = (
-        geometry["centroid_distance_angstrom"]
-        <= settings.maximum_centroid_distance_angstrom
-    )
-    overlap_pass = (
-        geometry["symmetric_overlap_fraction"]
-        >= settings.minimum_pocket_overlap_fraction
-    )
-    same_position_supported = global_tm_pass and centroid_pass and overlap_pass
-    pocket_structure_conserved = (
-        same_position_supported
-        and bool(residue_evidence["pocket_residue_conservation_pass"])
-    )
-    score = _three_dimensional_score(
-        minimum_tm_score=minimum_tm_score,
-        overlap_fraction=geometry["symmetric_overlap_fraction"],
-        centroid_distance_angstrom=geometry["centroid_distance_angstrom"],
-        maximum_centroid_distance_angstrom=settings.maximum_centroid_distance_angstrom,
     )
     alignment = {
         "cluster_id": reference.cluster_id,
@@ -872,41 +1196,56 @@ def _align_pair(
         "matrix_relative_path": str(matrix_path.relative_to(output_root)),
         "stdout_relative_path": str(stdout_path.relative_to(output_root)),
     }
-    comparison = {
-        "cluster_id": reference.cluster_id,
-        "primary_group_type": reference.primary_group_type,
-        "primary_group_id": reference.primary_group_id,
-        "reference_accession": reference.accession,
-        "mobile_accession": mobile.accession,
-        "reference_species": reference.species,
-        "mobile_species": mobile.species,
-        "alignment_tool": alignment_tool,
-        "reference_pocket_number": reference.pocket_number,
-        "mobile_pocket_number": mobile.pocket_number,
-        "reference_pocket_ca_count": len(atom_records[reference.accession]),
-        "mobile_pocket_ca_count": len(atom_records[mobile.accession]),
-        "distance_threshold_angstrom": settings.distance_threshold_angstrom,
-        **geometry,
-        "minimum_tm_score": minimum_tm_score,
-        "global_tm_pass": global_tm_pass,
-        "pocket_centroid_pass": centroid_pass,
-        "pocket_overlap_pass": overlap_pass,
-        "same_pocket_position_supported": same_position_supported,
-        **residue_evidence,
-        "pocket_structure_conserved": pocket_structure_conserved,
-        "same_pocket_supported": same_position_supported,
-        "three_dimensional_pocket_score": score,
-        "status": "ASSESSED",
-        "reason": (
-            "same pocket position and local structural conservation pass configured thresholds"
-            if pocket_structure_conserved
-            else (
-                "same pocket position passes but local residue conservation does not"
-                if same_position_supported
-                else "one or more global-superposition or pocket-position thresholds failed"
+    sensitivity_comparisons: list[dict[str, Any]] = []
+    sensitivity_residue_rows: list[dict[str, Any]] = []
+    for candidate in sorted(
+        ranked_mobile_pockets,
+        key=lambda pocket: (pocket.selection_rank, pocket.pocket_number),
+    ):
+        key = (candidate.accession, candidate.pocket_number)
+        candidate_atoms = ranked_atom_records.get(key)
+        if not candidate_atoms:
+            continue
+        candidate_comparison, candidate_residue_rows = _assess_pocket_pair(
+            reference=reference,
+            mobile=candidate,
+            reference_atoms=atom_records[reference.accession],
+            mobile_atoms=candidate_atoms,
+            reference_sequence_coordinates=sequence_coordinates.get(
+                reference.accession,
+                (),
+            ),
+            mobile_sequence_coordinates=ranked_sequence_coordinates.get(
+                key,
+                (),
+            ),
+            transform=result.transform,
+            minimum_tm_score=minimum_tm_score,
+            alignment_tool=alignment_tool,
+            settings=settings,
+        )
+        candidate_comparison.update(
+            {
+                "mobile_pocket_rank": candidate.selection_rank,
+                "strict_selected_mobile_pocket": (
+                    candidate.pocket_number == mobile.pocket_number
+                    and candidate.selection_rank == 1
+                ),
+                "member_pocket_top_k": settings.member_pocket_top_k,
+            }
+        )
+        for row in candidate_residue_rows:
+            row.update(
+                {
+                    "mobile_pocket_rank": candidate.selection_rank,
+                    "strict_selected_mobile_pocket": (
+                        candidate.pocket_number == mobile.pocket_number
+                        and candidate.selection_rank == 1
+                    ),
+                }
             )
-        ),
-    }
+        sensitivity_comparisons.append(candidate_comparison)
+        sensitivity_residue_rows.extend(candidate_residue_rows)
     viewer_path = (
         output_root
         / "interactive"
@@ -938,29 +1277,39 @@ def _align_pair(
             "Minimum TM-score": f"{minimum_tm_score:.4f}",
             "RMSD (Å)": f"{result.rmsd_angstrom:.4f}",
             "Pocket centroid distance (Å)": (
-                f"{geometry['centroid_distance_angstrom']:.4f}"
+                f"{comparison['centroid_distance_angstrom']:.4f}"
             ),
             "Symmetric pocket overlap": (
-                f"{geometry['symmetric_overlap_fraction']:.4f}"
+                f"{comparison['symmetric_overlap_fraction']:.4f}"
             ),
             "Local structural-residue match": (
-                f"{residue_evidence['structural_residue_match_fraction']:.4f}"
+                f"{comparison['structural_residue_match_fraction']:.4f}"
             ),
             "Local chemical-group conservation": (
                 "Not assessed"
-                if residue_evidence["structural_chemical_group_conservation"] is None
+                if comparison["structural_chemical_group_conservation"] is None
                 else (
-                    f"{residue_evidence['structural_chemical_group_conservation']:.4f}"
+                    f"{comparison['structural_chemical_group_conservation']:.4f}"
                 )
             ),
-            "Same pocket position supported": same_position_supported,
-            "Locally conserved pocket supported": pocket_structure_conserved,
+            "Same pocket position supported": comparison[
+                "same_pocket_position_supported"
+            ],
+            "Locally conserved pocket supported": comparison[
+                "pocket_structure_conserved"
+            ],
         },
     )
     alignment["interactive_view_relative_path"] = str(
         viewer_path.relative_to(output_root)
     )
-    return alignment, comparison, residue_rows
+    return (
+        alignment,
+        comparison,
+        residue_rows,
+        sensitivity_comparisons,
+        sensitivity_residue_rows,
+    )
 
 
 def _group_summary(
@@ -1124,17 +1473,264 @@ def _group_summary(
     }
 
 
+def _sensitivity_member_summaries(
+    *,
+    sensitivity_comparisons: Sequence[Mapping[str, Any]],
+    strict_comparisons: Sequence[Mapping[str, Any]],
+    alignment_tools: Sequence[str],
+    settings: AlignmentSettings,
+) -> list[dict[str, Any]]:
+    """Select one top-k member pocket only when every aligner agrees."""
+    strict_by_member: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
+    for row in strict_comparisons:
+        if row.get("status") != "ASSESSED":
+            continue
+        key = (
+            str(row["cluster_id"]),
+            str(row["primary_group_id"]),
+            str(row["mobile_accession"]),
+        )
+        strict_by_member.setdefault(key, []).append(row)
+
+    candidates: dict[
+        tuple[str, str, str, int],
+        list[Mapping[str, Any]],
+    ] = {}
+    for row in sensitivity_comparisons:
+        if row.get("status") != "ASSESSED":
+            continue
+        key = (
+            str(row["cluster_id"]),
+            str(row["primary_group_id"]),
+            str(row["mobile_accession"]),
+            int(row["mobile_pocket_number"]),
+        )
+        candidates.setdefault(key, []).append(row)
+
+    member_keys = sorted({key[:3] for key in candidates})
+    expected_tools = set(alignment_tools)
+    summaries: list[dict[str, Any]] = []
+    for member_key in member_keys:
+        assessed_candidates: list[dict[str, Any]] = []
+        for key, rows in candidates.items():
+            if key[:3] != member_key:
+                continue
+            observed_tools = {str(row["alignment_tool"]) for row in rows}
+            all_assessed = (
+                observed_tools == expected_tools
+                and len(rows) == len(alignment_tools)
+            )
+            position_supported = all_assessed and all(
+                bool(row["same_pocket_position_supported"]) for row in rows
+            )
+            structure_conserved = all_assessed and all(
+                bool(row["pocket_structure_conserved"]) for row in rows
+            )
+            assessed_candidates.append(
+                {
+                    "key": key,
+                    "rows": rows,
+                    "all_assessed": all_assessed,
+                    "position_supported": position_supported,
+                    "structure_conserved": structure_conserved,
+                    "rank": int(rows[0]["mobile_pocket_rank"]),
+                    "strict": bool(rows[0]["strict_selected_mobile_pocket"]),
+                    "score": statistics.mean(
+                        float(row["three_dimensional_pocket_score"])
+                        for row in rows
+                    ),
+                    "tm_score": statistics.mean(
+                        float(row["minimum_tm_score"]) for row in rows
+                    ),
+                    "overlap": statistics.mean(
+                        float(row["symmetric_overlap_fraction"]) for row in rows
+                    ),
+                    "centroid": statistics.median(
+                        float(row["centroid_distance_angstrom"]) for row in rows
+                    ),
+                }
+            )
+        best = min(
+            assessed_candidates,
+            key=lambda candidate: (
+                not candidate["structure_conserved"],
+                not candidate["position_supported"],
+                not candidate["all_assessed"],
+                -candidate["score"],
+                candidate["rank"],
+                candidate["key"][3],
+            ),
+        )
+        strict_rows = strict_by_member.get(member_key, [])
+        strict_tools = {str(row["alignment_tool"]) for row in strict_rows}
+        strict_assessed = (
+            strict_tools == expected_tools
+            and len(strict_rows) == len(alignment_tools)
+        )
+        strict_position = strict_assessed and all(
+            bool(row["same_pocket_position_supported"]) for row in strict_rows
+        )
+        strict_conserved = strict_assessed and all(
+            bool(row["pocket_structure_conserved"]) for row in strict_rows
+        )
+        first = best["rows"][0]
+        strict_pocket_number = (
+            int(strict_rows[0]["mobile_pocket_number"])
+            if strict_rows
+            else int(
+                min(
+                    assessed_candidates,
+                    key=lambda candidate: (
+                        not candidate["strict"],
+                        candidate["rank"],
+                        candidate["key"][3],
+                    ),
+                )["key"][3]
+            )
+        )
+        summaries.append(
+            {
+                "cluster_id": first["cluster_id"],
+                "primary_group_type": first["primary_group_type"],
+                "primary_group_id": first["primary_group_id"],
+                "reference_accession": first["reference_accession"],
+                "mobile_accession": first["mobile_accession"],
+                "reference_species": first["reference_species"],
+                "mobile_species": first["mobile_species"],
+                "member_pocket_top_k": settings.member_pocket_top_k,
+                "candidate_pocket_count": len(assessed_candidates),
+                "strict_selected_pocket_number": strict_pocket_number,
+                "best_mobile_pocket_number": best["key"][3],
+                "best_mobile_pocket_rank": best["rank"],
+                "alignment_tools": ";".join(alignment_tools),
+                "alignment_tool_count": len(alignment_tools),
+                "both_aligners_assessed": best["all_assessed"],
+                "same_pocket_position_supported": best["position_supported"],
+                "pocket_structure_conserved": best["structure_conserved"],
+                "strict_same_pocket_position_supported": strict_position,
+                "strict_pocket_structure_conserved": strict_conserved,
+                "position_rescued_by_alternative_pocket": (
+                    best["position_supported"]
+                    and not strict_position
+                    and best["rank"] > 1
+                ),
+                "conservation_rescued_by_alternative_pocket": (
+                    best["structure_conserved"]
+                    and not strict_conserved
+                    and best["rank"] > 1
+                ),
+                "best_three_dimensional_pocket_score": best["score"],
+                "best_mean_minimum_tm_score": best["tm_score"],
+                "best_mean_pocket_overlap_fraction": best["overlap"],
+                "best_median_centroid_distance_angstrom": best["centroid"],
+                "interpretation": (
+                    "the same candidate member pocket must pass with every enabled "
+                    "structural aligner; alternatives remain separate from the strict "
+                    "rank-one result"
+                ),
+            }
+        )
+    return summaries
+
+
+def _sensitivity_group_summary(
+    *,
+    records: Sequence[SelectedPocket],
+    reference: SelectedPocket | None,
+    eligible: Sequence[SelectedPocket],
+    strict_summary: Mapping[str, Any],
+    member_summaries: Sequence[Mapping[str, Any]],
+    settings: AlignmentSettings,
+) -> dict[str, Any]:
+    """Aggregate top-k sensitivity without changing the strict primary gates."""
+    reference_accessions = {reference.accession} if reference is not None else set()
+    position_supported = reference_accessions | {
+        str(row["mobile_accession"])
+        for row in member_summaries
+        if bool(row["same_pocket_position_supported"])
+    }
+    conserved = reference_accessions | {
+        str(row["mobile_accession"])
+        for row in member_summaries
+        if bool(row["pocket_structure_conserved"])
+    }
+    denominator = len(eligible)
+    position_fraction = len(position_supported) / denominator if denominator else 0.0
+    support_fraction = len(conserved) / denominator if denominator else 0.0
+    if denominator < 2:
+        position_status = "INSUFFICIENT_STRUCTURES"
+        alignment_status = "INSUFFICIENT_STRUCTURES"
+    else:
+        position_status = (
+            "SAME_3D_POCKET_POSITION_SUPPORTED"
+            if position_fraction >= settings.minimum_group_support_fraction
+            else "SAME_3D_POCKET_POSITION_NOT_SUPPORTED"
+        )
+        alignment_status = (
+            "CONSERVED_3D_POCKET_SUPPORTED"
+            if support_fraction >= settings.minimum_group_support_fraction
+            else "THREE_DIMENSIONAL_POCKET_NOT_SUPPORTED"
+        )
+    first = records[0]
+    return {
+        "cluster_id": first.cluster_id,
+        "primary_group_type": first.primary_group_type,
+        "primary_group_id": first.primary_group_id,
+        "reference_accession": reference.accession if reference is not None else "",
+        "member_pocket_top_k": settings.member_pocket_top_k,
+        "model_available_accession_count": denominator,
+        "assessed_member_count": len(member_summaries),
+        "strict_group_position_support_fraction": strict_summary[
+            "group_position_support_fraction"
+        ],
+        "sensitivity_group_position_support_fraction": position_fraction,
+        "strict_group_support_fraction": strict_summary["group_support_fraction"],
+        "sensitivity_group_support_fraction": support_fraction,
+        "position_rescued_accession_count": sum(
+            bool(row["position_rescued_by_alternative_pocket"])
+            for row in member_summaries
+        ),
+        "conservation_rescued_accession_count": sum(
+            bool(row["conservation_rescued_by_alternative_pocket"])
+            for row in member_summaries
+        ),
+        "sensitivity_position_alignment_status": position_status,
+        "sensitivity_alignment_status": alignment_status,
+        "sensitivity_position_supported_accessions": ";".join(
+            sorted(position_supported)
+        ),
+        "sensitivity_supported_accessions": ";".join(sorted(conserved)),
+        "interpretation": (
+            "exploratory top-k result; the published rank-one result remains "
+            "the primary stringent analysis"
+        ),
+    }
+
+
 def run_analysis(
     *,
     selected: Sequence[SelectedPocket],
+    ranked: Sequence[SelectedPocket],
     assets: Mapping[str, StructureAsset],
     locators: Mapping[str, Sequence[ResidueLocator]],
+    ranked_locators: Mapping[
+        tuple[str, int],
+        Sequence[ResidueLocator],
+    ],
     sequence_coordinates: Mapping[
         str, Sequence[PocketSequenceCoordinate]
+    ],
+    ranked_sequence_coordinates: Mapping[
+        tuple[str, int],
+        Sequence[PocketSequenceCoordinate],
     ],
     output_root: Path,
     settings: AlignmentSettings,
 ) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -1167,6 +1763,29 @@ def run_analysis(
         )
         if accession_atom_records:
             atom_records[pocket.accession] = accession_atom_records
+    ranked_atom_records: dict[
+        tuple[str, int],
+        Sequence[tuple[ResidueLocator, Any]],
+    ] = {}
+    for pocket in ranked:
+        key = (pocket.accession, pocket.pocket_number)
+        accession_locators = ranked_locators.get(key, ())
+        if pocket.accession not in assets or not accession_locators:
+            continue
+        if pocket.accession not in atoms:
+            atoms[pocket.accession] = parse_ca_atoms(
+                assets[pocket.accession].path
+            )
+        pocket_records = pocket_atom_coordinates(
+            atoms=atoms[pocket.accession],
+            locators=accession_locators,
+        )
+        if pocket_records:
+            ranked_atom_records[key] = pocket_records
+    ranked_by_accession: dict[str, list[SelectedPocket]] = {}
+    for pocket in ranked:
+        if (pocket.accession, pocket.pocket_number) in ranked_atom_records:
+            ranked_by_accession.setdefault(pocket.accession, []).append(pocket)
     grouped: dict[tuple[str, str, str], list[SelectedPocket]] = {}
     for pocket in selected:
         key = (
@@ -1211,6 +1830,8 @@ def run_analysis(
         )
     raw_root = output_root / "raw"
     residue_matches: list[dict[str, Any]] = []
+    sensitivity_comparisons: list[dict[str, Any]] = []
+    sensitivity_residue_matches: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=settings.threads) as executor:
         future_to_pair = {
             executor.submit(
@@ -1221,6 +1842,12 @@ def run_analysis(
                 all_atoms=atoms,
                 atom_records=atom_records,
                 sequence_coordinates=sequence_coordinates,
+                ranked_mobile_pockets=ranked_by_accession.get(
+                    mobile.accession,
+                    (),
+                ),
+                ranked_atom_records=ranked_atom_records,
+                ranked_sequence_coordinates=ranked_sequence_coordinates,
                 raw_root=raw_root,
                 output_root=output_root,
                 alignment_tool=alignment_tool,
@@ -1233,7 +1860,13 @@ def run_analysis(
         for future in as_completed(future_to_pair):
             pair = future_to_pair[future]
             try:
-                alignment, comparison, pair_residue_matches = future.result()
+                (
+                    alignment,
+                    comparison,
+                    pair_residue_matches,
+                    pair_sensitivity_comparisons,
+                    pair_sensitivity_residue_matches,
+                ) = future.result()
             except BaseException as exc:
                 raise StructuralAlignmentError(
                     f"Structural alignment failed for {pair[0]} versus {pair[1]}: {exc}"
@@ -1241,6 +1874,8 @@ def run_analysis(
             alignments.append(alignment)
             comparisons.append(comparison)
             residue_matches.extend(pair_residue_matches)
+            sensitivity_comparisons.extend(pair_sensitivity_comparisons)
+            sensitivity_residue_matches.extend(pair_sensitivity_residue_matches)
     alignments.sort(
         key=lambda row: (
             str(row["cluster_id"]),
@@ -1272,6 +1907,8 @@ def run_analysis(
         )
     )
     summaries = []
+    sensitivity_members: list[dict[str, Any]] = []
+    sensitivity_groups: list[dict[str, Any]] = []
     for records, reference, eligible in group_context:
         group_comparisons = [
             row
@@ -1279,20 +1916,82 @@ def run_analysis(
             if row["cluster_id"] == records[0].cluster_id
             and row["primary_group_id"] == records[0].primary_group_id
         ]
-        summaries.append(
-            _group_summary(
+        strict_summary = _group_summary(
+            records=records,
+            reference=reference,
+            eligible=eligible,
+            comparisons=group_comparisons,
+            alignment_tools=[name for name, _executable in tools],
+            settings=settings,
+        )
+        summaries.append(strict_summary)
+        group_sensitivity_comparisons = [
+            row
+            for row in sensitivity_comparisons
+            if row["cluster_id"] == records[0].cluster_id
+            and row["primary_group_id"] == records[0].primary_group_id
+        ]
+        group_members = _sensitivity_member_summaries(
+            sensitivity_comparisons=group_sensitivity_comparisons,
+            strict_comparisons=group_comparisons,
+            alignment_tools=[name for name, _executable in tools],
+            settings=settings,
+        )
+        sensitivity_members.extend(group_members)
+        sensitivity_groups.append(
+            _sensitivity_group_summary(
                 records=records,
                 reference=reference,
                 eligible=eligible,
-                comparisons=group_comparisons,
-                alignment_tools=[name for name, _executable in tools],
+                strict_summary=strict_summary,
+                member_summaries=group_members,
                 settings=settings,
             )
         )
     summaries.sort(
         key=lambda row: (str(row["cluster_id"]), str(row["primary_group_id"]))
     )
-    return alignments, comparisons, residue_matches, summaries, versions
+    sensitivity_comparisons.sort(
+        key=lambda row: (
+            str(row["cluster_id"]),
+            str(row["reference_accession"]),
+            str(row["mobile_accession"]),
+            int(row["mobile_pocket_rank"]),
+            str(row["alignment_tool"]),
+        )
+    )
+    sensitivity_residue_matches.sort(
+        key=lambda row: (
+            str(row["cluster_id"]),
+            str(row["reference_accession"]),
+            str(row["mobile_accession"]),
+            int(row["mobile_pocket_rank"]),
+            str(row["alignment_tool"]),
+            int(row["reference_fasta_position"])
+            if row["reference_fasta_position"] is not None
+            else 10**12,
+        )
+    )
+    sensitivity_members.sort(
+        key=lambda row: (str(row["cluster_id"]), str(row["mobile_accession"]))
+    )
+    sensitivity_groups.sort(
+        key=lambda row: (
+            str(row["cluster_id"]),
+            str(row["primary_group_id"]),
+        )
+    )
+    return (
+        alignments,
+        comparisons,
+        residue_matches,
+        summaries,
+        sensitivity_comparisons,
+        sensitivity_residue_matches,
+        sensitivity_members,
+        sensitivity_groups,
+        versions,
+    )
 
 
 def _run_digest(
@@ -1356,6 +2055,8 @@ def run_pipeline(
     force: bool,
     verbose: bool,
     pocket_sequence_coordinates_path: Path | None = None,
+    ranked_pockets_path: Path | None = None,
+    ranked_pocket_sequence_coordinates_path: Path | None = None,
 ) -> Path:
     """Run the complete workflow through atomic publication."""
     settings.validate()
@@ -1374,6 +2075,16 @@ def run_pipeline(
         input_paths["pocket_sequence_coordinates"] = resolve_input_file(
             pocket_sequence_coordinates_path,
             "pocket sequence coordinates",
+        )
+    if ranked_pockets_path is not None:
+        input_paths["ranked_pockets"] = resolve_input_file(
+            ranked_pockets_path,
+            "ranked member pockets",
+        )
+    if ranked_pocket_sequence_coordinates_path is not None:
+        input_paths["ranked_pocket_sequence_coordinates"] = resolve_input_file(
+            ranked_pocket_sequence_coordinates_path,
+            "ranked pocket sequence coordinates",
         )
     run_digest, input_inventory = _run_digest(
         input_paths=input_paths,
@@ -1410,40 +2121,105 @@ def run_pipeline(
                 details["size_bytes"],
                 details["sha256"],
             )
-        selected = parse_selected_pockets(
-            read_records(input_paths["selected_pockets"])
+        selected_records = read_records(input_paths["selected_pockets"])
+        selected = parse_selected_pockets(selected_records)
+        ranked = parse_ranked_pockets(
+            (
+                read_records(input_paths["ranked_pockets"])
+                if "ranked_pockets" in input_paths
+                else selected_records
+            ),
+            maximum_rank=settings.member_pocket_top_k,
         )
         assets = resolve_structure_assets(
             read_records(input_paths["asset_manifest"])
         )
+        mapping_records = read_records(input_paths["pocket_residue_mappings"])
         locators = parse_pocket_locators(
-            read_records(input_paths["pocket_residue_mappings"]),
+            mapping_records,
             selected=selected,
+        )
+        ranked_locators = parse_ranked_pocket_locators(
+            mapping_records,
+            ranked=ranked,
+        )
+        sequence_records = (
+            read_records(input_paths["pocket_sequence_coordinates"])
+            if "pocket_sequence_coordinates" in input_paths
+            else []
         )
         sequence_coordinates = parse_pocket_sequence_coordinates(
-            (
-                read_records(input_paths["pocket_sequence_coordinates"])
-                if "pocket_sequence_coordinates" in input_paths
-                else []
-            ),
+            sequence_records,
             selected=selected,
         )
+        ranked_sequence_coordinates = parse_ranked_pocket_sequence_coordinates(
+            (
+                read_records(
+                    input_paths["ranked_pocket_sequence_coordinates"]
+                )
+                if "ranked_pocket_sequence_coordinates" in input_paths
+                else sequence_records
+            ),
+            ranked=ranked,
+        )
         LOGGER.info(
-            "Selected pockets=%d; resolved models=%d; mapped-pocket accessions=%d; "
-            "FASTA-coordinate accessions=%d",
+            "Selected pockets=%d; ranked pockets=%d; resolved models=%d; "
+            "mapped-pocket accessions=%d; FASTA-coordinate accessions=%d",
             len(selected),
+            len(ranked),
             len(assets),
             len(locators),
             len(sequence_coordinates),
         )
-        alignments, comparisons, residue_matches, summaries, versions = run_analysis(
+        (
+            alignments,
+            comparisons,
+            residue_matches,
+            summaries,
+            sensitivity_comparisons,
+            sensitivity_residue_matches,
+            sensitivity_members,
+            sensitivity_groups,
+            versions,
+        ) = run_analysis(
             selected=selected,
+            ranked=ranked,
             assets=assets,
             locators=locators,
+            ranked_locators=ranked_locators,
             sequence_coordinates=sequence_coordinates,
+            ranked_sequence_coordinates=ranked_sequence_coordinates,
             output_root=staging,
             settings=settings,
         )
+        LOGGER.info(
+            "Completed strict comparisons=%d; top-k comparisons=%d; "
+            "strict supported groups=%d; sensitivity supported groups=%d",
+            len(comparisons),
+            len(sensitivity_comparisons),
+            sum(
+                row["alignment_status"] == "CONSERVED_3D_POCKET_SUPPORTED"
+                for row in summaries
+            ),
+            sum(
+                row["sensitivity_alignment_status"]
+                == "CONSERVED_3D_POCKET_SUPPORTED"
+                for row in sensitivity_groups
+            ),
+        )
+        for row in sensitivity_groups:
+            if (
+                int(row["position_rescued_accession_count"]) > 0
+                or int(row["conservation_rescued_accession_count"]) > 0
+            ):
+                LOGGER.info(
+                    "Top-k sensitivity rescue for %s:%s: position=%d; "
+                    "conservation=%d",
+                    row["primary_group_type"],
+                    row["primary_group_id"],
+                    row["position_rescued_accession_count"],
+                    row["conservation_rescued_accession_count"],
+                )
         write_table(
             tsv_path=staging / "tables" / "structural_alignments.tsv",
             parquet_path=staging / "tables" / "structural_alignments.parquet",
@@ -1468,8 +2244,66 @@ def run_pipeline(
             records=summaries,
             schema=GROUP_SUMMARY_SCHEMA,
         )
+        write_table(
+            tsv_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_comparisons.tsv"
+            ),
+            parquet_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_comparisons.parquet"
+            ),
+            records=sensitivity_comparisons,
+            schema=SENSITIVITY_COMPARISON_SCHEMA,
+        )
+        write_table(
+            tsv_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_residue_matches.tsv"
+            ),
+            parquet_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_residue_matches.parquet"
+            ),
+            records=sensitivity_residue_matches,
+            schema=SENSITIVITY_RESIDUE_MATCH_SCHEMA,
+        )
+        write_table(
+            tsv_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_member_summary.tsv"
+            ),
+            parquet_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_member_summary.parquet"
+            ),
+            records=sensitivity_members,
+            schema=SENSITIVITY_MEMBER_SCHEMA,
+        )
+        write_table(
+            tsv_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_group_summary.tsv"
+            ),
+            parquet_path=(
+                staging
+                / "tables"
+                / "structural_pocket_sensitivity_group_summary.parquet"
+            ),
+            records=sensitivity_groups,
+            schema=SENSITIVITY_GROUP_SCHEMA,
+        )
         validation = {
             "selected_accession_count": len(selected),
+            "ranked_member_pocket_count": len(ranked),
+            "member_pocket_top_k": settings.member_pocket_top_k,
             "resolved_model_count": len(assets),
             "group_count": len(summaries),
             "pairwise_alignment_count": sum(
@@ -1484,6 +2318,24 @@ def run_pipeline(
             "supported_group_count": sum(
                 row["alignment_status"] == "CONSERVED_3D_POCKET_SUPPORTED"
                 for row in summaries
+            ),
+            "sensitivity_position_supported_group_count": sum(
+                row["sensitivity_position_alignment_status"]
+                == "SAME_3D_POCKET_POSITION_SUPPORTED"
+                for row in sensitivity_groups
+            ),
+            "sensitivity_supported_group_count": sum(
+                row["sensitivity_alignment_status"]
+                == "CONSERVED_3D_POCKET_SUPPORTED"
+                for row in sensitivity_groups
+            ),
+            "position_rescued_member_count": sum(
+                bool(row["position_rescued_by_alternative_pocket"])
+                for row in sensitivity_members
+            ),
+            "conservation_rescued_member_count": sum(
+                bool(row["conservation_rescued_by_alternative_pocket"])
+                for row in sensitivity_members
             ),
             "insufficient_structure_group_count": sum(
                 row["alignment_status"] == "INSUFFICIENT_STRUCTURES"

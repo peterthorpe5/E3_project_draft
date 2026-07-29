@@ -616,6 +616,8 @@ def test_downloaded_evidence_to_app_ready_release(
     ).is_file()
     final_root = config.run_root / "10_integrated_resource/final_results"
     assert (final_root / "top_20_computational_review_shortlist.parquet").is_file()
+    assert (final_root / "top_computational_review_shortlist.parquet").is_file()
+    assert (final_root / "gate_sensitivity_summary.parquet").is_file()
     assert (final_root / "grant_aligned_predicted_candidates.parquet").is_file()
     workbook = load_workbook(
         final_root / "final_candidate_recommendations.xlsx",
@@ -623,7 +625,8 @@ def test_downloaded_evidence_to_app_ready_release(
         data_only=False,
     )
     try:
-        assert "Top_20_Review" in workbook.sheetnames
+        assert "Top_Review" in workbook.sheetnames
+        assert "Gate_Sensitivity" in workbook.sheetnames
         assert "Evolutionary_Groups" in workbook.sheetnames
         assert all(
             worksheet.freeze_panes == "A2"
