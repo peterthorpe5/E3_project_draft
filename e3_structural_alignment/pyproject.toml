@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-structural-alignment"
-version = "0.2.0"
-description = "US-align/TM-align superposition and 3D pocket comparison for ARIA E3 candidates"
+version = "0.3.0"
+description = "Structural pocket comparison and ranked visual review for ARIA E3 candidates"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Internal research use"}
+license = "LicenseRef-Internal-Research-Use"
 authors = [{name = "Peter Thorpe and collaborators"}]
 dependencies = [
   "biopython>=1.85,<2",
@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 e3-structure-align = "e3structalign.cli:main"
+e3-pocket-review = "e3structalign.review_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

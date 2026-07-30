@@ -163,3 +163,217 @@ print("TM-score= 1.00000 (if normalized by length of Chain_2)")
         "tmalign": tmalign,
         "output": tmp_path / "result",
     }
+
+
+@pytest.fixture
+def review_run(
+    tmp_path: Path,
+    structural_inputs: dict[str, Path],
+) -> dict[str, Path]:
+    """Create one minimal completed workflow run for visual-review tests."""
+    run_root = tmp_path / "completed_run"
+    stage09_tables = run_root / "09_ligandability" / "tables"
+    stage09_tables.mkdir(parents=True)
+    stage10 = run_root / "10_integrated_resource" / "final_results"
+    stage10.mkdir(parents=True)
+    stage09b = (
+        run_root
+        / "09b_structural_alignment"
+        / "structural_alignment"
+        / "tables"
+    )
+    stage09b.mkdir(parents=True)
+    shortlist_rows = [
+        {
+            "final_evolutionary_rank": 1,
+            "prestructure_evolutionary_group_rank": 2,
+            "lead_cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "grant_aligned_prediction_status": "STRUCTURAL_SUPPORT",
+            "grant_aligned_prestructure_pass": True,
+            "grant_aligned_base_pass": True,
+            "grant_aligned_final_pass": True,
+            "conservation_status": "CONSERVED_POCKET_SUPPORTED",
+            "three_dimensional_position_status": (
+                "SAME_3D_POCKET_POSITION_SUPPORTED"
+            ),
+            "three_dimensional_alignment_status": (
+                "CONSERVED_3D_POCKET_SUPPORTED"
+            ),
+            "sensitivity_position_alignment_status": (
+                "SAME_3D_POCKET_POSITION_SUPPORTED"
+            ),
+            "sensitivity_alignment_status": "CONSERVED_3D_POCKET_SUPPORTED",
+            "final_score": 0.91,
+        }
+    ]
+    write_tsv(
+        stage10 / "top_50_computational_review_shortlist.tsv",
+        shortlist_rows,
+        tuple(shortlist_rows[0]),
+    )
+    selected_rows = []
+    ranked_rows = []
+    for accession, species, score in (
+        ("P1", "species_1", 0.9),
+        ("P2", "species_2", 0.8),
+    ):
+        base = {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "candidate_accession": accession,
+            "species_column": species,
+            "pocket_number": 1,
+            "druggability_score": score,
+            "mapping_fraction": 1.0,
+            "conservative_fraction_plddt_ge_70": 1.0,
+            "predictor_agreement": True,
+            "structural_evidence_status": "SELECTED_HIGH_CONFIDENCE",
+        }
+        selected_rows.append(base)
+        ranked_rows.append(
+            {
+                **base,
+                "selection_rank": 1,
+                "is_strict_selected": True,
+            }
+        )
+        ranked_rows.append(
+            {
+                **base,
+                "pocket_number": 2,
+                "druggability_score": score - 0.1,
+                "selection_rank": 2,
+                "is_strict_selected": False,
+            }
+        )
+    write_tsv(
+        stage09_tables / "selected_pockets.tsv",
+        selected_rows,
+        tuple(selected_rows[0]),
+    )
+    write_tsv(
+        stage09_tables / "ranked_member_pockets.tsv",
+        ranked_rows,
+        tuple(ranked_rows[0]),
+    )
+    coordinate_rows = [
+        {
+            "candidate_accession": accession,
+            "pocket_number": pocket_number,
+            "structure_label_chain": "A",
+            "structure_label_seq_id": residue,
+            "structure_auth_chain": "A",
+            "structure_auth_seq_id": residue,
+            "structure_insertion_code": "",
+            "structure_residue_name": "ALA",
+            "fasta_position": residue,
+            "fasta_residue": "A",
+            "sequence_coordinate_status": "MAPPED_EXACT",
+        }
+        for accession in ("P1", "P2")
+        for pocket_number, residue in ((1, 1), (2, 2))
+    ]
+    write_tsv(
+        stage09_tables / "ranked_pocket_sequence_coordinates.tsv",
+        coordinate_rows,
+        tuple(coordinate_rows[0]),
+    )
+    asset_rows = [
+        {
+            "accession": "P1",
+            "path": structural_inputs["reference"],
+            "sha256": sha256_file(structural_inputs["reference"]),
+        },
+        {
+            "accession": "P2",
+            "path": structural_inputs["mobile"],
+            "sha256": sha256_file(structural_inputs["mobile"]),
+        },
+    ]
+    write_tsv(
+        stage09_tables / "reused_asset_manifest.tsv",
+        asset_rows,
+        tuple(asset_rows[0]),
+    )
+    alignment = (
+        run_root
+        / "09_ligandability"
+        / "alignments"
+        / "cluster_1__OG0001"
+        / "aligned.fasta"
+    )
+    alignment.parent.mkdir(parents=True)
+    alignment.write_text(">P1\nAA\n>P2\nAA\n", encoding="utf-8")
+    structural_rows = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "reference_accession": "P1",
+            "selected_accession_count": 2,
+            "model_available_accession_count": 2,
+            "aligned_accession_count": 2,
+            "position_supported_accession_count": 2,
+            "supported_accession_count": 2,
+            "group_position_support_fraction": 1.0,
+            "group_support_fraction": 1.0,
+            "mean_minimum_tm_score": 1.0,
+            "mean_pocket_overlap_fraction": 1.0,
+            "median_centroid_distance_angstrom": 0.0,
+            "position_alignment_status": "SAME_3D_POCKET_POSITION_SUPPORTED",
+            "alignment_status": "CONSERVED_3D_POCKET_SUPPORTED",
+        }
+    ]
+    write_tsv(
+        stage09b / "structural_alignment_summary.tsv",
+        structural_rows,
+        tuple(structural_rows[0]),
+    )
+    sensitivity_group_rows = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "member_pocket_top_k": 5,
+            "sensitivity_group_position_support_fraction": 1.0,
+            "sensitivity_group_support_fraction": 1.0,
+            "position_rescued_accession_count": 0,
+            "conservation_rescued_accession_count": 0,
+            "sensitivity_position_alignment_status": (
+                "SAME_3D_POCKET_POSITION_SUPPORTED"
+            ),
+            "sensitivity_alignment_status": "CONSERVED_3D_POCKET_SUPPORTED",
+        }
+    ]
+    write_tsv(
+        stage09b / "structural_pocket_sensitivity_group_summary.tsv",
+        sensitivity_group_rows,
+        tuple(sensitivity_group_rows[0]),
+    )
+    sensitivity_member_rows = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "mobile_species": "species_2",
+            "mobile_accession": "P2",
+            "agreed_pocket_number": 1,
+            "agreed_pocket_rank": 1,
+            "position_rescued_by_alternative_pocket": False,
+            "conservation_rescued_by_alternative_pocket": False,
+        }
+    ]
+    write_tsv(
+        stage09b / "structural_pocket_sensitivity_member_summary.tsv",
+        sensitivity_member_rows,
+        tuple(sensitivity_member_rows[0]),
+    )
+    return {
+        "run_root": run_root,
+        "output": tmp_path / "review_report",
+        "alignment": alignment,
+        "shortlist": stage10 / "top_50_computational_review_shortlist.tsv",
+    }

@@ -176,6 +176,78 @@ contain no external JavaScript or network dependency, so the whole result direct
 from the cluster and opened locally. These views show C-alpha traces and selected residues; they do
 not claim to be an atomistic surface or docking viewer.
 
+## Ranked top-50 pocket-review report
+
+Version 0.3.0 adds an additive post-run report for project-lead manual review. It reads the
+authoritative Stage 10 order and existing Stage 09/09b evidence; it does not recalculate candidate
+scores, reorder groups or replace the strict rank-one conclusion with top-k sensitivity evidence.
+
+```bash
+./run_e3_pocket_review.sh \
+    --run-root /path/to/completed/e3_end_to_end_run \
+    --output-dir /path/to/completed/e3_end_to_end_run/pocket_review_top50 \
+    --review-limit 50 \
+    --member-pocket-top-k 5 \
+    --resume
+```
+
+The command discovers the conventional Parquet or TSV authorities below the run root. Every path
+can also be supplied explicitly through a named option when a portable copied run uses a different
+layout. The output is published atomically and includes:
+
+```text
+pocket_review_top50/
+├── index.html
+├── evidence_matrix.html
+├── groups/rank_001__<group-type>__<group-id>.html
+├── review_decisions_template.tsv
+├── tables/
+│   ├── review_report_index.tsv
+│   ├── top_group_evidence_matrix.tsv
+│   ├── pocket_residue_annotations.tsv
+│   └── protein_model_inventory.tsv
+├── qc/pocket_review_validation.tsv
+├── logs/pocket_review.log
+└── provenance/run_manifest.json
+```
+
+Each group page contains:
+
+- a rotatable C-alpha trace for every available member model;
+- separately coloured strict rank-one and rank-two to rank-five pocket residues;
+- the published MAFFT sequence alignment with exact Stage 09 pocket coordinates highlighted;
+- an interactive linear alignment-position track for rapid pocket-location comparison;
+- the complete authoritative ranking row;
+- strict structural and top-k sensitivity summaries; and
+- an explicit warning that predicted pocket location does not establish ligand binding, E3
+  recruitment or complete PROTAC function.
+
+The searchable and filterable evidence matrix compares the primary and sensitivity conclusions
+across all ranked groups without creating a new score. The residue-audit TSV records exact FASTA,
+alignment and structure coordinates for every highlighted residue, while the model inventory
+records availability and checksums for every displayed protein. Summary cards on the index show
+group, protein, model and alignment coverage.
+
+All page data, CSS and JavaScript are embedded. No network connection, CDN or remote structure
+service is used. The report can therefore be copied from the cluster and opened directly on a Mac.
+
+The Slurm submitter defaults to the University of Dundee `barton` account and `barton` partition:
+
+```bash
+./scripts/submit_e3_pocket_review_slurm.sh \
+    --run-root /path/to/completed/e3_end_to_end_run \
+    --output-dir /path/to/completed/e3_end_to_end_run/pocket_review_top50 \
+    --account barton \
+    --partition barton \
+    --review-limit 50 \
+    --member-pocket-top-k 5 \
+    --resume
+```
+
+The submitter rejects wall times above five days. Its default request is four CPUs, 16 GB and four
+hours; report generation is normally much smaller than the structural comparison campaign because
+it reuses all completed models, alignments and tables.
+
 ## End-to-end integration
 
 The master workflow owns stage ordering and Slurm resources. In an end-to-end YAML,

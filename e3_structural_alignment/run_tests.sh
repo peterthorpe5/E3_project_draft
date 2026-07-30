@@ -13,4 +13,9 @@ python -m coverage run --branch -m pytest "${SCRIPT_DIR}/tests"
 python -m coverage report
 python -m pycodestyle src tests --max-line-length=100
 python -m pydocstyle src tests
-bash -n run_e3_structural_alignment.sh run_tests.sh
+bash -n \
+    run_e3_structural_alignment.sh \
+    run_e3_pocket_review.sh \
+    run_tests.sh \
+    scripts/submit_e3_pocket_review_slurm.sh \
+    scripts/slurm_e3_pocket_review_job.sh
