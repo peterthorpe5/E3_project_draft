@@ -19,6 +19,7 @@ from e3workflow.errors import WorkflowError
 from e3workflow.io_utils import write_tsv
 from e3workflow.reporting import (
     RUN_REPORT_FILENAME,
+    _authoritative_evolutionary_group_counts,
     _bar_chart,
     _controlled_input_role,
     _input_records,
@@ -32,6 +33,33 @@ from e3workflow.reporting import (
     summarise_output,
 )
 from e3workflow.runner import execute_stage
+
+
+def _write_evolutionary_group_ranking(
+    *,
+    path: Path,
+    rows: tuple[tuple[object, object], ...],
+    key_type: str = "VARCHAR",
+    flag_type: str = "BOOLEAN",
+) -> None:
+    """Write a minimal Stage 08 evolutionary-group authority for report tests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(database=":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE evolutionary_groups ("
+            f"evolutionary_group_key {key_type}, "
+            f"lead_grant_aligned_stringent_pass {flag_type}"
+            ")"
+        )
+        if rows:
+            connection.executemany(
+                "INSERT INTO evolutionary_groups VALUES (?, ?)",
+                rows,
+            )
+        connection.execute(
+            "COPY evolutionary_groups TO ? (FORMAT PARQUET)",
+            [str(path)],
+        )
 
 
 @pytest.mark.parametrize(
@@ -403,6 +431,123 @@ def test_complete_report_contains_all_stages_and_commands(synthetic_config: Path
     second = generate_run_report(config=config, output_dir=config.run_root / "reports")
     assert Path(second["html_report"]).is_file()
     assert any((config.run_root / "superseded").glob("reports.*"))
+
+
+@pytest.mark.parametrize(
+    ("flag_type", "rows", "expected"),
+    [
+        (
+            "BOOLEAN",
+            (("HOG:1", True), ("HOG:2", False), ("HOG:3", True)),
+            (3, 2),
+        ),
+        (
+            "VARCHAR",
+            (("HOG:1", "true"), ("HOG:2", "false"), ("HOG:3", "TRUE")),
+            (3, 2),
+        ),
+    ],
+)
+def test_authoritative_evolutionary_group_counts_use_group_schema(
+    synthetic_config: Path,
+    flag_type: str,
+    rows: tuple[tuple[object, object], ...],
+    expected: tuple[int, int],
+) -> None:
+    """The report counts native or textual lead-group pass flags."""
+    config = replace(load_config(path=synthetic_config), mode="production")
+    ranking = (
+        config.run_root
+        / "08_shortlist_gate"
+        / "tables"
+        / "evolutionary_candidate_group_ranking.parquet"
+    )
+    _write_evolutionary_group_ranking(
+        path=ranking,
+        rows=rows,
+        flag_type=flag_type,
+    )
+
+    assert _authoritative_evolutionary_group_counts(config) == expected
+
+
+def test_authoritative_evolutionary_group_counts_match_completed_run_shape(
+    synthetic_config: Path,
+) -> None:
+    """The completed-run dimensions yield 1,972 groups and 38 stringent passes."""
+    config = replace(load_config(path=synthetic_config), mode="production")
+    ranking = (
+        config.run_root
+        / "08_shortlist_gate"
+        / "tables"
+        / "evolutionary_candidate_group_ranking.parquet"
+    )
+    rows = tuple(
+        (f"ORTHOFINDER_HIERARCHICAL_GROUP:HOG{index:07d}", index <= 38)
+        for index in range(1, 1_973)
+    )
+    _write_evolutionary_group_ranking(path=ranking, rows=rows)
+
+    assert _authoritative_evolutionary_group_counts(config) == (1_972, 38)
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        ((), "ranking is empty"),
+        ((("HOG:1", "not-a-boolean"),), "invalid stringent-pass"),
+        ((("", "true"),), "empty group key"),
+        ((("HOG:1", "true"), ("HOG:1", "false")), "not one row per group"),
+    ],
+)
+def test_authoritative_evolutionary_group_counts_reject_invalid_authority(
+    synthetic_config: Path,
+    rows: tuple[tuple[object, object], ...],
+    message: str,
+) -> None:
+    """Empty, ambiguous or duplicate Stage 08 authorities fail closed."""
+    config = replace(load_config(path=synthetic_config), mode="production")
+    ranking = (
+        config.run_root
+        / "08_shortlist_gate"
+        / "tables"
+        / "evolutionary_candidate_group_ranking.parquet"
+    )
+    _write_evolutionary_group_ranking(
+        path=ranking,
+        rows=rows,
+        flag_type="VARCHAR",
+    )
+
+    with pytest.raises(WorkflowError, match=message):
+        _authoritative_evolutionary_group_counts(config)
+
+
+def test_authoritative_evolutionary_group_counts_require_lead_flag(
+    synthetic_config: Path,
+) -> None:
+    """A cluster-level flag cannot silently replace the lead-group flag."""
+    config = replace(load_config(path=synthetic_config), mode="production")
+    ranking = (
+        config.run_root
+        / "08_shortlist_gate"
+        / "tables"
+        / "evolutionary_candidate_group_ranking.parquet"
+    )
+    ranking.parent.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(database=":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE evolutionary_groups AS "
+            "SELECT 'HOG:1' AS evolutionary_group_key, "
+            "TRUE AS grant_aligned_stringent_pass"
+        )
+        connection.execute(
+            "COPY evolutionary_groups TO ? (FORMAT PARQUET)",
+            [str(ranking)],
+        )
+
+    with pytest.raises(WorkflowError, match="lead_grant_aligned_stringent_pass"):
+        _authoritative_evolutionary_group_counts(config)
 
 
 def test_complete_report_labels_bounded_runs(synthetic_config: Path) -> None:

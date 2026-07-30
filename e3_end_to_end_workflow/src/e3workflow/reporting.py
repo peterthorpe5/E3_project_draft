@@ -1056,20 +1056,71 @@ def _authoritative_evolutionary_group_counts(
         )
     connection = duckdb.connect(":memory:")
     try:
+        columns = {
+            str(row[0])
+            for row in connection.execute(
+                "DESCRIBE SELECT * FROM read_parquet(?)",
+                [str(path)],
+            ).fetchall()
+        }
+        required_columns = {
+            "evolutionary_group_key",
+            "lead_grant_aligned_stringent_pass",
+        }
+        missing_columns = sorted(required_columns - columns)
+        if missing_columns:
+            raise WorkflowError(
+                "Authoritative evolutionary-group ranking lacks required "
+                f"column(s) {', '.join(missing_columns)}: {path}"
+            )
         row = connection.execute(
-            "SELECT COUNT(*), SUM(CAST(grant_aligned_stringent_pass AS INTEGER)) "
-            "FROM read_parquet(?)",
+            "WITH evolutionary_groups AS ("
+            "SELECT evolutionary_group_key, "
+            "lead_grant_aligned_stringent_pass AS raw_stringent_pass, "
+            "TRY_CAST(lead_grant_aligned_stringent_pass AS BOOLEAN) AS stringent_pass "
+            "FROM read_parquet(?)"
+            ") "
+            "SELECT COUNT(*), "
+            "COUNT(*) FILTER (WHERE stringent_pass), "
+            "COUNT(*) FILTER ("
+            "WHERE raw_stringent_pass IS NULL OR stringent_pass IS NULL"
+            "), "
+            "COUNT(DISTINCT evolutionary_group_key), "
+            "COUNT(*) FILTER ("
+            "WHERE evolutionary_group_key IS NULL "
+            "OR TRIM(CAST(evolutionary_group_key AS VARCHAR)) = ''"
+            ") "
+            "FROM evolutionary_groups",
             [str(path)],
         ).fetchone()
     except duckdb.Error as exc:
         raise WorkflowError(
-            f"Could not count authoritative evolutionary groups: {path}"
+            f"Could not count authoritative evolutionary groups: {path}: {exc}"
         ) from exc
     finally:
         connection.close()
-    if row is None:
+    if row is None or int(row[0]) == 0:
         raise WorkflowError(f"Evolutionary-group ranking is empty: {path}")
-    return int(row[0]), int(row[1] or 0)
+    total_count = int(row[0])
+    invalid_flag_count = int(row[2])
+    distinct_group_count = int(row[3])
+    invalid_group_key_count = int(row[4])
+    if invalid_flag_count:
+        raise WorkflowError(
+            "Authoritative evolutionary-group ranking contains "
+            f"{invalid_flag_count} missing or invalid stringent-pass value(s): {path}"
+        )
+    if invalid_group_key_count:
+        raise WorkflowError(
+            "Authoritative evolutionary-group ranking contains "
+            f"{invalid_group_key_count} missing or empty group key(s): {path}"
+        )
+    if distinct_group_count != total_count:
+        raise WorkflowError(
+            "Authoritative evolutionary-group ranking is not one row per group: "
+            f"{total_count} rows but {distinct_group_count} distinct group keys: {path}"
+        )
+    return total_count, int(row[1])
 
 
 def _metric_value(metrics: Mapping[str, Mapping[str, str]], name: str) -> str:
