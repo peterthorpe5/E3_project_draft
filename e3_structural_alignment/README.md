@@ -201,11 +201,14 @@ pocket_review_top50/
 ├── evidence_matrix.html
 ├── groups/rank_001__<group-type>__<group-id>.html
 ├── review_decisions_template.tsv
+├── sequences/
+│   └── prioritised_group_sequences.fasta
 ├── tables/
 │   ├── review_report_index.tsv
 │   ├── top_group_evidence_matrix.tsv
 │   ├── pocket_residue_annotations.tsv
-│   └── protein_model_inventory.tsv
+│   ├── protein_model_inventory.tsv
+│   └── prioritised_group_sequences.tsv
 ├── qc/pocket_review_validation.tsv
 ├── logs/pocket_review.log
 └── provenance/run_manifest.json
@@ -227,6 +230,19 @@ across all ranked groups without creating a new score. The residue-audit TSV rec
 alignment and structure coordinates for every highlighted residue, while the model inventory
 records availability and checksums for every displayed protein. Summary cards on the index show
 group, protein, model and alignment coverage.
+
+The prioritised-group sequence exports retain every record from each authoritative Stage 09
+alignment, including group members without ranked-pocket or structure evidence. The FASTA contains
+ungapped full protein sequences with unique rank-and-group identifiers. The matching TSV provides
+the original accession/name, species when available, evolutionary-group and lead-cluster
+identifiers, reference and pocket-evidence flags, sequence length, ungapped sequence, original
+aligned sequence and alignment checksum.
+
+The production HTML index also summarises pre-structure rank/pass state, target- and
+structural-species coverage, minimum member druggability, integrated score, strict and top-k 3D
+position/conservation outcomes, sequence/model coverage and formal final-pass counts. Each group
+page includes the complete decision reasons, missing-evidence record, sequence/model inventory,
+expanded structural metrics and links to every downloadable audit resource.
 
 All page data, CSS and JavaScript are embedded. No network connection, CDN or remote structure
 service is used. The report can therefore be copied from the cluster and opened directly on a Mac.

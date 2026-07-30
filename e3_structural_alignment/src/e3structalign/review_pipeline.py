@@ -17,6 +17,7 @@ from e3structalign.io_utils import (
     close_logger,
     configure_logging,
     output_inventory,
+    safe_filename,
     sha256_file,
     utc_now,
     write_tsv,
@@ -277,6 +278,114 @@ def _model_inventory_rows(
     return rows
 
 
+def _sequence_rows(
+    payloads: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return every sequence in the published alignments for reviewed groups."""
+    rows: list[dict[str, Any]] = []
+    observed_identifiers: set[str] = set()
+    for payload in payloads:
+        key = payload["group_key"]
+        source_sha256 = payload["alignment"].get("source_sha256", "")
+        for record in payload["alignment"].get("all_records", ()):
+            aligned_sequence = str(record["sequence"]).upper()
+            amino_acid_sequence = aligned_sequence.replace("-", "").replace(".", "")
+            if not amino_acid_sequence:
+                raise StructuralAlignmentError(
+                    "Prioritised-group alignment contains an all-gap sequence: "
+                    f"{record['accession']}"
+                )
+            fasta_identifier = safe_filename(
+                "rank_"
+                f"{int(payload['review_rank']):03d}__"
+                f"{key['primary_group_type']}__"
+                f"{key['primary_group_id']}__"
+                f"{key['cluster_id']}__"
+                f"{record['accession']}"
+            )
+            if fasta_identifier in observed_identifiers:
+                raise StructuralAlignmentError(
+                    "Prioritised-group FASTA identifier is not unique after "
+                    f"normalisation: {fasta_identifier}"
+                )
+            observed_identifiers.add(fasta_identifier)
+            rows.append(
+                {
+                    "review_rank": payload["review_rank"],
+                    "primary_group_type": key["primary_group_type"],
+                    "primary_group_id": key["primary_group_id"],
+                    "lead_cluster_id": key["cluster_id"],
+                    "fasta_identifier": fasta_identifier,
+                    "candidate_accession": record["accession"],
+                    "species_column": record.get("species", ""),
+                    "is_reference": record.get("is_reference", False),
+                    "has_ranked_pocket_evidence": record.get(
+                        "has_ranked_pocket_evidence",
+                        False,
+                    ),
+                    "sequence_length": len(amino_acid_sequence),
+                    "amino_acid_sequence": amino_acid_sequence,
+                    "alignment_length": len(aligned_sequence),
+                    "aligned_sequence": aligned_sequence,
+                    "alignment_source_sha256": source_sha256,
+                }
+            )
+    rows.sort(
+        key=lambda row: (
+            row["review_rank"],
+            not row["is_reference"],
+            not bool(row["species_column"]),
+            row["species_column"],
+            row["candidate_accession"],
+        )
+    )
+    return rows
+
+
+def _write_sequence_fasta(
+    *,
+    path: Path,
+    records: Sequence[Mapping[str, Any]],
+    line_width: int = 80,
+) -> None:
+    """Write a deterministic, atomically published protein FASTA file.
+
+    Args:
+        path: Destination FASTA path.
+        records: Sequence-export records containing identifiers and sequences.
+        line_width: Maximum residues per sequence line.
+
+    Raises:
+        StructuralAlignmentError: If no records are available or the line width
+            is invalid.
+    """
+    if not records:
+        raise StructuralAlignmentError(
+            "No prioritised-group sequences were available for FASTA export"
+        )
+    if line_width < 1:
+        raise StructuralAlignmentError("FASTA line width must be positive")
+    destination = Path(path).expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.partial.{os.getpid()}")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
+            for record in records:
+                identifier = str(record["fasta_identifier"])
+                sequence = str(record["amino_acid_sequence"])
+                handle.write(f">{identifier}\n")
+                for start in range(0, len(sequence), line_width):
+                    handle.write(f"{sequence[start:start + line_width]}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(destination)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise StructuralAlignmentError(
+            f"Could not publish prioritised-group FASTA {destination}: {exc}"
+        ) from exc
+
+
 def _validation(
     payloads: Sequence[Mapping[str, Any]],
     settings: ReviewSettings,
@@ -296,6 +405,10 @@ def _validation(
         "alignment_available_group_count": sum(
             payload["alignment"]["status"] == "AVAILABLE" for payload in payloads
         ),
+        "sequence_export_group_count": sum(
+            bool(payload["alignment"].get("all_records")) for payload in payloads
+        ),
+        "sequence_export_record_count": len(_sequence_rows(payloads)),
         "exact_pocket_residue_annotation_count": len(
             _pocket_residue_rows(payloads)
         ),
@@ -381,6 +494,32 @@ def _publish_report(
         staging / "tables" / "protein_model_inventory.tsv",
         model_rows,
         tuple(model_rows[0]),
+    )
+    sequence_rows = _sequence_rows(payloads)
+    sequence_fields = (
+        "review_rank",
+        "primary_group_type",
+        "primary_group_id",
+        "lead_cluster_id",
+        "fasta_identifier",
+        "candidate_accession",
+        "species_column",
+        "is_reference",
+        "has_ranked_pocket_evidence",
+        "sequence_length",
+        "amino_acid_sequence",
+        "alignment_length",
+        "aligned_sequence",
+        "alignment_source_sha256",
+    )
+    write_tsv(
+        staging / "tables" / "prioritised_group_sequences.tsv",
+        sequence_rows,
+        sequence_fields,
+    )
+    _write_sequence_fasta(
+        path=staging / "sequences" / "prioritised_group_sequences.fasta",
+        records=sequence_rows,
     )
 
 

@@ -22,7 +22,13 @@ def _text(value: Any) -> str:
 
 def _status_class(value: Any) -> str:
     """Return a conservative CSS class for one evidence conclusion."""
+    if isinstance(value, bool):
+        return "supported" if value else "not-supported"
     text = str(value or "").upper()
+    if text in {"TRUE", "YES", "1"}:
+        return "supported"
+    if text in {"FALSE", "NO", "0"}:
+        return "not-supported"
     if any(token in text for token in ("NOT_ASSESSED", "UNAVAILABLE", "INSUFFICIENT")):
         return "unknown"
     if any(token in text for token in ("NOT_SUPPORTED", "FAIL", "EXCLUDED")):
@@ -30,6 +36,13 @@ def _status_class(value: Any) -> str:
     if any(token in text for token in ("SUPPORTED", "PASS", "HIGH_CONFIDENCE")):
         return "supported"
     return "neutral"
+
+
+def _is_true(value: Any) -> bool:
+    """Return whether a native or textual table value represents true."""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes"}
 
 
 def _record_table(
@@ -76,6 +89,44 @@ def _pocket_table(payload: Mapping[str, Any]) -> str:
         "<th>Accession</th><th>Species</th><th>Pocket rank</th><th>Pocket number</th>"
         "<th>Druggability</th><th>Mapping fraction</th><th>pLDDT fraction</th>"
         "<th>Predictor agreement</th><th>Evidence status</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
+
+def _group_member_table(payload: Mapping[str, Any]) -> str:
+    """Render complete alignment, pocket and model coverage for one group."""
+    protein_index = {
+        str(protein["accession"]): protein for protein in payload["proteins"]
+    }
+    rows = []
+    for record in payload["alignment"].get("all_records", ()):
+        accession = str(record["accession"])
+        protein = protein_index.get(accession)
+        aligned_sequence = str(record["sequence"])
+        sequence_length = len(
+            aligned_sequence.replace("-", "").replace(".", "")
+        )
+        rows.append(
+            "<tr>"
+            f"<td>{_text(accession)}</td>"
+            f"<td>{_text(record.get('species'))}</td>"
+            f"<td>{_text(record.get('is_reference'))}</td>"
+            f"<td>{sequence_length}</td>"
+            f"<td>{len(aligned_sequence)}</td>"
+            f"<td>{_text(record.get('has_ranked_pocket_evidence'))}</td>"
+            f"<td>{_text(protein['model_status'] if protein else 'NOT_ASSESSED')}</td>"
+            f"<td>{len(protein['pockets']) if protein else 0}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return '<p class="note">No published Stage 09 alignment was available.</p>'
+    return (
+        '<div class="table-scroll"><table class="wide"><thead><tr>'
+        "<th>Sequence name/accession</th><th>Species</th><th>Reference</th>"
+        "<th>Protein length</th><th>Alignment length</th><th>Ranked-pocket evidence</th>"
+        "<th>Model status</th><th>Retained pockets</th>"
         "</tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
@@ -163,7 +214,11 @@ position:relative;background:#dce7ed;border-radius:999px;border:1px solid #b5c8d
 .track-marker{position:absolute;top:50%;width:.75rem;height:.75rem;border:2px solid white;
 border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 1px #21313b}
 .track-row.selected{background:#eaf5fa;border-radius:6px;padding:.3rem}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}
+.metric-card{background:#f5f9fb;border:1px solid var(--line);border-radius:8px;padding:.75rem}
+.download-list{columns:2;column-gap:2rem}.download-list li{break-inside:avoid;margin:.35rem 0}
 @media(max-width:1050px){.grid,.viewer-layout{grid-template-columns:1fr}#viewer{height:60vh}}
+@media(max-width:700px){.download-list{columns:1}}
 """
 
 
@@ -316,6 +371,26 @@ def render_group_page(payload: Mapping[str, Any]) -> str:
         ("sensitivity_alignment_status", "Top-k 3D conservation"),
         ("final_score", "Integrated score"),
         ("prestructure_score", "Pre-structure score"),
+        ("target_species_fraction", "Target-species coverage"),
+        ("mandatory_species_fraction", "Mandatory-species coverage"),
+        ("domain_species_fraction", "Domain-species coverage"),
+        ("expression_species_fraction", "Expression-species coverage"),
+        ("structural_species_fraction", "Structural-species coverage"),
+        ("minimum_druggability_score", "Minimum member druggability"),
+        ("mean_pairwise_region_overlap", "Mean pocket-region overlap"),
+        (
+            "mean_chemical_group_conservation",
+            "Mean chemical-group conservation",
+        ),
+        ("mean_pocket_plddt_fraction", "Mean pocket pLDDT fraction"),
+        ("predictor_agreement_fraction", "Predictor agreement fraction"),
+    )
+    decision_fields = (
+        ("inclusion_reasons", "Inclusion reasons"),
+        ("exclusion_reasons", "Pre-structure exclusion reasons"),
+        ("missing_evidence", "Missing evidence"),
+        ("structural_exclusion_reasons", "Structural exclusion reasons"),
+        ("interpretation", "Interpretation"),
     )
     structural_fields = (
         ("reference_accession", "Structural reference"),
@@ -329,6 +404,18 @@ def render_group_page(payload: Mapping[str, Any]) -> str:
         ("mean_minimum_tm_score", "Mean minimum TM-score"),
         ("mean_pocket_overlap_fraction", "Mean pocket overlap"),
         ("median_centroid_distance_angstrom", "Median centroid distance (Å)"),
+        (
+            "mean_structural_residue_match_fraction",
+            "Mean structural residue-match fraction",
+        ),
+        (
+            "mean_structural_residue_identity_fraction",
+            "Mean structural residue identity",
+        ),
+        (
+            "mean_structural_chemical_group_conservation",
+            "Mean structural chemical-group conservation",
+        ),
         ("position_alignment_status", "Strict position conclusion"),
         ("alignment_status", "Strict conservation conclusion"),
     )
@@ -350,11 +437,15 @@ def render_group_page(payload: Mapping[str, Any]) -> str:
         ),
         ("sensitivity_alignment_status", "Top-k conservation conclusion"),
     )
+    model_count = sum(
+        protein["model_status"] == "MODEL_AVAILABLE"
+        for protein in payload["proteins"]
+    )
     return f"""<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title><style>{_GROUP_STYLE}</style></head><body>
-<header><a href="../index.html">← Ranked top-50 index</a>
+<header><a href="../index.html">← Ranked review index</a>
 <h1>{html.escape(title)}</h1>
 <p>Lead DeepClust cluster {html.escape(str(key['cluster_id']))} · reference
 {html.escape(str(payload['reference_accession']))}</p></header>
@@ -370,11 +461,25 @@ never replaces the immutable strict rank-one result.</div>
 {_record_table(payload['ranking'])}</details></div>
 <div class="card"><h2>Review scope</h2>
 <p><span class="metric">{len(payload['proteins'])}</span><br>proteins represented</p>
-<p><span class="metric">{payload['alignment']['sequence_count']}</span><br>aligned sequences</p>
+<p><span class="metric">{payload['alignment'].get('all_sequence_count', 0)}</span>
+<br>sequences in the published group alignment</p>
+<p><span class="metric">{model_count}</span><br>structure models available</p>
 <p><strong>Reference source:</strong> {_text(payload['reference_source'])}</p>
-<p class="note">The final rank is inherited from the authoritative Stage 10 top-50 relation.
+<p class="note">The final rank is inherited from the authoritative Stage 10 review relation.
 This report does not recalculate or reorder candidates.</p></div>
 </section>
+<section class="card"><h2>Decision interpretation</h2>
+<p>This section makes explicit why the group was retained, excluded or left with unresolved
+evidence. A promising score or conserved pocket is not equivalent to passing every configured
+gate.</p>
+{_record_table(payload['ranking'], fields=decision_fields)}</section>
+<section class="card"><h2>Sequence and model inventory</h2>
+<p>Every sequence in the authoritative Stage 09 group alignment is retained below. Members
+without ranked-pocket evidence or a structure model remain visible as explicit
+<code>NOT_ASSESSED</code> records.</p>
+{_group_member_table(payload)}
+<p class="note">Combined ungapped FASTA and full TSV sequence exports are linked from the
+ranked index.</p></section>
 <section class="card"><h2>Interactive 3D pocket location</h2>
 <div class="viewer-layout"><canvas id="viewer"></canvas><aside class="controls">
 <label>Protein<select id="proteinSelect"></select></label>
@@ -415,6 +520,19 @@ An alternative-pocket rescue remains sensitivity evidence and does not rewrite r
 {_record_table(payload['sensitivity_group_summary'], fields=sensitivity_fields)}
 <details><summary>Complete sensitivity summary</summary>
 {_record_table(payload['sensitivity_group_summary'])}</details></div></section>
+<section class="card"><h2>Downloadable audit resources</h2>
+<ul class="download-list">
+<li><a href="../sequences/prioritised_group_sequences.fasta">All prioritised-group
+protein sequences (FASTA)</a></li>
+<li><a href="../tables/prioritised_group_sequences.tsv">Sequence names, group identifiers
+and sequences (TSV)</a></li>
+<li><a href="../tables/pocket_residue_annotations.tsv">Exact pocket residue coordinates
+(TSV)</a></li>
+<li><a href="../tables/protein_model_inventory.tsv">Protein model inventory (TSV)</a></li>
+<li><a href="../tables/top_group_evidence_matrix.tsv">Rank-preserving evidence matrix
+(TSV)</a></li>
+<li><a href="../review_decisions_template.tsv">Project-lead decision worksheet (TSV)</a></li>
+</ul></section>
 </main>
 <script id="reviewData" type="application/json">{_json_payload(payload)}</script>
 <script>{_GROUP_SCRIPT}</script></body></html>"""
@@ -441,6 +559,9 @@ margin:1rem 0}.summary-card{background:white;border:1px solid #d6e0e6;border-rad
 padding:1rem}.summary-value{font-size:1.8rem;font-weight:700;color:#0b5f8a}
 .filter-grid{display:grid;grid-template-columns:minmax(240px,1fr) minmax(220px,.4fr);gap:.8rem}
 select{width:100%;padding:.65rem;font-size:1rem;margin:.5rem 0 1rem}
+.wide-index{min-width:2100px}.download-grid{display:grid;
+grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.6rem}.download-item{
+border:1px solid #d6e0e6;border-radius:8px;padding:.7rem;background:#f7fafb}
 """
 
 
@@ -459,10 +580,19 @@ def render_index(payloads: Sequence[Mapping[str, Any]]) -> str:
                 key["primary_group_type"],
                 key["primary_group_id"],
                 ranking.get("grant_aligned_prediction_status", ""),
+                ranking.get("grant_aligned_prestructure_pass", ""),
+                ranking.get("minimum_druggability_score", ""),
+                ranking.get("final_score", ""),
                 ranking.get("three_dimensional_alignment_status", ""),
                 ranking.get("sensitivity_alignment_status", ""),
+                ranking.get("exclusion_reasons", ""),
+                ranking.get("structural_exclusion_reasons", ""),
             )
         ).lower()
+        model_count = sum(
+            protein["model_status"] == "MODEL_AVAILABLE"
+            for protein in payload["proteins"]
+        )
         rows.append(
             f'<tr data-search="{html.escape(searchable)}">'
             f"<td>{payload['review_rank']}</td>"
@@ -470,15 +600,33 @@ def render_index(payloads: Sequence[Mapping[str, Any]]) -> str:
             f"{_text(key['primary_group_id'])}</td>"
             f"<td>{_text(key['cluster_id'])}</td>"
             f"<td>{_text(payload['reference_accession'])}</td>"
-            f"<td>{len(payload['proteins'])}</td>"
+            f"<td>{payload['alignment'].get('all_sequence_count', 0)}</td>"
+            f"<td>{model_count}/{len(payload['proteins'])}</td>"
+            f"<td>{_text(ranking.get('prestructure_evolutionary_group_rank'))}</td>"
+            "<td><span class=\"badge "
+            f"{_status_class(ranking.get('grant_aligned_prestructure_pass'))}\">"
+            f"{_text(ranking.get('grant_aligned_prestructure_pass'))}</span></td>"
+            f"<td>{_text(ranking.get('target_species_fraction'))}</td>"
+            f"<td>{_text(ranking.get('structural_species_fraction'))}</td>"
+            f"<td>{_text(ranking.get('minimum_druggability_score'))}</td>"
+            f"<td>{_text(ranking.get('final_score'))}</td>"
             f"<td><span class=\"badge {_status_class(ranking.get('conservation_status'))}\">"
             f"{_text(ranking.get('conservation_status'))}</span></td>"
+            "<td><span class=\"badge "
+            f"{_status_class(ranking.get('three_dimensional_position_status'))}\">"
+            f"{_text(ranking.get('three_dimensional_position_status'))}</span></td>"
             "<td><span class=\"badge "
             f"{_status_class(ranking.get('three_dimensional_alignment_status'))}\">"
             f"{_text(ranking.get('three_dimensional_alignment_status'))}</span></td>"
             "<td><span class=\"badge "
+            f"{_status_class(ranking.get('sensitivity_position_alignment_status'))}\">"
+            f"{_text(ranking.get('sensitivity_position_alignment_status'))}</span></td>"
+            "<td><span class=\"badge "
             f"{_status_class(ranking.get('sensitivity_alignment_status'))}\">"
             f"{_text(ranking.get('sensitivity_alignment_status'))}</span></td>"
+            "<td><span class=\"badge "
+            f"{_status_class(ranking.get('grant_aligned_final_pass'))}\">"
+            f"{_text(ranking.get('grant_aligned_final_pass'))}</span></td>"
             f'<td><a href="groups/{html.escape(slug)}">Open review page</a></td></tr>'
         )
     protein_count = sum(len(payload["proteins"]) for payload in payloads)
@@ -489,6 +637,51 @@ def render_index(payloads: Sequence[Mapping[str, Any]]) -> str:
     )
     alignment_count = sum(
         payload["alignment"]["status"] == "AVAILABLE" for payload in payloads
+    )
+    sequence_count = sum(
+        int(payload["alignment"].get("all_sequence_count", 0))
+        for payload in payloads
+    )
+    prestructure_pass_count = sum(
+        _is_true(payload["ranking"].get("grant_aligned_prestructure_pass"))
+        for payload in payloads
+    )
+    sequence_supported_count = sum(
+        _status_class(payload["ranking"].get("conservation_status"))
+        == "supported"
+        for payload in payloads
+    )
+    strict_position_count = sum(
+        _status_class(
+            payload["ranking"].get("three_dimensional_position_status")
+        )
+        == "supported"
+        for payload in payloads
+    )
+    strict_conservation_count = sum(
+        _status_class(
+            payload["ranking"].get("three_dimensional_alignment_status")
+        )
+        == "supported"
+        for payload in payloads
+    )
+    sensitivity_position_count = sum(
+        _status_class(
+            payload["ranking"].get("sensitivity_position_alignment_status")
+        )
+        == "supported"
+        for payload in payloads
+    )
+    sensitivity_conservation_count = sum(
+        _status_class(
+            payload["ranking"].get("sensitivity_alignment_status")
+        )
+        == "supported"
+        for payload in payloads
+    )
+    final_pass_count = sum(
+        _is_true(payload["ranking"].get("grant_aligned_final_pass"))
+        for payload in payloads
     )
     return f"""<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -503,21 +696,65 @@ the primary result. Top-k pocket views are sensitivity evidence. Neither predict
 location nor structural similarity establishes ligand binding or successful PROTAC activity.</div>
 <section class="summary-grid">
 <div class="summary-card"><span class="summary-value">{len(payloads)}</span><br>ranked groups</div>
-<div class="summary-card"><span class="summary-value">{protein_count}</span><br>group proteins</div>
+<div class="summary-card"><span class="summary-value">{sequence_count}</span>
+<br>group sequence records</div>
+<div class="summary-card"><span class="summary-value">{protein_count}</span>
+<br>proteins with pocket evidence</div>
 <div class="summary-card"><span class="summary-value">{model_count}</span><br>models available</div>
 <div class="summary-card"><span class="summary-value">{alignment_count}</span>
 <br>group alignments</div>
+<div class="summary-card"><span class="summary-value">{prestructure_pass_count}</span>
+<br>strict pre-structure passes</div>
+<div class="summary-card"><span class="summary-value">{sequence_supported_count}</span>
+<br>sequence-conserved pocket regions</div>
+<div class="summary-card"><span class="summary-value">{strict_position_count}</span>
+<br>strict same-position 3D support</div>
+<div class="summary-card"><span class="summary-value">{strict_conservation_count}</span>
+<br>strict conserved 3D support</div>
+<div class="summary-card"><span class="summary-value">{sensitivity_position_count}</span>
+<br>top-k same-position 3D support</div>
+<div class="summary-card"><span class="summary-value">{sensitivity_conservation_count}</span>
+<br>top-k conserved 3D support</div>
+<div class="summary-card"><span class="summary-value">{final_pass_count}</span>
+<br>formal final passes</div>
 </section>
+<section class="card"><h2>Downloadable audit outputs</h2>
+<p class="small">These files preserve the exact rank and group context used by the HTML.
+All analytical tables are tab-separated.</p>
+<div class="download-grid">
+<div class="download-item"><a href="sequences/prioritised_group_sequences.fasta">
+Prioritised-group protein sequences (FASTA)</a><br><span class="small">Ungapped sequences
+for every record in each published group alignment.</span></div>
+<div class="download-item"><a href="tables/prioritised_group_sequences.tsv">Sequence names,
+groups and sequences (TSV)</a><br><span class="small">Includes the original aligned and ungapped
+sequences plus source checksums.</span></div>
+<div class="download-item"><a href="tables/top_group_evidence_matrix.tsv">Complete evidence
+matrix (TSV)</a><br><span class="small">Strict and sensitivity conclusions in immutable rank
+order.</span></div>
+<div class="download-item"><a href="tables/pocket_residue_annotations.tsv">Pocket residue
+annotations (TSV)</a><br><span class="small">Exact FASTA, alignment and structure
+coordinates.</span></div>
+<div class="download-item"><a href="tables/protein_model_inventory.tsv">Protein model inventory
+(TSV)</a><br><span class="small">Model availability, checksums and mapped pocket
+coverage.</span></div>
+<div class="download-item"><a href="review_decisions_template.tsv">Manual-review decision
+worksheet (TSV)</a><br><span class="small">Blank, rank-preserving project-lead decision
+record.</span></div>
+</div></section>
 <section class="card"><h2>Review pages</h2>
 <p class="small">The ordering is inherited unchanged from
-<code>top_50_computational_review_shortlist</code>. Search filters the table but does not
+<code>top_computational_review_shortlist</code>. Search filters the table but does not
 reorder it.
 Use <code>review_decisions_template.tsv</code> to record the project leads' final choices.</p>
 <label for="filter">Filter by rank, group, cluster or conclusion</label>
 <input id="filter" type="search" placeholder="Type to filter the ranked list">
-<div class="scroll"><table><thead><tr><th>Rank</th><th>Evolutionary group</th>
-<th>Lead cluster</th><th>Reference</th><th>Proteins</th><th>Sequence pocket</th>
-<th>Strict 3D</th><th>Top-k 3D</th><th>Review</th></tr></thead>
+<div class="scroll"><table class="wide-index"><thead><tr><th>Rank</th>
+<th>Evolutionary group</th><th>Lead cluster</th><th>Reference</th><th>Sequences</th>
+<th>Models / pocket proteins</th><th>Pre-structure rank</th><th>Pre-structure pass</th>
+<th>Target-species fraction</th><th>Structural-species fraction</th>
+<th>Minimum druggability</th><th>Final score</th><th>Sequence pocket</th>
+<th>Strict 3D position</th><th>Strict 3D conservation</th><th>Top-k 3D position</th>
+<th>Top-k 3D conservation</th><th>Final pass</th><th>Review</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div></section></main>
 <script>"use strict";const input=document.getElementById("filter");
 const rows=[...document.querySelectorAll("tbody tr")];input.addEventListener("input",()=>{{

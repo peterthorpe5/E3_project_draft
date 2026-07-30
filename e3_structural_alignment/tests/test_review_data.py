@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from e3structalign.errors import InputValidationError
+from e3structalign.io_utils import quote_literal
 from e3structalign.models import SelectedPocket
 from e3structalign.review_data import (
     _alignment_payload,
@@ -122,8 +124,8 @@ def test_reference_selection_and_json_safety() -> None:
     }
 
 
-def test_discovery_requires_unique_conventional_inputs(tmp_path: Path) -> None:
-    """Automatic discovery rejects absent roots and duplicate formats."""
+def test_discovery_requires_conventional_inputs(tmp_path: Path) -> None:
+    """Automatic discovery rejects absent roots and missing authorities."""
     with pytest.raises(InputValidationError):
         resolve_review_inputs(
             run_root=tmp_path / "missing",
@@ -136,6 +138,33 @@ def test_discovery_requires_unique_conventional_inputs(tmp_path: Path) -> None:
             run_root=run_root,
             overrides=ReviewInputOverrides(),
         )
+
+
+def test_discovery_prefers_generic_parquet_when_both_formats_exist(
+    review_run: dict[str, Path],
+) -> None:
+    """Production TSV/Parquet pairs resolve deterministically to Parquet."""
+    final_results = (
+        review_run["run_root"]
+        / "10_integrated_resource"
+        / "final_results"
+    )
+    generic_parquet = final_results / "top_computational_review_shortlist.parquet"
+    connection = duckdb.connect(":memory:")
+    try:
+        connection.execute(
+            "COPY (SELECT * FROM read_csv("
+            f"{quote_literal(review_run['shortlist'])}, "
+            "delim='\\t', header=true, all_varchar=true)) TO "
+            f"{quote_literal(generic_parquet)} (FORMAT PARQUET)"
+        )
+    finally:
+        connection.close()
+    discovered = resolve_review_inputs(
+        run_root=review_run["run_root"],
+        overrides=ReviewInputOverrides(),
+    )
+    assert discovered.shortlist == generic_parquet.resolve()
 
 
 def test_explicit_input_overrides_and_invalid_alignment_root(
@@ -232,12 +261,14 @@ def test_missing_model_and_coordinate_failure_branches() -> None:
             "is_reference": True,
         }
     ]
-    assert _alignment_payload(
+    unannotated_alignment = _alignment_payload(
         sequences={"OTHER": "A"},
         proteins=proteins,
         coordinate_index={},
         ranked_by_accession={},
-    )["status"] == "UNAVAILABLE"
+    )
+    assert unannotated_alignment["status"] == "AVAILABLE"
+    assert not unannotated_alignment["records"][0]["has_ranked_pocket_evidence"]
     with pytest.raises(InputValidationError, match="exceeds"):
         _alignment_payload(
             sequences={"P1": "A"},

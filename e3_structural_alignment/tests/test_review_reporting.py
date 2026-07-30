@@ -43,6 +43,10 @@ def test_group_page_is_self_contained_and_explicit(
     assert "Pocket-annotated MAFFT sequence alignment" in page
     assert 'id="pocketTracks"' in page
     assert "Member-level top-k agreement and rescue audit" in page
+    assert "Decision interpretation" in page
+    assert "Sequence and model inventory" in page
+    assert "Downloadable audit resources" in page
+    assert "prioritised_group_sequences.fasta" in page
     assert "never replaces the immutable strict rank-one result" in page
     assert "https://" not in page
     assert "P1" in page
@@ -62,6 +66,10 @@ def test_index_preserves_ranking_and_escapes_identifiers(
     assert "<script>bad</script>" not in page
     assert "review_decisions_template.tsv" in page
     assert "evidence_matrix.html" in page
+    assert "Downloadable audit outputs" in page
+    assert "Minimum druggability" in page
+    assert "Pre-structure rank" in page
+    assert "prioritised_group_sequences.tsv" in page
 
 
 def test_evidence_matrix_separates_strict_and_sensitivity(
@@ -92,5 +100,7 @@ def test_display_helpers_cover_unknown_and_negative_states() -> None:
     assert _status_class("FAIL") == "not-supported"
     assert _status_class("NOT_SUPPORTED") == "not-supported"
     assert _status_class("SUPPORTED") == "supported"
+    assert _status_class(True) == "supported"
+    assert _status_class("false") == "not-supported"
     assert _status_class("review") == "neutral"
     assert "No member-level records" in _records_table([])

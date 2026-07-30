@@ -36,6 +36,10 @@ LOGGER = logging.getLogger("e3structalign.review")
 _RUN_FILE_CANDIDATES = {
     "shortlist": (
         "10_integrated_resource/final_results/"
+        "top_computational_review_shortlist.parquet",
+        "10_integrated_resource/final_results/"
+        "top_computational_review_shortlist.tsv",
+        "10_integrated_resource/final_results/"
         "top_50_computational_review_shortlist.parquet",
         "10_integrated_resource/final_results/"
         "top_50_computational_review_shortlist.tsv",
@@ -118,21 +122,17 @@ def _resolve_run_file(
     label: str,
     override: Path | None,
 ) -> Path:
-    """Resolve one unique explicit or conventional run input file."""
+    """Resolve one explicit or preferred conventional run input file."""
     if override is not None:
         return resolve_input_file(override, label)
-    present = [
-        run_root / relative
-        for relative in _RUN_FILE_CANDIDATES[label]
-        if (run_root / relative).is_file()
-    ]
-    if len(present) != 1:
-        expected = ", ".join(_RUN_FILE_CANDIDATES[label])
-        raise InputValidationError(
-            f"Expected exactly one {label} input below {run_root}; found "
-            f"{len(present)}. Expected one of: {expected}"
-        )
-    return resolve_input_file(present[0], label)
+    for relative in _RUN_FILE_CANDIDATES[label]:
+        candidate = run_root / relative
+        if candidate.is_file():
+            return resolve_input_file(candidate, label)
+    expected = ", ".join(_RUN_FILE_CANDIDATES[label])
+    raise InputValidationError(
+        f"Could not find {label} below {run_root}. Expected one of: {expected}"
+    )
 
 
 def _resolve_alignment_root(
@@ -447,10 +447,38 @@ def _alignment_payload(
     protein_index = {
         str(protein["accession"]): protein for protein in proteins
     }
+    reference_accession = next(
+        (
+            str(protein["accession"])
+            for protein in proteins
+            if protein["is_reference"]
+        ),
+        "",
+    )
+    all_records = [
+        {
+            "accession": accession,
+            "species": (
+                protein_index[accession]["species"]
+                if accession in protein_index
+                else ""
+            ),
+            "is_reference": accession == reference_accession,
+            "has_ranked_pocket_evidence": accession in protein_index,
+            "sequence": sequence,
+        }
+        for accession, sequence in sequences.items()
+    ]
+    all_records.sort(
+        key=lambda record: (
+            not record["is_reference"],
+            not bool(record["species"]),
+            record["species"],
+            record["accession"],
+        )
+    )
     records = []
     for accession, sequence in sequences.items():
-        if accession not in protein_index:
-            continue
         position_map = alignment_position_map(sequence)
         annotations: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for pocket in ranked_by_accession.get(accession, ()):
@@ -508,8 +536,13 @@ def _alignment_payload(
         records.append(
             {
                 "accession": accession,
-                "species": protein_index[accession]["species"],
-                "is_reference": protein_index[accession]["is_reference"],
+                "species": (
+                    protein_index[accession]["species"]
+                    if accession in protein_index
+                    else ""
+                ),
+                "is_reference": accession == reference_accession,
+                "has_ranked_pocket_evidence": accession in protein_index,
                 "sequence": sequence,
                 "pocket_annotations": ordered_annotations,
             }
@@ -517,6 +550,7 @@ def _alignment_payload(
     records.sort(
         key=lambda record: (
             not record["is_reference"],
+            not bool(record["species"]),
             record["species"],
             record["accession"],
         )
@@ -526,6 +560,8 @@ def _alignment_payload(
         "status": "AVAILABLE" if records else "UNAVAILABLE",
         "alignment_length": alignment_length,
         "sequence_count": len(records),
+        "all_sequence_count": len(all_records),
+        "all_records": all_records,
         "records": records,
     }
 
@@ -677,6 +713,8 @@ def load_report_payloads(
                 "reason": "No published Stage 09 aligned.fasta was available",
                 "alignment_length": 0,
                 "sequence_count": 0,
+                "all_sequence_count": 0,
+                "all_records": [],
                 "records": [],
             }
         payloads.append(

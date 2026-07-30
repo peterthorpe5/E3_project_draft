@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -10,7 +11,9 @@ import pytest
 from e3structalign.errors import StructuralAlignmentError
 from e3structalign.review_models import ReviewInputOverrides, ReviewSettings
 from e3structalign.review_pipeline import (
+    _sequence_rows,
     _validate_existing_output,
+    _write_sequence_fasta,
     build_review_report,
 )
 
@@ -44,14 +47,98 @@ def test_complete_report_build_and_checksum_resume(
     assert (output / "tables" / "top_group_evidence_matrix.tsv").is_file()
     assert (output / "tables" / "pocket_residue_annotations.tsv").is_file()
     assert (output / "tables" / "protein_model_inventory.tsv").is_file()
+    sequence_table = output / "tables" / "prioritised_group_sequences.tsv"
+    sequence_fasta = output / "sequences" / "prioritised_group_sequences.fasta"
+    assert sequence_table.is_file()
+    assert sequence_fasta.is_file()
+    with sequence_table.open("r", encoding="utf-8", newline="") as handle:
+        sequence_rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert [row["candidate_accession"] for row in sequence_rows] == ["P1", "P2"]
+    assert {row["amino_acid_sequence"] for row in sequence_rows} == {"AA"}
+    assert {row["sequence_length"] for row in sequence_rows} == {"2"}
+    assert sequence_fasta.read_text(encoding="utf-8") == (
+        ">rank_001__orthogroup__OG0001__cluster_1__P1\n"
+        "AA\n"
+        ">rank_001__orthogroup__OG0001__cluster_1__P2\n"
+        "AA\n"
+    )
     assert (output / "qc" / "pocket_review_validation.tsv").is_file()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["status"] == "complete"
-    assert payload["package_version"] == "0.3.0"
+    assert payload["package_version"] == "0.3.1"
     assert payload["validation"]["reported_group_count"] == 1
     assert payload["validation"]["exact_pocket_residue_annotation_count"] == 4
+    assert payload["validation"]["sequence_export_group_count"] == 1
+    assert payload["validation"]["sequence_export_record_count"] == 2
     assert payload["embedded_sources"][0]["models"][0]["sha256"]
     assert _build(review_run, resume=True) == manifest_path
+
+
+def test_sequence_export_retains_alignment_members_without_pockets(
+    review_run: dict[str, Path],
+) -> None:
+    """The sequence files retain group members lacking ranked-pocket evidence."""
+    alignment = review_run["alignment"]
+    alignment.write_text(">P1\nAA\n>P2\nAA\n>P3\nA-\n", encoding="utf-8")
+    _build(review_run)
+    table = (
+        review_run["output"]
+        / "tables"
+        / "prioritised_group_sequences.tsv"
+    )
+    with table.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert [row["candidate_accession"] for row in rows] == ["P1", "P2", "P3"]
+    third = rows[2]
+    assert third["species_column"] == ""
+    assert third["has_ranked_pocket_evidence"] == "False"
+    assert third["sequence_length"] == "1"
+    assert third["amino_acid_sequence"] == "A"
+    assert third["aligned_sequence"] == "A-"
+
+
+def test_sequence_export_rejects_all_gap_and_empty_outputs(
+    tmp_path: Path,
+) -> None:
+    """FASTA publication fails closed for invalid sequence exports."""
+    with pytest.raises(StructuralAlignmentError, match="all-gap"):
+        _sequence_rows(
+            [
+                {
+                    "review_rank": 1,
+                    "group_key": {
+                        "primary_group_type": "orthogroup",
+                        "primary_group_id": "OG0001",
+                        "cluster_id": "cluster_1",
+                    },
+                    "alignment": {
+                        "source_sha256": "abc",
+                        "all_records": [
+                            {
+                                "accession": "P1",
+                                "species": "species_1",
+                                "is_reference": True,
+                                "has_ranked_pocket_evidence": True,
+                                "sequence": "--",
+                            }
+                        ],
+                    },
+                }
+            ]
+        )
+    with pytest.raises(StructuralAlignmentError, match="No prioritised"):
+        _write_sequence_fasta(path=tmp_path / "empty.fasta", records=[])
+    with pytest.raises(StructuralAlignmentError, match="line width"):
+        _write_sequence_fasta(
+            path=tmp_path / "bad_width.fasta",
+            records=[
+                {
+                    "fasta_identifier": "P1",
+                    "amino_acid_sequence": "AA",
+                }
+            ],
+            line_width=0,
+        )
 
 
 def test_existing_mismatch_requires_force_and_preserves_old_report(
