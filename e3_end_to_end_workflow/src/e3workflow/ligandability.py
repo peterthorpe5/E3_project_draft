@@ -251,7 +251,13 @@ def build_selected_pockets(
     output_path: Path,
     maximum_rank: int = 1,
 ) -> None:
-    """Select ranked reused pockets per requested candidate accession.
+    """Select ranked pockets per requested candidate and evolutionary group.
+
+    Generated campaigns can contain more than one shard for an accession when
+    the same protein represents more than one selected evolutionary-group
+    context. Identical accession/pocket evidence is validated and collapsed
+    before ranking so that it cannot consume more than one top-k rank. The
+    group contexts themselves remain separate.
 
     Args:
         config: Validated workflow configuration.
@@ -259,7 +265,7 @@ def build_selected_pockets(
         joined_pockets: Reused or generated joined pocket evidence.
         pocket_quality: Residue-mapping and confidence evidence per pocket.
         output_path: Destination Parquet table.
-        maximum_rank: Maximum deterministic pocket rank retained per accession.
+        maximum_rank: Maximum deterministic pocket rank retained per group/accession.
 
     Raises:
         StageError: If inputs are invalid or the ranked table cannot be built.
@@ -310,19 +316,126 @@ def build_selected_pockets(
         if "p2rank_match_status" in joined_columns
         else "''"
     )
+    joined_resource = (
+        "COALESCE(CAST(j.source_resource_id AS VARCHAR), '')"
+        if "source_resource_id" in joined_columns
+        else "''"
+    )
+    quality_resource = (
+        "COALESCE(CAST(q.source_resource_id AS VARCHAR), '')"
+        if "source_resource_id" in quality_columns
+        else "''"
+    )
+    joined_raw = (
+        "SELECT upper(trim(CAST(j.accession AS VARCHAR))) AS accession_key, "
+        "CAST(j.accession AS VARCHAR) AS accession, "
+        "TRY_CAST(j.pocket_number AS INTEGER) AS pocket_number, "
+        f"{drug} AS druggability_score, {p2rank_score} AS p2rank_score, "
+        f"{p2rank_probability} AS p2rank_probability, "
+        f"{p2rank_match} AS p2rank_match_status, "
+        f"{joined_resource} AS source_resource_id "
+        f"FROM read_parquet({quote_literal(joined_pockets)}) AS j"
+    )
+    quality_raw = (
+        "SELECT upper(trim(CAST(q.accession AS VARCHAR))) AS accession_key, "
+        "TRY_CAST(q.pocket_number AS INTEGER) AS pocket_number, "
+        f"{mapping_fraction} AS mapping_fraction, "
+        f"{plddt_fraction} AS conservative_fraction_plddt_ge_70, "
+        f"{mapped_mean} AS mapped_mean_plddt, "
+        f"{quality_resource} AS source_resource_id "
+        f"FROM read_parquet({quote_literal(pocket_quality)}) AS q"
+    )
     connection = duckdb.connect(":memory:")
     try:
+        malformed = connection.execute(
+            "WITH joined_raw AS ("
+            + joined_raw
+            + "), quality_raw AS ("
+            + quality_raw
+            + ") SELECT "
+            "(SELECT count(*) FROM joined_raw WHERE accession_key = '' "
+            "OR pocket_number IS NULL), "
+            "(SELECT count(*) FROM quality_raw WHERE accession_key = '' "
+            "OR pocket_number IS NULL)"
+        ).fetchone()
+        if malformed is None:
+            raise StageError("Could not validate generated pocket identifiers")
+        if int(malformed[0]) or int(malformed[1]):
+            raise StageError(
+                "Ligandability evidence contains empty accessions or non-integer "
+                "pocket numbers: "
+                f"joined_pockets={int(malformed[0])}, pocket_quality={int(malformed[1])}"
+            )
+        joined_conflict = connection.execute(
+            "WITH joined_raw AS ("
+            + joined_raw
+            + ") SELECT accession_key, pocket_number FROM joined_raw "
+            "GROUP BY accession_key, pocket_number HAVING count(DISTINCT to_json("
+            "struct_pack(druggability_score := druggability_score, "
+            "p2rank_score := p2rank_score, p2rank_probability := p2rank_probability, "
+            "p2rank_match_status := p2rank_match_status))) > 1 "
+            "ORDER BY accession_key, pocket_number LIMIT 1"
+        ).fetchone()
+        if joined_conflict is not None:
+            raise StageError(
+                "Conflicting duplicate joined-pocket evidence for "
+                f"{joined_conflict[0]}/{joined_conflict[1]}"
+            )
+        quality_conflict = connection.execute(
+            "WITH quality_raw AS ("
+            + quality_raw
+            + ") SELECT accession_key, pocket_number FROM quality_raw "
+            "GROUP BY accession_key, pocket_number HAVING count(DISTINCT to_json("
+            "struct_pack(mapping_fraction := mapping_fraction, "
+            "conservative_fraction_plddt_ge_70 := "
+            "conservative_fraction_plddt_ge_70, "
+            "mapped_mean_plddt := mapped_mean_plddt))) > 1 "
+            "ORDER BY accession_key, pocket_number LIMIT 1"
+        ).fetchone()
+        if quality_conflict is not None:
+            raise StageError(
+                "Conflicting duplicate pocket-quality evidence for "
+                f"{quality_conflict[0]}/{quality_conflict[1]}"
+            )
+        evidence_counts = connection.execute(
+            "WITH joined_raw AS ("
+            + joined_raw
+            + "), quality_raw AS ("
+            + quality_raw
+            + ") SELECT "
+            "(SELECT count(*) FROM joined_raw), "
+            "(SELECT count(DISTINCT (accession_key, pocket_number)) FROM joined_raw), "
+            "(SELECT count(*) FROM quality_raw), "
+            "(SELECT count(DISTINCT (accession_key, pocket_number)) FROM quality_raw)"
+        ).fetchone()
+        if evidence_counts is None:
+            raise StageError("Could not count generated pocket evidence")
+        LOGGER.info(
+            "Canonicalising pocket evidence: joined=%d rows/%d unique pockets; "
+            "quality=%d rows/%d unique pockets",
+            int(evidence_counts[0]),
+            int(evidence_counts[1]),
+            int(evidence_counts[2]),
+            int(evidence_counts[3]),
+        )
         query = (
-            "WITH requested AS (SELECT * FROM read_parquet("
-            f"{quote_literal(structural_accessions)})), joined AS (SELECT * FROM read_parquet("
-            f"{quote_literal(joined_pockets)})), quality AS (SELECT * FROM read_parquet("
-            f"{quote_literal(pocket_quality)})), candidates AS (SELECT r.cluster_id, "
+            "WITH requested AS (SELECT DISTINCT cluster_id, primary_group_type, "
+            "primary_group_id, candidate_accession, species_column FROM read_parquet("
+            f"{quote_literal(structural_accessions)})), joined_raw AS ("
+            + joined_raw
+            + "), joined AS (SELECT * EXCLUDE (evidence_rank) FROM (SELECT *, "
+            "row_number() OVER (PARTITION BY accession_key, pocket_number ORDER BY "
+            "source_resource_id, accession) AS evidence_rank FROM joined_raw) "
+            "WHERE evidence_rank = 1), quality_raw AS ("
+            + quality_raw
+            + "), quality AS (SELECT * EXCLUDE (evidence_rank) FROM (SELECT *, "
+            "row_number() OVER (PARTITION BY accession_key, pocket_number ORDER BY "
+            "source_resource_id) AS evidence_rank FROM quality_raw) "
+            "WHERE evidence_rank = 1), candidates AS (SELECT r.cluster_id, "
             "r.primary_group_type, r.primary_group_id, r.candidate_accession, r.species_column, "
-            "TRY_CAST(j.pocket_number AS INTEGER) AS pocket_number, "
-            f"{drug} AS druggability_score, {p2rank_score} AS p2rank_score, "
-            f"{p2rank_probability} AS p2rank_probability, {p2rank_match} AS "
-            f"p2rank_match_status, {mapping_fraction} AS mapping_fraction, {plddt_fraction} AS "
-            f"conservative_fraction_plddt_ge_70, {mapped_mean} AS mapped_mean_plddt, "
+            "j.pocket_number, j.druggability_score, j.p2rank_score, "
+            "j.p2rank_probability, j.p2rank_match_status, q.mapping_fraction, "
+            "q.conservative_fraction_plddt_ge_70, q.mapped_mean_plddt, "
             "CASE WHEN druggability_score >= "
             f"{config.analysis.ligandability.minimum_druggability_score} THEN true ELSE false END "
             "AS passes_druggability_threshold, CASE WHEN mapping_fraction >= "
@@ -331,15 +444,16 @@ def build_selected_pockets(
             f"{config.analysis.ligandability.minimum_pocket_plddt_fraction} THEN true ELSE false "
             "END AS passes_pocket_confidence_threshold, CASE WHEN upper(p2rank_match_status) = "
             "'MATCHED' THEN true ELSE false END AS predictor_agreement, j.source_resource_id, "
-            "row_number() OVER (PARTITION BY r.cluster_id, r.candidate_accession ORDER BY "
+            "row_number() OVER (PARTITION BY r.cluster_id, r.primary_group_type, "
+            "r.primary_group_id, r.candidate_accession ORDER BY "
             "passes_druggability_threshold DESC, passes_mapping_threshold DESC, "
             "passes_pocket_confidence_threshold DESC, predictor_agreement DESC, "
             "druggability_score DESC NULLS LAST, conservative_fraction_plddt_ge_70 DESC NULLS "
             "LAST, j.source_resource_id, TRY_CAST(j.pocket_number AS INTEGER)) AS selection_rank "
-            "FROM requested r JOIN joined j ON upper(CAST(j.accession AS VARCHAR)) = "
-            "upper(r.candidate_accession) LEFT JOIN quality q ON upper(CAST(q.accession AS "
-            "VARCHAR)) = upper(CAST(j.accession AS VARCHAR)) AND TRY_CAST(q.pocket_number AS "
-            "INTEGER) = TRY_CAST(j.pocket_number AS INTEGER)) SELECT cluster_id, "
+            "FROM requested r JOIN joined j ON j.accession_key = "
+            "upper(trim(CAST(r.candidate_accession AS VARCHAR))) LEFT JOIN quality q ON "
+            "q.accession_key = j.accession_key AND q.pocket_number = j.pocket_number) "
+            "SELECT cluster_id, "
             "primary_group_type, primary_group_id, candidate_accession, species_column, "
             "pocket_number, druggability_score, p2rank_score, p2rank_probability, "
             "p2rank_match_status, mapping_fraction, conservative_fraction_plddt_ge_70, "
@@ -350,9 +464,12 @@ def build_selected_pockets(
             "'SELECTED_BEST_AVAILABLE_BELOW_ONE_OR_MORE_THRESHOLDS' END AS "
             "structural_evidence_status, source_resource_id, selection_rank, "
             "selection_rank = 1 AS is_strict_selected FROM candidates "
-            f"WHERE selection_rank <= {maximum_rank}"
+            f"WHERE selection_rank <= {maximum_rank} ORDER BY cluster_id, "
+            "primary_group_type, primary_group_id, candidate_accession, selection_rank"
         )
         copy_query_to_parquet(connection=connection, query=query, path=output_path)
+    except StageError:
+        raise
     except duckdb.Error as exc:
         raise StageError(f"Could not select reused ligandability pockets: {exc}") from exc
     finally:
@@ -619,7 +736,9 @@ def map_pocket_residues_to_fasta(
     AlphaFold-style ``label_seq_id`` values are treated as candidate FASTA
     coordinates only when they are positive, in range and consistent with the
     model residue identity. Author numbering is retained for traceability but
-    is never assumed to be a FASTA coordinate.
+    is never assumed to be a FASTA coordinate. One accession/pocket can be
+    retained in several evolutionary-group contexts; its residue mapping is
+    copied into each context without conflating the groups.
 
     Args:
         selected_records: One selected pocket per candidate and group.
@@ -630,50 +749,62 @@ def map_pocket_residues_to_fasta(
         Explicit mapped and unmapped residue-coordinate records.
 
     Raises:
-        StageError: If selected-pocket keys are duplicated or numeric fields are malformed.
+        StageError: If a complete group-pocket context is duplicated or numeric
+            fields are malformed.
     """
-    selected_by_key: dict[tuple[str, int], Mapping[str, Any]] = {}
+    selected_by_key: dict[tuple[str, int], list[Mapping[str, Any]]] = defaultdict(list)
+    seen_contexts: set[tuple[str, str, str, str, int]] = set()
     for record in selected_records:
-        accession = str(record["candidate_accession"])
+        accession = str(record["candidate_accession"]).strip()
         try:
             pocket_number = int(record["pocket_number"])
         except (TypeError, ValueError) as exc:
             raise StageError(
                 f"Selected pocket number is not an integer for {accession}"
             ) from exc
+        context_key = (
+            str(record["cluster_id"]),
+            str(record["primary_group_type"]),
+            str(record["primary_group_id"]),
+            accession,
+            pocket_number,
+        )
+        if context_key in seen_contexts:
+            raise StageError(
+                "Duplicate selected pocket group context: "
+                + "/".join(str(value) for value in context_key)
+            )
+        seen_contexts.add(context_key)
         key = (accession, pocket_number)
-        if key in selected_by_key:
-            raise StageError(f"Duplicate selected pocket key: {accession}/{pocket_number}")
-        selected_by_key[key] = record
+        selected_by_key[key].append(record)
+
+    repeated_context_count = sum(
+        len(contexts) - 1 for contexts in selected_by_key.values() if len(contexts) > 1
+    )
+    if repeated_context_count:
+        LOGGER.info(
+            "Retaining %d repeated accession/pocket evolutionary-group contexts",
+            repeated_context_count,
+        )
 
     results: list[dict[str, Any]] = []
-    seen: set[tuple[str, int, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, int, str, str, str]] = set()
     for record in mapping_records:
-        accession = str(record.get("accession") or "")
+        accession = str(record.get("accession") or "").strip()
         try:
             pocket_number = int(record.get("pocket_number"))
         except (TypeError, ValueError) as exc:
             raise StageError(
                 f"Pocket residue mapping has a non-integer pocket number for {accession}"
             ) from exc
-        selected = selected_by_key.get((accession, pocket_number))
-        if selected is None:
+        selected_contexts = selected_by_key.get((accession, pocket_number))
+        if not selected_contexts:
             continue
         label_chain = str(record.get("model_label_chain") or "")
         label_seq_id = str(record.get("model_label_seq_id") or "")
         auth_chain = str(record.get("model_auth_chain") or "")
         auth_seq_id = str(record.get("model_auth_seq_id") or "")
         insertion_code = str(record.get("model_insertion_code") or "")
-        residue_key = (
-            accession,
-            pocket_number,
-            label_chain,
-            label_seq_id,
-            f"{auth_chain}:{auth_seq_id}:{insertion_code}",
-        )
-        if residue_key in seen:
-            continue
-        seen.add(residue_key)
         sequence = sequences.get(accession)
         mapping_status = str(record.get("mapping_status") or "").upper()
         model_residue_name = str(record.get("model_residue_name") or "").upper()
@@ -714,30 +845,46 @@ def map_pocket_residues_to_fasta(
                         reason = (
                             "one-based model label_seq_id and residue identity match FASTA"
                         )
-        results.append(
-            {
-                "cluster_id": selected["cluster_id"],
-                "primary_group_type": selected["primary_group_type"],
-                "primary_group_id": selected["primary_group_id"],
-                "candidate_accession": accession,
-                "species_column": selected["species_column"],
-                "pocket_number": pocket_number,
-                "structure_label_chain": label_chain,
-                "structure_label_seq_id": label_seq_id,
-                "structure_auth_chain": auth_chain,
-                "structure_auth_seq_id": auth_seq_id,
-                "structure_insertion_code": insertion_code,
-                "structure_residue_name": model_residue_name,
-                "fasta_position": fasta_position,
-                "fasta_residue": fasta_residue,
-                "sequence_length": len(sequence) if sequence is not None else None,
-                "sequence_coordinate_status": status,
-                "sequence_coordinate_reason": reason,
-            }
-        )
+        for selected in selected_contexts:
+            residue_key = (
+                str(selected["cluster_id"]),
+                str(selected["primary_group_type"]),
+                str(selected["primary_group_id"]),
+                accession,
+                pocket_number,
+                label_chain,
+                label_seq_id,
+                f"{auth_chain}:{auth_seq_id}:{insertion_code}",
+            )
+            if residue_key in seen:
+                continue
+            seen.add(residue_key)
+            results.append(
+                {
+                    "cluster_id": selected["cluster_id"],
+                    "primary_group_type": selected["primary_group_type"],
+                    "primary_group_id": selected["primary_group_id"],
+                    "candidate_accession": accession,
+                    "species_column": selected["species_column"],
+                    "pocket_number": pocket_number,
+                    "structure_label_chain": label_chain,
+                    "structure_label_seq_id": label_seq_id,
+                    "structure_auth_chain": auth_chain,
+                    "structure_auth_seq_id": auth_seq_id,
+                    "structure_insertion_code": insertion_code,
+                    "structure_residue_name": model_residue_name,
+                    "fasta_position": fasta_position,
+                    "fasta_residue": fasta_residue,
+                    "sequence_length": len(sequence) if sequence is not None else None,
+                    "sequence_coordinate_status": status,
+                    "sequence_coordinate_reason": reason,
+                }
+            )
     results.sort(
         key=lambda row: (
             str(row["cluster_id"]),
+            str(row["primary_group_type"]),
+            str(row["primary_group_id"]),
             str(row["candidate_accession"]),
             int(row["pocket_number"]),
             int(row["fasta_position"]) if row["fasta_position"] is not None else math.inf,
@@ -865,22 +1012,32 @@ def measure_pocket_conservation(
     stage_root: Path,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Align selected candidates and calculate conserved pocket-region evidence."""
-    selected_by_accession = {
-        str(record["candidate_accession"]): dict(record) for record in selected_records
+    selected_pocket_keys = {
+        (str(record["candidate_accession"]), int(record["pocket_number"]))
+        for record in selected_records
     }
-    positions: dict[str, set[int]] = defaultdict(set)
+    positions: dict[tuple[str, int], set[int]] = defaultdict(set)
     for record in mapping_records:
         accession = str(record.get("accession", ""))
-        selected = selected_by_accession.get(accession)
-        if selected is None:
-            continue
-        if int(record.get("pocket_number") or -1) != int(selected["pocket_number"]):
+        try:
+            pocket_number = int(record.get("pocket_number"))
+        except (TypeError, ValueError) as exc:
+            raise StageError(
+                f"Pocket residue mapping has a non-integer pocket number for {accession}"
+            ) from exc
+        pocket_key = (accession, pocket_number)
+        if pocket_key not in selected_pocket_keys:
             continue
         if str(record.get("mapping_status", "")) != "MAPPED":
             continue
         position = record.get("model_label_seq_id")
         if position is not None and str(position) != "":
-            positions[accession].add(int(position))
+            try:
+                positions[pocket_key].add(int(position))
+            except (TypeError, ValueError) as exc:
+                raise StageError(
+                    f"Mapped pocket position is not an integer for {accession}/{pocket_number}"
+                ) from exc
     by_group: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for record in selected_records:
         key = (
@@ -892,11 +1049,23 @@ def measure_pocket_conservation(
     summaries: list[dict[str, Any]] = []
     members: list[dict[str, Any]] = []
     for (cluster_id, group_type, group_id), records in sorted(by_group.items()):
+        record_by_accession = {
+            str(record["candidate_accession"]): record for record in records
+        }
+        if len(record_by_accession) != len(records):
+            raise StageError(
+                f"Group {group_type}/{group_id} contains duplicate selected accessions"
+            )
         eligible = [
             record
             for record in records
             if record["candidate_accession"] in sequences
-            and positions.get(str(record["candidate_accession"]))
+            and positions.get(
+                (
+                    str(record["candidate_accession"]),
+                    int(record["pocket_number"]),
+                )
+            )
         ]
         if len(eligible) < 2:
             summaries.append(
@@ -953,14 +1122,18 @@ def measure_pocket_conservation(
             raise StageError(f"MAFFT output identifiers differ for group {group_id}")
         regions: dict[str, set[int]] = {}
         for accession in accessions:
+            selected_record = record_by_accession[accession]
+            pocket_key = (accession, int(selected_record["pocket_number"]))
             position_map = _alignment_position_map(sequence=aligned[accession])
-            missing_positions = positions[accession].difference(position_map)
+            missing_positions = positions[pocket_key].difference(position_map)
             if missing_positions:
                 raise StageError(
                     f"Pocket positions exceed the prepared sequence for {accession}: "
                     + ",".join(str(value) for value in sorted(missing_positions))
                 )
-            regions[accession] = {position_map[position] for position in positions[accession]}
+            regions[accession] = {
+                position_map[position] for position in positions[pocket_key]
+            }
         components = _connected_components(
             regions=regions,
             minimum_overlap=config.analysis.ligandability.minimum_region_overlap,
@@ -982,7 +1155,7 @@ def measure_pocket_conservation(
             component=component, aligned=aligned, regions=regions
         )
         component_records = [
-            selected_by_accession[accession] for accession in sorted(component)
+            record_by_accession[accession] for accession in sorted(component)
         ]
         drug_values = [
             float(record["druggability_score"])
@@ -1057,9 +1230,6 @@ def measure_pocket_conservation(
                 ),
             }
         )
-        record_by_accession = {
-            str(record["candidate_accession"]): record for record in eligible
-        }
         for accession in sorted(regions):
             record = record_by_accession[accession]
             members.append(

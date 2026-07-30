@@ -489,6 +489,273 @@ def test_pocket_residues_map_to_exact_fasta_coordinates() -> None:
     assert rows[2]["sequence_coordinate_status"] == "LABEL_SEQUENCE_ID_UNAVAILABLE"
 
 
+def test_repeated_accession_pocket_maps_to_each_group_context() -> None:
+    """One physical pocket can support several retained evolutionary-group contexts."""
+    selected = [
+        {
+            "cluster_id": cluster_id,
+            "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+            "primary_group_id": group_id,
+            "candidate_accession": "A0A8I6YKD5",
+            "species_column": "Species_a",
+            "pocket_number": 5,
+        }
+        for cluster_id, group_id in (
+            ("cluster_1", "N0.HOG0001"),
+            ("cluster_2", "N0.HOG0002"),
+        )
+    ]
+    mappings = [
+        {
+            "accession": "A0A8I6YKD5",
+            "pocket_number": 5,
+            "mapping_status": "MAPPED",
+            "model_label_chain": "A",
+            "model_label_seq_id": "2",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": "2",
+            "model_insertion_code": "",
+            "model_residue_name": "SER",
+        }
+    ]
+
+    rows = map_pocket_residues_to_fasta(
+        selected_records=selected,
+        mapping_records=mappings,
+        sequences={"A0A8I6YKD5": "MSA"},
+    )
+
+    assert len(rows) == 2
+    assert {
+        (row["cluster_id"], row["primary_group_id"]) for row in rows
+    } == {
+        ("cluster_1", "N0.HOG0001"),
+        ("cluster_2", "N0.HOG0002"),
+    }
+    assert all(row["sequence_coordinate_status"] == "MAPPED_EXACT" for row in rows)
+
+
+def test_duplicate_selected_group_context_is_rejected() -> None:
+    """An exact duplicate context remains an error rather than being silently discarded."""
+    selected = {
+        "cluster_id": "cluster_1",
+        "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+        "primary_group_id": "N0.HOG0001",
+        "candidate_accession": "A0A8I6YKD5",
+        "species_column": "Species_a",
+        "pocket_number": 5,
+    }
+
+    with pytest.raises(StageError, match="Duplicate selected pocket group context"):
+        map_pocket_residues_to_fasta(
+            selected_records=[selected, dict(selected)],
+            mapping_records=[],
+            sequences={"A0A8I6YKD5": "MSA"},
+        )
+
+
+def test_repeated_shard_evidence_uses_unique_top_k_pockets(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """Repeated identical shards cannot consume several ranks for one physical pocket."""
+    config = load_config(synthetic_config)
+    structural = tmp_path / "structural_repeated.parquet"
+    joined = tmp_path / "joined_repeated.parquet"
+    quality = tmp_path / "quality_repeated.parquet"
+    output = tmp_path / "ranked_unique.parquet"
+    write_parquet(
+        structural,
+        (
+            "cluster_id VARCHAR, primary_group_type VARCHAR, primary_group_id VARCHAR, "
+            "candidate_accession VARCHAR, species_column VARCHAR"
+        ),
+        [
+            (
+                "cluster_1",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                "A0A8I6YKD5",
+                "Species_a",
+            ),
+            (
+                "cluster_2",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0002",
+                "A0A8I6YKD5",
+                "Species_a",
+            ),
+        ],
+    )
+    joined_rows = [
+        ("resource_a", "A0A8I6YKD5", 5, 0.9, 0.8, 0.8, "MATCHED"),
+        ("resource_b", "A0A8I6YKD5", 5, 0.9, 0.8, 0.8, "MATCHED"),
+        ("resource_a", "A0A8I6YKD5", 8, 0.7, 0.6, 0.6, "MATCHED"),
+        ("resource_b", "A0A8I6YKD5", 8, 0.7, 0.6, 0.6, "MATCHED"),
+    ]
+    write_parquet(
+        joined,
+        (
+            "source_resource_id VARCHAR, accession VARCHAR, pocket_number INTEGER, "
+            "druggability_score DOUBLE, p2rank_score DOUBLE, p2rank_probability DOUBLE, "
+            "p2rank_match_status VARCHAR"
+        ),
+        joined_rows,
+    )
+    quality_rows = [
+        ("resource_a", "A0A8I6YKD5", 5, 1.0, 0.9, 90.0),
+        ("resource_b", "A0A8I6YKD5", 5, 1.0, 0.9, 90.0),
+        ("resource_a", "A0A8I6YKD5", 8, 1.0, 0.8, 85.0),
+        ("resource_b", "A0A8I6YKD5", 8, 1.0, 0.8, 85.0),
+    ]
+    write_parquet(
+        quality,
+        (
+            "source_resource_id VARCHAR, accession VARCHAR, pocket_number INTEGER, "
+            "mapping_fraction DOUBLE, conservative_fraction_plddt_ge_70 DOUBLE, "
+            "mapped_mean_plddt DOUBLE"
+        ),
+        quality_rows,
+    )
+
+    build_selected_pockets(
+        config=config,
+        structural_accessions=structural,
+        joined_pockets=joined,
+        pocket_quality=quality,
+        output_path=output,
+        maximum_rank=2,
+    )
+
+    connection = duckdb.connect(":memory:")
+    try:
+        rows = connection.execute(
+            f"SELECT cluster_id, pocket_number, selection_rank "
+            f"FROM read_parquet('{output}') "
+            "ORDER BY cluster_id, selection_rank"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert rows == [
+        ("cluster_1", 5, 1),
+        ("cluster_1", 8, 2),
+        ("cluster_2", 5, 1),
+        ("cluster_2", 8, 2),
+    ]
+
+
+def test_conflicting_repeated_shard_evidence_is_rejected(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """Conflicting accession/pocket results stop aggregation for scientific review."""
+    config = load_config(synthetic_config)
+    structural = tmp_path / "structural_conflict.parquet"
+    joined = tmp_path / "joined_conflict.parquet"
+    quality = tmp_path / "quality_conflict.parquet"
+    write_parquet(
+        structural,
+        (
+            "cluster_id VARCHAR, primary_group_type VARCHAR, primary_group_id VARCHAR, "
+            "candidate_accession VARCHAR, species_column VARCHAR"
+        ),
+        [
+            (
+                "cluster_1",
+                "HIERARCHICAL_ORTHOGROUP",
+                "N0.HOG0001",
+                "A0A8I6YKD5",
+                "Species_a",
+            )
+        ],
+    )
+    write_parquet(
+        joined,
+        (
+            "source_resource_id VARCHAR, accession VARCHAR, pocket_number INTEGER, "
+            "druggability_score DOUBLE, p2rank_score DOUBLE, p2rank_probability DOUBLE, "
+            "p2rank_match_status VARCHAR"
+        ),
+        [
+            ("resource_a", "A0A8I6YKD5", 5, 0.9, 0.8, 0.8, "MATCHED"),
+            ("resource_b", "A0A8I6YKD5", 5, 0.4, 0.8, 0.8, "MATCHED"),
+        ],
+    )
+    write_parquet(
+        quality,
+        (
+            "accession VARCHAR, pocket_number INTEGER, mapping_fraction DOUBLE, "
+            "conservative_fraction_plddt_ge_70 DOUBLE, mapped_mean_plddt DOUBLE"
+        ),
+        [("A0A8I6YKD5", 5, 1.0, 0.9, 90.0)],
+    )
+
+    with pytest.raises(
+        StageError,
+        match="Conflicting duplicate joined-pocket evidence for A0A8I6YKD5/5",
+    ):
+        build_selected_pockets(
+            config=config,
+            structural_accessions=structural,
+            joined_pockets=joined,
+            pocket_quality=quality,
+            output_path=tmp_path / "must_not_exist.parquet",
+        )
+
+    write_parquet(
+        joined,
+        (
+            "source_resource_id VARCHAR, accession VARCHAR, pocket_number INTEGER, "
+            "druggability_score DOUBLE, p2rank_score DOUBLE, p2rank_probability DOUBLE, "
+            "p2rank_match_status VARCHAR"
+        ),
+        [
+            ("resource_a", "A0A8I6YKD5", 5, 0.9, 0.8, 0.8, "MATCHED"),
+            ("resource_b", "A0A8I6YKD5", 5, 0.9, 0.8, 0.8, "MATCHED"),
+        ],
+    )
+    write_parquet(
+        quality,
+        (
+            "source_resource_id VARCHAR, accession VARCHAR, pocket_number INTEGER, "
+            "mapping_fraction DOUBLE, conservative_fraction_plddt_ge_70 DOUBLE, "
+            "mapped_mean_plddt DOUBLE"
+        ),
+        [
+            ("resource_a", "A0A8I6YKD5", 5, 1.0, 0.9, 90.0),
+            ("resource_b", "A0A8I6YKD5", 5, 0.4, 0.9, 90.0),
+        ],
+    )
+    with pytest.raises(
+        StageError,
+        match="Conflicting duplicate pocket-quality evidence for A0A8I6YKD5/5",
+    ):
+        build_selected_pockets(
+            config=config,
+            structural_accessions=structural,
+            joined_pockets=joined,
+            pocket_quality=quality,
+            output_path=tmp_path / "quality_conflict_must_not_exist.parquet",
+        )
+
+    write_parquet(
+        quality,
+        (
+            "accession VARCHAR, pocket_number INTEGER, mapping_fraction DOUBLE, "
+            "conservative_fraction_plddt_ge_70 DOUBLE, mapped_mean_plddt DOUBLE"
+        ),
+        [("A0A8I6YKD5", None, 1.0, 0.9, 90.0)],
+    )
+    with pytest.raises(StageError, match="non-integer pocket numbers"):
+        build_selected_pockets(
+            config=config,
+            structural_accessions=structural,
+            joined_pockets=joined,
+            pocket_quality=quality,
+            output_path=tmp_path / "malformed_must_not_exist.parquet",
+        )
+
+
 def test_reused_orthofinder_archive_is_validated_and_published(
     synthetic_config: Path, tmp_path: Path
 ) -> None:
