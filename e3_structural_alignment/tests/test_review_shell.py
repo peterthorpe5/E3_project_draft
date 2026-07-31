@@ -90,6 +90,77 @@ def test_submitter_accepts_exact_five_days_and_barton_defaults(
     assert "--account=barton" in arguments
     assert "--partition=barton" in arguments
     assert "--time=5-00:00:00" in arguments
+    assert "--package-root" in arguments
+    assert str(PACKAGE_ROOT) in arguments
+
+
+def test_relocated_worker_uses_explicit_package_root(tmp_path: Path) -> None:
+    """A Slurm-spooled worker finds the runner through its explicit source root."""
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    invocation = tmp_path / "runner_arguments.txt"
+    runner = package_root / "run_e3_pocket_review.sh"
+    runner.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"${RUNNER_CAPTURE}\"\n",
+        encoding="utf-8",
+    )
+    runner.chmod(0o755)
+
+    spool_dir = tmp_path / "var" / "spool" / "slurmd"
+    spool_dir.mkdir(parents=True)
+    worker = spool_dir / "slurm_script"
+    worker.write_bytes(
+        (
+            PACKAGE_ROOT
+            / "scripts"
+            / "slurm_e3_pocket_review_job.sh"
+        ).read_bytes()
+    )
+    worker.chmod(0o755)
+
+    binary_dir = tmp_path / "bin"
+    binary_dir.mkdir()
+    conda = binary_dir / "conda"
+    conda.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"$1\" == \"run\" && \"$2\" == \"--name\" ]]; then\n"
+        "    shift 3\n"
+        "fi\n"
+        "exec \"$@\"\n",
+        encoding="utf-8",
+    )
+    conda.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{binary_dir}:{environment['PATH']}"
+    environment["RUNNER_CAPTURE"] = str(invocation)
+    output_dir = tmp_path / "output"
+    result = subprocess.run(
+        [
+            str(worker),
+            "--package-root",
+            str(package_root),
+            "--run-root",
+            str(tmp_path),
+            "--output-dir",
+            str(output_dir),
+            "--review-limit",
+            "50",
+            "--member-pocket-top-k",
+            "5",
+            "--resume",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert result.returncode == 0, result.stderr
+    arguments = invocation.read_text(encoding="utf-8")
+    assert f"--run-root\n{tmp_path}\n" in arguments
+    assert f"--output-dir\n{output_dir}\n" in arguments
+    assert "--resume\n" in arguments
 
 
 def test_worker_rejects_unknown_option() -> None:

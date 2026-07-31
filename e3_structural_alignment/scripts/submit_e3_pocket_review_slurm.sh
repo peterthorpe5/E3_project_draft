@@ -4,7 +4,9 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PACKAGE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 readonly JOB_SCRIPT="${SCRIPT_DIR}/slurm_e3_pocket_review_job.sh"
+readonly REVIEW_SCRIPT="${PACKAGE_ROOT}/run_e3_pocket_review.sh"
 
 RUN_ROOT=""
 OUTPUT_DIR=""
@@ -163,10 +165,19 @@ if ! command -v sbatch >/dev/null 2>&1; then
     printf 'ERROR: sbatch is unavailable; submit this command from a Slurm login node.\n' >&2
     exit 2
 fi
+if [[ ! -f "${JOB_SCRIPT}" ]]; then
+    printf 'ERROR: Slurm worker script is missing: %s\n' "${JOB_SCRIPT}" >&2
+    exit 2
+fi
+if [[ ! -f "${REVIEW_SCRIPT}" ]]; then
+    printf 'ERROR: pocket-review runner is missing: %s\n' "${REVIEW_SCRIPT}" >&2
+    exit 2
+fi
 
 mkdir -p -- "$(dirname -- "${OUTPUT_DIR}")"
 
 JOB_ARGUMENTS=(
+    --package-root "${PACKAGE_ROOT}"
     --run-root "${RUN_ROOT}"
     --output-dir "${OUTPUT_DIR}"
     --conda-environment "${CONDA_ENVIRONMENT}"

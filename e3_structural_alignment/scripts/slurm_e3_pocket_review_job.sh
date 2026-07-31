@@ -3,9 +3,7 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly PACKAGE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-
+PACKAGE_ROOT=""
 RUN_ROOT=""
 OUTPUT_DIR=""
 CONDA_ENVIRONMENT="e3_structural_alignment"
@@ -24,6 +22,11 @@ require_value() {
 
 while (($#)); do
     case "$1" in
+        --package-root)
+            require_value "$1" "${2:-}"
+            PACKAGE_ROOT="$2"
+            shift 2
+            ;;
         --run-root)
             require_value "$1" "${2:-}"
             RUN_ROOT="$2"
@@ -60,8 +63,18 @@ while (($#)); do
     esac
 done
 
-if [[ -z "${RUN_ROOT}" || -z "${OUTPUT_DIR}" ]]; then
-    printf 'ERROR: worker requires --run-root and --output-dir.\n' >&2
+if [[ -z "${PACKAGE_ROOT}" || -z "${RUN_ROOT}" || -z "${OUTPUT_DIR}" ]]; then
+    printf '%s\n' \
+        'ERROR: worker requires --package-root, --run-root and --output-dir.' >&2
+    exit 2
+fi
+if [[ ! -d "${PACKAGE_ROOT}" ]]; then
+    printf 'ERROR: package root is not a directory: %s\n' "${PACKAGE_ROOT}" >&2
+    exit 2
+fi
+if [[ ! -f "${PACKAGE_ROOT}/run_e3_pocket_review.sh" ]]; then
+    printf 'ERROR: pocket-review runner is missing: %s\n' \
+        "${PACKAGE_ROOT}/run_e3_pocket_review.sh" >&2
     exit 2
 fi
 if ! command -v conda >/dev/null 2>&1; then
