@@ -6,6 +6,8 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
+from test_pocket_review import make_pocket_review
+
 
 def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> None:
     """The app renders all tabs and accepts a representative accession."""
@@ -16,12 +18,24 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 12
-    assert app.tabs[1].label == "Final recommendations"
+    assert len(app.tabs) == 15
+    assert app.tabs[1].label == "Computational recommendations"
+    assert app.tabs[2].label == "Threshold explorer"
+    assert app.tabs[9].label == "3D structures & pockets"
+    assert app.tabs[10].label == "Pocket-aligned sequences"
     assert len(app.multiselect) >= 8
     assert any("Columns to display" in item.label for item in app.multiselect)
+    metric_labels = [metric.label for metric in app.metric]
+    assert "Evolutionary groups assessed" in metric_labels
+    assert "Milestone 1 pre-structure passes" in metric_labels
     app.text_input[0].set_value("Q9SA03").run()
     assert not app.exception
+    app.radio[0].set_value("structural").run()
+    assert not app.exception
+    assert any(
+        slider.label == "Minimum member druggability score"
+        for slider in app.slider
+    )
 
 
 def test_app_reports_missing_database(monkeypatch: object, tmp_path: Path) -> None:
@@ -41,7 +55,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 12
+    assert len(app.tabs) == 15
 
 
 def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: Path) -> None:
@@ -64,3 +78,25 @@ def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: 
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert app.error
     assert "Could not open" in app.error[0].value
+
+
+def test_app_renders_portable_structure_and_alignment_tabs(
+    resource_db: Path,
+    monkeypatch: object,
+    tmp_path: Path,
+) -> None:
+    """A valid pocket-review bundle activates both visual review tabs."""
+    review_dir = make_pocket_review(tmp_path)
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    monkeypatch.setenv("E3_POCKET_REVIEW_DIR", str(review_dir))
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=10).run()
+    assert not app.exception
+    group_selectors = [
+        selector for selector in app.selectbox if selector.label == "Evolutionary group"
+    ]
+    assert len(group_selectors) == 2
+    assert all(
+        selector.value == "groups/rank_001__hog__N0.HOG1.html"
+        for selector in group_selectors
+    )

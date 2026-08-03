@@ -16,6 +16,7 @@ class AppConfig:
 
     resource_duckdb: Path | None = None
     expression_duckdb: Path | None = None
+    pocket_review_dir: Path | None = None
     max_rows: int = 1000
     resource_parquet: Path | None = None
     resource_run_dir: Path | None = None
@@ -60,12 +61,16 @@ def config_from_environment(environment: Mapping[str, str] | None = None) -> App
             "E3_RESOURCE_RUN_DIR is required"
         )
     expression = values.get("E3_EXPRESSION_DUCKDB", "").strip()
+    pocket_review = values.get("E3_POCKET_REVIEW_DIR", "").strip()
     max_rows = parse_positive_integer(values.get("E3_MAX_TABLE_ROWS", "1000"), "max rows")
     return AppConfig(
         resource_duckdb=(
             Path(resource_duckdb).expanduser().resolve() if resource_duckdb else None
         ),
         expression_duckdb=Path(expression).expanduser().resolve() if expression else None,
+        pocket_review_dir=(
+            Path(pocket_review).expanduser().resolve() if pocket_review else None
+        ),
         max_rows=max_rows,
         resource_parquet=(
             Path(resource_parquet).expanduser().resolve() if resource_parquet else None
@@ -107,4 +112,8 @@ def validate_config(config: AppConfig) -> None:
             )
     if config.expression_duckdb is not None and not config.expression_duckdb.is_file():
         raise AppError(f"Expression DuckDB does not exist: {config.expression_duckdb}")
+    if config.pocket_review_dir is not None and not config.pocket_review_dir.is_dir():
+        raise AppError(
+            f"Pocket-review directory does not exist: {config.pocket_review_dir}"
+        )
     parse_positive_integer(str(config.max_rows), "max rows")

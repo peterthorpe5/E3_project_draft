@@ -30,7 +30,7 @@ ACCESSION_COLUMNS = (
 
 SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
     "final_recommendations": {
-        "title": "Final computational recommendations",
+        "title": "Computational recommendations",
         "description": (
             "Which distinct evolutionary candidate groups should be reviewed in "
             "the ordered top 50, which pass every enabled grant-aligned gate, "
@@ -46,7 +46,6 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "final_evolutionary_candidate_prioritisation",
             "final_evolutionary_group_cluster_contributors",
             "final_candidate_exclusion_audit",
-            "candidate_master_results",
         ),
     },
     "candidates": {
@@ -56,6 +55,7 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "domain, expression and structural evidence gates?"
         ),
         "relations": (
+            "final_evolutionary_candidate_prioritisation",
             "candidate_master_results",
             "final_candidate_prioritisation",
             "prestructure_ranking",
@@ -74,7 +74,6 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "candidate_group_member_sequences",
             "orthogroup_membership",
             "hierarchical_membership",
-            "candidate_master_results",
         ),
     },
     "domains": {
@@ -477,6 +476,12 @@ def relations_for_section(
     available = list_relations(connection)
     preferred = list(SECTION_SPECS[section]["relations"])
     selected = [relation for relation in preferred if relation in available]
+    if (
+        section == "final_recommendations"
+        and not selected
+        and "candidate_master_results" in available
+    ):
+        selected.append("candidate_master_results")
     if section == "provenance":
         selected.extend(
             relation
@@ -623,12 +628,18 @@ def default_columns(section: str, available: Sequence[str]) -> list[str]:
 
 
 def grant_overview(connection: duckdb.DuckDBPyConnection) -> dict[str, int]:
-    """Calculate compact Milestone 1/2 counts from the best candidate relation."""
+    """Calculate group-level Milestone 1/2 counts from the best relation.
+
+    Compatibility relations are deduplicated by evolutionary-group identifier
+    before any card is calculated. This prevents DeepClust contributor rows
+    from being reported as distinct biological candidate groups.
+    """
     relations = list_relations(connection)
     relation = next(
         (
             name
             for name in (
+                "final_evolutionary_candidate_prioritisation",
                 "candidate_master_results",
                 "final_candidate_prioritisation",
                 "prestructure_ranking",
@@ -645,14 +656,47 @@ def grant_overview(connection: duckdb.DuckDBPyConnection) -> dict[str, int]:
             "final_pass_count": 0,
             "structural_assessed_count": 0,
         }
-    columns = set(relation_columns(connection, relation))
+    relation_column_list = relation_columns(connection, relation)
+    columns = set(relation_column_list)
+    source = quote_identifier(relation)
+    if (
+        relation != "final_evolutionary_candidate_prioritisation"
+        and "primary_group_id" in columns
+    ):
+        partition = ["primary_group_id"]
+        if "primary_group_type" in columns:
+            partition.insert(0, "primary_group_type")
+        order_columns = [
+            column
+            for column in (
+                "final_evolutionary_rank",
+                "final_rank",
+                "computational_rank",
+                "prestructure_evolutionary_group_rank",
+                "cluster_id",
+            )
+            if column in columns
+        ] or ["primary_group_id"]
+        partition_sql = ", ".join(
+            quote_identifier(column) for column in partition
+        )
+        order_sql = ", ".join(
+            quote_identifier(column) for column in order_columns
+        )
+        source = (
+            "(SELECT * EXCLUDE (_e3_group_row) FROM (SELECT *, "
+            f"ROW_NUMBER() OVER (PARTITION BY {partition_sql} ORDER BY "
+            f"{order_sql}) AS _e3_group_row FROM {source} WHERE "
+            "COALESCE(CAST(primary_group_id AS VARCHAR), '') <> '') "
+            "WHERE _e3_group_row = 1)"
+        )
 
     def count_true(column: str) -> int:
         if column not in columns:
             return 0
         return int(
             connection.execute(
-                f"SELECT COUNT(*) FROM {quote_identifier(relation)} "
+                f"SELECT COUNT(*) FROM {source} "
                 f"WHERE COALESCE(CAST({quote_identifier(column)} AS BOOLEAN), false)"
             ).fetchone()[0]
         )
@@ -661,13 +705,15 @@ def grant_overview(connection: duckdb.DuckDBPyConnection) -> dict[str, int]:
     if "three_dimensional_alignment_status" in columns:
         structural_status = int(
             connection.execute(
-                f"SELECT COUNT(*) FROM {quote_identifier(relation)} "
+                f"SELECT COUNT(*) FROM {source} "
                 "WHERE COALESCE(three_dimensional_alignment_status, 'NOT_ASSESSED') "
                 "<> 'NOT_ASSESSED'"
             ).fetchone()[0]
         )
     return {
-        "candidate_count": relation_count(connection, relation),
+        "candidate_count": int(
+            connection.execute(f"SELECT COUNT(*) FROM {source}").fetchone()[0]
+        ),
         "prestructure_pass_count": count_true("grant_aligned_prestructure_pass")
         or count_true("grant_aligned_stringent_pass"),
         "final_pass_count": count_true("grant_aligned_final_pass"),

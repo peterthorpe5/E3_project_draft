@@ -258,3 +258,29 @@ def test_grant_overview_fallbacks(tmp_path: Path) -> None:
             "final_pass_count": 0,
             "structural_assessed_count": 0,
         }
+
+
+def test_grant_overview_prefers_and_counts_evolutionary_groups(tmp_path: Path) -> None:
+    """Headline cards never count duplicate DeepClust contributor rows as groups."""
+    path = tmp_path / "groups.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "CREATE TABLE candidate_master_results("
+            "primary_group_type VARCHAR, primary_group_id VARCHAR, "
+            "cluster_id VARCHAR, grant_aligned_prestructure_pass BOOLEAN, "
+            "grant_aligned_final_pass BOOLEAN, "
+            "three_dimensional_alignment_status VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO candidate_master_results VALUES "
+            "('HOG', 'N0.HOG1', 'cluster_1', true, false, 'ASSESSED'), "
+            "('HOG', 'N0.HOG1', 'cluster_2', true, false, 'ASSESSED'), "
+            "('HOG', 'N0.HOG2', 'cluster_3', false, false, 'NOT_ASSESSED')"
+        )
+    with open_read_only(path) as connection:
+        assert grant_overview(connection) == {
+            "candidate_count": 2,
+            "prestructure_pass_count": 1,
+            "final_pass_count": 0,
+            "structural_assessed_count": 1,
+        }

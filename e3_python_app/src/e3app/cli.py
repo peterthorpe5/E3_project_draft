@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -22,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--resource-parquet", type=Path)
     source.add_argument("--resource-run-dir", type=Path)
     parser.add_argument("--expression-duckdb", type=Path)
+    parser.add_argument("--pocket-review-dir", type=Path)
     parser.add_argument("--max-rows", type=int, default=1000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
@@ -62,6 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         resource_parquet=args.resource_parquet,
         resource_run_dir=args.resource_run_dir,
         expression_duckdb=args.expression_duckdb,
+        pocket_review_dir=args.pocket_review_dir,
         max_rows=args.max_rows,
     )
     try:
@@ -85,6 +88,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         environment["E3_MAX_TABLE_ROWS"] = str(config.max_rows)
         if config.expression_duckdb:
             environment["E3_EXPRESSION_DUCKDB"] = str(config.expression_duckdb.resolve())
+        else:
+            environment.pop("E3_EXPRESSION_DUCKDB", None)
+        if config.pocket_review_dir:
+            environment["E3_POCKET_REVIEW_DIR"] = str(
+                config.pocket_review_dir.resolve()
+            )
+        else:
+            environment.pop("E3_POCKET_REVIEW_DIR", None)
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
         return subprocess.run(streamlit_command(args), env=environment, check=False).returncode
     except AppError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
