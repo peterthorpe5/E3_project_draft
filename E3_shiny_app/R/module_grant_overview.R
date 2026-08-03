@@ -15,21 +15,25 @@ grant_overview_ui <- function(id) {
     ),
     bslib::layout_columns(
       bslib::value_box(
-        "Candidate groups",
+        "Evolutionary groups assessed",
         shiny::textOutput(ns("candidate_count"))
       ),
       bslib::value_box(
-        "Milestone 1 passes",
+        "Milestone 1 pre-structure passes",
         shiny::textOutput(ns("prestructure_pass_count"))
       ),
       bslib::value_box(
-        "Final stringent passes",
+        "All current stringent gates passed",
         shiny::textOutput(ns("final_pass_count"))
       ),
       bslib::value_box(
         "3D-assessed groups",
         shiny::textOutput(ns("structural_assessed_count"))
       )
+    ),
+    shiny::p(
+      class = "small text-muted",
+      shiny::textOutput(ns("count_scope"), inline = TRUE)
     ),
     bslib::layout_columns(
       bslib::card(
@@ -74,7 +78,8 @@ grant_overview_server <- function(id, resource_source) {
           candidate_count = 0,
           prestructure_pass_count = 0,
           final_pass_count = 0,
-          structural_assessed_count = 0
+          structural_assessed_count = 0,
+          source_relation = NA_character_
         ))
       }
       tryCatch(
@@ -89,7 +94,8 @@ grant_overview_server <- function(id, resource_source) {
             candidate_count = 0,
             prestructure_pass_count = 0,
             final_pass_count = 0,
-            structural_assessed_count = 0
+            structural_assessed_count = 0,
+            source_relation = NA_character_
           )
         }
       )
@@ -103,6 +109,16 @@ grant_overview_server <- function(id, resource_source) {
     output$prestructure_pass_count <- render_metric("prestructure_pass_count")
     output$final_pass_count <- render_metric("final_pass_count")
     output$structural_assessed_count <- render_metric("structural_assessed_count")
+    output$count_scope <- shiny::renderText({
+      relation <- metrics()$source_relation[[1L]]
+      if (is.na(relation) || !nzchar(relation)) {
+        return("No candidate relation is available for group-level counts.")
+      }
+      paste0(
+        "Counts use evolutionary groups from `", relation,
+        "`; cluster-level sources are reduced to one deterministic lead row per group."
+      )
+    })
     output$resource_overview <- DT::renderDT({
       if (!resource_source_available(resource_source)) {
         return(DT::datatable(

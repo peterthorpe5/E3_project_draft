@@ -21,6 +21,8 @@ source("R/app_config.R")
 source("R/data_sources.R")
 source("R/query_helpers.R")
 source("R/resource_helpers.R")
+source("R/threshold_explorer.R")
+source("R/pocket_review.R")
 source("R/module_expression_filters.R")
 source("R/module_expression_summary.R")
 source("R/module_expression_table.R")
@@ -31,10 +33,17 @@ source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
 source("R/module_grant_overview.R")
 source("R/module_result_section.R")
+source("R/module_threshold_explorer.R")
+source("R/module_pocket_review.R")
 
 # Configuration can come from command-line arguments, environment variables, or
 # defaults. See README.md for the supported options.
 app_config <- get_app_config(args = commandArgs(trailingOnly = TRUE))
+pocket_review_config <- prepare_pocket_review(
+  explicit_dir = app_config$pocket_review_dir,
+  resource_source = app_config$resource_source
+)
+pocket_review_config <- register_pocket_review_resource(pocket_review_config)
 
 ui <- bslib::page_sidebar(
   title = "ARIA Plant E3 Evidence Reporter",
@@ -65,8 +74,12 @@ ui <- bslib::page_sidebar(
       grant_overview_ui("grant_overview")
     ),
     bslib::nav_panel(
-      "Final recommendations",
+      "Computational recommendations",
       result_section_ui("final_recommendation_results", "final_recommendations")
+    ),
+    bslib::nav_panel(
+      "Threshold explorer",
+      threshold_explorer_ui("threshold_explorer")
     ),
     bslib::nav_panel(
       "Candidates",
@@ -91,6 +104,14 @@ ui <- bslib::page_sidebar(
     bslib::nav_panel(
       "Pocket conservation",
       result_section_ui("pocket_results", "pocket_conservation")
+    ),
+    bslib::nav_panel(
+      "3D structures & pockets",
+      pocket_review_ui("structure_review", focus = "structure")
+    ),
+    bslib::nav_panel(
+      "Pocket-aligned sequences",
+      pocket_review_ui("alignment_review", focus = "alignment")
     ),
     bslib::nav_panel(
       "3D alignment",
@@ -152,6 +173,21 @@ server <- function(input, output, session) {
   grant_overview_server(
     id = "grant_overview",
     resource_source = app_config$resource_source
+  )
+  threshold_explorer_server(
+    id = "threshold_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  pocket_review_server(
+    id = "structure_review",
+    review_config = pocket_review_config,
+    focus = "structure"
+  )
+  pocket_review_server(
+    id = "alignment_review",
+    review_config = pocket_review_config,
+    focus = "alignment"
   )
 
   result_section_server(
@@ -259,6 +295,8 @@ server <- function(input, output, session) {
       "\nResource run directory:", app_config$resource_run_dir,
       "\nResolved resource mode:", app_config$resource_source$mode,
       "\nResource derived dir:", app_config$resource_derived_dir,
+      "\nPocket-review bundle:", pocket_review_config$path,
+      "\nPocket-review available:", pocket_review_config$available,
       "\nExpression DuckDB:", app_config$expression_duckdb_path,
       "\nMax display rows:", app_config$max_table_rows,
       sep = ""

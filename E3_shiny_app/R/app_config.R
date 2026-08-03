@@ -62,14 +62,42 @@ default_expression_duckdb_path <- function() {
 #' Infer a resource derived directory from config values.
 #'
 #' @param resource_duckdb_path Path to source-first resource DuckDB.
+#' @param resource_parquet_path Path to a candidate master Parquet.
+#' @param resource_run_dir Path to a completed workflow run.
+#' @param resource_source Optional resolved result-source specification.
 #' @param explicit_derived_dir Explicit derived directory, if supplied.
 #' @return Derived directory path.
-resolve_resource_derived_dir <- function(resource_duckdb_path, explicit_derived_dir = NULL) {
+resolve_resource_derived_dir <- function(
+  resource_duckdb_path = "",
+  resource_parquet_path = "",
+  resource_run_dir = "",
+  resource_source = NULL,
+  explicit_derived_dir = NULL
+) {
   if (!is.null(explicit_derived_dir) && nzchar(explicit_derived_dir)) {
     return(explicit_derived_dir)
   }
 
-  infer_derived_dir(resource_duckdb_path = resource_duckdb_path)
+  if (is.null(resource_source)) {
+    resource_source <- resolve_resource_source(
+      resource_duckdb_path = resource_duckdb_path,
+      resource_parquet_path = resource_parquet_path,
+      resource_run_dir = resource_run_dir
+    )
+  }
+
+  source <- coerce_resource_source(resource_source = resource_source)
+  if (source$mode == "duckdb") {
+    return(infer_derived_dir(resource_duckdb_path = source$path))
+  }
+  if (source$mode == "master_parquet") {
+    return(dirname(source$path))
+  }
+  if (source$mode == "run_directory") {
+    return(source$path)
+  }
+
+  ""
 }
 
 #' Get the app configuration.
@@ -82,6 +110,7 @@ resolve_resource_derived_dir <- function(resource_duckdb_path, explicit_derived_
 #' * `resource_duckdb_path`: completed integrated/source-first DuckDB.
 #' * `resource_parquet_path`: single candidate master-results Parquet.
 #' * `resource_run_dir`: workflow run containing current stage Parquets.
+#' * `pocket_review_dir`: optional offline structure/alignment review bundle.
 #' * `expression_duckdb_path`: the Expression Atlas DuckDB created by the
 #'   separate expression-downloader pipeline.
 #'
@@ -94,12 +123,33 @@ get_app_config <- function(args = commandArgs(trailingOnly = TRUE)) {
     parsed_args$duckdb_path %||%
     Sys.getenv("E3_EXPRESSION_DUCKDB", unset = default_expression_duckdb_path())
 
-  resource_duckdb_path <- parsed_args$resource_duckdb_path %||%
-    Sys.getenv("E3_RESOURCE_DUCKDB", unset = "")
-  resource_parquet_path <- parsed_args$resource_parquet_path %||%
-    Sys.getenv("E3_RESOURCE_PARQUET", unset = "")
-  resource_run_dir <- parsed_args$resource_run_dir %||%
-    Sys.getenv("E3_RESOURCE_RUN_DIR", unset = "")
+  explicit_resource_names <- c(
+    "resource_duckdb_path",
+    "resource_parquet_path",
+    "resource_run_dir"
+  )
+  explicit_resource_supplied <- any(vapply(
+    explicit_resource_names,
+    function(name) !is.null(parsed_args[[name]]),
+    logical(1L)
+  ))
+  cli_resource_supplied <- explicit_resource_supplied ||
+    !is.null(parsed_args$duckdb_path)
+  if (cli_resource_supplied) {
+    legacy_resource_path <- if (explicit_resource_supplied) {
+      ""
+    } else {
+      parsed_args$duckdb_path %||% ""
+    }
+    resource_duckdb_path <- parsed_args$resource_duckdb_path %||%
+      legacy_resource_path
+    resource_parquet_path <- parsed_args$resource_parquet_path %||% ""
+    resource_run_dir <- parsed_args$resource_run_dir %||% ""
+  } else {
+    resource_duckdb_path <- Sys.getenv("E3_RESOURCE_DUCKDB", unset = "")
+    resource_parquet_path <- Sys.getenv("E3_RESOURCE_PARQUET", unset = "")
+    resource_run_dir <- Sys.getenv("E3_RESOURCE_RUN_DIR", unset = "")
+  }
   if (
     !nzchar(resource_duckdb_path) &&
       !nzchar(resource_parquet_path) &&
@@ -123,6 +173,9 @@ get_app_config <- function(args = commandArgs(trailingOnly = TRUE)) {
       Sys.getenv("E3_RESOURCE_DERIVED_DIR", unset = "")
   )
 
+  pocket_review_dir <- parsed_args$pocket_review_dir %||%
+    Sys.getenv("E3_POCKET_REVIEW_DIR", unset = "")
+
   max_table_rows <- as.integer(
     parsed_args$max_table_rows %||%
       Sys.getenv("E3_MAX_TABLE_ROWS", unset = "1000")
@@ -130,7 +183,11 @@ get_app_config <- function(args = commandArgs(trailingOnly = TRUE)) {
 
   list(
     resource_duckdb_path = resource_duckdb_path,
+    resource_parquet_path = resource_parquet_path,
+    resource_run_dir = resource_run_dir,
+    resource_source = resource_source,
     resource_derived_dir = resource_derived_dir,
+    pocket_review_dir = pocket_review_dir,
     expression_duckdb_path = expression_duckdb_path,
     # Backwards-compatible field used by older modules/tests.
     duckdb_path = expression_duckdb_path,

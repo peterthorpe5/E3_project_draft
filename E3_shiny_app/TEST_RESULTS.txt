@@ -1,26 +1,55 @@
-E3 PROTAC Resource Shiny app v0.3.0 test note
+ARIA plant E3 Shiny reporter v0.6.0 test note
 ================================================
 
-The package includes an expanded test suite under tests/testthat/.
+The package includes the expanded test suite under tests/testthat/.
 
-Important limitation of this ChatGPT sandbox:
+Validation completed for v0.5.0 in this development environment:
+- Every v0.5.0 R source and test file parsed without syntax errors using the
+  tree-sitter R grammar.
+- The generated evolutionary-group de-duplication SQL was executed against a
+  small DuckDB fixture and returned the expected group counts.
+- The pre-structure/structural threshold SQL design was executed against a
+  four-group DuckDB fixture. It classified the 0.325 minimum-druggability case
+  as a near-miss at 0.50 and a pass at 0.30.
+
+Environment limitation:
 - R is not installed in the sandbox environment, so I could not execute the R
-  testthat suite here.
-- The tests are included and should be run in Pete's active R/conda environment
-  with:
+  testthat suite or an R-native parse of the additive v0.6.0 files here.
+- All 40 R source/test files, including the v0.6.0 additions, passed a static
+  delimiter, quote and escape scan. The source also passed repository
+  whitespace/error validation with `git diff --check`; its complete testthat
+  run remains required on the Mac or cluster R environment.
+- Run the complete suite in the e3_shiny_app conda environment with:
 
     Rscript inst/scripts/check_dependencies.R
     Rscript inst/scripts/run_tests.R
 
-New test files added in v0.3.0:
-- tests/testthat/test_resource_helpers.R
-- tests/testthat/test_data_source_report.R
-- tests/testthat/test_resource_modules_ui.R
+New v0.5.0 coverage is in:
+- tests/testthat/test_threshold_explorer.R
+- tests/testthat/test_config.R
+- tests/testthat/test_result_sections.R
 
-Existing expression-app tests are retained.
+New v0.6.0 coverage is in:
+- tests/testthat/test_pocket_review.R
+- tests/testthat/test_config.R
+- tests/testthat/test_threshold_explorer.R
+
+The v0.6.0 tests cover:
+- explicit and unique automatic pocket-review bundle discovery;
+- rejection of incomplete bundles, ambiguous discovery and unsafe page paths;
+- stable group labels and rank ordering;
+- retention of model and OrthoFinder-group member sequence identifiers;
+- separate structure and MAFFT-alignment tab contracts;
+- the new command-line configuration field; and
+- retention of every pre-existing application tab.
 
 Expected test coverage:
-- CLI/config parsing.
+- CLI/config parsing and command-line precedence.
+- Flexible DuckDB, Parquet and run-directory resource selection.
+- Evolutionary-group headline counts and cluster-level de-duplication fallback.
+- Current threshold defaults and defensive validation.
+- Pre-structure and structural candidate reclassification.
+- Manual/slider threshold UI contracts and TSV download control.
 - Expression SQL helper construction.
 - Resource DuckDB query builders.
 - Resource catalog/status summaries.

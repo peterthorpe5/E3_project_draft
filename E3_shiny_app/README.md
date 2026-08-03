@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.4.0 is the grant-focused R reporter for the PT_E3_7 workflow. It is a
+Version 0.6.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -8,32 +8,69 @@ while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
 The main sections follow the evidence path required by the grant:
 
-1. **Final recommendations** – the ordered top-50 review shortlist, strict
+1. **Grant overview** – authoritative evolutionary-group counts rather than
+   earlier DeepClust evidence-row counts.
+2. **Threshold explorer** – separate pre-structure and structurally informed
+   sensitivity-analysis lists, using sliders and exact typed values while the
+   primary grant-aligned result remains unchanged.
+3. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
    exclusion reasons.
-2. **Candidates** – combined discovery, conservation, domain, expression and
+4. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-3. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
+5. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
    species membership, member accessions and candidate-relevant sequences.
-4. **Domains** – catalogued E3-associated domain support and explicit annotation
+6. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-5. **Expression evidence** – identifier mapping and broad Expression Atlas
+7. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives.
-6. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+8. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-7. **Pocket conservation** – conserved pocket-bearing alignment regions and
+9. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-8. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+10. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation.
-9. **Provenance and QC** – release metadata, relation catalogue and source paths.
+11. **3D structures & pockets** – selected-group, rotatable member structures
+    with strict and top-k pocket residues highlighted.
+12. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+    highlights and the original OrthoFinder-group member sequence identifiers.
+13. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
 removes all columns. The table remains row-bounded regardless of the selection.
 Displayed rows can be downloaded as TSV; analytical comma-separated outputs are
 not produced.
+
+## Threshold explorer
+
+The threshold explorer always starts from the current primary-analysis values:
+
+| Gate | Default |
+|---|---:|
+| Minimum target-species fraction | 0.90 |
+| Minimum mandatory-species fraction | 1.00 |
+| Minimum domain-supported assessed-species fraction | 0.80 |
+| Minimum expression-supported assessed-species fraction | 0.80 |
+| Minimum structurally supported species fraction | 0.75 |
+| Minimum member druggability score | 0.50 |
+
+The structural view also defaults to requiring a conserved pocket-bearing
+sequence region, acceptable mapping in every assessed member and a strictly
+conserved corresponding 3D pocket. The displayed druggability value is the
+minimum across assessed members, so moving that slider directly re-evaluates the
+all-member druggability requirement. `Reset current defaults` restores these
+values. The app labels groups outside the 200-group structural
+analysis as `NOT_STRUCTURALLY_ASSESSED`; it never turns missing assessment into a
+structural failure or pass.
+
+`PASS` means that every selected gate is met. `NEAR_MISS` means that one
+conceptual gate is not met. The exported TSV includes the selected numeric
+thresholds in every row, so an exploratory list remains interpretable after it
+leaves the app. Slider-generated results are sensitivity analyses and do not
+replace the locked primary analysis.
 
 ## Three interchangeable result-source modes
 
@@ -97,6 +134,7 @@ Equivalent environment variables are:
 - `E3_RESOURCE_DUCKDB`
 - `E3_RESOURCE_PARQUET`
 - `E3_RESOURCE_RUN_DIR`
+- `E3_POCKET_REVIEW_DIR`
 - `E3_EXPRESSION_DUCKDB`
 - `E3_MAX_TABLE_ROWS`
 - `E3_SHINY_HOST`
@@ -105,6 +143,38 @@ Equivalent environment variables are:
 The raw Expression Atlas summary/table/lookup/plot tabs use the optional
 expression DuckDB. The integrated Expression evidence section uses the selected
 E3 result source.
+
+## Portable 3D and alignment review
+
+The integrated DuckDB stores structural evidence, residue mappings and original
+provenance paths, but it does not embed the model coordinates required by a
+browser viewer. The optional pocket-review bundle is therefore copied beside
+the DuckDB as a self-contained asset directory. It contains compact C-alpha
+coordinates, pocket annotations, published alignments, exact coordinate maps,
+member sequence identifiers, checksums and offline HTML/JavaScript.
+
+Configure it explicitly:
+
+```bash
+./run_app.sh \
+  --resource_duckdb_path /path/to/portable_release/e3_integrated_resource.duckdb \
+  --pocket_review_dir /path/to/portable_release/pocket_review \
+  --expression_duckdb_path "" \
+  --max_table_rows 1000 \
+  --host 127.0.0.1 \
+  --port 3838
+```
+
+If exactly one valid directory beginning with `pocket_review` is beside the
+DuckDB, the app discovers it automatically. An explicit path is preferred when
+several review bundles are retained. The two review tabs remain visible when no
+bundle is configured, but show a clear setup message rather than failing the
+whole app.
+
+The embedded 3D view is a rotatable C-alpha trace with mapped pocket residues,
+not an atomistic surface or docking result. It can switch between group members
+and pocket ranks. The sequence view retains members without structure or pocket
+evidence as explicit unassessed records.
 
 ## Dependencies and tests
 
@@ -119,8 +189,13 @@ Rscript inst/scripts/run_tests.R
 ```
 
 The test suite covers source selection, run-directory discovery, lazy Parquet
-registration, section classification, selected-column SQL, grant-overview
-queries, module UI contracts and the retained Expression Atlas functionality.
+registration, section classification, group-level grant-overview counts,
+threshold validation and SQL, druggability near-miss reclassification, module UI
+contracts, portable pocket-review validation, selected-group sequence/model
+identifiers and the retained Expression Atlas functionality.
+
+The complete cluster-build, external-drive transfer and local launch procedure
+is in `PORTABLE_VISUALISATION_RUNBOOK_v0_6_0.md`.
 
 ## Interpretation boundary
 

@@ -145,9 +145,6 @@ safe_parquet_relation_name <- function(parquet_path, run_dir) {
   name <- tolower(gsub("[^A-Za-z0-9_]", "_", paste(parts, collapse = "_")))
   name <- gsub("_+", "_", name)
   name <- gsub("^_+|_+$", "", name)
-  if (!grepl("^[A-Za-z]", name)) {
-    name <- paste0("result_", name)
-  }
   name
 }
 

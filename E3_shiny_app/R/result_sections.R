@@ -17,8 +17,7 @@ result_section_specs <- list(
       "grant_aligned_predicted_candidates",
       "final_evolutionary_candidate_prioritisation",
       "final_evolutionary_group_cluster_contributors",
-      "final_candidate_exclusion_audit",
-      "candidate_master_results"
+      "final_candidate_exclusion_audit"
     )
   ),
   candidates = list(
@@ -45,8 +44,7 @@ result_section_specs <- list(
       "candidate_orthology_summary",
       "candidate_group_member_sequences",
       "orthogroup_membership",
-      "hierarchical_membership",
-      "candidate_master_results"
+      "hierarchical_membership"
     )
   ),
   domains = list(
@@ -55,7 +53,7 @@ result_section_specs <- list(
       "Is a catalogued E3-associated domain supported across assessed members,",
       "and where is annotation unavailable?"
     ),
-    relations = c("domain_summary", "domain_hits", "candidate_master_results")
+    relations = c("domain_summary", "domain_hits")
   ),
   expression = list(
     title = "Expression support",
@@ -66,8 +64,7 @@ result_section_specs <- list(
     relations = c(
       "candidate_expression_summary",
       "candidate_expression_mapping",
-      "candidate_identifier_aliases",
-      "candidate_master_results"
+      "candidate_identifier_aliases"
     )
   ),
   ligandability = list(
@@ -80,8 +77,7 @@ result_section_specs <- list(
       "selected_pockets",
       "ranked_member_pockets",
       "structural_prediction_status",
-      "structural_analysis_accessions",
-      "candidate_master_results"
+      "structural_analysis_accessions"
     )
   ),
   pocket_conservation = list(
@@ -94,8 +90,7 @@ result_section_specs <- list(
       "pocket_conservation_summary",
       "pocket_conservation_members",
       "pocket_sequence_coordinates",
-      "ranked_pocket_sequence_coordinates",
-      "candidate_master_results"
+      "ranked_pocket_sequence_coordinates"
     )
   ),
   structural_alignment = list(
@@ -112,8 +107,7 @@ result_section_specs <- list(
       "structural_pocket_sensitivity_residue_matches",
       "structural_pocket_comparisons",
       "structural_pocket_residue_matches",
-      "structural_alignments",
-      "candidate_master_results"
+      "structural_alignments"
     )
   ),
   provenance = list(
@@ -203,11 +197,27 @@ default_result_columns <- function(section, available) {
       "inclusion_reasons", "exclusion_reasons", "missing_evidence"
     ),
     candidates = c(
-      "final_rank", "recommendation_status", "cluster_id",
-      "primary_group_id", "orthofinder_orthogroup_ids",
-      "candidate_accessions", "final_score", "target_species_fraction",
-      "domain_species_fraction", "expression_species_fraction",
-      "structural_species_fraction", "missing_evidence"
+      "final_rank", "computational_rank", "recommendation_status",
+      "grant_aligned_prediction_status", "cluster_id", "primary_group_type",
+      "primary_group_id", "candidate_accession_count", "candidate_accessions",
+      "orthofinder_orthogroup_ids", "orthofinder_hierarchical_group_ids",
+      "orthofinder_group_member_count", "orthofinder_group_species_count",
+      "prestructure_score", "final_score", "evidence_completeness_fraction",
+      "target_species_count", "target_species_total", "target_species_fraction",
+      "target_species_present", "target_species_missing",
+      "mandatory_species_count", "mandatory_species_total",
+      "mandatory_species_fraction", "mandatory_species_missing",
+      "domain_supported_species_count", "domain_assessed_species_count",
+      "domain_annotation_coverage_fraction", "domain_species_fraction",
+      "domain_supported_species", "domain_unavailable_species",
+      "expression_supported_species_count", "expression_assessed_species_count",
+      "expression_evidence_coverage_fraction", "expression_species_fraction",
+      "expression_supported_species", "expression_unavailable_species",
+      "structural_species_fraction", "minimum_druggability_score",
+      "conservation_status", "three_dimensional_alignment_status",
+      "grant_aligned_prestructure_pass", "grant_aligned_final_pass",
+      "inclusion_reasons", "exclusion_reasons", "missing_evidence",
+      "structural_exclusion_reasons"
     ),
     orthology = c(
       "cluster_id", "record_type", "group_id", "orthogroup_id",
@@ -330,7 +340,7 @@ collect_selected_result <- function(
 
 #' Build a compact grant-overview query.
 #'
-#' @param relation Candidate-level relation.
+#' @param relation Candidate or evolutionary-group relation.
 #' @param available Available columns.
 #' @param alias Attached resource alias.
 #' @return SQL query.
@@ -341,6 +351,34 @@ build_grant_overview_query <- function(
 ) {
   safe_alias <- sanitise_duckdb_alias(alias)
   safe_relation <- quote_duckdb_identifier(relation)
+  source_relation <- paste0(safe_alias, ".main.", safe_relation)
+  if (
+    relation %in% c(
+      "candidate_master_results",
+      "final_candidate_prioritisation",
+      "prestructure_ranking"
+    ) &&
+      all(c("primary_group_type", "primary_group_id") %in% available)
+  ) {
+    order_columns <- c("final_rank", "computational_rank", "cluster_id")
+    order_columns <- order_columns[order_columns %in% available]
+    order_sql <- if (length(order_columns) > 0L) {
+      paste(
+        vapply(order_columns, quote_duckdb_identifier, character(1L)),
+        collapse = ", "
+      )
+    } else {
+      quote_duckdb_identifier("primary_group_id")
+    }
+    source_relation <- paste0(
+      "(SELECT * EXCLUDE (_e3_group_row) FROM (SELECT *, ROW_NUMBER() OVER (",
+      "PARTITION BY primary_group_type, primary_group_id ORDER BY ", order_sql,
+      ") AS _e3_group_row FROM ", source_relation,
+      " WHERE COALESCE(CAST(primary_group_type AS VARCHAR), '') <> '' ",
+      "AND COALESCE(CAST(primary_group_id AS VARCHAR), '') <> '') ",
+      "WHERE _e3_group_row = 1)"
+    )
+  }
   true_count <- function(column) {
     if (!column %in% available) {
       return("0")
@@ -352,7 +390,7 @@ build_grant_overview_query <- function(
   }
   structural_count <- if ("three_dimensional_alignment_status" %in% available) {
     paste0(
-      "SUM(CASE WHEN COALESCE(three_dimensional_alignment_status, ",
+      "SUM(CASE WHEN COALESCE(CAST(three_dimensional_alignment_status AS VARCHAR), ",
       "'NOT_ASSESSED') <> 'NOT_ASSESSED' THEN 1 ELSE 0 END)"
     )
   } else {
@@ -367,8 +405,31 @@ build_grant_overview_query <- function(
     "SELECT COUNT(*) AS candidate_count, ", prestructure,
     " AS prestructure_pass_count, ", true_count("grant_aligned_final_pass"),
     " AS final_pass_count, ", structural_count,
-    " AS structural_assessed_count FROM ", safe_alias, ".main.", safe_relation
+    " AS structural_assessed_count FROM ", source_relation
   )
+}
+
+#' Select the authoritative relation for grant-overview group counts.
+#'
+#' The completed integrated resource contains a definitive one-row-per-
+#' evolutionary-group relation. Cluster-level fallbacks are deduplicated by
+#' `build_grant_overview_query()` when only a master Parquet is available.
+#'
+#' @param relation_names Available relation names.
+#' @return Relation name or an empty string.
+select_grant_overview_relation <- function(relation_names) {
+  preferred <- c(
+    "final_evolutionary_candidate_prioritisation",
+    "evolutionary_candidate_group_ranking",
+    "candidate_master_results",
+    "final_candidate_prioritisation",
+    "prestructure_ranking"
+  )
+  selected <- preferred[preferred %in% relation_names]
+  if (length(selected) == 0L) {
+    return("")
+  }
+  selected[[1L]]
 }
 
 #' Collect compact Milestone 1/2 counts.
@@ -377,28 +438,24 @@ build_grant_overview_query <- function(
 #' @return One-row tibble.
 collect_grant_overview <- function(resource_source) {
   relations <- collect_resource_view_names(resource_source)
-  candidate_relation <- c(
-    "candidate_master_results",
-    "final_candidate_prioritisation",
-    "prestructure_ranking",
-    "candidate_evidence"
-  )
-  candidate_relation <- candidate_relation[candidate_relation %in% relations]
-  if (length(candidate_relation) == 0L) {
+  relation <- select_grant_overview_relation(relation_names = relations)
+  if (!nzchar(relation)) {
     return(tibble::tibble(
       candidate_count = 0,
       prestructure_pass_count = 0,
       final_pass_count = 0,
-      structural_assessed_count = 0
+      structural_assessed_count = 0,
+      source_relation = NA_character_
     ))
   }
-  relation <- candidate_relation[[1L]]
   columns <- collect_resource_columns(resource_source, relation)
-  collect_resource_query(
+  result <- collect_resource_query(
     duckdb_path = resource_source,
     query = build_grant_overview_query(
       relation = relation,
       available = as.character(columns$column_name)
     )
   )
+  result$source_relation <- relation
+  result
 }

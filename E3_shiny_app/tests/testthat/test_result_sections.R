@@ -99,6 +99,31 @@ testthat::test_that("grant-overview SQL adapts to available evidence fields", {
   testthat::expect_match(fallback, "0 AS final_pass_count")
 })
 
+testthat::test_that("grant overview prefers evolutionary-group decisions", {
+  relations <- c(
+    "candidate_master_results",
+    "final_evolutionary_candidate_prioritisation",
+    "prestructure_ranking"
+  )
+  testthat::expect_equal(
+    select_grant_overview_relation(relation_names = relations),
+    "final_evolutionary_candidate_prioritisation"
+  )
+  fallback_query <- build_grant_overview_query(
+    relation = "candidate_master_results",
+    available = c(
+      "final_rank",
+      "cluster_id",
+      "primary_group_type",
+      "primary_group_id",
+      "grant_aligned_prestructure_pass",
+      "grant_aligned_final_pass"
+    )
+  )
+  testthat::expect_match(fallback_query, "PARTITION BY primary_group_type")
+  testthat::expect_match(fallback_query, "_e3_group_row = 1")
+})
+
 testthat::test_that("result-section UI exposes checkbox column controls", {
   ui <- paste(
     as.character(result_section_ui("candidate", "candidates")),
@@ -118,4 +143,5 @@ testthat::test_that("grant overview UI states both milestones and limitations", 
   testthat::expect_match(ui, "Milestone 1")
   testthat::expect_match(ui, "Milestone 2")
   testthat::expect_match(ui, "Interpretation boundary")
+  testthat::expect_match(ui, "Evolutionary groups assessed")
 })

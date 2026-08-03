@@ -35,6 +35,8 @@ source(file.path(repo_dir, "R", "app_config.R"))
 source(file.path(repo_dir, "R", "data_sources.R"))
 source(file.path(repo_dir, "R", "query_helpers.R"))
 source(file.path(repo_dir, "R", "resource_helpers.R"))
+source(file.path(repo_dir, "R", "threshold_explorer.R"))
+source(file.path(repo_dir, "R", "pocket_review.R"))
 source(file.path(repo_dir, "R", "module_expression_filters.R"))
 source(file.path(repo_dir, "R", "module_expression_summary.R"))
 source(file.path(repo_dir, "R", "module_expression_table.R"))
@@ -45,6 +47,8 @@ source(file.path(repo_dir, "R", "module_resource_browser.R"))
 source(file.path(repo_dir, "R", "module_data_sources.R"))
 source(file.path(repo_dir, "R", "module_grant_overview.R"))
 source(file.path(repo_dir, "R", "module_result_section.R"))
+source(file.path(repo_dir, "R", "module_threshold_explorer.R"))
+source(file.path(repo_dir, "R", "module_pocket_review.R"))
 
 make_test_expression_tbl <- function() {
   tibble::tibble(
