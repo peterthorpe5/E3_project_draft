@@ -1,4 +1,4 @@
-ARIA plant E3 Shiny reporter v0.6.0 test note
+ARIA plant E3 Shiny reporter v0.7.0 test note
 ================================================
 
 The package includes the expanded test suite under tests/testthat/.
@@ -15,7 +15,7 @@ Validation completed for v0.5.0 in this development environment:
 Environment limitation:
 - R is not installed in the sandbox environment, so I could not execute the R
   testthat suite or an R-native parse of the additive v0.6.0 files here.
-- All 40 R source/test files, including the v0.6.0 additions, passed a static
+- All 43 R source/test files, including the v0.7.0 additions, passed a static
   delimiter, quote and escape scan. The source also passed repository
   whitespace/error validation with `git diff --check`; its complete testthat
   run remains required on the Mac or cluster R environment.
@@ -33,6 +33,16 @@ New v0.6.0 coverage is in:
 - tests/testthat/test_pocket_review.R
 - tests/testthat/test_config.R
 - tests/testthat/test_threshold_explorer.R
+
+New v0.7.0 coverage is in:
+- tests/testthat/test_glossary.R
+- tests/testthat/test_result_sections.R
+- tests/testthat/test_threshold_explorer.R
+
+The v0.7.0 tests cover glossary terminology, exact primary thresholds, the
+assessed-species denominator wording, retention of all application tabs,
+selection of the normalised candidate-by-expression-context relation and
+bounded species/tissue/identifier filtering.
 
 The v0.6.0 tests cover:
 - explicit and unique automatic pocket-review bundle discovery;

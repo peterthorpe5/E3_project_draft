@@ -7,6 +7,7 @@ testthat::test_that("grant-facing relation classification is stable", {
     "candidate_master_results",
     "candidate_group_member_sequences",
     "domain_summary",
+    "candidate_expression_context_summary",
     "candidate_expression_summary",
     "selected_pockets",
     "pocket_conservation_summary",
@@ -33,6 +34,13 @@ testthat::test_that("grant-facing relation classification is stable", {
   testthat::expect_equal(
     infer_result_section("candidate_expression_summary"),
     "expression"
+  )
+  testthat::expect_equal(
+    relations_for_result_section(relations, "expression"),
+    c(
+      "candidate_expression_context_summary",
+      "candidate_expression_summary"
+    )
   )
   testthat::expect_equal(infer_result_section("unclassified_table"), "other")
   testthat::expect_error(
@@ -79,6 +87,25 @@ testthat::test_that("selected-result SQL quotes columns and remains bounded", {
     build_selected_result_query("candidate_master_results", character()),
     "at least one"
   )
+})
+
+testthat::test_that("expression SQL supports explicit tissue selection", {
+  query <- build_filtered_expression_query(
+    relation = "candidate_expression_context_summary",
+    selected_columns = c("cluster_id", "organism_part", "gene_id"),
+    available_columns = c(
+      "cluster_id", "primary_group_id", "member_accession",
+      "species_column", "organism_part", "gene_id"
+    ),
+    species = "Zea_mays",
+    tissue = "leaf",
+    search = "N0.HOG0001",
+    max_rows = 50
+  )
+  testthat::expect_match(query, '"species_column" AS VARCHAR\\) = \'Zea_mays\'')
+  testthat::expect_match(query, '"organism_part" AS VARCHAR\\) = \'leaf\'')
+  testthat::expect_match(query, "ILIKE '%N0.HOG0001%'", fixed = TRUE)
+  testthat::expect_match(query, "LIMIT 50$")
 })
 
 testthat::test_that("grant-overview SQL adapts to available evidence fields", {
@@ -136,6 +163,13 @@ testthat::test_that("result-section UI exposes checkbox column controls", {
     result_section_ui("bad", "missing"),
     "Unknown"
   )
+  expression_ui <- paste(
+    as.character(result_section_ui("expression", "expression")),
+    collapse = "\n"
+  )
+  testthat::expect_match(expression_ui, "Tissue / organism part", fixed = TRUE)
+  testthat::expect_match(expression_ui, "expression-expression_tissue")
+  testthat::expect_match(expression_ui, "not measured zero", fixed = TRUE)
 })
 
 testthat::test_that("grant overview UI states both milestones and limitations", {

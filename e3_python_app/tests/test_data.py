@@ -11,8 +11,10 @@ from e3app.config import AppConfig
 from e3app.data import (
     _safe_relation_name,
     default_columns,
+    distinct_text_values,
     discover_run_parquets,
     grant_overview,
+    filter_expression_context,
     infer_capability,
     list_relations,
     open_read_only,
@@ -93,6 +95,52 @@ def test_relation_queries(resource_db: Path) -> None:
     with pytest.raises(AppError, match="does not exist"):
         with open_read_only(resource_db.parent / "missing.duckdb"):
             pass
+
+
+def test_candidate_expression_context_filters(resource_db: Path) -> None:
+    """Candidate expression should be selectable by species and tissue."""
+
+    relation = "candidate_expression_context_summary"
+    with open_read_only(resource_db) as connection:
+        assert distinct_text_values(
+            connection=connection,
+            relation=relation,
+            column="organism_part",
+        ) == ["leaf", "root"]
+        assert distinct_text_values(
+            connection=connection,
+            relation=relation,
+            column="missing",
+        ) == []
+        leaf = filter_expression_context(
+            connection=connection,
+            relation=relation,
+            selected_columns=(
+                "primary_group_id",
+                "species_column",
+                "gene_id",
+                "organism_part",
+            ),
+            species="Arabidopsis_thaliana",
+            organism_part="leaf",
+            search_text="hog0001",
+            maximum_rows=10,
+        )
+        assert len(leaf) == 1
+        assert leaf.iloc[0]["organism_part"] == "leaf"
+        with pytest.raises(AppError, match="Unknown expression columns"):
+            filter_expression_context(
+                connection=connection,
+                relation=relation,
+                selected_columns=("missing",),
+            )
+        with pytest.raises(AppError, match="maximum expression rows"):
+            filter_expression_context(
+                connection=connection,
+                relation=relation,
+                selected_columns=("gene_id",),
+                maximum_rows=0,
+            )
     corrupt = resource_db.parent / "corrupt.duckdb"
     corrupt.write_text("not a database", encoding="utf-8")
     with pytest.raises(AppError, match="Could not open"):

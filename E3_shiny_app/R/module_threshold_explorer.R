@@ -8,24 +8,30 @@
 #' @param value Default value.
 #' @return Shiny UI.
 threshold_pair_ui <- function(ns, id, label, value) {
-  bslib::layout_columns(
-    shiny::sliderInput(
-      inputId = ns(paste0(id, "_slider")),
-      label = label,
-      min = 0,
-      max = 1,
-      value = value,
-      step = 0.01
+  shiny::tagList(
+    bslib::layout_columns(
+      shiny::sliderInput(
+        inputId = ns(paste0(id, "_slider")),
+        label = label,
+        min = 0,
+        max = 1,
+        value = value,
+        step = 0.01
+      ),
+      shiny::numericInput(
+        inputId = ns(id),
+        label = "Type exact value",
+        value = value,
+        min = 0,
+        max = 1,
+        step = 0.01
+      ),
+      col_widths = c(8, 4)
     ),
-    shiny::numericInput(
-      inputId = ns(id),
-      label = "Type exact value",
-      value = value,
-      min = 0,
-      max = 1,
-      step = 0.01
-    ),
-    col_widths = c(8, 4)
+    shiny::p(
+      class = "small text-muted threshold-definition",
+      threshold_help_text(id)
+    )
   )
 }
 

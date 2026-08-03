@@ -217,6 +217,12 @@ def test_expression_maps_full_selected_group_members(
     assert all(
         row["broad_expression_supported"].lower() == "true" for row in summaries
     )
+    _, contexts = read_tsv(
+        stage_root / "tables" / "candidate_expression_context_summary.tsv"
+    )
+    assert len(contexts) == 2
+    assert {row["expression_context"] for row in contexts} == {"leaf"}
+    assert all(row["maximum_expression_value"] == "5.0" for row in contexts)
     _, validation_rows = read_tsv(
         stage_root / "qc" / "expression_validation.tsv"
     )
@@ -365,6 +371,71 @@ def test_missing_domain_annotation_is_not_a_biological_negative(
     assert record["grant_aligned_criteria_status"] == "PASS_WITH_MISSING_EVIDENCE"
     assert record["grant_aligned_stringent_pass"] is True
     assert "domain_annotation_unavailable_for_species=Species_c" in record["missing_evidence"]
+
+
+def test_no_expression_records_are_unavailable_not_measured_zero(
+    synthetic_config: Path,
+) -> None:
+    """A mapped gene with no Atlas rows must not enter the negative denominator."""
+    config = load_config(synthetic_config)
+    prioritisation = replace(
+        config.analysis.prioritisation,
+        target_species=("Species_a", "Species_b"),
+        mandatory_species=("Species_a",),
+        minimum_target_species_fraction=1.0,
+        minimum_domain_species_fraction=1.0,
+        minimum_expression_species_fraction=1.0,
+    )
+    configured = replace(
+        config,
+        analysis=replace(config.analysis, prioritisation=prioritisation),
+    )
+    record = score_candidate(
+        config=configured,
+        candidate={
+            "cluster_id": "cluster_1",
+            "matched_seed_ids_calculated": "Q1",
+            "matched_seed_id_count": 1,
+            "reviewed_seed_count": 1,
+            "ubiquitin_go_positive_seed_count": 1,
+            "seed_with_exclusion_go_term_count": 0,
+        },
+        primary={
+            "record_type": "HIERARCHICAL_ORTHOGROUP",
+            "group_id": "N0.HOG0001",
+            "alternative_group_count": 0,
+        },
+        full_species={"Species_a", "Species_b"},
+        domain_rows=[
+            {
+                "species_column": species,
+                "domain_support_status": "SUPPORTED",
+            }
+            for species in ("Species_a", "Species_b")
+        ],
+        expression_rows=[
+            {
+                "species_column": "Species_a",
+                "mapping_status": "MAPPED_UNIQUE",
+                "evidence_status": "BROAD_EXPRESSION_SUPPORTED",
+                "broad_expression_supported": True,
+            },
+            {
+                "species_column": "Species_b",
+                "mapping_status": "MAPPED_UNIQUE",
+                "evidence_status": "NO_EXPRESSION_RECORDS",
+                "broad_expression_supported": None,
+            },
+        ],
+        expression_available_species={"Species_a", "Species_b"},
+    )
+    assert record["expression_assessed_species_count"] == 1
+    assert record["expression_supported_species_count"] == 1
+    assert record["expression_species_fraction"] == 1.0
+    assert record["expression_unavailable_species"] == "Species_b"
+    assert "expression_evidence_unavailable_for_species=Species_b" in record[
+        "missing_evidence"
+    ]
 
 
 def test_reused_orthofinder_sequences_and_best_pocket_selection(

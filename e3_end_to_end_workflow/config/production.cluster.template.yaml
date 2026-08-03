@@ -253,6 +253,7 @@ stages:
       - tables/candidate_identifier_aliases.parquet
       - tables/candidate_expression_mapping.parquet
       - tables/candidate_expression_summary.parquet
+      - tables/candidate_expression_context_summary.parquet
       - qc/expression_validation.tsv
     threads: 16
     memory_mb: 120000

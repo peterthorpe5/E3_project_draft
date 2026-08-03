@@ -142,6 +142,33 @@ EXPRESSION_SUMMARY_FIELDS = (
     "evidence_status",
 )
 
+EXPRESSION_CONTEXT_FIELDS = (
+    "cluster_id",
+    "primary_group_type",
+    "primary_group_id",
+    "member_accession",
+    "member_identifier",
+    "species_column",
+    "gene_id",
+    "gene_name",
+    "experiment_accession",
+    "expression_unit",
+    "sample_or_condition",
+    "organism_part",
+    "developmental_stage",
+    "genotype",
+    "cultivar",
+    "treatment",
+    "condition",
+    "expression_context",
+    "measurement_count",
+    "positive_measurement_count",
+    "positive_measurement_fraction",
+    "maximum_expression_value",
+    "median_expression_value",
+    "broad_expression_supported",
+)
+
 
 def find_one(root: Path, name: str) -> Path:
     """Find exactly one named file below a completed stage root."""
@@ -1020,6 +1047,7 @@ def _expression_paths_for_species(
     *,
     manifest_records: Sequence[Mapping[str, str]],
     selected_species: Iterable[str],
+    resource_type: str = "atlas_expression_long",
 ) -> tuple[Path, ...]:
     """Return only expression partitions needed by selected orthology-group members.
 
@@ -1040,7 +1068,7 @@ def _expression_paths_for_species(
             {
                 Path(record["path"])
                 for record in manifest_records
-                if record["resource_type"] == "atlas_expression_long"
+                if record["resource_type"] == resource_type
                 and record["species_column"].strip().upper() in species_keys
             }
         )
@@ -1094,6 +1122,24 @@ def _create_empty_expression_view(
     )
 
 
+def _create_empty_sample_metadata_view(
+    *, connection: duckdb.DuckDBPyConnection
+) -> None:
+    """Create a typed empty sample-metadata relation for context joins."""
+    connection.execute(
+        "CREATE TEMP VIEW atlas_sample_metadata AS SELECT "
+        "CAST(NULL AS VARCHAR) AS experiment_accession, "
+        "CAST(NULL AS VARCHAR) AS species_column, "
+        "CAST(NULL AS VARCHAR) AS sample_or_condition, "
+        "CAST(NULL AS VARCHAR) AS organism_part, "
+        "CAST(NULL AS VARCHAR) AS developmental_stage, "
+        "CAST(NULL AS VARCHAR) AS genotype, "
+        "CAST(NULL AS VARCHAR) AS cultivar, "
+        "CAST(NULL AS VARCHAR) AS treatment, "
+        "CAST(NULL AS VARCHAR) AS condition WHERE FALSE"
+    )
+
+
 def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     """Map candidate protein aliases to Atlas genes and quantify expression breadth."""
     manifest_path = config.resources.expression_manifest
@@ -1123,6 +1169,11 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
     expression_paths = _expression_paths_for_species(
         manifest_records=manifest_records,
         selected_species=selected_species,
+    )
+    sample_metadata_paths = _expression_paths_for_species(
+        manifest_records=manifest_records,
+        selected_species=selected_species,
+        resource_type="atlas_sample_metadata_wide",
     )
     accessions = sorted(
         {
@@ -1214,6 +1265,38 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             )
         else:
             _create_empty_expression_view(connection=connection)
+        if sample_metadata_paths:
+            metadata_sql = (
+                "SELECT * FROM read_parquet("
+                + _parquet_list_literal(sample_metadata_paths)
+                + ", union_by_name=true, hive_partitioning=true)"
+            )
+            metadata_columns = {
+                str(row[0])
+                for row in connection.execute(f"DESCRIBE {metadata_sql}").fetchall()
+            }
+            required_metadata = {
+                "experiment_accession",
+                "species_column",
+                "sample_or_condition",
+                "organism_part",
+                "developmental_stage",
+                "genotype",
+                "cultivar",
+                "treatment",
+                "condition",
+            }
+            missing_metadata = sorted(required_metadata.difference(metadata_columns))
+            if missing_metadata:
+                raise StageError(
+                    "Expression sample metadata is missing columns: "
+                    + ", ".join(missing_metadata)
+                )
+            connection.execute(
+                f"CREATE TEMP VIEW atlas_sample_metadata AS {metadata_sql}"
+            )
+        else:
+            _create_empty_sample_metadata_view(connection=connection)
         connection.execute(
             "CREATE TEMP TABLE candidate_identifier_keys AS "
             "SELECT DISTINCT upper(species_column) AS species_key, "
@@ -1319,13 +1402,19 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "m.primary_group_id, m.member_accession, m.member_identifier, m.species_column, "
             "m.mapping_status, "
             "COALESCE(e.gene_id, '') AS gene_id, COALESCE(e.gene_name, '') AS "
-            "gene_name, COALESCE(e.experiment_count, 0) AS experiment_count, "
-            "COALESCE(e.expression_unit_count, 0) AS expression_unit_count, "
-            "COALESCE(e.measurement_count, 0) AS measurement_count, "
-            "COALESCE(e.positive_measurement_count, 0) AS positive_measurement_count, "
-            "COALESCE(e.positive_measurement_fraction, 0.0) AS positive_measurement_fraction, "
+            "gene_name, CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "COALESCE(e.experiment_count, 0) ELSE NULL END AS experiment_count, "
+            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "COALESCE(e.expression_unit_count, 0) ELSE NULL END AS expression_unit_count, "
+            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "COALESCE(e.measurement_count, 0) ELSE NULL END AS measurement_count, "
+            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "COALESCE(e.positive_measurement_count, 0) ELSE NULL END AS "
+            "positive_measurement_count, CASE WHEN e.measurement_count IS NOT NULL THEN "
+            "e.positive_measurement_fraction ELSE NULL END AS positive_measurement_fraction, "
             "e.maximum_expression_value, e.median_expression_value, CASE WHEN "
-            "COALESCE(e.positive_measurement_fraction, 0.0) >= "
+            "m.mapping_status <> 'MAPPED_UNIQUE' OR e.measurement_count IS NULL THEN NULL WHEN "
+            "e.positive_measurement_fraction >= "
             f"{config.analysis.expression.broad_positive_fraction} THEN true ELSE false END AS "
             "broad_expression_supported, CASE WHEN m.mapping_status <> 'MAPPED_UNIQUE' THEN "
             "m.mapping_status WHEN e.measurement_count IS NULL THEN 'NO_EXPRESSION_RECORDS' "
@@ -1339,10 +1428,63 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         connection.execute(
             f"CREATE TEMP TABLE candidate_expression_summary AS {summary_query}"
         )
+        context_query = (
+            "WITH unique_mapping AS (SELECT cluster_id, primary_group_type, "
+            "primary_group_id, member_accession, member_identifier, species_column, "
+            "matched_gene_ids AS gene_id FROM candidate_mapping WHERE mapping_status = "
+            "'MAPPED_UNIQUE'), joined AS (SELECT m.cluster_id, m.primary_group_type, "
+            "m.primary_group_id, m.member_accession, m.member_identifier, m.species_column, "
+            "m.gene_id, CAST(e.gene_name AS VARCHAR) AS gene_name, "
+            "CAST(e.experiment_accession AS VARCHAR) AS experiment_accession, "
+            "CAST(e.expression_unit AS VARCHAR) AS expression_unit, "
+            "CAST(e.sample_or_condition AS VARCHAR) AS sample_or_condition, "
+            "COALESCE(CAST(meta.organism_part AS VARCHAR), '') AS organism_part, "
+            "COALESCE(CAST(meta.developmental_stage AS VARCHAR), '') AS "
+            "developmental_stage, COALESCE(CAST(meta.genotype AS VARCHAR), '') AS genotype, "
+            "COALESCE(CAST(meta.cultivar AS VARCHAR), '') AS cultivar, "
+            "COALESCE(CAST(meta.treatment AS VARCHAR), '') AS treatment, "
+            "COALESCE(CAST(meta.condition AS VARCHAR), '') AS condition, "
+            "COALESCE(NULLIF(CAST(meta.organism_part AS VARCHAR), ''), "
+            "NULLIF(CAST(meta.condition AS VARCHAR), ''), "
+            "CAST(e.sample_or_condition AS VARCHAR), 'UNSPECIFIED') AS expression_context, "
+            "CAST(e.expression_value AS DOUBLE) AS expression_value FROM unique_mapping m "
+            "JOIN atlas_expression e ON upper(CAST(e.species_column AS VARCHAR)) = "
+            "upper(m.species_column) AND upper(CAST(e.gene_id AS VARCHAR)) = "
+            "upper(m.gene_id) LEFT JOIN atlas_sample_metadata meta ON "
+            "upper(CAST(meta.species_column AS VARCHAR)) = upper(m.species_column) AND "
+            "CAST(meta.experiment_accession AS VARCHAR) = "
+            "CAST(e.experiment_accession AS VARCHAR) AND "
+            "CAST(meta.sample_or_condition AS VARCHAR) = "
+            "CAST(e.sample_or_condition AS VARCHAR)) SELECT cluster_id, primary_group_type, "
+            "primary_group_id, member_accession, member_identifier, species_column, gene_id, "
+            "max(gene_name) AS gene_name, experiment_accession, expression_unit, "
+            "sample_or_condition, organism_part, developmental_stage, genotype, cultivar, "
+            "treatment, condition, expression_context, COUNT(*) AS measurement_count, "
+            "COUNT(*) FILTER (WHERE expression_value > "
+            f"{config.analysis.expression.minimum_expression_value}) AS "
+            "positive_measurement_count, COUNT(*) FILTER (WHERE expression_value > "
+            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / "
+            "NULLIF(COUNT(*), 0) AS positive_measurement_fraction, "
+            "max(expression_value) AS maximum_expression_value, "
+            "median(expression_value) AS median_expression_value, CASE WHEN "
+            "COUNT(*) FILTER (WHERE expression_value > "
+            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / "
+            "NULLIF(COUNT(*), 0) >= "
+            f"{config.analysis.expression.broad_positive_fraction} THEN true ELSE false END "
+            "AS broad_expression_supported FROM joined GROUP BY ALL"
+        )
+        connection.execute(
+            f"CREATE TEMP TABLE candidate_expression_context_summary AS {context_query}"
+        )
         copy_query_to_parquet(
             connection=connection,
             query="SELECT * FROM candidate_expression_summary",
             path=tables / "candidate_expression_summary.parquet",
+        )
+        copy_query_to_parquet(
+            connection=connection,
+            query="SELECT * FROM candidate_expression_context_summary",
+            path=tables / "candidate_expression_context_summary.parquet",
         )
         mapping_rows = connection.execute(
             "SELECT * FROM candidate_mapping "
@@ -1354,6 +1496,12 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "ORDER BY cluster_id, species_column, member_accession"
         ).fetchall()
         summary_columns = [str(item[0]) for item in connection.description]
+        context_rows = connection.execute(
+            "SELECT * FROM candidate_expression_context_summary ORDER BY "
+            "cluster_id, species_column, member_accession, experiment_accession, "
+            "expression_context"
+        ).fetchall()
+        context_columns = [str(item[0]) for item in connection.description]
     except duckdb.Error as exc:
         raise StageError(f"Expression mapping failed: {exc}") from exc
     finally:
@@ -1368,6 +1516,11 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         tables / "candidate_expression_summary.tsv",
         (dict(zip(summary_columns, row)) for row in summary_rows),
         EXPRESSION_SUMMARY_FIELDS,
+    )
+    write_tsv(
+        tables / "candidate_expression_context_summary.tsv",
+        (dict(zip(context_columns, row)) for row in context_rows),
+        EXPRESSION_CONTEXT_FIELDS,
     )
     write_tsv(
         stage_root / "qc" / "expression_validation.tsv",
@@ -1387,6 +1540,20 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                     bool(row[summary_columns.index("broad_expression_supported")])
                     for row in summary_rows
                 ),
+                "not_mapped_member_count": sum(
+                    row[mapping_columns.index("mapping_status")] == "NOT_MAPPED"
+                    for row in mapping_rows
+                ),
+                "candidate_expression_context_count": len(context_rows),
+                "organism_part_count": len(
+                    {
+                        str(row[context_columns.index("organism_part")]).strip()
+                        for row in context_rows
+                        if str(
+                            row[context_columns.index("organism_part")]
+                        ).strip()
+                    }
+                ),
                 "expression_species_count": len(
                     {
                         record["species_column"]
@@ -1396,6 +1563,9 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 ),
                 "target_member_species_count": len(selected_species),
                 "expression_manifest_file_count": len(all_expression_paths),
+                "sample_metadata_scanned_file_count": len(
+                    sample_metadata_paths
+                ),
                 "expression_scanned_file_count": len(expression_paths),
                 "expression_skipped_file_count": (
                     len(all_expression_paths) - len(expression_paths)
@@ -1427,9 +1597,13 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "sqlite_alias_candidate_count",
             "unique_expression_mapping_count",
             "broad_expression_supported_count",
+            "not_mapped_member_count",
+            "candidate_expression_context_count",
+            "organism_part_count",
             "expression_species_count",
             "target_member_species_count",
             "expression_manifest_file_count",
+            "sample_metadata_scanned_file_count",
             "expression_scanned_file_count",
             "expression_skipped_file_count",
             "expression_scanned_species_count",

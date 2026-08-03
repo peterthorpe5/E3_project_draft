@@ -14,6 +14,17 @@ result_section_ui <- function(id, section) {
   shiny::tagList(
     shiny::h3(specification$title),
     shiny::p(class = "grant-question", specification$question),
+    if (identical(section, "expression")) {
+      shiny::div(
+        class = "alert alert-info",
+        paste(
+          "NOT_MAPPED means that no unique Atlas gene mapping was found.",
+          "Zero count fields in a legacy relation are not measured zero",
+          "expression. Tissue choices appear when the selected relation",
+          "contains organism_part metadata."
+        )
+      )
+    },
     bslib::layout_columns(
       shiny::selectInput(
         ns("relation"),
@@ -34,6 +45,26 @@ result_section_ui <- function(id, section) {
       ),
       col_widths = c(5, 3, 4)
     ),
+    if (identical(section, "expression")) {
+      bslib::layout_columns(
+        shiny::selectInput(
+          ns("expression_species"),
+          "Species",
+          choices = "All species"
+        ),
+        shiny::selectInput(
+          ns("expression_tissue"),
+          "Tissue / organism part",
+          choices = "All tissues"
+        ),
+        shiny::textInput(
+          ns("expression_search"),
+          "Candidate group, accession or gene",
+          value = ""
+        ),
+        col_widths = c(3, 3, 6)
+      )
+    },
     shiny::div(
       class = "column-selector-panel",
       shiny::h4("Columns to display"),
@@ -149,6 +180,40 @@ result_section_server <- function(
         choices = names,
         selected = selected
       )
+      if (identical(section, "expression")) {
+        expression_filter_choices <- function(column, all_label) {
+          if (!column %in% names) {
+            return(stats::setNames("", all_label))
+          }
+          values <- tryCatch(
+            collect_distinct_result_values(
+              resource_source = resource_source,
+              relation = relation,
+              column = column
+            ),
+            error = function(error) character()
+          )
+          c(stats::setNames("", all_label), values)
+        }
+        shiny::updateSelectInput(
+          session,
+          "expression_species",
+          choices = expression_filter_choices(
+            "species_column",
+            "All species"
+          ),
+          selected = ""
+        )
+        shiny::updateSelectInput(
+          session,
+          "expression_tissue",
+          choices = expression_filter_choices(
+            "organism_part",
+            "All tissues"
+          ),
+          selected = ""
+        )
+      }
       invisible(names)
     }
 
@@ -180,7 +245,15 @@ result_section_server <- function(
     })
 
     displayed <- shiny::eventReactive(
-      list(input$preview, input$relation, input$selected_columns, input$max_rows),
+      list(
+        input$preview,
+        input$relation,
+        input$selected_columns,
+        input$max_rows,
+        input$expression_species,
+        input$expression_tissue,
+        input$expression_search
+      ),
       {
         if (
           is.null(input$relation) ||
@@ -202,12 +275,25 @@ result_section_server <- function(
           as.integer(max_rows)
         )
         tryCatch(
-          collect_selected_result(
-            resource_source = resource_source,
-            relation = input$relation,
-            selected_columns = input$selected_columns,
-            max_rows = row_limit
-          ),
+          if (identical(section, "expression")) {
+            collect_filtered_expression_result(
+              resource_source = resource_source,
+              relation = input$relation,
+              selected_columns = input$selected_columns,
+              available_columns = available_columns(),
+              species = input$expression_species %||% "",
+              tissue = input$expression_tissue %||% "",
+              search = input$expression_search %||% "",
+              max_rows = row_limit
+            )
+          } else {
+            collect_selected_result(
+              resource_source = resource_source,
+              relation = input$relation,
+              selected_columns = input$selected_columns,
+              max_rows = row_limit
+            )
+          },
           error = function(error) {
             shiny::showNotification(
               paste("Could not query result table:", conditionMessage(error)),

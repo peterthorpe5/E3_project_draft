@@ -687,6 +687,11 @@ def score_candidate(
         for row in expression_rows
         if row.get("species_column")
         and row.get("mapping_status") == "MAPPED_UNIQUE"
+        and (
+            not row.get("evidence_status")
+            or row.get("evidence_status")
+            in {"BROAD_EXPRESSION_SUPPORTED", "LIMITED_OR_ZERO_EXPRESSION"}
+        )
     }.intersection(expression_available)
     expression_supported_species = {
         str(row["species_column"])

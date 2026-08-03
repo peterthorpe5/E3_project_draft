@@ -3,5 +3,7 @@ e3app.config	parse_positive_integer; config_from_environment; validate_config	te
 e3app.data	quote_identifier; open_read_only; open_resource; discover_run_parquets; list_relations; relation_columns; relation_count; preview_relation; preview_selected_columns; resource_overview; infer_capability; relations_for_section; default_columns; grant_overview; search_accession	test_data.py
 e3app.thresholds	ThresholdSettings; validate_threshold_settings; threshold_settings_from_mapping; select_threshold_relation; group_source_sql; build_threshold_evaluation_cte; threshold_result_columns; build_threshold_result_query; build_threshold_summary_query; evaluate_thresholds	test_thresholds.py
 e3app.pocket_review	required_review_paths; pocket_review_available; discover_pocket_review_dir; load_pocket_review; prepare_pocket_review; group_choice_labels; selected_group_row; selected_group_members; read_review_html; read_group_html	test_pocket_review.py
+e3app.glossary	SLIDER_HELP; scientific_glossary; glossary_table	test_glossary.py
+e3app.data	distinct_text_values; filter_expression_context	test_data.py
 e3app.cli	build_parser; streamlit_command; main	test_cli.py
 e3app.streamlit_app	render_app	test_streamlit_app.py

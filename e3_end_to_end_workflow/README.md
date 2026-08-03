@@ -5,7 +5,7 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.11.0` supports three explicit production strategies:
+Version `0.12.0` supports three explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -164,7 +164,7 @@ and diagnostics.
 | `04_orthofinder` | OrthoFinder 2.5.5 | reviewed archive reuse or fresh isolated result |
 | `05_orthology` | `e3_orthology_integration` | run-specific group IDs, membership and candidate-group sequences |
 | `06_domains` | native download/cache adapter | InterPro/Pfam hits and tri-state domain evidence |
-| `07_expression` | native Expression Atlas adapter | full selected-group mapping and expression summary |
+| `07_expression` | native Expression Atlas adapter | selected-group mapping, evidence-state summary and tissue/sample context |
 | `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
 | `09_ligandability` | native reuse/conservation adapter | best pockets, pocket-region conservation and validated FASTA coordinates |
 | `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align pocket-position/conservation tests and interactive HTML |

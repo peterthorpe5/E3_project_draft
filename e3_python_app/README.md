@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.3.0 is the tested Streamlit companion to `E3_shiny_app` 0.6.0. Both
+Version 0.4.0 is the tested Streamlit companion to `E3_shiny_app` 0.7.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -51,6 +51,9 @@ run directory. It never guesses between multiple bundles.
 
 The reporter provides:
 
+- a searchable Glossary defining seeds, evolutionary groups, gates, strict
+  predictions, assessed denominators, every primary threshold and all result
+  labels;
 - a dedicated Computational recommendations view containing the ordered top-50 review
   shortlist, strict grant-aligned predictions, named gate-sensitivity
   scenarios, evolutionary-group scorecard, contributors, representative audit
@@ -59,6 +62,9 @@ The reporter provides:
   2 conserved structural/chemical starting space;
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
   conservation and 3D alignment sections;
+- species, tissue/organism-part and identifier filters for the normalised
+  candidate-by-expression-context relation, when supplied by workflow v0.12.0
+  or later;
 - a separate Threshold explorer with the completed analysis defaults, paired
   sliders and typed values, pre-structure and structurally informed modes,
   explicit `PASS`, `NEAR_MISS`, `FAIL` and `NOT_STRUCTURALLY_ASSESSED` labels,
@@ -96,9 +102,14 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.3.0 quality gate comprises 36 passing tests at 98% branch-aware coverage
-of DuckDB, master-Parquet, run-directory, threshold, portable-review and
-headless Streamlit behaviour.
+The v0.4.0 quality gate comprises 40 passing tests at 98% branch-aware coverage
+of DuckDB, master-Parquet, run-directory, glossary, expression-context,
+threshold, portable-review and headless Streamlit behaviour.
+
+Legacy resources without `candidate_expression_context_summary` remain
+readable. The Expression tab then shows the older candidate summary plus a
+warning that zero count fields on `NOT_MAPPED` rows mean absent mapping, not
+measured zero expression.
 
 ## Portable top-200 visualisation release
 

@@ -65,6 +65,24 @@ def resource_db(tmp_path: Path) -> Path:
             "('cluster_1', 'Q9SA03', 'Arabidopsis_thaliana', 'MAPPED_UNIQUE', true)"
         )
         connection.execute(
+            "CREATE TABLE candidate_expression_context_summary("
+            "cluster_id VARCHAR, primary_group_id VARCHAR, member_accession VARCHAR, "
+            "member_identifier VARCHAR, species_column VARCHAR, gene_id VARCHAR, "
+            "gene_name VARCHAR, experiment_accession VARCHAR, expression_unit VARCHAR, "
+            "organism_part VARCHAR, developmental_stage VARCHAR, condition VARCHAR, "
+            "expression_context VARCHAR, maximum_expression_value DOUBLE, "
+            "median_expression_value DOUBLE, broad_expression_supported BOOLEAN)"
+        )
+        connection.execute(
+            "INSERT INTO candidate_expression_context_summary VALUES "
+            "('cluster_1', 'N0.HOG0001', 'Q9SA03', 'Q9SA03', "
+            "'Arabidopsis_thaliana', 'AT1G31090', 'FB27', 'E-MTAB-1', 'TPM', "
+            "'leaf', 'adult', 'control', 'leaf', 5.0, 4.0, true), "
+            "('cluster_1', 'N0.HOG0001', 'Q9SA03', 'Q9SA03', "
+            "'Arabidopsis_thaliana', 'AT1G31090', 'FB27', 'E-MTAB-2', 'TPM', "
+            "'root', 'adult', 'control', 'root', 2.0, 2.0, true)"
+        )
+        connection.execute(
             "CREATE TABLE selected_pockets("
             "cluster_id VARCHAR, candidate_accession VARCHAR, pocket_number INTEGER, "
             "druggability_score DOUBLE)"

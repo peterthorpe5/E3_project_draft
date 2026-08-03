@@ -91,6 +91,7 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "plant expression support?"
         ),
         "relations": (
+            "candidate_expression_context_summary",
             "candidate_expression_summary",
             "candidate_expression_mapping",
             "candidate_identifier_aliases",
@@ -196,6 +197,7 @@ CANONICAL_PARQUET_RELATIONS = {
     "candidate_identifier_aliases": "candidate_identifier_aliases",
     "candidate_expression_mapping": "candidate_expression_mapping",
     "candidate_expression_summary": "candidate_expression_summary",
+    "candidate_expression_context_summary": "candidate_expression_context_summary",
     "structural_analysis_accessions": "structural_analysis_accessions",
     "structural_representative_selection_audit": (
         "structural_representative_selection_audit"
@@ -414,6 +416,137 @@ def preview_selected_columns(
     ).fetchdf()
 
 
+def distinct_text_values(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    column: str,
+    maximum_values: int = 500,
+) -> list[str]:
+    """Return bounded distinct non-empty values for one filter control.
+
+    Args:
+        connection: Open read-only DuckDB connection.
+        relation: Existing relation name.
+        column: Existing text-compatible column.
+        maximum_values: Maximum values collected into the app.
+
+    Returns:
+        Sorted values, or an empty list when the column is unavailable.
+
+    Raises:
+        AppError: If the limit is invalid.
+    """
+    if not 1 <= maximum_values <= 10_000:
+        raise AppError("maximum distinct values must be between 1 and 10000")
+    available = relation_columns(connection, relation)
+    if column not in available:
+        return []
+    quoted_column = quote_identifier(column)
+    query = (
+        f"SELECT DISTINCT CAST({quoted_column} AS VARCHAR) AS value "
+        f"FROM {quote_identifier(relation)} WHERE {quoted_column} IS NOT NULL "
+        f"AND trim(CAST({quoted_column} AS VARCHAR)) <> '' "
+        f"ORDER BY value LIMIT {int(maximum_values)}"
+    )
+    return [str(row[0]) for row in connection.execute(query).fetchall()]
+
+
+def filter_expression_context(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    selected_columns: Sequence[str],
+    species: str = "All",
+    organism_part: str = "All",
+    search_text: str = "",
+    maximum_rows: int = 1000,
+) -> pd.DataFrame:
+    """Query a bounded candidate-by-tissue expression relation.
+
+    Args:
+        connection: Open read-only DuckDB connection.
+        relation: Candidate expression-context relation.
+        selected_columns: Columns returned to the app.
+        species: Exact species filter or ``All``.
+        organism_part: Exact tissue/organism-part filter or ``All``.
+        search_text: Case-insensitive partial identifier search.
+        maximum_rows: Hard result limit.
+
+    Returns:
+        Filtered expression-context rows.
+
+    Raises:
+        AppError: If requested fields or limits are invalid.
+    """
+    if not 1 <= maximum_rows <= 10_000:
+        raise AppError("maximum expression rows must be between 1 and 10000")
+    available = relation_columns(connection, relation)
+    if not selected_columns:
+        raise AppError("At least one expression column must be selected")
+    missing = sorted(set(selected_columns).difference(available))
+    if missing:
+        raise AppError("Unknown expression columns: " + ", ".join(missing))
+    conditions: list[str] = []
+    parameters: list[str] = []
+    if species != "All" and "species_column" in available:
+        conditions.append("CAST(species_column AS VARCHAR) = ?")
+        parameters.append(species)
+    if organism_part != "All" and "organism_part" in available:
+        conditions.append("CAST(organism_part AS VARCHAR) = ?")
+        parameters.append(organism_part)
+    cleaned_search = search_text.strip().lower()
+    search_columns = [
+        column
+        for column in (
+            "gene_id",
+            "gene_name",
+            "member_accession",
+            "member_identifier",
+            "primary_group_id",
+            "cluster_id",
+        )
+        if column in available
+    ]
+    if cleaned_search and search_columns:
+        conditions.append(
+            "("
+            + " OR ".join(
+                "contains(lower(COALESCE(CAST("
+                f"{quote_identifier(column)} AS VARCHAR), '')), ?)"
+                for column in search_columns
+            )
+            + ")"
+        )
+        parameters.extend([cleaned_search] * len(search_columns))
+    selected_sql = ", ".join(
+        quote_identifier(column) for column in selected_columns
+    )
+    where_sql = " WHERE " + " AND ".join(conditions) if conditions else ""
+    order_columns = [
+        column
+        for column in (
+            "primary_group_id",
+            "species_column",
+            "member_accession",
+            "organism_part",
+            "experiment_accession",
+        )
+        if column in available
+    ]
+    order_sql = (
+        " ORDER BY "
+        + ", ".join(quote_identifier(column) for column in order_columns)
+        if order_columns
+        else ""
+    )
+    query = (
+        f"SELECT {selected_sql} FROM {quote_identifier(relation)}"
+        f"{where_sql}{order_sql} LIMIT {int(maximum_rows)}"
+    )
+    return connection.execute(query, parameters).fetchdf()
+
+
 def resource_overview(
     connection: duckdb.DuckDBPyConnection,
     relations: Sequence[str] | None = None,
@@ -562,6 +695,13 @@ def default_columns(section: str, available: Sequence[str]) -> list[str]:
             "member_accession",
             "species_column",
             "mapping_status",
+            "gene_id",
+            "organism_part",
+            "developmental_stage",
+            "condition",
+            "expression_context",
+            "maximum_expression_value",
+            "median_expression_value",
             "broad_expression_supported",
             "evidence_status",
             "expression_species_fraction",

@@ -89,6 +89,10 @@ RESOURCE_SECTIONS = {
     "candidate_identifier_aliases": ("expression", "candidate_group_member"),
     "candidate_expression_mapping": ("expression", "candidate_group_member"),
     "candidate_expression_summary": ("expression", "candidate_group_member"),
+    "candidate_expression_context_summary": (
+        "expression",
+        "candidate_group_member_context",
+    ),
     "prestructure_ranking": ("prioritisation", "candidate"),
     "evolutionary_candidate_group_ranking": (
         "prioritisation",
@@ -784,6 +788,11 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ("candidate_identifier_aliases", "07_expression", "candidate_identifier_aliases.parquet"),
         ("candidate_expression_mapping", "07_expression", "candidate_expression_mapping.parquet"),
         ("candidate_expression_summary", "07_expression", "candidate_expression_summary.parquet"),
+        (
+            "candidate_expression_context_summary",
+            "07_expression",
+            "candidate_expression_context_summary.parquet",
+        ),
         ("prestructure_ranking", "08_shortlist_gate", "computational_prestructure_ranking.parquet"),
         (
             "evolutionary_candidate_group_ranking",
@@ -830,9 +839,10 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         ),
     )
     tables = []
-    optional_v011_relations = {
+    optional_legacy_relations = {
         "ranked_member_pockets",
         "ranked_pocket_sequence_coordinates",
+        "candidate_expression_context_summary",
     }
     for table_name, stage_name, filename in roots_and_names:
         stage_root = config.run_root / stage_name
@@ -843,10 +853,10 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
                 else find_one(root=stage_root, name=filename)
             )
         except StageError:
-            if table_name not in optional_v011_relations:
+            if table_name not in optional_legacy_relations:
                 raise
             LOGGER.warning(
-                "Optional v0.11 relation is unavailable in a legacy result: %s",
+                "Optional relation is unavailable in a legacy result: %s",
                 table_name,
             )
             continue

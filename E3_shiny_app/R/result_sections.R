@@ -62,6 +62,7 @@ result_section_specs <- list(
       "plant expression support?"
     ),
     relations = c(
+      "candidate_expression_context_summary",
       "candidate_expression_summary",
       "candidate_expression_mapping",
       "candidate_identifier_aliases"
@@ -234,6 +235,8 @@ default_result_columns <- function(section, available) {
     ),
     expression = c(
       "cluster_id", "member_accession", "species_column", "mapping_status",
+      "gene_id", "organism_part", "developmental_stage", "condition",
+      "expression_context", "maximum_expression_value", "median_expression_value",
       "broad_expression_supported", "evidence_status",
       "expression_species_fraction", "expression_evidence_coverage_fraction",
       "expression_supported_species", "expression_unavailable_species"
@@ -333,6 +336,157 @@ collect_selected_result <- function(
     query = build_selected_result_query(
       relation = relation,
       selected_columns = selected_columns,
+      max_rows = max_rows
+    )
+  )
+}
+
+#' Collect bounded distinct text values for a filter control.
+#'
+#' @param resource_source Flexible result source.
+#' @param relation Relation name.
+#' @param column Text column.
+#' @param max_values Maximum distinct values.
+#' @return Character vector.
+collect_distinct_result_values <- function(
+  resource_source,
+  relation,
+  column,
+  max_values = 1000L
+) {
+  available <- as.character(
+    collect_resource_columns(resource_source, relation)$column_name
+  )
+  if (!column %in% available) {
+    return(character())
+  }
+  safe_relation <- quote_duckdb_identifier(relation)
+  safe_column <- quote_duckdb_identifier(column)
+  query <- paste0(
+    "SELECT DISTINCT CAST(", safe_column, " AS VARCHAR) AS value FROM ",
+    "e3_resource.main.", safe_relation, " WHERE COALESCE(TRIM(CAST(",
+    safe_column, " AS VARCHAR)), '') <> '' ORDER BY value LIMIT ",
+    max(1L, as.integer(max_values))
+  )
+  result <- collect_resource_query(resource_source, query)
+  as.character(result$value)
+}
+
+#' Build a bounded candidate-expression context query.
+#'
+#' @param relation Relation name.
+#' @param selected_columns Display columns.
+#' @param available_columns Relation columns.
+#' @param species Optional exact species label.
+#' @param tissue Optional exact organism-part label.
+#' @param search Optional partial identifier search.
+#' @param max_rows Maximum rows.
+#' @return SQL query.
+build_filtered_expression_query <- function(
+  relation,
+  selected_columns,
+  available_columns,
+  species = "",
+  tissue = "",
+  search = "",
+  max_rows = 1000L
+) {
+  unknown <- setdiff(selected_columns, available_columns)
+  if (length(unknown) > 0L) {
+    stop(
+      paste0("Unknown selected columns: ", paste(unknown, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  predicates <- character()
+  exact_filter <- function(column, value) {
+    if (!nzchar(trimws(value)) || !column %in% available_columns) {
+      return(character())
+    }
+    paste0(
+      "CAST(", quote_duckdb_identifier(column), " AS VARCHAR) = '",
+      escape_sql_literal(trimws(value)), "'"
+    )
+  }
+  predicates <- c(
+    predicates,
+    exact_filter("species_column", species),
+    exact_filter("organism_part", tissue)
+  )
+  search <- trimws(search)
+  if (nzchar(search)) {
+    searchable <- intersect(
+      c(
+        "cluster_id", "primary_group_id", "member_accession",
+        "member_identifier", "gene_id", "gene_name"
+      ),
+      available_columns
+    )
+    if (length(searchable) > 0L) {
+      pattern <- paste0("%", escape_sql_literal(search), "%")
+      predicates <- c(
+        predicates,
+        paste0(
+          "(",
+          paste(
+            paste0(
+              "CAST(",
+              vapply(searchable, quote_duckdb_identifier, character(1L)),
+              " AS VARCHAR) ILIKE '", pattern, "'"
+            ),
+            collapse = " OR "
+          ),
+          ")"
+        )
+      )
+    }
+  }
+  query <- build_selected_result_query(
+    relation = relation,
+    selected_columns = selected_columns,
+    max_rows = max_rows
+  )
+  if (length(predicates) == 0L) {
+    return(query)
+  }
+  sub(
+    " LIMIT ",
+    paste0(" WHERE ", paste(predicates, collapse = " AND "), " LIMIT "),
+    query,
+    fixed = TRUE
+  )
+}
+
+#' Collect a filtered candidate-expression context result.
+#'
+#' @param resource_source Flexible result source.
+#' @param relation Relation name.
+#' @param selected_columns Display columns.
+#' @param available_columns Relation columns.
+#' @param species Optional exact species label.
+#' @param tissue Optional exact organism-part label.
+#' @param search Optional partial identifier search.
+#' @param max_rows Maximum rows.
+#' @return Collected bounded tibble.
+collect_filtered_expression_result <- function(
+  resource_source,
+  relation,
+  selected_columns,
+  available_columns,
+  species = "",
+  tissue = "",
+  search = "",
+  max_rows = 1000L
+) {
+  collect_resource_query(
+    resource_source,
+    build_filtered_expression_query(
+      relation = relation,
+      selected_columns = selected_columns,
+      available_columns = available_columns,
+      species = species,
+      tissue = tissue,
+      search = search,
       max_rows = max_rows
     )
   )

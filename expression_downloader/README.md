@@ -542,3 +542,30 @@ expr_meta |>
   tree over an older installed package, avoiding missing-function errors after
   pulling a new patch.
 - The expression Parquet files do not need to be rebuilt for this patch.
+
+## Controlled diagnostic snapshot (v0.4.0)
+
+Use the snapshot utility when identifier mapping, tissue metadata or app totals
+need to be investigated away from the cluster. It is deliberately bounded and
+auditable: it packages manifests, SDRF/design/method files, Stage 07 TSV/QC
+outputs and the header plus a configurable number of rows from each expression
+matrix. It optionally retrieves only three explicit official pages per detected
+experiment; it does not recursively crawl Expression Atlas.
+
+```bash
+./inst/scripts/10_snapshot_expression_evidence.sh \
+  --expression-root /path/to/expression_atlas_ftp_full \
+  --workflow-run-root /path/to/completed_workflow_run \
+  --output-archive /path/to/expression_evidence_snapshot.tar.gz \
+  --fetch-pages true \
+  --preview-rows 50 \
+  --timeout-seconds 30 \
+  --retries 2 \
+  --delay-seconds 0.25 \
+  --overwrite false \
+  --verbose
+```
+
+The archive contains SHA-256 checksums and a complete local/remote manifest.
+It excludes the full expression matrices, so it is suitable for diagnosis but
+is not a replacement for the complete Expression Atlas download.

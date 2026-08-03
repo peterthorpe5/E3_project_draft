@@ -1,6 +1,6 @@
 Package: E3ExpressionShiny
 Title: Grant-Focused Shiny Reporter for the ARIA Plant E3 Resource
-Version: 0.6.0
+Version: 0.7.0
 Authors@R: c(
     person("Peter", "Thorpe", role = c("aut", "cre"), email = "p.thorpe@dundee.ac.uk")
     )
@@ -11,6 +11,8 @@ Description: A modular Shiny application for querying and visualising candidate
     current-run Parquet results through lazy, bounded DuckDB and duckplyr
     queries. A separate threshold explorer re-evaluates documented candidate
     gates without changing the primary analysis or rerunning scientific stages.
+    A glossary defines the computational language and thresholds, while
+    expression-context results expose explicit species and tissue filters.
     Optional offline pocket-review pages provide interactive selected-group
     structure, pocket-location and pocket-annotated alignment views.
 License: MIT + file LICENSE

@@ -21,6 +21,7 @@ source("R/app_config.R")
 source("R/data_sources.R")
 source("R/query_helpers.R")
 source("R/resource_helpers.R")
+source("R/glossary.R")
 source("R/threshold_explorer.R")
 source("R/pocket_review.R")
 source("R/module_expression_filters.R")
@@ -32,6 +33,7 @@ source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
 source("R/module_grant_overview.R")
+source("R/module_glossary.R")
 source("R/module_result_section.R")
 source("R/module_threshold_explorer.R")
 source("R/module_pocket_review.R")
@@ -72,6 +74,10 @@ ui <- bslib::page_sidebar(
     bslib::nav_panel(
       "Grant overview",
       grant_overview_ui("grant_overview")
+    ),
+    bslib::nav_panel(
+      "Glossary",
+      glossary_ui("glossary")
     ),
     bslib::nav_panel(
       "Computational recommendations",
@@ -170,6 +176,7 @@ ui <- bslib::page_sidebar(
 )
 
 server <- function(input, output, session) {
+  glossary_server(id = "glossary")
   grant_overview_server(
     id = "grant_overview",
     resource_source = app_config$resource_source

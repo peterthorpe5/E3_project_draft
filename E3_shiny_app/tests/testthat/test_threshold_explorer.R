@@ -189,6 +189,7 @@ testthat::test_that("the new explorer retains every existing application tab", {
   )
   expected_tabs <- c(
     "Grant overview",
+    "Glossary",
     "Computational recommendations",
     "Threshold explorer",
     "Candidates",

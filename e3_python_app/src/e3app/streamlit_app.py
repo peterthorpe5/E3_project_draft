@@ -6,6 +6,7 @@ import logging
 from dataclasses import asdict
 from typing import Sequence
 
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -13,6 +14,8 @@ from e3app.config import AppConfig, config_from_environment, validate_config
 from e3app.data import (
     SECTION_SPECS,
     default_columns,
+    distinct_text_values,
+    filter_expression_context,
     grant_overview,
     list_relations,
     open_resource,
@@ -23,6 +26,7 @@ from e3app.data import (
     search_accession,
 )
 from e3app.errors import AppError
+from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
 from e3app.pocket_review import (
     PocketReviewBundle,
     group_choice_labels,
@@ -97,6 +101,94 @@ def _render_section(
         mime="text/tab-separated-values",
         key=f"{section}_download",
     )
+
+
+def _render_expression_section(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render candidate expression with explicit tissue and evidence-state controls."""
+    relations = relations_for_section(connection, "expression")
+    if "candidate_expression_context_summary" not in relations:
+        st.warning(
+            "This data release does not yet contain candidate-by-tissue expression rows. "
+            "The legacy summary can distinguish mapping status, but zero count fields on "
+            "NOT_MAPPED rows mean no mapped evidence, not measured zero expression."
+        )
+        _render_section(connection=connection, config=config, section="expression")
+        return
+    relation = "candidate_expression_context_summary"
+    st.subheader("Candidate expression by tissue and biological context")
+    st.caption(
+        "Filter mapped candidate members by the original Expression Atlas organism-part "
+        "label. Developmental stage, treatment and condition remain available as columns."
+    )
+    species_values = distinct_text_values(
+        connection=connection,
+        relation=relation,
+        column="species_column",
+    )
+    tissue_values = distinct_text_values(
+        connection=connection,
+        relation=relation,
+        column="organism_part",
+    )
+    filter_one, filter_two, filter_three = st.columns(3)
+    with filter_one:
+        species = st.selectbox(
+            "Species",
+            options=["All", *species_values],
+            key="expression_context_species",
+        )
+    with filter_two:
+        tissue = st.selectbox(
+            "Tissue / organism part",
+            options=["All", *tissue_values],
+            key="expression_context_tissue",
+        )
+    with filter_three:
+        search_text = st.text_input(
+            "Group, accession or gene contains",
+            value="",
+            key="expression_context_search",
+        )
+    available = relation_columns(connection, relation)
+    selected = st.multiselect(
+        "Columns to display",
+        available,
+        default=default_columns("expression", available),
+        key="expression_context_columns",
+    )
+    maximum_rows = st.number_input(
+        "Maximum rows",
+        min_value=1,
+        max_value=min(config.max_rows, 10_000),
+        value=min(config.max_rows, 1000),
+        key="expression_context_rows",
+    )
+    if not selected:
+        st.warning("Select at least one column.")
+        return
+    result = filter_expression_context(
+        connection=connection,
+        relation=relation,
+        selected_columns=selected,
+        species=species,
+        organism_part=tissue,
+        search_text=search_text,
+        maximum_rows=int(maximum_rows),
+    )
+    st.dataframe(result, use_container_width=True, hide_index=True, height=650)
+    st.download_button(
+        "Download filtered candidate-by-tissue rows as TSV",
+        data=result.to_csv(sep="\t", index=False),
+        file_name="candidate_expression_by_tissue.tsv",
+        mime="text/tab-separated-values",
+        key="expression_context_download",
+    )
+    with st.expander("Mapping summary and audit relations"):
+        _render_section(connection=connection, config=config, section="expression")
 
 
 def _render_overview(*, connection: object, config: AppConfig) -> None:
@@ -189,7 +281,37 @@ def _threshold_pair(field: str, label: str, default: float) -> float:
             args=(field, "number"),
             label_visibility="visible",
         )
+    st.caption(SLIDER_HELP[field])
     return float(st.session_state[number_key])
+
+
+def _render_glossary() -> None:
+    """Render plain-language terms and the exact recorded scientific rules."""
+    st.subheader("Glossary and computational rules")
+    st.info(
+        "These definitions describe the completed top-200 analysis. Threshold-explorer "
+        "changes create sensitivity lists and do not rewrite the recorded primary result."
+    )
+    selected_section = st.selectbox(
+        "Glossary section",
+        options=glossary_sections(),
+        key="glossary_section",
+    )
+    rows = glossary_rows(selected_section)
+    st.dataframe(rows, use_container_width=True, hide_index=True)
+    all_rows = [
+        {"Section": section, **row}
+        for section in glossary_sections()
+        for row in glossary_rows(section)
+    ]
+    export = pd.DataFrame(all_rows)
+    st.download_button(
+        "Download complete glossary as TSV",
+        data=export.to_csv(sep="\t", index=False),
+        file_name="aria_e3_scientific_glossary.tsv",
+        mime="text/tab-separated-values",
+        key="glossary_download",
+    )
 
 
 def _reset_threshold_controls() -> None:
@@ -567,6 +689,7 @@ def render_app() -> None:
             tabs = st.tabs(
                 [
                     "Overview",
+                    "Glossary",
                     "Computational recommendations",
                     "Threshold explorer",
                     "Candidates",
@@ -586,15 +709,17 @@ def render_app() -> None:
             with tabs[0]:
                 _render_overview(connection=connection, config=config)
             with tabs[1]:
+                _render_glossary()
+            with tabs[2]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="final_recommendations",
                 )
-            with tabs[2]:
+            with tabs[3]:
                 _render_threshold_explorer(connection=connection, config=config)
             for tab, section in zip(
-                tabs[3:9],
+                tabs[4:10],
                 (
                     "candidates",
                     "orthology",
@@ -605,30 +730,36 @@ def render_app() -> None:
                 ),
             ):
                 with tab:
-                    _render_section(
-                        connection=connection,
-                        config=config,
-                        section=section,
-                    )
-            with tabs[9]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
+                    if section == "expression":
+                        _render_expression_section(
+                            connection=connection,
+                            config=config,
+                        )
+                    else:
+                        _render_section(
+                            connection=connection,
+                            config=config,
+                            section=section,
+                        )
             with tabs[10]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
+                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[11]:
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[12]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="structural_alignment",
                 )
-            with tabs[12]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[13]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[14]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[14]:
+            with tabs[15]:
                 _render_section(
                     connection=connection,
                     config=config,

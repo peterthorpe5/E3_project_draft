@@ -39,6 +39,8 @@ canonical_result_relations <- c(
   candidate_identifier_aliases = "candidate_identifier_aliases",
   candidate_expression_mapping = "candidate_expression_mapping",
   candidate_expression_summary = "candidate_expression_summary",
+  candidate_expression_context_summary =
+    "candidate_expression_context_summary",
   structural_analysis_accessions = "structural_analysis_accessions",
   structural_representative_selection_audit =
     "structural_representative_selection_audit",

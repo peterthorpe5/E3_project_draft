@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.6.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
+Version 0.7.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -10,33 +10,38 @@ The main sections follow the evidence path required by the grant:
 
 1. **Grant overview** – authoritative evolutionary-group counts rather than
    earlier DeepClust evidence-row counts.
-2. **Threshold explorer** – separate pre-structure and structurally informed
+2. **Glossary** – plain-language definitions for seeds, evolutionary groups,
+   gates, strict predictions, assessed denominators, thresholds and result
+   labels.
+3. **Threshold explorer** – separate pre-structure and structurally informed
    sensitivity-analysis lists, using sliders and exact typed values while the
    primary grant-aligned result remains unchanged.
-3. **Final recommendations** – the ordered top-50 review shortlist, strict
+4. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
    exclusion reasons.
-4. **Candidates** – combined discovery, conservation, domain, expression and
+5. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-5. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
+6. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
    species membership, member accessions and candidate-relevant sequences.
-6. **Domains** – catalogued E3-associated domain support and explicit annotation
+7. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-7. **Expression evidence** – identifier mapping and broad Expression Atlas
-   support without treating unavailable resources as biological negatives.
-8. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+8. **Expression evidence** – identifier mapping and broad Expression Atlas
+   support without treating unavailable resources as biological negatives;
+   workflow v0.12.0 resources also retain tissue/organism part, developmental
+   stage, condition, treatment, experiment and sample context.
+9. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-9. **Pocket conservation** – conserved pocket-bearing alignment regions and
+10. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-10. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+11. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation.
-11. **3D structures & pockets** – selected-group, rotatable member structures
+12. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
-12. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+13. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights and the original OrthoFinder-group member sequence identifiers.
-13. **Provenance and QC** – release metadata, relation catalogue and source paths.
+14. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -56,6 +61,13 @@ The threshold explorer always starts from the current primary-analysis values:
 | Minimum expression-supported assessed-species fraction | 0.80 |
 | Minimum structurally supported species fraction | 0.75 |
 | Minimum member druggability score | 0.50 |
+
+“Minimum domain-supported assessed-species fraction” uses only species for
+which a usable domain annotation was available as its denominator. At the 0.80
+default, at least 80% of those assessed species must support a catalogued
+E3-associated domain. Unassessed species are reported separately; they are not
+silently counted as domain failures or passes. The explorer shows this
+definition directly below the slider.
 
 The structural view also defaults to requiring a conserved pocket-bearing
 sequence region, acceptable mapping in every assessed member and a strictly
@@ -142,7 +154,11 @@ Equivalent environment variables are:
 
 The raw Expression Atlas summary/table/lookup/plot tabs use the optional
 expression DuckDB. The integrated Expression evidence section uses the selected
-E3 result source.
+E3 result source. In workflow v0.12.0 resources, the normalised
+`candidate_expression_context_summary` relation supports tissue and context
+columns. Older resources remain readable but cannot reconstruct tissue after
+the fact; they explicitly label `NOT_MAPPED` zero counts as missing mapping,
+not biological zero expression.
 
 ## Portable 3D and alignment review
 
