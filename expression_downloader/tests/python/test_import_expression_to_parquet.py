@@ -165,11 +165,29 @@ class ImportExpressionToParquetTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(ValueError, "ordered group labels"):
+            with self.assertRaisesRegex(ValueError, "non-group labels"):
                 importer.detect_column_layout(path)
 
-    def test_column_layout_rejects_missing_group_number(self) -> None:
-        """A missing g2 column must not silently shift condition identities."""
+    def test_column_layout_accepts_real_atlas_lexicographic_group_order(self) -> None:
+        """Atlas g1,g10,...,g2 ordering must preserve each group identity."""
+        labels = ["g1", "g10", "g11", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "matrix.tsv"
+            path.write_text(
+                "Gene ID\tGene Name\t" + "\t".join(labels) + "\n"
+                "AT1G1\tGENE1\t" + "\t".join("1,1,1,1,1" for _ in labels) + "\n",
+                encoding="utf-8",
+            )
+
+            layout = importer.detect_column_layout(path)
+
+        self.assertEqual(
+            [layout.header[index] for index in layout.expression_indices],
+            labels,
+        )
+
+    def test_column_layout_accepts_sparse_group_identifiers(self) -> None:
+        """Atlas may omit groups while retaining their authoritative IDs."""
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "matrix.tsv"
@@ -178,8 +196,12 @@ class ImportExpressionToParquetTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(ValueError, "g1..gN"):
-                importer.detect_column_layout(path)
+            layout = importer.detect_column_layout(path)
+
+        self.assertEqual(
+            [layout.header[index] for index in layout.expression_indices],
+            ["g1", "g3"],
+        )
 
     def test_column_layout_rejects_missing_gene_identifier(self) -> None:
         """A matrix without an explicit gene-ID column must not be guessed."""
@@ -573,6 +595,23 @@ class ImportExpressionToParquetTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "conflicting inputs"):
                 importer.build_jobs(manifest, tmp)
 
+    def test_preflight_rejects_empty_and_missing_matrix_sets(self) -> None:
+        """Long imports must not start when their raw matrices are unavailable."""
+        with self.assertRaisesRegex(ValueError, "selected no TPM/FPKM"):
+            importer.preflight_matrix_jobs([])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing = Path(tmpdir) / "missing.tsv"
+            job = importer.MatrixJob(
+                expression_tsv=missing,
+                output_parquet=Path(tmpdir) / "output.parquet",
+                experiment_accession="E-TEST-1",
+                species_column="Zea_mays",
+                expression_unit="TPM",
+                file_type="tpms",
+            )
+            with self.assertRaisesRegex(ValueError, "1/1 missing or empty"):
+                importer.preflight_matrix_jobs([job])
+
     @unittest.skipIf(importer.pa is None, "pyarrow is not installed")
     def test_main_fails_if_any_selected_matrix_cannot_be_imported(self) -> None:
         """One successful matrix must not hide another failed import job."""
@@ -594,23 +633,18 @@ class ImportExpressionToParquetTests(unittest.TestCase):
             )
             output = tmp / "output"
 
-            status = importer.main(
-                [
-                    "--downloaded_files_tsv",
-                    str(manifest),
-                    "--output_dir",
-                    str(output),
-                    "--chunk_rows",
-                    "1",
-                ]
-            )
-
-            self.assertEqual(status, 1)
-            summary = (output / "manifests" / "atlas_expression_import_summary.tsv").read_text(
-                encoding="utf-8"
-            )
-            self.assertIn("imported_to_parquet_python", summary)
-            self.assertIn("skipped_missing_or_empty_input", summary)
+            with self.assertRaisesRegex(SystemExit, "Preflight found 1/2"):
+                importer.main(
+                    [
+                        "--downloaded_files_tsv",
+                        str(manifest),
+                        "--output_dir",
+                        str(output),
+                        "--chunk_rows",
+                        "1",
+                    ]
+                )
+            self.assertFalse((output / "manifests").exists())
 
     @unittest.skipIf(importer.pa is None, "pyarrow is not installed")
     def test_main_returns_success_only_for_a_complete_import_set(self) -> None:

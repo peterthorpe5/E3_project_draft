@@ -274,13 +274,14 @@ def detect_column_layout(expression_tsv: Path) -> ColumnLayout:
 
     expression_indices = [index for index in range(len(header)) if index not in metadata_indices]
     expression_labels = [header[index] for index in expression_indices]
-    expected_labels = [f"g{index}" for index in range(1, len(expression_labels) + 1)]
-    if expression_labels != expected_labels:
+    invalid_labels = [
+        label for label in expression_labels if not ATLAS_GROUP_PATTERN.fullmatch(label)
+    ]
+    if invalid_labels:
         raise ValueError(
-            "Expression Atlas baseline columns must be the ordered group labels "
-            f"g1..gN; found {expression_labels!r} in {expression_tsv}"
+            "Expression Atlas baseline columns contain non-group labels: "
+            f"{invalid_labels!r} in {expression_tsv}"
         )
-
     return ColumnLayout(
         header=header,
         gene_id_index=gene_id_index,
@@ -950,6 +951,31 @@ def build_jobs(
     return [jobs_by_output[path] for path in sorted(jobs_by_output)]
 
 
+def preflight_matrix_jobs(jobs: list[MatrixJob]) -> None:
+    """Reject missing raw matrices before starting a long import.
+
+    Args:
+        jobs: Matrix import jobs built from the downloaded-files manifest.
+
+    Raises:
+        ValueError: If no jobs were selected or any source is absent or empty.
+    """
+    if not jobs:
+        raise ValueError("Downloaded-files manifest selected no TPM/FPKM matrices")
+    invalid = [
+        job.expression_tsv
+        for job in jobs
+        if not job.expression_tsv.is_file() or job.expression_tsv.stat().st_size == 0
+    ]
+    if invalid:
+        examples = "; ".join(str(path) for path in invalid[:3])
+        raise ValueError(
+            f"Preflight found {len(invalid)}/{len(jobs)} missing or empty expression "
+            f"matrices. Examples: {examples}. Legacy relative paths must first be "
+            "rebased with 03_prepare_existing_atlas_downloads.sh."
+        )
+
+
 def write_summary(path: Path, results: list[ImportResult]) -> None:
     """Write an import summary TSV.
 
@@ -1049,6 +1075,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         downloaded_files_tsv=downloaded_files_tsv,
         output_dir=output_dir,
     )
+    try:
+        preflight_matrix_jobs(jobs)
+    except ValueError as error:
+        raise SystemExit(f"ERROR: {error}") from error
 
     results: list[ImportResult] = []
     total_jobs = len(jobs)

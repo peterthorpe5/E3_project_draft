@@ -1,0 +1,14 @@
+validation_item	observed_value	status	evidence
+captured_matrix_preview_files	387	PASS	Every matrix preview in the 2026-08-03 controlled expression snapshot was parsed by the production v0.5.1 column and cell parser.
+captured_declared_expression_cells	897650	PASS	Data rows multiplied by their published matrix-condition columns.
+captured_parsed_non_null_records	897650	PASS	Every declared preview cell produced one valid expression record; no cell was concatenated, discarded or structurally rejected.
+dense_configuration_mapping	57_matrix_57_xml_57_matched	PASS	E-CURD-1 TPM preview mapped to freshly retrieved official configuration XML by literal gN identifier.
+sparse_configuration_mapping	5_matrix_5_xml_5_matched	PASS	E-MTAB-4723 TPM preview with sparse g8,g11,g13,g15,g21 identifiers mapped to freshly retrieved official configuration XML.
+legacy_download_manifest_sha256	5fe5649d1b167287cd4ba6d35759a314819b87202fee70996b3db65ce762ddc4	PASS	Captured atlas_downloaded_files.tsv used to reproduce the relative-path and missing-configuration contract gap.
+e_curd_1_configuration_sha256	405d110c22691555a5832cfb058aad0bad39427de73e0423144468ec91d3bb28	PASS	Official Expression Atlas E-CURD-1 configuration XML retrieved 2026-08-04.
+e_mtab_4723_configuration_sha256	11b691503b16b76f87de90775cf29b97c7d003e4def35478d899f0634078f80b	PASS	Official Expression Atlas E-MTAB-4723 configuration XML retrieved 2026-08-04.
+python_quality_gate	118_passed_0_failed	PASS	Complete package Python gate including unit, corruption, known-answer, wrapper-order and raw-to-DuckDB tests.
+branch_aware_coverage	90_percent	PASS	Package gate threshold is at least 90 percent.
+real_legacy_manifest_mini_rebuild	1_experiment_50_genes_57_groups_2850_rows	PASS	The production wrapper rebased a legacy E-CURD-1 manifest, acquired official XML, imported the captured condensed SDRF before expression, created Parquet and published validated DuckDB.
+real_mini_rebuild_metadata_completeness	0_missing_configuration_hash_2850_tissue_rows	PASS	Every joined expression row retained a non-empty configuration checksum and organism-part context.
+real_mini_rebuild_hash_cardinality	0_hash_mismatch_rows	PASS	Expression source SHA-256 matched the matrix checksum carried by metadata for every joined row.

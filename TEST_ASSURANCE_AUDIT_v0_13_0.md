@@ -1,6 +1,7 @@
 # E3 project scientific test-assurance audit
 
-Date: 2026-08-03  
+Date: 2026-08-03
+Corrective addendum: 2026-08-04
 Scope: source ingestion, discovery, orthology, domains, expression,
 ligandability, structural alignment, integrated prioritisation, Python app and
 Shiny app.
@@ -46,7 +47,10 @@ used as a substitute for semantic assertions.
 | Severity | Finding | Correction and regression authority |
 |---|---|---|
 | Critical | Atlas five-number cells could be concatenated as thousands-like text. | Median semantics with all five statistics retained; malformed comma counts, non-finite, negative and unordered values rejected; raw-to-DuckDB known-answer test. |
-| High | Metadata groups could be inferred from factor order rather than the experiment configuration. | Exact `gN`-to-assay mapping now comes from configuration XML; missing, duplicate, reordered or reused groups fail. |
+| Critical | The clean-rebuild README passed a legacy relative-path manifest directly to the strict importers, so every source could be unresolved from the documented working directory. | A dedicated preparation command now rebases sources against an explicit raw root, computes SHA-256, acquires missing configuration XML, and atomically publishes an absolute-path strict manifest. Both importers also preflight the complete source set. |
+| High | Metadata groups could be inferred from factor order rather than the experiment configuration. | Exact `gN`-to-assay mapping now comes from configuration XML; missing referenced IDs, duplicate IDs and assays reused across groups fail. Matrix and XML order are not assumed. |
+| High | The v0.5.0 tests incorrectly required numerically ordered, contiguous `g1..gN` columns, although real Atlas matrices are lexicographically ordered and may contain sparse group IDs. | Matrix groups are now unique valid `gN` identifiers in source order; every matrix ID must exist in XML, XML-only IDs are permitted, and joins use the literal ID. All 387 captured previews and 897,650 cells pass the production parser. |
+| High | The metadata CLI could publish SDRF-only output without a matrix or configuration XML, despite the documented strict contract. | Every metadata job now requires non-empty SDRF, expression matrix and configuration XML before any import starts; the permissive historical test was replaced with fail-closed and complete-authority tests. |
 | High | Tissue metadata could remain joined to a changed expression matrix. | Expression and metadata relations must carry the same raw matrix SHA-256; stale bindings fail before publication. |
 | High | TPM and FPKM could both contribute when both existed. | TPM is selected per species/experiment; FPKM is an explicit fallback only. |
 | High | `NOT_MAPPED` expression could be displayed as biological zero. | Unavailable mapping fields remain blank and distinct from Atlas measured-zero codes. |
@@ -67,10 +71,10 @@ used as a substitute for semantic assertions.
 | Ligandability pipeline | 83 | 0 | 97% | Pass |
 | Structural alignment | 61 | 0 | 93% | Pass |
 | End-to-end workflow | 224 | 1 | 90.56% | Pass; Snakemake contract check skipped because Snakemake is unavailable here |
-| Expression downloader/importer | 99 | 0 | 91% | Pass |
+| Expression downloader/importer | 118 | 0 | 90% | Pass |
 | Python application | 40 | 0 | 98% | Pass |
 
-Total package tests executed: **860 passed, 4 skipped**. A further **15
+Total package tests executed: **879 passed, 4 skipped**. A further **15
 repository-root tests passed**; they validate launchers, documentation and the
 test-traceability matrix rather than scientific calculations.
 
@@ -127,10 +131,17 @@ with controlled fixtures rather than new real-tool runs.
 ### Expression
 
 This layer received the deepest rebuild because the previous parser contract
-was wrong. The supported code now requires complete raw evidence, retains
-tissue/development/treatment context, validates hashes and joins, and publishes
-atomically. The unsupported R parser and legacy R-manifest downloader fail
-closed.
+was wrong. The supported code now requires complete raw evidence, prepares the
+legacy manifest without modifying its retained sources, accepts real Atlas
+lexicographic and sparse `gN` identifiers, retains tissue/development/treatment
+context, validates hashes and identifier-based joins, and publishes atomically.
+The unsupported R parser and legacy R-manifest downloader fail closed.
+
+The first v0.13.0 assurance pass still relied on tidy manifest-path and `gN`
+ordering fixtures. The 2026-08-04 corrective pass was triggered by the actual
+cluster failure and replaced those assumptions with the captured production
+grammar. This limitation and correction are recorded explicitly so the audit
+does not imply that its earlier green suite was sufficient.
 
 ### Integrated prioritisation
 

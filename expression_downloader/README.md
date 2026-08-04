@@ -25,12 +25,16 @@ never concatenated. The importer retains all five statistics and records
 
 The contract is intentionally strict:
 
-- matrix condition columns must be ordered and contiguous `g1..gN`;
+- matrix condition columns must be unique valid `gN` identifiers; Atlas's
+  observed lexicographic order (`g1`, `g10`, ..., `g2`) and sparse group sets
+  (for example `g8`, `g11`, `g13`) are preserved rather than treated as
+  corruption;
 - each row must have exactly the declared number of fields;
 - gene identifiers and condition headers must be non-empty and unique;
 - values must be finite, non-negative and statistically ordered;
 - each matrix must have matching sample metadata and configuration XML;
-- the configuration XML is the authority for `gN`-to-assay membership;
+- the configuration XML is the authority for `gN`-to-assay membership; every
+  matrix group must occur in the XML, while XML-only groups are permitted;
 - every selected expression context must have exactly one metadata context;
 - raw expression, XML and metadata SHA-256 values are carried into Parquet;
 - stale derived files are not reused when a raw checksum changes;
@@ -88,8 +92,11 @@ Run the complete Python assurance suite:
 
 This compiles and lints the supported code, runs all unit, corruption,
 known-answer and raw-to-DuckDB tests, enforces at least 90% branch-aware
-coverage, and validates every shell script. Version 0.5.0 has 99 passing Python
-tests and 91% overall branch-aware coverage.
+coverage, and validates every shell script. The recorded release result must be
+regenerated after any source or test change; see the current release notes.
+For v0.5.1, 118 Python tests passed at 90% branch-aware coverage. The separate
+`REAL_DATA_VALIDATION_v0_5_1.tsv` records the all-preview production-format
+audit and two official configuration-XML mapping checks.
 
 Run the R query-helper tests in the R-enabled environment:
 
@@ -102,7 +109,15 @@ Rscript inst/scripts/08_run_tests.R
 
 This is the recommended route for the current project. It leaves the existing
 raw download tree untouched and creates all corrected Parquet and DuckDB
-outputs in a new directory.
+outputs in a new directory. The historical manifest cannot be passed directly
+to the strict importers: its paths are relative to the old working directory,
+it lacks SHA-256 values, and it predates configuration-XML acquisition.
+
+The preparation step below treats the historical manifest as a catalogue,
+resolves each claimed file beneath the explicit `RAW_ROOT`, calculates its
+digest, fetches missing official configuration XML into the new versioned
+supplement directory, and atomically writes a strict manifest with absolute
+paths. It does not rewrite or delete the historical downloads or manifest.
 
 ```bash
 set -euo pipefail
@@ -111,11 +126,11 @@ REPO_ROOT="/home/pthorpe001/data/2026_E3_protac/E3_project_draft"
 
 RAW_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/expression_atlas_ftp_full"
 
-REBUILD_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/expression_atlas_rebuild_v0_5_0_20260803"
+REBUILD_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/expression_atlas_rebuild_v0_5_1_20260804"
 
-DOWNLOADED_MANIFEST="${RAW_ROOT}/manifests/atlas_downloaded_files.tsv"
+SOURCE_MANIFEST="${RAW_ROOT}/manifests/atlas_downloaded_files.tsv"
 
-test -s "${DOWNLOADED_MANIFEST}"
+test -s "${SOURCE_MANIFEST}"
 
 if [[ -e "${REBUILD_ROOT}" ]]; then
   printf 'ERROR: rebuild directory already exists: %s\n' \
@@ -123,32 +138,28 @@ if [[ -e "${REBUILD_ROOT}" ]]; then
   exit 1
 fi
 
-mkdir -p "${REBUILD_ROOT}/manifests"
-cp -p \
-  "${DOWNLOADED_MANIFEST}" \
-  "${REBUILD_ROOT}/manifests/source_atlas_downloaded_files.tsv"
-
 cd "${REPO_ROOT}/expression_downloader"
 
-./inst/scripts/04_python_import_expression_to_parquet.sh \
-  --downloaded_files_tsv "${DOWNLOADED_MANIFEST}" \
+./inst/scripts/run_clean_rebuild_from_existing.sh \
+  --source_manifest "${SOURCE_MANIFEST}" \
+  --raw_root "${RAW_ROOT}" \
   --output_dir "${REBUILD_ROOT}" \
-  --force_import false \
+  --download_missing_configuration true \
+  --timeout_seconds 30 \
+  --retries 2 \
   --chunk_rows 250000
-
-./inst/scripts/05_python_import_sample_metadata_to_parquet.sh \
-  --downloaded_files_tsv "${DOWNLOADED_MANIFEST}" \
-  --output_dir "${REBUILD_ROOT}" \
-  --force_import false
-
-./inst/scripts/06_python_create_duckdb_views.sh \
-  --output_dir "${REBUILD_ROOT}" \
-  --duckdb_path "${REBUILD_ROOT}/e3_expression.duckdb" \
-  --force false
 ```
 
-`force=false` is intentional because the rebuild directory is new. No old
-Parquet or DuckDB file is eligible for reuse.
+The wrapper is a non-interactive fail-fast boundary. It prepares the strict
+manifest, validates and imports configuration-backed metadata first, imports
+the much larger expression matrices only after metadata succeeds, and then
+atomically publishes DuckDB. A failed stage prevents all later stages from
+running and identifies the failed stage. The new output directory is retained
+for diagnosis.
+
+Do not execute steps 04, 05 and 06 individually against the historical
+manifest. Both importers now preflight all required sources and stop before
+processing if the prepared absolute-path, checksum and XML contract is absent.
 
 ## Validate the clean rebuild
 
@@ -310,9 +321,11 @@ fail closed. They did not enforce the five-number-summary and configuration-XML
 contracts required by this release. Supported entry points are:
 
 - `02_python_discover_download_atlas.sh`;
+- `03_prepare_existing_atlas_downloads.sh`;
 - `04_python_import_expression_to_parquet.sh`;
 - `05_python_import_sample_metadata_to_parquet.sh`;
 - `06_python_create_duckdb_views.sh`;
+- `run_clean_rebuild_from_existing.sh`;
 - `run_python_first_then_r.sh`.
 
 ## Controlled diagnostic snapshot

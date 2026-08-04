@@ -197,7 +197,7 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
                 )
 
     def test_expression_group_header_contracts(self) -> None:
-        """Matrix condition columns must be a complete ordered g1..gN set."""
+        """Matrix groups must be complete while retaining Atlas column order."""
         self.assertEqual(metadata_importer.read_expression_group_labels(None), [])
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -214,6 +214,26 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "non-group"):
                 metadata_importer.read_expression_group_labels(invalid)
+
+            lexicographic = tmp / "lexicographic.tsv"
+            lexicographic.write_text(
+                "Gene ID\tGene Name\tg1\tg10\tg2\tg3\tg4\tg5\tg6\tg7\tg8\tg9\n"
+                "GENE1\tname\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                metadata_importer.read_expression_group_labels(lexicographic),
+                ["g1", "g10", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9"],
+            )
+            sparse = tmp / "sparse.tsv"
+            sparse.write_text(
+                "Gene ID\tGene Name\tg8\tg11\tg21\nGENE1\tname\t1\t2\t3\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                metadata_importer.read_expression_group_labels(sparse),
+                ["g8", "g11", "g21"],
+            )
 
     def test_configuration_xml_rejects_every_ambiguous_shape(self) -> None:
         """Invalid XML group IDs, duplication and missing assays must all fail."""
@@ -249,8 +269,8 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, message):
                         metadata_importer.read_configuration_groups(path)
 
-    def test_group_validation_rejects_duplicates_invalid_ids_and_reordering(self) -> None:
-        """No ambiguous condition-group list may pass into a join."""
+    def test_group_validation_rejects_ambiguity_and_maps_by_identifier(self) -> None:
+        """Group joins must reject ambiguity but remain independent of order."""
         groups = metadata_importer.OrderedDict(
             [
                 ("g1", metadata_importer.AssayGroup("g1", "leaf", ("S1",))),
@@ -267,11 +287,16 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
                 ["g1", "leaf"],
                 groups,
             )
-        with self.assertRaisesRegex(ValueError, "order disagrees"):
-            metadata_importer.validate_matrix_configuration_groups(
-                ["g2", "g1"],
-                groups,
-            )
+        reordered = metadata_importer.validate_matrix_configuration_groups(
+            ["g2", "g1"],
+            groups,
+        )
+        self.assertEqual([group.group_id for group in reordered], ["g2", "g1"])
+        subset = metadata_importer.validate_matrix_configuration_groups(
+            ["g1"],
+            groups,
+        )
+        self.assertEqual([group.group_id for group in subset], ["g1"])
 
     def test_jobs_are_built_from_download_manifest(self) -> None:
         """Only successful sample_metadata rows become metadata import jobs."""
@@ -329,6 +354,23 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
         self.assertEqual(jobs[0].experiment_accession, "E-TEST-1")
         self.assertEqual(jobs[0].expression_tsv.name, "tpms.tsv")
         self.assertEqual(jobs[0].configuration_xml.name, "configuration.xml")
+
+    def test_preflight_requires_metadata_matrix_and_configuration(self) -> None:
+        """Metadata publication must require every checksum-bound authority."""
+        with self.assertRaisesRegex(ValueError, "selected no sample-metadata"):
+            metadata_importer.preflight_metadata_jobs([])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing = Path(tmpdir) / "missing.tsv"
+            job = metadata_importer.MetadataJob(
+                metadata_tsv=missing,
+                experiment_accession="E-TEST-1",
+                species_column="Zea_mays",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "sample_metadata,tpms_or_fpkms,configuration_xml",
+            ):
+                metadata_importer.preflight_metadata_jobs([job])
 
     def test_condensed_sdrf_is_preferred_over_full_sdrf(self) -> None:
         """Only one preferred metadata file should be used per experiment."""
@@ -415,8 +457,8 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
                 groups,
             )
 
-    def test_non_contiguous_matrix_groups_are_rejected(self) -> None:
-        """Missing group IDs must fail rather than shift condition identities."""
+    def test_sparse_matrix_groups_map_by_authoritative_identifier(self) -> None:
+        """Sparse matrix IDs must map to the same literal XML group IDs."""
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
@@ -453,39 +495,59 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
                 configuration_xml=configuration,
             )
 
-            with self.assertRaisesRegex(ValueError, "contiguous g1..gN"):
+            wide, _long, _metadata_count, mapped_count = (
                 metadata_importer.read_metadata_records(job)
+            )
 
-    def test_configuration_rejects_reordered_groups_and_reused_assays(self) -> None:
-        """Configuration order and one-group-per-assay membership are invariant."""
+        group_rows = {
+            row["sample_or_condition"]: row
+            for row in wide
+            if row["sample_or_condition"] in {"g1", "g3"}
+        }
+        self.assertEqual(mapped_count, 2)
+        self.assertEqual(group_rows["g1"]["assay_ids"], "SRR1")
+        self.assertEqual(group_rows["g3"]["assay_ids"], "SRR3")
 
-        cases = (
-            (
+    def test_configuration_accepts_order_variation_but_rejects_reused_assays(self) -> None:
+        """XML group order is irrelevant, while assay membership stays unique."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            reordered = root / "reordered.xml"
+            reordered.write_text(
+                "<configuration><analytics><assay_groups>"
                 '<assay_group id="g2"><assay>SRR2</assay></assay_group>'
-                '<assay_group id="g1"><assay>SRR1</assay></assay_group>',
-                "ordered and contiguous",
-            ),
-            (
                 '<assay_group id="g1"><assay>SRR1</assay></assay_group>'
-                '<assay_group id="g2"><assay>SRR1</assay></assay_group>',
-                "multiple groups",
-            ),
-        )
-        for groups, expected_message in cases:
-            with (
-                self.subTest(expected_message=expected_message),
-                tempfile.TemporaryDirectory() as tmpdir,
-            ):
-                configuration = Path(tmpdir) / "configuration.xml"
-                configuration.write_text(
-                    "<configuration><analytics><assay_groups>"
-                    + groups
-                    + "</assay_groups></analytics></configuration>",
-                    encoding="utf-8",
-                )
+                "</assay_groups></analytics></configuration>",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                list(metadata_importer.read_configuration_groups(reordered)),
+                ["g2", "g1"],
+            )
 
-                with self.assertRaisesRegex(ValueError, expected_message):
-                    metadata_importer.read_configuration_groups(configuration)
+            sparse = root / "sparse.xml"
+            sparse.write_text(
+                "<configuration><analytics><assay_groups>"
+                '<assay_group id="g8"><assay>SRR8</assay></assay_group>'
+                '<assay_group id="g21"><assay>SRR21</assay></assay_group>'
+                "</assay_groups></analytics></configuration>",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                list(metadata_importer.read_configuration_groups(sparse)),
+                ["g8", "g21"],
+            )
+
+            reused = root / "reused.xml"
+            reused.write_text(
+                "<configuration><analytics><assay_groups>"
+                '<assay_group id="g1"><assay>SRR1</assay></assay_group>'
+                '<assay_group id="g2"><assay>SRR1</assay></assay_group>'
+                "</assay_groups></analytics></configuration>",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "multiple groups"):
+                metadata_importer.read_configuration_groups(reused)
 
     def test_tabular_metadata_rejects_truncated_rows(self) -> None:
         """Missing metadata fields must not be padded into apparently valid rows."""
@@ -799,37 +861,45 @@ class ImportSampleMetadataToParquetTests(unittest.TestCase):
             )
             output = tmp / "output"
 
-            status = metadata_importer.main(
-                [
-                    "--downloaded_files_tsv",
-                    str(manifest),
-                    "--output_dir",
-                    str(output),
-                ]
-            )
-
-            self.assertEqual(status, 1)
-            summary = (output / "manifests" / "atlas_sample_metadata_import_summary.tsv").read_text(
-                encoding="utf-8"
-            )
-            self.assertIn("imported_to_parquet", summary)
-            self.assertIn("skipped_missing_or_empty_input", summary)
+            with self.assertRaisesRegex(SystemExit, "Preflight found 2/2"):
+                metadata_importer.main(
+                    [
+                        "--downloaded_files_tsv",
+                        str(manifest),
+                        "--output_dir",
+                        str(output),
+                    ]
+                )
+            self.assertFalse((output / "manifests").exists())
 
     @unittest.skipIf(metadata_importer.pa is None, "pyarrow is not installed")
     def test_main_returns_success_for_a_complete_metadata_set(self) -> None:
         """Every selected metadata source should be required for success."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            metadata = tmp / "metadata.tsv"
+            metadata = tmp / "E-TEST-1.condensed-sdrf.tsv"
             metadata.write_text(
-                "Assay Group\tCharacteristics[organism part]\ng1\troot\n",
+                "E-TEST-1\t\tERR1\tcharacteristic\torganism part\troot\n",
+                encoding="utf-8",
+            )
+            expression = tmp / "expression.tsv"
+            expression.write_text(
+                "Gene ID\tGene Name\tg1\nZm1\tGENE1\t1,2,3,4,5\n",
+                encoding="utf-8",
+            )
+            configuration = tmp / "configuration.xml"
+            configuration.write_text(
+                '<configuration><assay_group id="g1" label="root">'
+                "<assay>ERR1</assay></assay_group></configuration>",
                 encoding="utf-8",
             )
             manifest = tmp / "atlas_downloaded_files.tsv"
             manifest.write_text(
                 "species_column\texperiment_accession\tfile_type\t"
                 "local_path\tsuccess\n"
-                f"Species_a\tE-TEST-1\tsample_metadata\t{metadata}\ttrue\n",
+                f"Species_a\tE-TEST-1\tsample_metadata\t{metadata}\ttrue\n"
+                f"Species_a\tE-TEST-1\ttpms\t{expression}\ttrue\n"
+                f"Species_a\tE-TEST-1\tconfiguration_xml\t{configuration}\ttrue\n",
                 encoding="utf-8",
             )
 

@@ -489,12 +489,8 @@ def read_expression_group_labels(expression_tsv: Optional[Path]) -> list[str]:
     if len(group_labels) != len(expression_columns):
         invalid = [name for name in expression_columns if not is_group_value(name)]
         raise ValueError(f"Expression matrix contains non-group condition labels: {invalid!r}")
-    expected = [f"g{index}" for index in range(1, len(group_labels) + 1)]
-    if group_labels != expected:
-        raise ValueError(
-            "Expression matrix groups must be ordered and contiguous g1..gN; "
-            f"found {group_labels!r}"
-        )
+    if len(set(group_labels)) != len(group_labels):
+        raise ValueError(f"Expression matrix contains duplicate group labels: {group_labels!r}")
     return group_labels
 
 
@@ -552,12 +548,6 @@ def read_configuration_groups(configuration_xml: Path) -> OrderedDict[str, Assay
 
     if not groups:
         raise ValueError(f"Configuration contains no assay groups: {configuration_xml}")
-    expected_group_ids = [f"g{index}" for index in range(1, len(groups) + 1)]
-    if list(groups) != expected_group_ids:
-        raise ValueError(
-            "Configuration assay groups must be ordered and contiguous g1..gN; "
-            f"found {list(groups)!r}"
-        )
     all_assays = [assay for group in groups.values() for assay in group.assay_ids]
     duplicate_assays = sorted({assay for assay in all_assays if all_assays.count(assay) > 1})
     if duplicate_assays:
@@ -591,18 +581,11 @@ def validate_matrix_configuration_groups(
         )
     matrix_ids = set(group_labels)
     configuration_ids = set(configuration_groups)
-    if matrix_ids != configuration_ids:
+    if not matrix_ids.issubset(configuration_ids):
         missing = sorted(matrix_ids - configuration_ids, key=group_label_sort_key)
-        extra = sorted(configuration_ids - matrix_ids, key=group_label_sort_key)
         raise ValueError(
             "Matrix/configuration assay groups disagree; "
-            f"missing_from_configuration={missing!r}; "
-            f"extra_in_configuration={extra!r}"
-        )
-    if group_labels != list(configuration_groups):
-        raise ValueError(
-            "Matrix/configuration assay-group order disagrees; "
-            f"matrix={group_labels!r}; configuration={list(configuration_groups)!r}"
+            f"missing_from_configuration={missing!r}"
         )
     return [configuration_groups[label] for label in group_labels]
 
@@ -1429,6 +1412,51 @@ def build_jobs(downloaded_files_tsv: Path) -> list[MetadataJob]:
     return jobs
 
 
+def preflight_metadata_jobs(jobs: list[MetadataJob]) -> None:
+    """Reject incomplete metadata authorities before importing any records.
+
+    Every selected metadata experiment must be bound to a non-empty expression
+    matrix and authoritative configuration XML.  This prevents a legacy SDRF
+    from being published without a defensible ``gN``-to-assay mapping.
+
+    Args:
+        jobs: Preferred per-experiment metadata jobs.
+
+    Raises:
+        ValueError: If no jobs were selected or any required source is absent.
+    """
+    if not jobs:
+        raise ValueError("Downloaded-files manifest selected no sample-metadata jobs")
+    failures: list[str] = []
+    for job in jobs:
+        missing: list[str] = []
+        if not job.metadata_tsv.is_file() or job.metadata_tsv.stat().st_size == 0:
+            missing.append("sample_metadata")
+        if (
+            job.expression_tsv is None
+            or not job.expression_tsv.is_file()
+            or job.expression_tsv.stat().st_size == 0
+        ):
+            missing.append("tpms_or_fpkms")
+        if (
+            job.configuration_xml is None
+            or not job.configuration_xml.is_file()
+            or job.configuration_xml.stat().st_size == 0
+        ):
+            missing.append("configuration_xml")
+        if missing:
+            failures.append(
+                f"{job.species_column} {job.experiment_accession}: {','.join(missing)}"
+            )
+    if failures:
+        examples = "; ".join(failures[:3])
+        raise ValueError(
+            f"Preflight found {len(failures)}/{len(jobs)} incomplete metadata "
+            f"authorities. Examples: {examples}. Prepare the legacy raw sources "
+            "with 03_prepare_existing_atlas_downloads.sh before import."
+        )
+
+
 def write_summary(path: Path, results: list[MetadataResult]) -> None:
     """Write the metadata import summary."""
 
@@ -1493,6 +1521,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         raise SystemExit(f"Downloaded-files manifest does not exist: {downloaded_files_tsv}")
 
     jobs = build_jobs(downloaded_files_tsv=downloaded_files_tsv)
+    try:
+        preflight_metadata_jobs(jobs)
+    except ValueError as error:
+        raise SystemExit(f"ERROR: {error}") from error
     print(f"Python sample metadata importer found {len(jobs)} metadata jobs", flush=True)
     results: list[MetadataResult] = []
     for index, job in enumerate(jobs, start=1):
