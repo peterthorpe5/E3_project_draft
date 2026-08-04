@@ -47,7 +47,7 @@ analysis:
     max_retries: 4
     retry_delay_seconds: 2
   expression:
-    minimum_expression_value: 0.0
+    minimum_expression_value: 0.5
     broad_positive_fraction: 0.5
   ligandability:
     mode: reuse_only

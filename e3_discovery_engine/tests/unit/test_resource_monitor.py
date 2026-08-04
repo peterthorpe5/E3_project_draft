@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import tempfile
 import time
 import unittest
-from unittest import mock
 from pathlib import Path
+from unittest import mock
 
 import e3_discovery.resource_monitor as resource_monitor
 
@@ -16,9 +14,9 @@ from e3_discovery.resource_monitor import (
     CpuUsageSnapshot,
     ProcessTreeResourceMonitor,
     ResourceUsage,
+    aggregate_resource_usage_directory,
     capture_cpu_usage_snapshot,
     cpu_usage_delta,
-    aggregate_resource_usage_directory,
     plot_peak_ram_by_stage,
     read_resource_usage,
     summarise_resource_usage,
@@ -59,6 +57,27 @@ def usage(stage_name: str = "stage", peak_rss_mb: float = 12.5) -> ResourceUsage
     )
 
 
+def fake_process(
+    pid: int = 123,
+    rss_bytes: int = 8 * 1024 * 1024,
+) -> mock.Mock:
+    """Return a deterministic psutil-compatible process fixture.
+
+    Args:
+        pid: Stable fixture process identifier.
+        rss_bytes: Resident-memory value returned by the fixture.
+
+    Returns:
+        Mock process with no children and fixed CPU/memory counters.
+    """
+    process = mock.Mock(pid=pid)
+    process.create_time.return_value = 1.0
+    process.memory_info.return_value = mock.Mock(rss=rss_bytes)
+    process.cpu_times.return_value = mock.Mock(user=1.0, system=0.25)
+    process.children.return_value = []
+    return process
+
+
 class ResourceMonitorTests(unittest.TestCase):
     """Validate monitoring, serialisation, aggregation and plotting."""
 
@@ -88,7 +107,12 @@ class ResourceMonitorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ProcessTreeResourceMonitor("x", root_pid=0)
 
-        monitor = ProcessTreeResourceMonitor("sampling-errors")
+        with mock.patch.object(
+            resource_monitor.psutil,
+            "Process",
+            return_value=fake_process(),
+        ):
+            monitor = ProcessTreeResourceMonitor("sampling-errors")
         fake_root = mock.Mock()
         fake_root.children.side_effect = resource_monitor.psutil.NoSuchProcess(1)
         monitor._root_process = fake_root
@@ -109,10 +133,13 @@ class ResourceMonitorTests(unittest.TestCase):
             resource_monitor,
             "capture_cpu_usage_snapshot",
             return_value=None,
+        ), mock.patch.object(
+            resource_monitor.psutil,
+            "Process",
+            return_value=fake_process(),
         ):
             fallback = ProcessTreeResourceMonitor(
-                "fallback",
-                sample_interval_seconds=0.01,
+                "fallback", sample_interval_seconds=0.01
             )
             fallback.start()
             time.sleep(0.02)
@@ -123,10 +150,15 @@ class ResourceMonitorTests(unittest.TestCase):
         )
 
     def test_process_tree_monitor_lifecycle(self) -> None:
-        monitor = ProcessTreeResourceMonitor(
-            "unit-test",
-            sample_interval_seconds=0.01,
-        )
+        with mock.patch.object(
+            resource_monitor.psutil,
+            "Process",
+            return_value=fake_process(),
+        ):
+            monitor = ProcessTreeResourceMonitor(
+                "unit-test",
+                sample_interval_seconds=0.01,
+            )
         monitor.start()
         time.sleep(0.03)
         measurement = monitor.stop()
@@ -137,35 +169,45 @@ class ResourceMonitorTests(unittest.TestCase):
         self.assertTrue(measurement.cpu_accounting_method)
 
     def test_process_tree_monitor_includes_child_process(self) -> None:
-        monitor = ProcessTreeResourceMonitor(
-            "child-test",
-            sample_interval_seconds=0.01,
-        )
-        monitor.start()
-        child = subprocess.Popen(
-            [
-                sys.executable,
-                "-c",
-                (
-                    "import time; "
-                    "payload = bytearray(20 * 1024 * 1024); "
-                    "time.sleep(0.2); print(len(payload))"
-                ),
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        child.wait(timeout=5)
-        measurement = monitor.stop()
-        self.assertGreaterEqual(measurement.maximum_process_count, 2)
-        self.assertGreater(measurement.peak_rss_mb, 20.0)
+        with mock.patch.object(
+            resource_monitor.psutil,
+            "Process",
+            return_value=fake_process(),
+        ):
+            monitor = ProcessTreeResourceMonitor("child-test")
+
+        root = mock.Mock(pid=100)
+        root.create_time.return_value = 1.0
+        root.memory_info.return_value = mock.Mock(rss=10 * 1024 * 1024)
+        root.cpu_times.return_value = mock.Mock(user=1.0, system=0.2)
+
+        child = mock.Mock(pid=101)
+        child.create_time.return_value = 2.0
+        child.memory_info.return_value = mock.Mock(rss=20 * 1024 * 1024)
+        child.cpu_times.return_value = mock.Mock(user=2.0, system=0.4)
+
+        root.children.return_value = [child]
+        monitor._root_process = root
+        monitor._sample_once()
+
+        self.assertEqual(monitor._maximum_process_count, 2)
+        self.assertEqual(monitor._peak_rss_bytes, 30 * 1024 * 1024)
+        self.assertEqual(monitor._cpu_by_process[(100, 1.0)], (1.0, 0.2))
+        self.assertEqual(monitor._cpu_by_process[(101, 2.0)], (2.0, 0.4))
 
     def test_process_tree_monitor_rejects_bad_lifecycle(self) -> None:
         with self.assertRaises(ValueError):
             ProcessTreeResourceMonitor("")
         with self.assertRaises(ValueError):
             ProcessTreeResourceMonitor("x", sample_interval_seconds=0)
-        monitor = ProcessTreeResourceMonitor("x", sample_interval_seconds=0.01)
+        with mock.patch.object(
+            resource_monitor.psutil,
+            "Process",
+            return_value=fake_process(),
+        ):
+            monitor = ProcessTreeResourceMonitor(
+                "x", sample_interval_seconds=0.01
+            )
         with self.assertRaises(RuntimeError):
             monitor.stop()
         monitor.start()

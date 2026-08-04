@@ -17,7 +17,7 @@ import sqlite3
 from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from e3parquet.io_utils import normalise_relative_path, safe_name, write_tsv
 
@@ -374,6 +374,13 @@ def create_protein_records_view(
                 "gene_names_standardised": "VARCHAR",
                 "organism_standardised": "VARCHAR",
                 "organism_id_standardised": "VARCHAR",
+                "e3_category_standardised": "VARCHAR",
+                "reviewed_standardised": "VARCHAR",
+                "protein_names_standardised": "VARCHAR",
+                "protein_length_standardised": "BIGINT",
+                "embedded_sequence": "VARCHAR",
+                "embedded_sequence_md5": "VARCHAR",
+                "_curated_source_view": "VARCHAR",
             },
         )
         debug.add("protein_records", "missing", "No E3 ligase source table was found; created empty placeholder view.")
@@ -595,9 +602,32 @@ def create_go_term_evidence_view(
         include_any=("go_terms", "go_terms", "e3_go", "gene_ontology", "ubiquitin_go"),
         exclude_any=("sqlite",),
     )
-    protein_source = select_best_catalog_view(catalog, ("e3_ligases.csv", "e3_ligases"), ("small_test",))
+    protein_source = select_best_catalog_view(
+        catalog,
+        ("e3_ligases.csv", "e3_ligases"),
+        ("small_test",),
+    )
     if protein_source:
-        views.append(protein_source)
+        protein_columns = columns_for_object(connection, protein_source)
+        go_evidence_candidates = (
+            *GO_ID_CANDIDATES,
+            "ubiquitin_go_term",
+            "ubiquitin",
+            "Ubiquitin",
+            "exclusion_go_term",
+            "exclusion",
+            "Exclusion",
+        )
+        if find_column(protein_columns, go_evidence_candidates) is not None:
+            views.append(protein_source)
+        else:
+            debug.add(
+                "go_term_evidence",
+                "skipped",
+                "The selected protein table has no GO-evidence column and "
+                "was not counted as GO evidence.",
+                source_view=protein_source,
+            )
     views = sorted(set(views))
 
     def builder(source_view: str, columns: Sequence[str]) -> str:
@@ -690,6 +720,7 @@ def create_ligandability_pocket_scores_view(
             "probability_numeric": "DOUBLE",
             "pocket_rank_numeric": "BIGINT",
             "p2rank_score_numeric": "DOUBLE",
+            "_curated_source_view": "VARCHAR",
         },
         debug,
         "ligandability_pocket_scores",
@@ -795,6 +826,11 @@ def create_candidate_e3_summary_view(connection: Any, debug: DebugRecorder) -> N
             MAX(CASE WHEN LOWER(COALESCE(exclusion_go_term_flag, '')) IN ('1', 'true', 'yes') THEN 1 ELSE 0 END) AS has_exclusion_go_term
         FROM go_term_evidence
         WHERE protein_accession IS NOT NULL AND protein_accession <> ''
+          AND (
+              NULLIF(go_id_or_terms, '') IS NOT NULL
+              OR NULLIF(ubiquitin_go_term_flag, '') IS NOT NULL
+              OR NULLIF(exclusion_go_term_flag, '') IS NOT NULL
+          )
         GROUP BY protein_accession
         """
     )

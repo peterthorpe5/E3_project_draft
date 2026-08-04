@@ -46,6 +46,46 @@ class ClusterTests(unittest.TestCase):
         base["bitscore"] = 20
         self.assertFalse(classify_alignment(base, self.thresholds())["passes_all"])
 
+    def test_each_scientific_threshold_has_an_explicit_boundary_contract(self):
+        """Inclusive coverage/identity and exclusive score/e-value must not drift."""
+        exact = {
+            "pident": 50,
+            "representative_length": 100,
+            "member_length": 100,
+            "alignment_length": 50,
+            "bitscore": 20.000001,
+            "evalue": 0.999999e-10,
+        }
+        classified = classify_alignment(exact, self.thresholds())
+        self.assertTrue(classified["passes_identity"])
+        self.assertTrue(classified["passes_representative_coverage"])
+        self.assertTrue(classified["passes_member_coverage"])
+        self.assertTrue(classified["passes_bitscore"])
+        self.assertTrue(classified["passes_evalue"])
+        self.assertTrue(classified["passes_all"])
+
+        mutations = {
+            "identity": {"pident": 49.999999},
+            "representative_coverage": {
+                "representative_length": 101,
+            },
+            "member_coverage": {"member_length": 101},
+            "bitscore_exclusive": {"bitscore": 20},
+            "evalue_exclusive": {"evalue": 1e-10},
+        }
+        expected_failed_flag = {
+            "identity": "passes_identity",
+            "representative_coverage": "passes_representative_coverage",
+            "member_coverage": "passes_member_coverage",
+            "bitscore_exclusive": "passes_bitscore",
+            "evalue_exclusive": "passes_evalue",
+        }
+        for name, change in mutations.items():
+            with self.subTest(name=name):
+                result = classify_alignment({**exact, **change}, self.thresholds())
+                self.assertFalse(result[expected_failed_flag[name]])
+                self.assertFalse(result["passes_all"])
+
     def test_header_normalisation_and_aliases(self):
         self.assertEqual(
             _normalise_header_token("#Cluster Representative"),

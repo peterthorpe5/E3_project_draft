@@ -7,6 +7,8 @@ from pathlib import Path
 import duckdb
 import pytest
 
+from e3app.data import quote_literal
+
 
 @pytest.fixture
 def resource_db(tmp_path: Path) -> Path:
@@ -69,18 +71,26 @@ def resource_db(tmp_path: Path) -> Path:
             "cluster_id VARCHAR, primary_group_id VARCHAR, member_accession VARCHAR, "
             "member_identifier VARCHAR, species_column VARCHAR, gene_id VARCHAR, "
             "gene_name VARCHAR, experiment_accession VARCHAR, expression_unit VARCHAR, "
-            "organism_part VARCHAR, developmental_stage VARCHAR, condition VARCHAR, "
-            "expression_context VARCHAR, maximum_expression_value DOUBLE, "
-            "median_expression_value DOUBLE, broad_expression_supported BOOLEAN)"
+            "sample_or_condition VARCHAR, atlas_group_label VARCHAR, assay_ids VARCHAR, "
+            "assay_count INTEGER, organism_part VARCHAR, developmental_stage VARCHAR, "
+            "condition VARCHAR, expression_context VARCHAR, metadata_status VARCHAR, "
+            "expression_value_statistic VARCHAR, expression_value DOUBLE, "
+            "expression_minimum DOUBLE, expression_lower_quartile DOUBLE, "
+            "expression_median DOUBLE, expression_upper_quartile DOUBLE, "
+            "expression_maximum DOUBLE, expression_positive BOOLEAN)"
         )
         connection.execute(
             "INSERT INTO candidate_expression_context_summary VALUES "
             "('cluster_1', 'N0.HOG0001', 'Q9SA03', 'Q9SA03', "
             "'Arabidopsis_thaliana', 'AT1G31090', 'FB27', 'E-MTAB-1', 'TPM', "
-            "'leaf', 'adult', 'control', 'leaf', 5.0, 4.0, true), "
+            "'g1', 'leaf control', 'SRR1;SRR2', 2, 'leaf', 'adult', 'control', "
+            "'leaf', 'MAPPED_WITH_TISSUE', 'median', 4.0, 3.0, 3.5, 4.0, "
+            "4.5, 5.0, true), "
             "('cluster_1', 'N0.HOG0001', 'Q9SA03', 'Q9SA03', "
             "'Arabidopsis_thaliana', 'AT1G31090', 'FB27', 'E-MTAB-2', 'TPM', "
-            "'root', 'adult', 'control', 'root', 2.0, 2.0, true)"
+            "'g2', 'root control', 'SRR3', 1, 'root', 'adult', 'control', "
+            "'root', 'MAPPED_WITH_TISSUE', 'median', 0.4, 0.1, 0.2, 0.4, "
+            "0.5, 0.7, false)"
         )
         connection.execute(
             "CREATE TABLE selected_pockets("
@@ -144,8 +154,8 @@ def master_parquet(resource_db: Path, tmp_path: Path) -> Path:
     path = tmp_path / "e3_candidate_master_results.parquet"
     with duckdb.connect(str(resource_db), read_only=True) as connection:
         connection.execute(
-            "COPY candidate_master_results TO ? (FORMAT PARQUET)",
-            [str(path)],
+            "COPY candidate_master_results TO "
+            f"{quote_literal(path)} (FORMAT PARQUET)"
         )
     return path
 

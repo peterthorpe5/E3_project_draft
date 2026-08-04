@@ -36,7 +36,6 @@ from e3workflow.tabular import (
     copy_query_to_parquet,
     parquet_columns,
     parquet_row_count,
-    quote_identifier,
     quote_literal,
     write_records,
 )
@@ -132,10 +131,12 @@ EXPRESSION_SUMMARY_FIELDS = (
     "gene_id",
     "gene_name",
     "experiment_count",
+    "selected_expression_units",
     "expression_unit_count",
-    "measurement_count",
-    "positive_measurement_count",
-    "positive_measurement_fraction",
+    "context_count",
+    "positive_context_count",
+    "positive_context_fraction",
+    "minimum_context_expression_value",
     "maximum_expression_value",
     "median_expression_value",
     "broad_expression_supported",
@@ -154,6 +155,9 @@ EXPRESSION_CONTEXT_FIELDS = (
     "experiment_accession",
     "expression_unit",
     "sample_or_condition",
+    "atlas_group_label",
+    "assay_ids",
+    "assay_count",
     "organism_part",
     "developmental_stage",
     "genotype",
@@ -161,13 +165,17 @@ EXPRESSION_CONTEXT_FIELDS = (
     "treatment",
     "condition",
     "expression_context",
-    "measurement_count",
-    "positive_measurement_count",
-    "positive_measurement_fraction",
-    "maximum_expression_value",
-    "median_expression_value",
-    "broad_expression_supported",
+    "metadata_status",
+    "expression_value_statistic",
+    "expression_value",
+    "expression_minimum",
+    "expression_lower_quartile",
+    "expression_median",
+    "expression_upper_quartile",
+    "expression_maximum",
+    "expression_positive",
 )
+EXPRESSION_CONTEXT_PREVIEW_LIMIT = 10_000
 
 
 def find_one(root: Path, name: str) -> Path:
@@ -1118,7 +1126,16 @@ def _create_empty_expression_view(
         "CAST(NULL AS VARCHAR) AS gene_name, "
         "CAST(NULL AS VARCHAR) AS sample_or_condition, "
         "CAST(NULL AS DOUBLE) AS expression_value, "
-        "CAST(NULL AS VARCHAR) AS expression_unit WHERE FALSE"
+        "CAST(NULL AS DOUBLE) AS expression_minimum, "
+        "CAST(NULL AS DOUBLE) AS expression_lower_quartile, "
+        "CAST(NULL AS DOUBLE) AS expression_median, "
+        "CAST(NULL AS DOUBLE) AS expression_upper_quartile, "
+        "CAST(NULL AS DOUBLE) AS expression_maximum, "
+        "CAST(NULL AS VARCHAR) AS expression_value_statistic, "
+        "CAST(NULL AS VARCHAR) AS expression_summary_type, "
+        "CAST(NULL AS VARCHAR) AS expression_unit, "
+        "CAST(NULL AS VARCHAR) AS source_file, "
+        "CAST(NULL AS VARCHAR) AS source_file_sha256 WHERE FALSE"
     )
 
 
@@ -1131,12 +1148,20 @@ def _create_empty_sample_metadata_view(
         "CAST(NULL AS VARCHAR) AS experiment_accession, "
         "CAST(NULL AS VARCHAR) AS species_column, "
         "CAST(NULL AS VARCHAR) AS sample_or_condition, "
+        "CAST(NULL AS VARCHAR) AS atlas_group_label, "
+        "CAST(NULL AS VARCHAR) AS assay_ids, "
+        "CAST(NULL AS INTEGER) AS assay_count, "
         "CAST(NULL AS VARCHAR) AS organism_part, "
         "CAST(NULL AS VARCHAR) AS developmental_stage, "
         "CAST(NULL AS VARCHAR) AS genotype, "
         "CAST(NULL AS VARCHAR) AS cultivar, "
         "CAST(NULL AS VARCHAR) AS treatment, "
-        "CAST(NULL AS VARCHAR) AS condition WHERE FALSE"
+        "CAST(NULL AS VARCHAR) AS condition, "
+        "CAST(NULL AS VARCHAR) AS source_file, "
+        "CAST(NULL AS VARCHAR) AS source_file_sha256, "
+        "CAST(NULL AS VARCHAR) AS configuration_file, "
+        "CAST(NULL AS VARCHAR) AS configuration_file_sha256, "
+        "CAST(NULL AS VARCHAR) AS expression_file_sha256 WHERE FALSE"
     )
 
 
@@ -1249,7 +1274,16 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "gene_name",
             "sample_or_condition",
             "expression_value",
+            "expression_minimum",
+            "expression_lower_quartile",
+            "expression_median",
+            "expression_upper_quartile",
+            "expression_maximum",
+            "expression_value_statistic",
+            "expression_summary_type",
             "expression_unit",
+            "source_file",
+            "source_file_sha256",
         }
         missing = sorted(required.difference(expression_columns))
         if missing:
@@ -1279,12 +1313,20 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "experiment_accession",
                 "species_column",
                 "sample_or_condition",
+                "atlas_group_label",
+                "assay_ids",
+                "assay_count",
                 "organism_part",
                 "developmental_stage",
                 "genotype",
                 "cultivar",
                 "treatment",
                 "condition",
+                "source_file",
+                "source_file_sha256",
+                "configuration_file",
+                "configuration_file_sha256",
+                "expression_file_sha256",
             }
             missing_metadata = sorted(required_metadata.difference(metadata_columns))
             if missing_metadata:
@@ -1297,6 +1339,125 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             )
         else:
             _create_empty_sample_metadata_view(connection=connection)
+        duplicate_metadata_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM (SELECT species_column, experiment_accession, "
+                "sample_or_condition, COUNT(*) AS row_count FROM atlas_sample_metadata "
+                "WHERE sample_or_condition <> '' GROUP BY ALL HAVING COUNT(*) <> 1)"
+            ).fetchone()[0]
+        )
+        if duplicate_metadata_count:
+            raise StageError(
+                "Expression metadata contains duplicate group keys: "
+                f"{duplicate_metadata_count} duplicated species/experiment/group keys"
+            )
+        invalid_unit_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM atlas_expression WHERE "
+                "upper(CAST(expression_unit AS VARCHAR)) NOT IN ('TPM', 'FPKM')"
+            ).fetchone()[0]
+        )
+        if invalid_unit_count:
+            raise StageError(
+                "Expression input contains unsupported units: "
+                f"{invalid_unit_count} rows are not TPM or FPKM"
+            )
+        invalid_expression_provenance_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM atlas_expression WHERE "
+                "COALESCE(CAST(source_file AS VARCHAR), '') = '' OR "
+                "NOT regexp_full_match(COALESCE(CAST(source_file_sha256 AS VARCHAR), ''), "
+                "'^[0-9a-f]{64}$')"
+            ).fetchone()[0]
+        )
+        if invalid_expression_provenance_count:
+            raise StageError(
+                "Expression input contains invalid raw-source provenance: "
+                f"{invalid_expression_provenance_count} rows"
+            )
+        conflicting_expression_hash_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM (SELECT source_file FROM atlas_expression "
+                "GROUP BY source_file HAVING COUNT(DISTINCT source_file_sha256) <> 1)"
+            ).fetchone()[0]
+        )
+        if conflicting_expression_hash_count:
+            raise StageError(
+                "Expression input maps one source file to conflicting checksums: "
+                f"{conflicting_expression_hash_count} files"
+            )
+        invalid_metadata_provenance_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM atlas_sample_metadata WHERE "
+                "COALESCE(CAST(source_file AS VARCHAR), '') = '' OR "
+                "NOT regexp_full_match(COALESCE(CAST(source_file_sha256 AS VARCHAR), ''), "
+                "'^[0-9a-f]{64}$') OR (COALESCE(CAST(configuration_file AS VARCHAR), '') "
+                "<> '' AND NOT regexp_full_match(COALESCE(CAST("
+                "configuration_file_sha256 AS VARCHAR), ''), '^[0-9a-f]{64}$')) OR "
+                "(regexp_full_match(CAST(sample_or_condition AS VARCHAR), '^g[1-9][0-9]*$') "
+                "AND NOT regexp_full_match(COALESCE(CAST(expression_file_sha256 AS "
+                "VARCHAR), ''), '^[0-9a-f]{64}$'))"
+            ).fetchone()[0]
+        )
+        if invalid_metadata_provenance_count:
+            raise StageError(
+                "Expression metadata contain invalid raw-source provenance: "
+                f"{invalid_metadata_provenance_count} rows"
+            )
+        connection.execute(
+            "CREATE TEMP TABLE expression_unit_selection AS SELECT "
+            "upper(CAST(species_column AS VARCHAR)) AS species_key, "
+            "CAST(experiment_accession AS VARCHAR) AS experiment_accession, "
+            "CASE WHEN bool_or(upper(CAST(expression_unit AS VARCHAR)) = 'TPM') "
+            "THEN 'TPM' WHEN bool_or(upper(CAST(expression_unit AS VARCHAR)) = 'FPKM') "
+            "THEN 'FPKM' ELSE NULL END AS selected_expression_unit "
+            "FROM atlas_expression GROUP BY ALL"
+        )
+        connection.execute(
+            "CREATE TEMP VIEW atlas_expression_preferred AS SELECT e.*, "
+            "s.selected_expression_unit, "
+            "s.selected_expression_unit = 'FPKM' AS used_fpkm_fallback "
+            "FROM atlas_expression e JOIN expression_unit_selection s ON "
+            "upper(CAST(e.species_column AS VARCHAR)) = s.species_key AND "
+            "CAST(e.experiment_accession AS VARCHAR) = s.experiment_accession "
+            "WHERE upper(CAST(e.expression_unit AS VARCHAR)) = "
+            "s.selected_expression_unit"
+        )
+        invalid_summary_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM atlas_expression_preferred WHERE "
+                "expression_value < 0 OR NOT isfinite(expression_value) OR "
+                "CASE WHEN expression_summary_type = 'atlas_five_number_summary' THEN ("
+                "expression_value_statistic <> 'median' OR expression_minimum IS NULL OR "
+                "expression_lower_quartile IS NULL OR expression_median IS NULL OR "
+                "expression_upper_quartile IS NULL OR expression_maximum IS NULL OR "
+                "expression_value <> expression_median OR NOT (expression_minimum <= "
+                "expression_lower_quartile AND expression_lower_quartile <= "
+                "expression_median AND expression_median <= expression_upper_quartile "
+                "AND expression_upper_quartile <= expression_maximum)) WHEN "
+                "expression_summary_type IN ('single_value', 'atlas_zero_code') THEN NOT ("
+                "expression_minimum IS NULL AND expression_lower_quartile IS NULL AND "
+                "expression_median IS NULL AND expression_upper_quartile IS NULL AND "
+                "expression_maximum IS NULL) ELSE TRUE END"
+            ).fetchone()[0]
+        )
+        if invalid_summary_count:
+            raise StageError(
+                "Expression input violates the Atlas summary-statistic contract: "
+                f"{invalid_summary_count} preferred rows are invalid"
+            )
+        duplicate_context_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM (SELECT species_column, experiment_accession, "
+                "gene_id, sample_or_condition, COUNT(*) AS row_count "
+                "FROM atlas_expression_preferred GROUP BY ALL HAVING COUNT(*) <> 1)"
+            ).fetchone()[0]
+        )
+        if duplicate_context_count:
+            raise StageError(
+                "Preferred expression input contains duplicate gene contexts: "
+                f"{duplicate_context_count} duplicated keys"
+            )
         connection.execute(
             "CREATE TEMP TABLE candidate_identifier_keys AS "
             "SELECT DISTINCT upper(species_column) AS species_key, "
@@ -1309,14 +1470,14 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "upper(CAST(e.species_column AS VARCHAR)) AS species_key, "
             "CAST(e.gene_id AS VARCHAR) AS gene_id, "
             "CAST(e.gene_name AS VARCHAR) AS gene_name "
-            "FROM atlas_expression e JOIN candidate_identifier_keys k "
+            "FROM atlas_expression_preferred e JOIN candidate_identifier_keys k "
             "ON upper(CAST(e.species_column AS VARCHAR)) = k.species_key "
             "AND upper(CAST(e.gene_id AS VARCHAR)) = k.identifier_key "
             "UNION ALL SELECT "
             "upper(CAST(e.species_column AS VARCHAR)) AS species_key, "
             "CAST(e.gene_id AS VARCHAR) AS gene_id, "
             "CAST(e.gene_name AS VARCHAR) AS gene_name "
-            "FROM atlas_expression e JOIN candidate_identifier_keys k "
+            "FROM atlas_expression_preferred e JOIN candidate_identifier_keys k "
             "ON upper(CAST(e.species_column AS VARCHAR)) = k.species_key "
             "AND upper(COALESCE(CAST(e.gene_name AS VARCHAR), '')) = k.identifier_key)"
         )
@@ -1379,51 +1540,56 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         )
         summary_query = (
             "WITH unique_mapping AS (SELECT cluster_id, primary_group_type, primary_group_id, "
-            "member_accession, member_identifier, species_column, "
-            "matched_gene_ids AS gene_id FROM candidate_mapping WHERE mapping_status = "
-            "'MAPPED_UNIQUE'), evidence AS (SELECT m.cluster_id, m.primary_group_type, "
-            "m.primary_group_id, m.member_accession, m.member_identifier, m.species_column, "
-            "m.gene_id, "
+            "member_accession, member_identifier, species_column, matched_gene_ids AS "
+            "gene_id FROM candidate_mapping WHERE mapping_status = 'MAPPED_UNIQUE'), "
+            "evidence AS (SELECT m.cluster_id, m.primary_group_type, m.primary_group_id, "
+            "m.member_accession, m.member_identifier, m.species_column, m.gene_id, "
             "max(CAST(e.gene_name AS VARCHAR)) AS gene_name, "
             "COUNT(DISTINCT e.experiment_accession) AS experiment_count, "
-            "COUNT(DISTINCT e.expression_unit) AS expression_unit_count, COUNT(*) AS "
-            "measurement_count, COUNT(*) FILTER (WHERE CAST(e.expression_value AS DOUBLE) > "
-            f"{config.analysis.expression.minimum_expression_value}) AS "
-            "positive_measurement_count, "
-            "COUNT(*) FILTER (WHERE CAST(e.expression_value AS DOUBLE) > "
-            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / NULLIF(COUNT(*), 0) "
-            "AS positive_measurement_fraction, max(CAST(e.expression_value AS DOUBLE)) AS "
-            "maximum_expression_value, median(CAST(e.expression_value AS DOUBLE)) AS "
-            "median_expression_value FROM unique_mapping m JOIN atlas_expression e "
-            "ON upper(CAST(e.species_column AS VARCHAR)) = upper(m.species_column) AND "
-            "upper(CAST(e.gene_id AS VARCHAR)) = upper(m.gene_id) GROUP BY m.cluster_id, "
-            "m.primary_group_type, m.primary_group_id, m.member_accession, m.species_column, "
-            "m.member_identifier, m.gene_id) SELECT m.cluster_id, m.primary_group_type, "
-            "m.primary_group_id, m.member_accession, m.member_identifier, m.species_column, "
-            "m.mapping_status, "
-            "COALESCE(e.gene_id, '') AS gene_id, COALESCE(e.gene_name, '') AS "
-            "gene_name, CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "string_agg(DISTINCT e.selected_expression_unit, ';' ORDER BY "
+            "e.selected_expression_unit) AS selected_expression_units, "
+            "COUNT(DISTINCT e.selected_expression_unit) AS expression_unit_count, "
+            "COUNT(*) AS context_count, COUNT(*) FILTER (WHERE e.expression_value >= "
+            f"{config.analysis.expression.minimum_expression_value}) AS positive_context_count, "
+            "COUNT(*) FILTER (WHERE e.expression_value >= "
+            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / "
+            "NULLIF(COUNT(*), 0) AS positive_context_fraction, "
+            "CASE WHEN COUNT(DISTINCT e.selected_expression_unit) = 1 THEN "
+            "min(e.expression_value) ELSE NULL END AS minimum_context_expression_value, "
+            "CASE WHEN COUNT(DISTINCT e.selected_expression_unit) = 1 THEN "
+            "max(e.expression_value) ELSE NULL END AS maximum_expression_value, "
+            "CASE WHEN COUNT(DISTINCT e.selected_expression_unit) = 1 THEN "
+            "median(e.expression_value) ELSE NULL END AS median_expression_value "
+            "FROM unique_mapping m JOIN atlas_expression_preferred e ON "
+            "upper(CAST(e.species_column AS VARCHAR)) = upper(m.species_column) AND "
+            "upper(CAST(e.gene_id AS VARCHAR)) = upper(m.gene_id) GROUP BY "
+            "m.cluster_id, m.primary_group_type, m.primary_group_id, m.member_accession, "
+            "m.member_identifier, m.species_column, m.gene_id) SELECT m.cluster_id, "
+            "m.primary_group_type, m.primary_group_id, m.member_accession, "
+            "m.member_identifier, m.species_column, m.mapping_status, "
+            "COALESCE(e.gene_id, '') AS gene_id, COALESCE(e.gene_name, '') AS gene_name, "
+            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
             "COALESCE(e.experiment_count, 0) ELSE NULL END AS experiment_count, "
             "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
+            "COALESCE(e.selected_expression_units, '') ELSE NULL END AS "
+            "selected_expression_units, CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
             "COALESCE(e.expression_unit_count, 0) ELSE NULL END AS expression_unit_count, "
-            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
-            "COALESCE(e.measurement_count, 0) ELSE NULL END AS measurement_count, "
-            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN "
-            "COALESCE(e.positive_measurement_count, 0) ELSE NULL END AS "
-            "positive_measurement_count, CASE WHEN e.measurement_count IS NOT NULL THEN "
-            "e.positive_measurement_fraction ELSE NULL END AS positive_measurement_fraction, "
-            "e.maximum_expression_value, e.median_expression_value, CASE WHEN "
-            "m.mapping_status <> 'MAPPED_UNIQUE' OR e.measurement_count IS NULL THEN NULL WHEN "
-            "e.positive_measurement_fraction >= "
-            f"{config.analysis.expression.broad_positive_fraction} THEN true ELSE false END AS "
-            "broad_expression_supported, CASE WHEN m.mapping_status <> 'MAPPED_UNIQUE' THEN "
-            "m.mapping_status WHEN e.measurement_count IS NULL THEN 'NO_EXPRESSION_RECORDS' "
-            "WHEN COALESCE(e.positive_measurement_fraction, 0.0) >= "
+            "CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' THEN COALESCE(e.context_count, 0) "
+            "ELSE NULL END AS context_count, CASE WHEN m.mapping_status = 'MAPPED_UNIQUE' "
+            "THEN COALESCE(e.positive_context_count, 0) ELSE NULL END AS "
+            "positive_context_count, e.positive_context_fraction, "
+            "e.minimum_context_expression_value, e.maximum_expression_value, "
+            "e.median_expression_value, CASE WHEN m.mapping_status <> 'MAPPED_UNIQUE' OR "
+            "e.context_count IS NULL THEN NULL WHEN e.positive_context_fraction >= "
+            f"{config.analysis.expression.broad_positive_fraction} THEN true ELSE false END "
+            "AS broad_expression_supported, CASE WHEN m.mapping_status <> 'MAPPED_UNIQUE' "
+            "THEN m.mapping_status WHEN e.context_count IS NULL THEN "
+            "'NO_EXPRESSION_RECORDS' WHEN e.positive_context_fraction >= "
             f"{config.analysis.expression.broad_positive_fraction} THEN "
-            "'BROAD_EXPRESSION_SUPPORTED' "
-            "ELSE 'LIMITED_OR_ZERO_EXPRESSION' END AS evidence_status FROM candidate_mapping m "
-            "LEFT JOIN evidence e USING (cluster_id, primary_group_type, primary_group_id, "
-            "member_accession, member_identifier, species_column)"
+            "'BROAD_EXPRESSION_SUPPORTED' ELSE 'LIMITED_OR_ZERO_EXPRESSION' END AS "
+            "evidence_status FROM candidate_mapping m LEFT JOIN evidence e USING "
+            "(cluster_id, primary_group_type, primary_group_id, member_accession, "
+            "member_identifier, species_column)"
         )
         connection.execute(
             f"CREATE TEMP TABLE candidate_expression_summary AS {summary_query}"
@@ -1436,8 +1602,11 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "m.primary_group_id, m.member_accession, m.member_identifier, m.species_column, "
             "m.gene_id, CAST(e.gene_name AS VARCHAR) AS gene_name, "
             "CAST(e.experiment_accession AS VARCHAR) AS experiment_accession, "
-            "CAST(e.expression_unit AS VARCHAR) AS expression_unit, "
+            "CAST(e.selected_expression_unit AS VARCHAR) AS expression_unit, "
             "CAST(e.sample_or_condition AS VARCHAR) AS sample_or_condition, "
+            "COALESCE(CAST(meta.atlas_group_label AS VARCHAR), '') AS atlas_group_label, "
+            "COALESCE(CAST(meta.assay_ids AS VARCHAR), '') AS assay_ids, "
+            "COALESCE(CAST(meta.assay_count AS INTEGER), 0) AS assay_count, "
             "COALESCE(CAST(meta.organism_part AS VARCHAR), '') AS organism_part, "
             "COALESCE(CAST(meta.developmental_stage AS VARCHAR), '') AS "
             "developmental_stage, COALESCE(CAST(meta.genotype AS VARCHAR), '') AS genotype, "
@@ -1446,32 +1615,31 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "COALESCE(CAST(meta.condition AS VARCHAR), '') AS condition, "
             "COALESCE(NULLIF(CAST(meta.organism_part AS VARCHAR), ''), "
             "NULLIF(CAST(meta.condition AS VARCHAR), ''), "
+            "NULLIF(CAST(meta.atlas_group_label AS VARCHAR), ''), "
             "CAST(e.sample_or_condition AS VARCHAR), 'UNSPECIFIED') AS expression_context, "
-            "CAST(e.expression_value AS DOUBLE) AS expression_value FROM unique_mapping m "
-            "JOIN atlas_expression e ON upper(CAST(e.species_column AS VARCHAR)) = "
+            "CASE WHEN meta.sample_or_condition IS NULL THEN 'METADATA_NOT_MAPPED' "
+            "WHEN COALESCE(CAST(meta.organism_part AS VARCHAR), '') = '' THEN "
+            "'MAPPED_WITHOUT_TISSUE' ELSE 'MAPPED_WITH_TISSUE' END AS metadata_status, "
+            "CAST(e.expression_value_statistic AS VARCHAR) AS expression_value_statistic, "
+            "CAST(e.expression_value AS DOUBLE) AS expression_value, "
+            "CAST(e.expression_minimum AS DOUBLE) AS expression_minimum, "
+            "CAST(e.expression_lower_quartile AS DOUBLE) AS expression_lower_quartile, "
+            "CAST(e.expression_median AS DOUBLE) AS expression_median, "
+            "CAST(e.expression_upper_quartile AS DOUBLE) AS expression_upper_quartile, "
+            "CAST(e.expression_maximum AS DOUBLE) AS expression_maximum, "
+            "CAST(e.expression_value AS DOUBLE) >= "
+            f"{config.analysis.expression.minimum_expression_value} AS expression_positive "
+            "FROM unique_mapping m JOIN atlas_expression_preferred e ON "
+            "upper(CAST(e.species_column AS VARCHAR)) = "
             "upper(m.species_column) AND upper(CAST(e.gene_id AS VARCHAR)) = "
             "upper(m.gene_id) LEFT JOIN atlas_sample_metadata meta ON "
             "upper(CAST(meta.species_column AS VARCHAR)) = upper(m.species_column) AND "
             "CAST(meta.experiment_accession AS VARCHAR) = "
             "CAST(e.experiment_accession AS VARCHAR) AND "
             "CAST(meta.sample_or_condition AS VARCHAR) = "
-            "CAST(e.sample_or_condition AS VARCHAR)) SELECT cluster_id, primary_group_type, "
-            "primary_group_id, member_accession, member_identifier, species_column, gene_id, "
-            "max(gene_name) AS gene_name, experiment_accession, expression_unit, "
-            "sample_or_condition, organism_part, developmental_stage, genotype, cultivar, "
-            "treatment, condition, expression_context, COUNT(*) AS measurement_count, "
-            "COUNT(*) FILTER (WHERE expression_value > "
-            f"{config.analysis.expression.minimum_expression_value}) AS "
-            "positive_measurement_count, COUNT(*) FILTER (WHERE expression_value > "
-            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / "
-            "NULLIF(COUNT(*), 0) AS positive_measurement_fraction, "
-            "max(expression_value) AS maximum_expression_value, "
-            "median(expression_value) AS median_expression_value, CASE WHEN "
-            "COUNT(*) FILTER (WHERE expression_value > "
-            f"{config.analysis.expression.minimum_expression_value})::DOUBLE / "
-            "NULLIF(COUNT(*), 0) >= "
-            f"{config.analysis.expression.broad_positive_fraction} THEN true ELSE false END "
-            "AS broad_expression_supported FROM joined GROUP BY ALL"
+            "CAST(e.sample_or_condition AS VARCHAR) AND "
+            "CAST(meta.expression_file_sha256 AS VARCHAR) = "
+            "CAST(e.source_file_sha256 AS VARCHAR)) SELECT * FROM joined"
         )
         connection.execute(
             f"CREATE TEMP TABLE candidate_expression_context_summary AS {context_query}"
@@ -1499,9 +1667,39 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         context_rows = connection.execute(
             "SELECT * FROM candidate_expression_context_summary ORDER BY "
             "cluster_id, species_column, member_accession, experiment_accession, "
-            "expression_context"
+            f"expression_context LIMIT {EXPRESSION_CONTEXT_PREVIEW_LIMIT}"
         ).fetchall()
         context_columns = [str(item[0]) for item in connection.description]
+        context_total_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM candidate_expression_context_summary"
+            ).fetchone()[0]
+        )
+        organism_part_count = int(
+            connection.execute(
+                "SELECT COUNT(DISTINCT organism_part) FROM "
+                "candidate_expression_context_summary WHERE organism_part <> ''"
+            ).fetchone()[0]
+        )
+        mapped_tissue_context_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM candidate_expression_context_summary WHERE "
+                "metadata_status = 'MAPPED_WITH_TISSUE'"
+            ).fetchone()[0]
+        )
+        metadata_unmapped_context_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM candidate_expression_context_summary WHERE "
+                "metadata_status = 'METADATA_NOT_MAPPED'"
+            ).fetchone()[0]
+        )
+        selected_experiment_count, fpkm_fallback_experiment_count = (
+            int(value)
+            for value in connection.execute(
+                "SELECT COUNT(*), COUNT(*) FILTER (WHERE selected_expression_unit = "
+                "'FPKM') FROM expression_unit_selection"
+            ).fetchone()
+        )
     except duckdb.Error as exc:
         raise StageError(f"Expression mapping failed: {exc}") from exc
     finally:
@@ -1518,7 +1716,7 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         EXPRESSION_SUMMARY_FIELDS,
     )
     write_tsv(
-        tables / "candidate_expression_context_summary.tsv",
+        tables / "candidate_expression_context_summary.preview.tsv",
         (dict(zip(context_columns, row)) for row in context_rows),
         EXPRESSION_CONTEXT_FIELDS,
     )
@@ -1544,15 +1742,18 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                     row[mapping_columns.index("mapping_status")] == "NOT_MAPPED"
                     for row in mapping_rows
                 ),
-                "candidate_expression_context_count": len(context_rows),
-                "organism_part_count": len(
-                    {
-                        str(row[context_columns.index("organism_part")]).strip()
-                        for row in context_rows
-                        if str(
-                            row[context_columns.index("organism_part")]
-                        ).strip()
-                    }
+                "candidate_expression_context_count": context_total_count,
+                "candidate_expression_context_preview_count": len(context_rows),
+                "mapped_tissue_context_count": mapped_tissue_context_count,
+                "metadata_unmapped_context_count": metadata_unmapped_context_count,
+                "organism_part_count": organism_part_count,
+                "selected_experiment_count": selected_experiment_count,
+                "fpkm_fallback_experiment_count": fpkm_fallback_experiment_count,
+                "minimum_median_expression_value": (
+                    config.analysis.expression.minimum_expression_value
+                ),
+                "minimum_positive_context_fraction": (
+                    config.analysis.expression.broad_positive_fraction
                 ),
                 "expression_species_count": len(
                     {
@@ -1585,8 +1786,9 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                     "selected group-member species"
                 ),
                 "interpretation": (
-                    "expression is transcript evidence; values from different units or "
-                    "experiments are not treated as directly comparable abundance measurements"
+                    "Atlas five-number summaries are represented by their median expression "
+                    "level; TPM is selected per experiment with FPKM only as a recorded "
+                    "fallback; contexts are counted once and tissue absence remains unavailable"
                 ),
             }
         ],
@@ -1599,7 +1801,14 @@ def run_expression_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "broad_expression_supported_count",
             "not_mapped_member_count",
             "candidate_expression_context_count",
+            "candidate_expression_context_preview_count",
+            "mapped_tissue_context_count",
+            "metadata_unmapped_context_count",
             "organism_part_count",
+            "selected_experiment_count",
+            "fpkm_fallback_experiment_count",
+            "minimum_median_expression_value",
+            "minimum_positive_context_fraction",
             "expression_species_count",
             "target_member_species_count",
             "expression_manifest_file_count",

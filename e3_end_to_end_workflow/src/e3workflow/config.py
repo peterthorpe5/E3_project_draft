@@ -913,7 +913,7 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
         ),
         expression=ExpressionAnalysisConfig(
             minimum_expression_value=_number(
-                expression.get("minimum_expression_value", 0.0),
+                expression.get("minimum_expression_value", 0.5),
                 "analysis.expression.minimum_expression_value",
                 minimum=0.0,
             ),

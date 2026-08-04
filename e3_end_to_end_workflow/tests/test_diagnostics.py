@@ -58,7 +58,7 @@ def test_source_version_rejects_invalid_or_empty_metadata(tmp_path: Path) -> Non
     module_root = source_root / "src" / "e3workflow"
     module_root.mkdir(parents=True)
     (module_root / "__init__.py").write_text(
-        '__version__ = "0.12.0"\n',
+        '__version__ = "0.13.0"\n',
         encoding="utf-8",
     )
     pyproject = source_root / "pyproject.toml"

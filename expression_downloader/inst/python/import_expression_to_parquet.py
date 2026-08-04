@@ -16,11 +16,12 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import hashlib
+import math
 import os
 import re
-import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
@@ -43,13 +44,26 @@ def require_pyarrow() -> None:
             "  conda install -c conda-forge pyarrow"
         )
 
+
 TRUE_VALUES = {"true", "t", "yes", "y", "1"}
 FALSE_VALUES = {"false", "f", "no", "n", "0", ""}
 EXPRESSION_TYPES = {"tpms": "TPM", "fpkms": "FPKM"}
-NULL_VALUES = {"", "na", "n/a", "nan", "null", "none", "-"}
+NULL_VALUES = {"", "na", "n/a", "nan", "null", "none", "nt"}
+EXPRESSION_SCHEMA_VERSION = "3.1"
+SCHEMA_VERSION_METADATA_KEY = b"e3_expression_schema_version"
+SOURCE_SHA256_METADATA_KEY = b"e3_expression_source_sha256"
+FIVE_NUMBER_STATISTICS = (
+    "minimum",
+    "lower_quartile",
+    "median",
+    "upper_quartile",
+    "maximum",
+)
 
 GENE_ID_PATTERN = re.compile(r"gene.*id|ensembl|identifier|^id$", re.I)
 GENE_NAME_PATTERN = re.compile(r"gene.*name|gene.*symbol|symbol|^name$", re.I)
+ATLAS_GROUP_PATTERN = re.compile(r"^g([1-9][0-9]*)$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -63,6 +77,7 @@ class MatrixJob:
     expression_unit: str
     file_type: str
     source_database: str = "ExpressionAtlas"
+    source_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -90,6 +105,19 @@ class ImportResult:
     input_rows: int
     expression_columns: int
     message: str
+
+
+@dataclass(frozen=True)
+class ExpressionSummary:
+    """One Atlas expression level with optional five-number statistics."""
+
+    expression_value: float
+    minimum: Optional[float]
+    lower_quartile: Optional[float]
+    median: Optional[float]
+    upper_quartile: Optional[float]
+    maximum: Optional[float]
+    summary_type: str
 
 
 def parse_bool(value: object, default: bool = False) -> bool:
@@ -212,13 +240,25 @@ def detect_column_layout(expression_tsv: Path) -> ColumnLayout:
         except StopIteration as error:
             raise ValueError(f"Expression matrix has no header: {expression_tsv}") from error
 
-    header = make_unique(raw_header)
+    header = [normalise_header_name(value) for value in raw_header]
+    if any(name == "" for name in header):
+        raise ValueError(f"Expression matrix contains an empty header field: {expression_tsv}")
+    duplicate_headers = sorted({name for name in header if header.count(name) > 1})
+    if duplicate_headers:
+        raise ValueError(
+            "Expression matrix contains duplicate header fields: "
+            f"{duplicate_headers!r} in {expression_tsv}"
+        )
 
-    gene_id_index = 0
-    for index, name in enumerate(header):
-        if GENE_ID_PATTERN.search(name):
-            gene_id_index = index
-            break
+    gene_id_candidates = [
+        index for index, name in enumerate(header) if GENE_ID_PATTERN.search(name)
+    ]
+    if len(gene_id_candidates) != 1:
+        raise ValueError(
+            "Expression matrix must contain exactly one recognised gene-ID "
+            f"column; found {len(gene_id_candidates)} in {expression_tsv}"
+        )
+    gene_id_index = gene_id_candidates[0]
 
     gene_name_index: Optional[int] = None
     for index, name in enumerate(header):
@@ -232,9 +272,14 @@ def detect_column_layout(expression_tsv: Path) -> ColumnLayout:
     if gene_name_index is not None:
         metadata_indices.add(gene_name_index)
 
-    expression_indices = [
-        index for index in range(len(header)) if index not in metadata_indices
-    ]
+    expression_indices = [index for index in range(len(header)) if index not in metadata_indices]
+    expression_labels = [header[index] for index in expression_indices]
+    expected_labels = [f"g{index}" for index in range(1, len(expression_labels) + 1)]
+    if expression_labels != expected_labels:
+        raise ValueError(
+            "Expression Atlas baseline columns must be the ordered group labels "
+            f"g1..gN; found {expression_labels!r} in {expression_tsv}"
+        )
 
     return ColumnLayout(
         header=header,
@@ -281,18 +326,89 @@ def parse_float(value: str) -> Optional[float]:
         Parsed float, or ``None`` when the value is blank or non-numeric.
     """
 
-    clean_value = value.strip().replace(",", "")
+    clean_value = value.strip()
 
     if clean_value.lower() in NULL_VALUES:
         return None
 
     try:
-        return float(clean_value)
+        parsed = float(clean_value)
     except ValueError:
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
-def build_schema() -> pa.Schema:
+def parse_expression_summary(value: str) -> Optional[ExpressionSummary]:
+    """Parse one Atlas baseline-expression cell.
+
+    Atlas serialises a five-number summary as
+    ``minimum,lower-quartile,median,upper-quartile,maximum`` and uses the
+    median as the expression level. A single numeric value is also accepted.
+
+    Args:
+        value: Raw matrix cell.
+
+    Returns:
+        Parsed summary, or ``None`` for an unavailable value.
+
+    Raises:
+        ValueError: If the cell is malformed, non-finite, negative or its
+            five-number statistics are not monotonically ordered.
+    """
+    clean_value = value.strip()
+    if clean_value.lower() in NULL_VALUES:
+        return None
+    if clean_value == "-":
+        return ExpressionSummary(0.0, None, None, None, None, None, "atlas_zero_code")
+
+    tokens = clean_value.split(",")
+    if len(tokens) not in {1, 5}:
+        raise ValueError(
+            "Expression cell must contain one value or the five Atlas "
+            f"summary statistics; found {len(tokens)} in {value!r}"
+        )
+
+    parsed_values: list[float] = []
+    for token in tokens:
+        clean_token = token.strip()
+        parsed = parse_float(clean_token)
+        if parsed is None:
+            raise ValueError(
+                f"Expression statistic is not a finite number: {clean_token!r} in cell {value!r}"
+            )
+        if parsed < 0.0:
+            raise ValueError(f"Expression statistic is negative: {clean_token!r} in cell {value!r}")
+        parsed_values.append(parsed)
+
+    if len(parsed_values) == 1:
+        return ExpressionSummary(
+            parsed_values[0],
+            None,
+            None,
+            None,
+            None,
+            None,
+            "single_value",
+        )
+
+    if parsed_values != sorted(parsed_values):
+        labelled = dict(zip(FIVE_NUMBER_STATISTICS, parsed_values))
+        raise ValueError(
+            f"Atlas five-number expression summary is not monotonically ordered: {labelled!r}"
+        )
+    minimum, lower, median, upper, maximum = parsed_values
+    return ExpressionSummary(
+        median,
+        minimum,
+        lower,
+        median,
+        upper,
+        maximum,
+        "atlas_five_number_summary",
+    )
+
+
+def build_schema(source_sha256: str = "") -> pa.Schema:
     """Build the long-expression Parquet schema.
 
     Returns
@@ -310,9 +426,23 @@ def build_schema() -> pa.Schema:
             pa.field("gene_name", pa.string()),
             pa.field("sample_or_condition", pa.string()),
             pa.field("expression_value", pa.float64()),
+            pa.field("expression_minimum", pa.float64()),
+            pa.field("expression_lower_quartile", pa.float64()),
+            pa.field("expression_median", pa.float64()),
+            pa.field("expression_upper_quartile", pa.float64()),
+            pa.field("expression_maximum", pa.float64()),
+            pa.field("expression_value_statistic", pa.string()),
+            pa.field("expression_summary_type", pa.string()),
             pa.field("expression_unit", pa.string()),
             pa.field("source_file", pa.string()),
-        ]
+            pa.field("source_file_sha256", pa.string()),
+        ],
+        metadata={
+            SCHEMA_VERSION_METADATA_KEY: EXPRESSION_SCHEMA_VERSION.encode("ascii"),
+            **(
+                {SOURCE_SHA256_METADATA_KEY: source_sha256.encode("ascii")} if source_sha256 else {}
+            ),
+        },
     )
 
 
@@ -364,6 +494,95 @@ def parquet_row_count(path: Path) -> int:
         return 0
 
 
+def parquet_has_current_schema(path: Path, source_sha256: str = "") -> bool:
+    """Return whether a Parquet file has the current expression schema.
+
+    Args:
+        path: Parquet file to inspect.
+
+    Returns:
+        ``True`` only when all required fields and the exact schema-version
+        marker are present.
+    """
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+
+    try:
+        schema = pq.ParquetFile(path).schema_arrow
+    except Exception:  # noqa: BLE001 - invalid Parquet must not be reused
+        return False
+
+    required_fields = set(build_schema().names)
+    metadata = schema.metadata or {}
+    schema_matches = required_fields.issubset(schema.names) and metadata.get(
+        SCHEMA_VERSION_METADATA_KEY
+    ) == EXPRESSION_SCHEMA_VERSION.encode("ascii")
+    if not schema_matches:
+        return False
+    return not source_sha256 or (
+        metadata.get(SOURCE_SHA256_METADATA_KEY) == source_sha256.encode("ascii")
+    )
+
+
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Return the lowercase SHA-256 digest of one file.
+
+    Args:
+        path: Existing regular file.
+        chunk_size: Bytes read per update.
+
+    Returns:
+        Lowercase hexadecimal SHA-256 digest.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def resolve_source_sha256(job: MatrixJob) -> str:
+    """Calculate and validate the immutable raw-matrix digest for a job.
+
+    Args:
+        job: Matrix import job, optionally carrying a manifest digest.
+
+    Returns:
+        Verified lowercase SHA-256 digest.
+
+    Raises:
+        ValueError: If the manifest digest is malformed or differs from the file.
+    """
+    expected = job.source_sha256.strip().lower()
+    if expected and not SHA256_PATTERN.fullmatch(expected):
+        raise ValueError(f"Malformed source SHA-256 for {job.expression_tsv}: {expected!r}")
+    observed = sha256_file(job.expression_tsv)
+    if expected and observed != expected:
+        raise ValueError(
+            f"Source SHA-256 mismatch for {job.expression_tsv}: "
+            f"manifest={expected}, observed={observed}"
+        )
+    return observed
+
+
+def make_closed_temp_path(parent_dir: Path, suffix: str) -> Path:
+    """Create a temporary path and close its file descriptor immediately.
+
+    Args:
+        parent_dir: Directory in which to create the temporary file.
+        suffix: Filename suffix for the temporary file.
+
+    Returns:
+        Path to the closed temporary file.
+    """
+    file_descriptor, temporary_name = tempfile.mkstemp(
+        suffix=suffix,
+        dir=str(parent_dir),
+    )
+    os.close(file_descriptor)
+    return Path(temporary_name)
+
+
 def iter_matrix_records(
     job: MatrixJob,
     layout: ColumnLayout,
@@ -383,6 +602,8 @@ def iter_matrix_records(
         Long record and the current input row number.
     """
 
+    source_sha256 = job.source_sha256 or resolve_source_sha256(job)
+    seen_gene_ids: set[str] = set()
     with open_text(job.expression_tsv) as handle:
         reader = csv.reader(handle, delimiter="\t")
         next(reader, None)
@@ -391,17 +612,37 @@ def iter_matrix_records(
             if not row:
                 continue
 
+            if len(row) != len(layout.header):
+                raise ValueError(
+                    f"Expression data row {input_row_number} has {len(row)} "
+                    f"fields; expected {len(layout.header)}"
+                )
+
             gene_id = safe_get(row=row, index=layout.gene_id_index)
             gene_name = safe_get(row=row, index=layout.gene_name_index)
 
             if gene_id == "":
-                continue
+                raise ValueError(
+                    f"Expression data row {input_row_number} has a blank gene identifier"
+                )
+            gene_key = gene_id.upper()
+            if gene_key in seen_gene_ids:
+                raise ValueError(
+                    f"Expression data row {input_row_number} duplicates gene identifier {gene_id!r}"
+                )
+            seen_gene_ids.add(gene_key)
 
             for index in layout.expression_indices:
                 sample_or_condition = layout.header[index]
-                value = parse_float(safe_get(row=row, index=index))
-
-                if value is None:
+                raw_value = safe_get(row=row, index=index)
+                try:
+                    summary = parse_expression_summary(raw_value)
+                except ValueError as error:
+                    raise ValueError(
+                        f"Invalid expression cell at data row {input_row_number}, "
+                        f"column {sample_or_condition!r}: {error}"
+                    ) from error
+                if summary is None:
                     continue
 
                 yield (
@@ -412,9 +653,21 @@ def iter_matrix_records(
                         "gene_id": gene_id,
                         "gene_name": gene_name,
                         "sample_or_condition": sample_or_condition,
-                        "expression_value": value,
+                        "expression_value": summary.expression_value,
+                        "expression_minimum": summary.minimum,
+                        "expression_lower_quartile": summary.lower_quartile,
+                        "expression_median": summary.median,
+                        "expression_upper_quartile": summary.upper_quartile,
+                        "expression_maximum": summary.maximum,
+                        "expression_value_statistic": (
+                            "median"
+                            if summary.summary_type == "atlas_five_number_summary"
+                            else summary.summary_type
+                        ),
+                        "expression_summary_type": summary.summary_type,
                         "expression_unit": job.expression_unit,
                         "source_file": str(job.expression_tsv),
+                        "source_file_sha256": source_sha256,
                     },
                     input_row_number,
                 )
@@ -457,8 +710,30 @@ def normalise_matrix_to_parquet(
             message="input matrix missing or empty",
         )
 
+    try:
+        source_sha256 = resolve_source_sha256(job)
+    except ValueError as error:
+        return ImportResult(
+            expression_tsv=job.expression_tsv,
+            output_parquet=job.output_parquet,
+            experiment_accession=job.experiment_accession,
+            species_column=job.species_column,
+            expression_unit=job.expression_unit,
+            action="source_validation_failed",
+            success=False,
+            imported_rows=0,
+            input_rows=0,
+            expression_columns=0,
+            message=str(error),
+        )
+    job = replace(job, source_sha256=source_sha256)
+
     existing_rows = parquet_row_count(path=job.output_parquet)
-    if not force and existing_rows > 0:
+    if (
+        not force
+        and existing_rows > 0
+        and parquet_has_current_schema(job.output_parquet, source_sha256)
+    ):
         layout = detect_column_layout(expression_tsv=job.expression_tsv)
         return ImportResult(
             expression_tsv=job.expression_tsv,
@@ -471,7 +746,10 @@ def normalise_matrix_to_parquet(
             imported_rows=existing_rows,
             input_rows=0,
             expression_columns=len(layout.expression_indices),
-            message="existing Parquet contained rows",
+            message=(
+                "existing Parquet contained rows and matched expression "
+                f"schema {EXPRESSION_SCHEMA_VERSION}"
+            ),
         )
 
     layout = detect_column_layout(expression_tsv=job.expression_tsv)
@@ -492,13 +770,11 @@ def normalise_matrix_to_parquet(
         )
 
     job.output_parquet.parent.mkdir(parents=True, exist_ok=True)
-    schema = build_schema()
+    schema = build_schema(source_sha256)
 
-    temporary_path = Path(
-        tempfile.mkstemp(
-            suffix=".parquet.partial",
-            dir=str(job.output_parquet.parent),
-        )[1]
+    temporary_path = make_closed_temp_path(
+        parent_dir=job.output_parquet.parent,
+        suffix=".parquet.partial",
     )
 
     writer: Optional[pq.ParquetWriter] = None
@@ -625,7 +901,7 @@ def build_jobs(
     """
 
     rows = read_downloaded_manifest(path=downloaded_files_tsv)
-    jobs: list[MatrixJob] = []
+    jobs_by_output: dict[Path, MatrixJob] = {}
 
     for row in rows:
         file_type = (row.get("file_type") or "").strip()
@@ -637,10 +913,12 @@ def build_jobs(
         species_column = (row.get("species_column") or "").strip()
         experiment_accession = (row.get("experiment_accession") or "").strip()
         source_database = (row.get("source_database") or "ExpressionAtlas").strip()
-        local_path = Path((row.get("local_path") or "").strip())
+        source_sha256 = (row.get("sha256") or "").strip().lower()
+        local_path_text = (row.get("local_path") or "").strip()
 
-        if not species_column or not experiment_accession or not str(local_path):
+        if not species_column or not experiment_accession or not local_path_text:
             continue
+        local_path = Path(local_path_text)
 
         output_parquet = (
             output_dir
@@ -651,19 +929,25 @@ def build_jobs(
             / f"{file_type}.parquet"
         )
 
-        jobs.append(
-            MatrixJob(
-                expression_tsv=local_path,
-                output_parquet=output_parquet,
-                experiment_accession=experiment_accession,
-                species_column=species_column,
-                expression_unit=EXPRESSION_TYPES[file_type],
-                file_type=file_type,
-                source_database=source_database,
-            )
+        job = MatrixJob(
+            expression_tsv=local_path,
+            output_parquet=output_parquet,
+            experiment_accession=experiment_accession,
+            species_column=species_column,
+            expression_unit=EXPRESSION_TYPES[file_type],
+            file_type=file_type,
+            source_database=source_database,
+            source_sha256=source_sha256,
         )
+        existing_job = jobs_by_output.get(output_parquet)
+        if existing_job is not None and existing_job != job:
+            raise ValueError(
+                "Downloaded-files manifest assigns conflicting inputs to "
+                f"{output_parquet}: {existing_job.expression_tsv} and {local_path}"
+            )
+        jobs_by_output[output_parquet] = job
 
-    return jobs
+    return [jobs_by_output[path] for path in sorted(jobs_by_output)]
 
 
 def write_summary(path: Path, results: list[ImportResult]) -> None:
@@ -792,7 +1076,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"Successful matrix imports: {successful}/{total_jobs}", flush=True)
     print(f"Total long expression rows: {imported_rows}", flush=True)
 
-    if total_jobs > 0 and successful == 0:
+    if total_jobs == 0 or successful != total_jobs:
         return 1
 
     return 0

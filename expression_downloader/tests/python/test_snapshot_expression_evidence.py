@@ -11,12 +11,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 SCRIPT_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "inst"
-    / "python"
-    / "snapshot_expression_evidence.py"
+    Path(__file__).resolve().parents[2] / "inst" / "python" / "snapshot_expression_evidence.py"
 )
 SPEC = importlib.util.spec_from_file_location(
     "snapshot_expression_evidence",
@@ -42,12 +38,7 @@ class SnapshotFixture:
         self.expression_root = root / "expression"
         self.workflow_root = root / "workflow"
         manifests = self.expression_root / "manifests"
-        downloads = (
-            self.expression_root
-            / "downloads"
-            / "Zea_mays"
-            / "E-MTAB-5915"
-        )
+        downloads = self.expression_root / "downloads" / "Zea_mays" / "E-MTAB-5915"
         stage_tables = self.workflow_root / "07_expression" / "tables"
         stage_qc = self.workflow_root / "07_expression" / "qc"
         plan = self.workflow_root / "00_plan"
@@ -97,9 +88,7 @@ class TestExpressionEvidenceSnapshot(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "Expected true or false"):
             MODULE.parse_boolean("perhaps")
         self.assertTrue(MODULE.is_expression_matrix(Path("E-X-tpms.tsv.gz")))
-        self.assertFalse(
-            MODULE.is_expression_matrix(Path("E-X-tpms-markers.tsv"))
-        )
+        self.assertFalse(MODULE.is_expression_matrix(Path("E-X-tpms-markers.tsv")))
 
     def test_matrix_preview_is_bounded(self) -> None:
         """Preview should retain a header and only the requested data rows."""
@@ -165,21 +154,11 @@ class TestExpressionEvidenceSnapshot(unittest.TestCase):
             self.assertTrue(archive_path.is_file())
             with tarfile.open(archive_path, "r:gz") as archive:
                 names = set(archive.getnames())
-                manifest_name = (
-                    "expression_evidence_snapshot/provenance/"
-                    "snapshot_manifest.tsv"
-                )
+                manifest_name = "expression_evidence_snapshot/provenance/snapshot_manifest.tsv"
                 self.assertIn(manifest_name, names)
                 self.assertIn("expression_evidence_snapshot/README.txt", names)
-                self.assertTrue(
-                    any("matrix_previews" in name for name in names)
-                )
-                self.assertTrue(
-                    any(
-                        "candidate_expression_summary.tsv" in name
-                        for name in names
-                    )
-                )
+                self.assertTrue(any("matrix_previews" in name for name in names))
+                self.assertTrue(any("candidate_expression_summary.tsv" in name for name in names))
                 handle = archive.extractfile(manifest_name)
                 assert handle is not None
                 manifest_text = handle.read().decode("utf-8")
@@ -189,9 +168,7 @@ class TestExpressionEvidenceSnapshot(unittest.TestCase):
                         delimiter="\t",
                     )
                 )
-                self.assertTrue(
-                    any(row["category"] == "stage_07_qc" for row in rows)
-                )
+                self.assertTrue(any(row["category"] == "stage_07_qc" for row in rows))
             with self.assertRaises(FileExistsError):
                 MODULE.build_snapshot(
                     expression_root=fixture.expression_root,
@@ -204,6 +181,38 @@ class TestExpressionEvidenceSnapshot(unittest.TestCase):
                     delay_seconds=0,
                     overwrite=False,
                 )
+
+    def test_cli_builds_an_offline_snapshot(self) -> None:
+        """The command-line surface should invoke the same bounded contract."""
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            fixture = SnapshotFixture(root)
+            archive = root / "cli-snapshot.tar.gz"
+
+            status = MODULE.main(
+                [
+                    "--expression-root",
+                    str(fixture.expression_root),
+                    "--workflow-run-root",
+                    str(fixture.workflow_root),
+                    "--output-archive",
+                    str(archive),
+                    "--fetch-pages",
+                    "false",
+                    "--preview-rows",
+                    "1",
+                    "--timeout-seconds",
+                    "1",
+                    "--retries",
+                    "0",
+                    "--delay-seconds",
+                    "0",
+                    "--verbose",
+                ]
+            )
+
+            self.assertEqual(status, 0)
+            self.assertTrue(archive.is_file())
 
 
 if __name__ == "__main__":

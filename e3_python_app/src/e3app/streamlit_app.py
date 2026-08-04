@@ -121,8 +121,9 @@ def _render_expression_section(
     relation = "candidate_expression_context_summary"
     st.subheader("Candidate expression by tissue and biological context")
     st.caption(
-        "Filter mapped candidate members by the original Expression Atlas organism-part "
-        "label. Developmental stage, treatment and condition remain available as columns."
+        "Each row is one gene in one Atlas experiment group. Expression is the Atlas "
+        "median TPM (TPM ≥ 0.5 is positive); the minimum, quartiles and maximum remain "
+        "available. FPKM is used only when an experiment has no TPM matrix."
     )
     species_values = distinct_text_values(
         connection=connection,
@@ -133,6 +134,11 @@ def _render_expression_section(
         connection=connection,
         relation=relation,
         column="organism_part",
+    )
+    metadata_values = distinct_text_values(
+        connection=connection,
+        relation=relation,
+        column="metadata_status",
     )
     filter_one, filter_two, filter_three = st.columns(3)
     with filter_one:
@@ -152,6 +158,19 @@ def _render_expression_section(
             "Group, accession or gene contains",
             value="",
             key="expression_context_search",
+        )
+    status_one, status_two = st.columns(2)
+    with status_one:
+        metadata_status = st.selectbox(
+            "Tissue-metadata status",
+            options=["All", *metadata_values],
+            key="expression_context_metadata_status",
+        )
+    with status_two:
+        expression_positive = st.selectbox(
+            "Median expression support",
+            options=["All", "Positive", "Below threshold"],
+            key="expression_context_positive",
         )
     available = relation_columns(connection, relation)
     selected = st.multiselect(
@@ -176,6 +195,8 @@ def _render_expression_section(
         selected_columns=selected,
         species=species,
         organism_part=tissue,
+        metadata_status=metadata_status,
+        expression_positive=expression_positive,
         search_text=search_text,
         maximum_rows=int(maximum_rows),
     )

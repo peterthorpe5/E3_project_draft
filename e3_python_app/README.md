@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.4.0 is the tested Streamlit companion to `E3_shiny_app` 0.7.0. Both
+Version 0.5.0 is the tested Streamlit companion to `E3_shiny_app` 0.8.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -63,7 +63,7 @@ The reporter provides:
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
   conservation and 3D alignment sections;
 - species, tissue/organism-part and identifier filters for the normalised
-  candidate-by-expression-context relation, when supplied by workflow v0.12.0
+  candidate-by-expression-context relation, when supplied by workflow v0.13.0
   or later;
 - a separate Threshold explorer with the completed analysis defaults, paired
   sliders and typed values, pre-structure and structurally informed modes,
@@ -102,7 +102,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.4.0 quality gate comprises 40 passing tests at 98% branch-aware coverage
+The v0.5.0 quality gate comprises 40 passing tests at 98% branch-aware coverage
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 threshold, portable-review and headless Streamlit behaviour.
 

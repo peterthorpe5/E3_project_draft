@@ -173,12 +173,82 @@ def test_expression_maps_full_selected_group_members(
     expression_schema = (
         "experiment_accession VARCHAR, species_column VARCHAR, gene_id VARCHAR, "
         "gene_name VARCHAR, sample_or_condition VARCHAR, expression_value DOUBLE, "
-        "expression_unit VARCHAR, source_file VARCHAR"
+        "expression_minimum DOUBLE, expression_lower_quartile DOUBLE, "
+        "expression_median DOUBLE, expression_upper_quartile DOUBLE, "
+        "expression_maximum DOUBLE, expression_value_statistic VARCHAR, "
+        "expression_summary_type VARCHAR, expression_unit VARCHAR, source_file VARCHAR, "
+        "source_file_sha256 VARCHAR"
     )
-    for species, gene in (
-        ("Arabidopsis_thaliana", "AT1G31090"),
-        ("Oryza_sativa", "LOC_Os01g01010"),
-        ("Zea_mays", "IRRELEVANT_GENE"),
+
+    def expression_row(
+        *, accession: str, species: str, gene: str, context: str, value: float, unit: str
+    ) -> tuple[Any, ...]:
+        """Build one internally consistent Atlas five-number fixture row."""
+
+        return (
+            accession,
+            species,
+            gene,
+            gene,
+            context,
+            value,
+            value,
+            value,
+            value,
+            value,
+            value,
+            "median",
+            "atlas_five_number_summary",
+            unit,
+            "fixture",
+            "a" * 64,
+        )
+
+    arabidopsis_dir = (
+        expression_root
+        / "atlas_expression_long"
+        / "species_column=Arabidopsis_thaliana"
+    )
+    write_parquet(
+        arabidopsis_dir / "tpms.parquet",
+        expression_schema,
+        [
+            expression_row(
+                accession="E-MTAB-1",
+                species="Arabidopsis_thaliana",
+                gene="AT1G31090",
+                context="g1",
+                value=0.4,
+                unit="TPM",
+            ),
+            expression_row(
+                accession="E-MTAB-1",
+                species="Arabidopsis_thaliana",
+                gene="AT1G31090",
+                context="g2",
+                value=0.5,
+                unit="TPM",
+            ),
+        ],
+    )
+    write_parquet(
+        arabidopsis_dir / "fpkms.parquet",
+        expression_schema,
+        [
+            expression_row(
+                accession="E-MTAB-1",
+                species="Arabidopsis_thaliana",
+                gene="AT1G31090",
+                context=context,
+                value=999.0,
+                unit="FPKM",
+            )
+            for context in ("g1", "g2")
+        ],
+    )
+    for accession, species, gene, context in (
+        ("E-MTAB-2", "Oryza_sativa", "LOC_Os01g01010", "g1"),
+        ("E-MTAB-3", "Zea_mays", "IRRELEVANT_GENE", "g1"),
     ):
         write_parquet(
             expression_root
@@ -186,7 +256,61 @@ def test_expression_maps_full_selected_group_members(
             / f"species_column={species}"
             / "part.parquet",
             expression_schema,
-            [("E-MTAB-1", species, gene, gene, "leaf", 5.0, "TPM", "fixture")],
+            [
+                expression_row(
+                    accession=accession,
+                    species=species,
+                    gene=gene,
+                    context=context,
+                    value=5.0,
+                    unit="TPM",
+                )
+            ],
+        )
+    metadata_schema = (
+        "experiment_accession VARCHAR, species_column VARCHAR, "
+        "sample_or_condition VARCHAR, atlas_group_label VARCHAR, assay_ids VARCHAR, "
+        "assay_count INTEGER, organism_part VARCHAR, developmental_stage VARCHAR, "
+        "genotype VARCHAR, cultivar VARCHAR, treatment VARCHAR, condition VARCHAR, "
+        "source_file VARCHAR, source_file_sha256 VARCHAR, configuration_file VARCHAR, "
+        "configuration_file_sha256 VARCHAR, expression_file_sha256 VARCHAR"
+    )
+    for species, accession, groups in (
+        (
+            "Arabidopsis_thaliana",
+            "E-MTAB-1",
+            (("g1", "leaf"), ("g2", "root")),
+        ),
+        ("Oryza_sativa", "E-MTAB-2", (("g1", "root"),)),
+    ):
+        write_parquet(
+            expression_root
+            / "atlas_sample_metadata_wide"
+            / f"species_column={species}"
+            / "part.parquet",
+            metadata_schema,
+            [
+                (
+                    accession,
+                    species,
+                    group_id,
+                    tissue,
+                    f"{accession}_{group_id}_assay",
+                    1,
+                    tissue,
+                    "adult",
+                    "wild type",
+                    "",
+                    "control",
+                    "treatment=control",
+                    "metadata_fixture",
+                    "b" * 64,
+                    "configuration_fixture",
+                    "c" * 64,
+                    "a" * 64,
+                )
+                for group_id, tissue in groups
+            ],
         )
     manifest = build_expression_manifest(
         expression_root=expression_root,
@@ -204,7 +328,15 @@ def test_expression_maps_full_selected_group_members(
             expression_manifest=manifest,
             inherited_sqlite=sqlite_path,
         ),
-        analysis=replace(config.analysis, prioritisation=prioritisation),
+        analysis=replace(
+            config.analysis,
+            expression=replace(
+                config.analysis.expression,
+                minimum_expression_value=0.5,
+                broad_positive_fraction=0.5,
+            ),
+            prioritisation=prioritisation,
+        ),
     )
     stage_root = tmp_path / "expression_stage"
     run_expression_stage(config=configured, stage_root=stage_root)
@@ -217,22 +349,44 @@ def test_expression_maps_full_selected_group_members(
     assert all(
         row["broad_expression_supported"].lower() == "true" for row in summaries
     )
-    _, contexts = read_tsv(
-        stage_root / "tables" / "candidate_expression_context_summary.tsv"
+    arabidopsis_summary = next(
+        row for row in summaries if row["species_column"] == "Arabidopsis_thaliana"
     )
-    assert len(contexts) == 2
-    assert {row["expression_context"] for row in contexts} == {"leaf"}
-    assert all(row["maximum_expression_value"] == "5.0" for row in contexts)
+    assert arabidopsis_summary["selected_expression_units"] == "TPM"
+    assert arabidopsis_summary["context_count"] == "2"
+    assert arabidopsis_summary["positive_context_count"] == "1"
+    assert arabidopsis_summary["positive_context_fraction"] == "0.5"
+    _, contexts = read_tsv(
+        stage_root / "tables" / "candidate_expression_context_summary.preview.tsv"
+    )
+    assert len(contexts) == 3
+    assert {row["sample_or_condition"] for row in contexts} == {"g1", "g2"}
+    assert {row["organism_part"] for row in contexts} == {"leaf", "root"}
+    assert all(row["metadata_status"] == "MAPPED_WITH_TISSUE" for row in contexts)
+    assert all(row["expression_unit"] == "TPM" for row in contexts)
+    boundary = next(
+        row
+        for row in contexts
+        if row["species_column"] == "Arabidopsis_thaliana"
+        and row["sample_or_condition"] == "g2"
+    )
+    assert boundary["expression_value"] == "0.5"
+    assert boundary["expression_positive"].lower() == "true"
     _, validation_rows = read_tsv(
         stage_root / "qc" / "expression_validation.tsv"
     )
     validation = validation_rows[0]
     assert validation["target_member_species_count"] == "2"
-    assert validation["expression_manifest_file_count"] == "3"
-    assert validation["expression_scanned_file_count"] == "2"
+    assert validation["expression_manifest_file_count"] == "4"
+    assert validation["expression_scanned_file_count"] == "3"
     assert validation["expression_skipped_file_count"] == "1"
     assert validation["expression_scanned_species_count"] == "2"
     assert validation["duckdb_memory_limit_mb"] == "6000"
+    assert validation["selected_experiment_count"] == "2"
+    assert validation["fpkm_fallback_experiment_count"] == "0"
+    assert validation["sample_metadata_scanned_file_count"] == "2"
+    assert validation["mapped_tissue_context_count"] == "3"
+    assert validation["metadata_unmapped_context_count"] == "0"
     assert not (stage_root / "duckdb_spill").exists()
 
 
@@ -298,7 +452,16 @@ def test_empty_expression_view_preserves_the_atlas_contract() -> None:
             "gene_name",
             "sample_or_condition",
             "expression_value",
+            "expression_minimum",
+            "expression_lower_quartile",
+            "expression_median",
+            "expression_upper_quartile",
+            "expression_maximum",
+            "expression_value_statistic",
+            "expression_summary_type",
             "expression_unit",
+            "source_file",
+            "source_file_sha256",
         ]
         assert connection.execute(
             "SELECT count(*) FROM atlas_expression"
@@ -371,6 +534,73 @@ def test_missing_domain_annotation_is_not_a_biological_negative(
     assert record["grant_aligned_criteria_status"] == "PASS_WITH_MISSING_EVIDENCE"
     assert record["grant_aligned_stringent_pass"] is True
     assert "domain_annotation_unavailable_for_species=Species_c" in record["missing_evidence"]
+
+
+def test_off_target_domain_rows_cannot_change_a_target_species_gate(
+    synthetic_config: Path,
+) -> None:
+    """A supported non-target species must not rescue target-domain failure."""
+    config = load_config(synthetic_config)
+    prioritisation = replace(
+        config.analysis.prioritisation,
+        target_species=("Species_a", "Species_b"),
+        mandatory_species=("Species_a",),
+        minimum_target_species_fraction=1.0,
+        minimum_domain_species_fraction=0.5,
+        minimum_expression_species_fraction=1.0,
+    )
+    configured = replace(
+        config,
+        analysis=replace(config.analysis, prioritisation=prioritisation),
+    )
+
+    record = score_candidate(
+        config=configured,
+        candidate={
+            "cluster_id": "cluster_1",
+            "matched_seed_ids_calculated": "Q1",
+            "matched_seed_id_count": 1,
+            "reviewed_seed_count": 1,
+            "ubiquitin_go_positive_seed_count": 1,
+            "seed_with_exclusion_go_term_count": 0,
+        },
+        primary={
+            "record_type": "HIERARCHICAL_ORTHOGROUP",
+            "group_id": "N0.HOG0001",
+            "alternative_group_count": 0,
+        },
+        full_species={"Species_a", "Species_b", "Off_target"},
+        domain_rows=[
+            {
+                "species_column": "Species_a",
+                "domain_support_status": "ANNOTATED_NO_CATALOGUED_E3_DOMAIN",
+            },
+            {
+                "species_column": "Off_target",
+                "domain_support_status": "SUPPORTED",
+            },
+        ],
+        expression_rows=[
+            {
+                "species_column": species,
+                "mapping_status": "MAPPED_UNIQUE",
+                "evidence_status": "BROAD_EXPRESSION_SUPPORTED",
+                "broad_expression_supported": True,
+            }
+            for species in ("Species_a", "Species_b")
+        ],
+        expression_available_species={"Species_a", "Species_b", "Off_target"},
+    )
+
+    assert record["domain_assessed_species_count"] == 1
+    assert record["domain_supported_species_count"] == 0
+    assert record["domain_species_fraction"] == 0.0
+    assert record["domain_annotation_coverage_fraction"] == 0.5
+    assert record["grant_aligned_criteria_status"] == "FAIL"
+    assert (
+        record["exclusion_reasons"]
+        == "domain_species_fraction_below_threshold"
+    )
 
 
 def test_no_expression_records_are_unavailable_not_measured_zero(

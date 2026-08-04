@@ -376,7 +376,11 @@ def test_downloaded_evidence_to_app_ready_release(
     expression_schema = (
         "experiment_accession VARCHAR, species_column VARCHAR, gene_id VARCHAR, "
         "gene_name VARCHAR, sample_or_condition VARCHAR, expression_value DOUBLE, "
-        "expression_unit VARCHAR, source_file VARCHAR"
+        "expression_minimum DOUBLE, expression_lower_quartile DOUBLE, "
+        "expression_median DOUBLE, expression_upper_quartile DOUBLE, "
+        "expression_maximum DOUBLE, expression_value_statistic VARCHAR, "
+        "expression_summary_type VARCHAR, expression_unit VARCHAR, source_file VARCHAR, "
+        "source_file_sha256 VARCHAR"
     )
     for species, gene in (
         ("Arabidopsis_thaliana", "AT1G31090"),
@@ -388,7 +392,26 @@ def test_downloaded_evidence_to_app_ready_release(
             / f"species_column={species}"
             / "part.parquet",
             expression_schema,
-            [("E-MTAB-1", species, gene, gene, "leaf", 5.0, "TPM", "fixture")],
+            [
+                (
+                    "E-MTAB-1",
+                    species,
+                    gene,
+                    gene,
+                    "leaf",
+                    5.0,
+                    5.0,
+                    5.0,
+                    5.0,
+                    5.0,
+                    5.0,
+                    "median",
+                    "atlas_five_number_summary",
+                    "TPM",
+                    "fixture",
+                    "a" * 64,
+                )
+            ],
         )
     expression_manifest = build_expression_manifest(
         expression_root=expression_root,

@@ -87,16 +87,16 @@ def read_tabular_file(path: Path) -> List[Tuple[str, pd.DataFrame]]:
         )
         return [("", dataframe)]
     if suffix in {".xlsx", ".xls"}:
-        excel_file = pd.ExcelFile(path)
         tables: List[Tuple[str, pd.DataFrame]] = []
-        for sheet_name in excel_file.sheet_names:
-            dataframe = pd.read_excel(
-                excel_file,
-                sheet_name=sheet_name,
-                dtype=str,
-                keep_default_na=False,
-            )
-            tables.append((sheet_name, dataframe))
+        with pd.ExcelFile(path) as excel_file:
+            for sheet_name in excel_file.sheet_names:
+                dataframe = pd.read_excel(
+                    excel_file,
+                    sheet_name=sheet_name,
+                    dtype=str,
+                    keep_default_na=False,
+                )
+                tables.append((sheet_name, dataframe))
         return tables
 
     # Some inherited .txt files are simple tabular accession lists. Detect a

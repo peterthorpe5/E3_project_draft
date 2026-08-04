@@ -344,6 +344,22 @@ materialise_duckdb_views_from_parquet <- function(
       "AND sample_or_condition <> '')"
     )
 
+    duplicate_metadata_keys <- duckplyr::read_sql_duckdb(
+      sql = stringr::str_c(
+        "SELECT COUNT(*) AS duplicate_key_count FROM (",
+        "SELECT species_column, experiment_accession, sample_or_condition ",
+        "FROM ", sample_wide_joinable_sql, " GROUP BY ALL HAVING COUNT(*) <> 1)"
+      ),
+      prudence = "stingy"
+    ) |>
+      dplyr::collect()
+    if (duplicate_metadata_keys$duplicate_key_count[[1L]] != 0L) {
+      stop(
+        "Sample metadata contain duplicate expression-group join keys.",
+        call. = FALSE
+      )
+    }
+
     duckplyr::db_exec(
       sql = stringr::str_c(
         "CREATE OR REPLACE VIEW e3_expression.atlas_sample_metadata_wide AS ",
@@ -364,9 +380,13 @@ materialise_duckdb_views_from_parquet <- function(
       sql = stringr::str_c(
         "CREATE OR REPLACE VIEW e3_expression.atlas_expression_with_sample_metadata AS ",
         "SELECT e.*, ",
+        "m.atlas_group_label, m.assay_ids, m.assay_count, ",
         "m.organism, m.organism_part, m.developmental_stage, ",
         "m.genotype, m.cultivar, m.treatment, m.condition, ",
-        "m.assay_name, m.source_name, m.sample_name ",
+        "m.assay_name, m.source_name, m.sample_name, ",
+        "m.source_file AS metadata_source_file, ",
+        "m.source_file_sha256 AS metadata_source_file_sha256, ",
+        "m.configuration_file, m.configuration_file_sha256 ",
         "FROM ",
         expression_dataset_sql,
         " e LEFT JOIN ",
@@ -376,6 +396,31 @@ materialise_duckdb_views_from_parquet <- function(
         "AND e.sample_or_condition = m.sample_or_condition"
       )
     )
+
+    joined_validation <- duckplyr::read_sql_duckdb(
+      sql = paste(
+        "SELECT",
+        "(SELECT COUNT(*) FROM e3_expression.atlas_expression_long) AS expression_rows,",
+        paste0(
+          "(SELECT COUNT(*) FROM ",
+          "e3_expression.atlas_expression_with_sample_metadata) AS joined_rows"
+        )
+      ),
+      prudence = "stingy"
+    ) |>
+      dplyr::collect()
+    if (joined_validation$expression_rows[[1L]] != joined_validation$joined_rows[[1L]]) {
+      stop(
+        paste(
+          "Expression/metadata join changed row cardinality:",
+          joined_validation$expression_rows[[1L]],
+          "expression rows and",
+          joined_validation$joined_rows[[1L]],
+          "joined rows."
+        ),
+        call. = FALSE
+      )
+    }
   }
 
   duckplyr::db_exec(sql = "DETACH e3_expression")

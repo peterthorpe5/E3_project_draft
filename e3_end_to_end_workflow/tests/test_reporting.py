@@ -33,6 +33,7 @@ from e3workflow.reporting import (
     summarise_output,
 )
 from e3workflow.runner import execute_stage
+from e3workflow.tabular import quote_literal
 
 
 def _write_evolutionary_group_ranking(
@@ -57,8 +58,8 @@ def _write_evolutionary_group_ranking(
                 rows,
             )
         connection.execute(
-            "COPY evolutionary_groups TO ? (FORMAT PARQUET)",
-            [str(path)],
+            "COPY evolutionary_groups TO "
+            f"{quote_literal(path)} (FORMAT PARQUET)",
         )
 
 
@@ -190,8 +191,8 @@ def test_streaming_output_summaries_are_bounded(tmp_path: Path) -> None:
     with duckdb.connect(database=":memory:") as connection:
         connection.execute(query="CREATE TABLE results AS SELECT 1 AS identifier, 2.5 AS score")
         connection.execute(
-            query="COPY results TO ? (FORMAT PARQUET)",
-            parameters=[str(tmp_path / "result.parquet")],
+            "COPY results TO "
+            f"{quote_literal(tmp_path / 'result.parquet')} (FORMAT PARQUET)"
         )
     with duckdb.connect(database=str(tmp_path / "results.duckdb")) as connection:
         connection.execute(query="CREATE TABLE candidates AS SELECT 1 AS identifier")
@@ -542,8 +543,8 @@ def test_authoritative_evolutionary_group_counts_require_lead_flag(
             "TRUE AS grant_aligned_stringent_pass"
         )
         connection.execute(
-            "COPY evolutionary_groups TO ? (FORMAT PARQUET)",
-            [str(ranking)],
+            "COPY evolutionary_groups TO "
+            f"{quote_literal(ranking)} (FORMAT PARQUET)",
         )
 
     with pytest.raises(WorkflowError, match="lead_grant_aligned_stringent_pass"):

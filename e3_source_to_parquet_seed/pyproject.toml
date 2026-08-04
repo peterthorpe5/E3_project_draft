@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-source-to-parquet-seed"
-version = "0.4.0"
+version = "0.4.1"
 description = "Source-first E3 PROTAC audit, Parquet conversion and candidate evidence integration"
 requires-python = ">=3.10"
 dependencies = [
@@ -32,6 +32,14 @@ select = ["E", "F", "W", "I"]
 
 [tool.pydocstyle]
 convention = "google"
+
+[tool.coverage.run]
+branch = true
+source = ["e3parquet"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
 
 [tool.setuptools.packages.find]
 include = ["e3parquet*"]

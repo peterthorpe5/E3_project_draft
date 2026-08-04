@@ -1,6 +1,6 @@
 # E3 PROTAC source-first Parquet/DuckDB rebuild
 
-Version: **0.3.0**
+Version 0.4.1
 
 ## Version 0.3.2 bug-fix notes
 

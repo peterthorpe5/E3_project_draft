@@ -89,23 +89,39 @@ testthat::test_that("selected-result SQL quotes columns and remains bounded", {
   )
 })
 
-testthat::test_that("expression SQL supports explicit tissue selection", {
+testthat::test_that("expression SQL supports context and threshold selection", {
   query <- build_filtered_expression_query(
     relation = "candidate_expression_context_summary",
-    selected_columns = c("cluster_id", "organism_part", "gene_id"),
+    selected_columns = c(
+      "cluster_id", "organism_part", "gene_id", "expression_positive"
+    ),
     available_columns = c(
       "cluster_id", "primary_group_id", "member_accession",
-      "species_column", "organism_part", "gene_id"
+      "species_column", "organism_part", "gene_id", "metadata_status",
+      "expression_positive"
     ),
     species = "Zea_mays",
     tissue = "leaf",
+    metadata_status = "MAPPED",
+    expression_positive = "true",
     search = "N0.HOG0001",
     max_rows = 50
   )
   testthat::expect_match(query, '"species_column" AS VARCHAR\\) = \'Zea_mays\'')
   testthat::expect_match(query, '"organism_part" AS VARCHAR\\) = \'leaf\'')
+  testthat::expect_match(query, '"metadata_status" AS VARCHAR\\) = \'MAPPED\'')
+  testthat::expect_match(query, '"expression_positive" = TRUE', fixed = TRUE)
   testthat::expect_match(query, "ILIKE '%N0.HOG0001%'", fixed = TRUE)
   testthat::expect_match(query, "LIMIT 50$")
+  testthat::expect_error(
+    build_filtered_expression_query(
+      relation = "candidate_expression_context_summary",
+      selected_columns = "expression_positive",
+      available_columns = "expression_positive",
+      expression_positive = "maybe"
+    ),
+    "must be empty"
+  )
 })
 
 testthat::test_that("grant-overview SQL adapts to available evidence fields", {
@@ -170,6 +186,8 @@ testthat::test_that("result-section UI exposes checkbox column controls", {
   testthat::expect_match(expression_ui, "Tissue / organism part", fixed = TRUE)
   testthat::expect_match(expression_ui, "expression-expression_tissue")
   testthat::expect_match(expression_ui, "not measured zero", fixed = TRUE)
+  testthat::expect_match(expression_ui, "Median TPM threshold", fixed = TRUE)
+  testthat::expect_match(expression_ui, "At least 0.5 TPM", fixed = TRUE)
 })
 
 testthat::test_that("grant overview UI states both milestones and limitations", {

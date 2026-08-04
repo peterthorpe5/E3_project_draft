@@ -9,6 +9,11 @@ dependencies:
   - certifi
   - openssl
   - pyarrow
+  - python-duckdb>=1.2,<2
+  - coverage>=7.6,<8
+  - pycodestyle>=2.12,<3
+  - pydocstyle>=6.3,<7
+  - ruff>=0.9,<1
   - r-base>=4.3
   - r-dplyr
   - r-duckplyr

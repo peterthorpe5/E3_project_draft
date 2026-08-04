@@ -16,7 +16,7 @@ DISCOVERY_BACKEND="ftp_scan"
 FTP_SCAN_MAX_ACCESSIONS="0"
 INCLUDE_OPTIONAL_EXTRAS="false"
 EXPRESSION_FILE_TYPES="tpms,fpkms"
-DOWNLOAD_FILE_TYPES="tpms,fpkms,sample_metadata,analysis_methods,r_object"
+DOWNLOAD_FILE_TYPES="tpms,fpkms,configuration_xml,sample_metadata,analysis_methods,r_object"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -76,15 +76,15 @@ PKG_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DOWNLOADED_MANIFEST="${OUTPUT_DIR}/manifests/atlas_downloaded_files.tsv"
 
 if [[ ! -s "${DOWNLOADED_MANIFEST}" ]]; then
-  echo "No downloaded-files manifest was created. Skipping Parquet import." >&2
-  exit 0
+  echo "ERROR: no downloaded-files manifest was created." >&2
+  exit 1
 fi
 
 EXPRESSION_DOWNLOAD_COUNT=$(awk -F '\t' 'NR > 1 && ($4 == "tpms" || $4 == "fpkms") && $9 == "true" {count++} END {print count + 0}' "${DOWNLOADED_MANIFEST}")
 
 if [[ "${EXPRESSION_DOWNLOAD_COUNT}" -eq 0 ]]; then
-  echo "No successful TPM/FPKM downloads were found. Skipping Parquet import." >&2
-  exit 0
+  echo "ERROR: no successful TPM/FPKM downloads were found." >&2
+  exit 1
 fi
 
 if [[ "${IMPORT_BACKEND}" == "python" ]]; then
@@ -94,10 +94,9 @@ if [[ "${IMPORT_BACKEND}" == "python" ]]; then
     --force_import="${FORCE_IMPORT}" \
     --chunk_rows="${CHUNK_ROWS}"
 else
-  Rscript "${SCRIPT_DIR}/04_import_expression_to_parquet.R" \
-    --downloaded_files_tsv="${DOWNLOADED_MANIFEST}" \
-    --output_dir="${OUTPUT_DIR}" \
-    --force_import="${FORCE_IMPORT}"
+  printf 'ERROR: --import_backend must be python. The retired R/DuckDB parser '\
+'cannot enforce the versioned Atlas five-number-summary contract.\n' >&2
+  exit 2
 fi
 
 # Import SDRF/condensed-SDRF metadata as a separate Parquet module.
@@ -109,7 +108,8 @@ fi
   --force_import="${FORCE_IMPORT}"
 
 if [[ "${CREATE_DUCKDB}" == "true" || "${CREATE_DUCKDB}" == "TRUE" || "${CREATE_DUCKDB}" == "1" ]]; then
-  Rscript "${SCRIPT_DIR}/06_create_duckdb_views.R" \
+  "${SCRIPT_DIR}/06_python_create_duckdb_views.sh" \
     --output_dir="${OUTPUT_DIR}" \
-    --duckdb_path="${OUTPUT_DIR}/e3_expression.duckdb"
+    --duckdb_path="${OUTPUT_DIR}/e3_expression.duckdb" \
+    --force="${FORCE_IMPORT}"
 fi

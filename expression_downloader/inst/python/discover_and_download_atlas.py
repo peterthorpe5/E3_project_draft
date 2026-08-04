@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as _dt
+import hashlib
 import json
 import os
 import re
@@ -31,8 +32,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, Optional
-
+from typing import Iterable, Optional
 
 ACCESSION_RE = re.compile(r"\bE-[A-Z0-9]{4,}-\d+\b")
 DEFAULT_SEARCH_TERMS = (
@@ -46,6 +46,7 @@ DEFAULT_DOWNLOAD_TYPES = (
     "tpms",
     "fpkms",
     "sample_metadata",
+    "configuration_xml",
     "analysis_methods",
     "r_object",
 )
@@ -59,9 +60,7 @@ DEFAULT_OPTIONAL_EXTRA_TYPES = (
     "fpkms_bedgraph",
     "heatmap_pdf",
 )
-DEFAULT_FTP_INDEX_URL = (
-    "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/"
-)
+DEFAULT_FTP_INDEX_URL = "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/"
 
 
 @dataclass(frozen=True)
@@ -489,6 +488,9 @@ def detect_atlas_file_type(file_name: str) -> Optional[str]:
     if "analysis-method" in lower_name:
         return "analysis_methods"
 
+    if lower_name.endswith("-configuration.xml"):
+        return "configuration_xml"
+
     if "atlasexperimentsummary" in lower_name and lower_name.endswith(".rdata"):
         return "r_object"
 
@@ -516,7 +518,11 @@ def detect_atlas_file_type(file_name: str) -> Optional[str]:
             return "tpms_bedgraph"
         return None
 
-    if "transcript" in lower_name and "tpm" in lower_name and lower_name.endswith((".tsv", ".tsv.gz")):
+    if (
+        "transcript" in lower_name
+        and "tpm" in lower_name
+        and lower_name.endswith((".tsv", ".tsv.gz"))
+    ):
         return "transcript_tpms"
 
     # True gene-level matrix files. These are the only file types imported
@@ -732,8 +738,6 @@ def search_species_accessions(
     return results
 
 
-
-
 def normalise_species_name(value: str) -> str:
     """Normalise a species name for robust matching.
 
@@ -902,7 +906,8 @@ def extract_species_from_sdrf_text(metadata_text: str) -> list[str]:
         return []
 
     organism_indices = [
-        index for index, column in enumerate(header)
+        index
+        for index, column in enumerate(header)
         if "organism" in column.lower() or "species" in column.lower()
     ]
 
@@ -1066,8 +1071,7 @@ def discover_candidates_by_ftp_scan(
         )
 
         available_expression_types = [
-            file_type for file_type in expression_file_types
-            if files_by_type.get(file_type)
+            file_type for file_type in expression_file_types if files_by_type.get(file_type)
         ]
 
         if not available_expression_types:
@@ -1084,9 +1088,7 @@ def discover_candidates_by_ftp_scan(
                 timeout_seconds=timeout_seconds,
                 retries=retries,
             )
-            observed_species.extend(
-                extract_species_from_sdrf_text(metadata_text=metadata_text)
-            )
+            observed_species.extend(extract_species_from_sdrf_text(metadata_text=metadata_text))
 
         # De-duplicate while preserving order.
         observed_species = list(dict.fromkeys(observed_species))
@@ -1161,24 +1163,19 @@ def build_remote_files(
     """
 
     accession = candidate.accession
-    base_url = (
-        "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/"
-        f"experiments/{accession}/"
-    )
+    base_url = f"https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/{accession}/"
 
     fallback_names = {
         "tpms": [f"{accession}-tpms.tsv"],
         "fpkms": [f"{accession}-fpkms.tsv"],
         "transcript_tpms": [f"{accession}-transcript_tpms.tsv"],
         "sample_metadata": [f"{accession}.condensed-sdrf.tsv"],
+        "configuration_xml": [f"{accession}-configuration.xml"],
         "analysis_methods": [f"{accession}-analysis-methods.tsv"],
         "r_object": [f"{accession}-atlasExperimentSummary.Rdata"],
-        "transcript_tpms": [f"{accession}-transcript_tpms.tsv"],
     }
 
-    actual_names = decode_remote_file_names(
-        remote_file_names=candidate.remote_file_names
-    )
+    actual_names = decode_remote_file_names(remote_file_names=candidate.remote_file_names)
 
     files: list[RemoteFile] = []
 
@@ -1221,7 +1218,26 @@ def local_file_is_usable(path: Path, minimum_bytes: int = 1) -> bool:
         return False
 
 
-def check_remote_file(url: str, timeout_seconds: int) -> tuple[bool, bool, int | None, int | None, str]:
+def file_sha256(path: Path, chunk_bytes: int = 1024 * 1024) -> str:
+    """Return the SHA-256 digest of a local file.
+
+    Args:
+        path: File to hash.
+        chunk_bytes: Number of bytes read per iteration.
+
+    Returns:
+        Lower-case hexadecimal SHA-256 digest.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_bytes), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def check_remote_file(
+    url: str, timeout_seconds: int
+) -> tuple[bool, bool, int | None, int | None, str]:
     """Check whether a remote file exists and appears non-empty.
 
     Parameters
@@ -1273,7 +1289,13 @@ def check_remote_file(url: str, timeout_seconds: int) -> tuple[bool, bool, int |
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             data = response.read(1)
             status_code = response.status
-            return status_code < 400, status_code < 400 and bool(data), status_code, None, "GET_RANGE"
+            return (
+                status_code < 400,
+                status_code < 400 and bool(data),
+                status_code,
+                None,
+                "GET_RANGE",
+            )
     except urllib.error.HTTPError as error:
         return False, False, error.code, None, "GET_RANGE"
     except Exception:
@@ -1457,7 +1479,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     summary_path = manifest_dir / "atlas_python_summary.tsv"
 
     # Remove old manifests for this run to avoid mixing stale rows.
-    for path in [candidate_path, availability_path, checked_path, selected_path, downloaded_path, summary_path]:
+    for path in [
+        candidate_path,
+        availability_path,
+        checked_path,
+        selected_path,
+        downloaded_path,
+        summary_path,
+    ]:
         if path.exists():
             path.unlink()
 
@@ -1495,7 +1524,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                 log_file=log_file,
             )
 
-            if args.max_experiments_per_species and len(species_candidates) > args.max_experiments_per_species:
+            if (
+                args.max_experiments_per_species
+                and len(species_candidates) > args.max_experiments_per_species
+            ):
                 log(
                     f"Limiting {species_record.species_column} from "
                     f"{len(species_candidates)} to {args.max_experiments_per_species} experiments",
@@ -1516,9 +1548,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             with manual_path.open(mode="r", encoding="utf-8", newline="") as handle:
                 reader = csv.DictReader(handle, delimiter="\t")
                 for row in reader:
-                    accession = (row.get("experiment_accession") or row.get("accession") or "").strip()
+                    accession = (
+                        row.get("experiment_accession") or row.get("accession") or ""
+                    ).strip()
                     species_column = (row.get("species_column") or "manual_species").strip()
-                    species_query = (row.get("atlas_species_query") or species_column.replace("_", " ")).strip()
+                    species_query = (
+                        row.get("atlas_species_query") or species_column.replace("_", " ")
+                    ).strip()
                     if accession:
                         candidates.append(
                             CandidateExperiment(
@@ -1591,7 +1627,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     for index, candidate in enumerate(candidates, start=1):
         if index % 25 == 0:
-            log(f"Checked remote files for {index}/{len(candidates)} experiments", log_file=log_file)
+            log(
+                f"Checked remote files for {index}/{len(candidates)} experiments", log_file=log_file
+            )
 
         files = build_remote_files(
             candidate=candidate,
@@ -1650,7 +1688,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
 
     selected_remote_files = [
-        remote_file for remote_file in remote_file_records
+        remote_file
+        for remote_file in remote_file_records
         if (remote_file.species_column, remote_file.experiment_accession) in selected_keys
     ]
 
@@ -1696,6 +1735,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "action",
         "success",
         "local_bytes",
+        "sha256",
         "checked_at",
     ]
 
@@ -1708,9 +1748,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         fieldnames=download_fields,
     )
 
+    successful_download_types: dict[tuple[str, str], set[str]] = {}
+    failed_selected_downloads = 0
     for index, remote_file in enumerate(selected_remote_files, start=1):
         if index % 25 == 0:
-            log(f"Downloaded/checked {index}/{len(selected_remote_files)} selected files", log_file=log_file)
+            log(
+                f"Downloaded/checked {index}/{len(selected_remote_files)} selected files",
+                log_file=log_file,
+            )
 
         success, action, local_bytes = download_file(
             remote_file=remote_file,
@@ -1719,6 +1764,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             retries=args.retries,
             minimum_bytes=args.minimum_bytes,
         )
+        sha256 = (
+            file_sha256(remote_file.local_path)
+            if success and local_file_is_usable(remote_file.local_path)
+            else ""
+        )
+        key = (remote_file.species_column, remote_file.experiment_accession)
+        if success:
+            successful_download_types.setdefault(key, set()).add(remote_file.file_type)
+        else:
+            failed_selected_downloads += 1
 
         append_tsv(
             path=downloaded_path,
@@ -1733,6 +1788,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "action": action,
                 "success": safe_bool_text(success),
                 "local_bytes": "" if local_bytes is None else local_bytes,
+                "sha256": sha256,
                 "checked_at": now_iso(),
             },
             fieldnames=download_fields,
@@ -1743,8 +1799,22 @@ def main(argv: Optional[list[str]] = None) -> int:
         with downloaded_path.open(mode="r", encoding="utf-8", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             for row in reader:
-                if row.get("file_type") in expression_file_types and parse_bool(row.get("success"), default=False):
+                if row.get("file_type") in expression_file_types and parse_bool(
+                    row.get("success"), default=False
+                ):
                     expression_downloads += 1
+
+    incomplete_experiments = []
+    for key in sorted(selected_keys):
+        successful_types = successful_download_types.get(key, set())
+        missing_types = {
+            "sample_metadata",
+            "configuration_xml",
+        } - successful_types
+        if not (successful_types & set(expression_file_types)):
+            missing_types.add("tpms_or_fpkms")
+        if missing_types:
+            incomplete_experiments.append((key, sorted(missing_types)))
 
     summary_rows = [
         {
@@ -1767,6 +1837,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             "metric": "successful_expression_matrix_downloads",
             "value": expression_downloads,
         },
+        {
+            "metric": "failed_selected_file_downloads",
+            "value": failed_selected_downloads,
+        },
+        {
+            "metric": "incomplete_expression_experiments",
+            "value": len(incomplete_experiments),
+        },
     ]
 
     write_tsv(
@@ -1780,6 +1858,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     log(f"Candidate manifest: {candidate_path}", log_file=log_file)
     log(f"Availability manifest: {availability_path}", log_file=log_file)
     log(f"Downloaded files manifest: {downloaded_path}", log_file=log_file)
+
+    if incomplete_experiments:
+        for key, missing_types in incomplete_experiments:
+            log(
+                f"Incomplete experiment {key[0]} {key[1]}: missing {','.join(missing_types)}",
+                log_file=log_file,
+            )
+    if not selected_keys or failed_selected_downloads or incomplete_experiments:
+        return 1
 
     return 0
 

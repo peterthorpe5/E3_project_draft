@@ -459,6 +459,8 @@ def filter_expression_context(
     selected_columns: Sequence[str],
     species: str = "All",
     organism_part: str = "All",
+    metadata_status: str = "All",
+    expression_positive: str = "All",
     search_text: str = "",
     maximum_rows: int = 1000,
 ) -> pd.DataFrame:
@@ -470,6 +472,8 @@ def filter_expression_context(
         selected_columns: Columns returned to the app.
         species: Exact species filter or ``All``.
         organism_part: Exact tissue/organism-part filter or ``All``.
+        metadata_status: Exact metadata-availability state or ``All``.
+        expression_positive: ``Positive``, ``Below threshold`` or ``All``.
         search_text: Case-insensitive partial identifier search.
         maximum_rows: Hard result limit.
 
@@ -488,13 +492,21 @@ def filter_expression_context(
     if missing:
         raise AppError("Unknown expression columns: " + ", ".join(missing))
     conditions: list[str] = []
-    parameters: list[str] = []
+    parameters: list[object] = []
     if species != "All" and "species_column" in available:
         conditions.append("CAST(species_column AS VARCHAR) = ?")
         parameters.append(species)
     if organism_part != "All" and "organism_part" in available:
         conditions.append("CAST(organism_part AS VARCHAR) = ?")
         parameters.append(organism_part)
+    if metadata_status != "All" and "metadata_status" in available:
+        conditions.append("CAST(metadata_status AS VARCHAR) = ?")
+        parameters.append(metadata_status)
+    if expression_positive not in {"All", "Positive", "Below threshold"}:
+        raise AppError(f"Unknown expression support filter: {expression_positive}")
+    if expression_positive != "All" and "expression_positive" in available:
+        conditions.append("CAST(expression_positive AS BOOLEAN) = ?")
+        parameters.append(expression_positive == "Positive")
     cleaned_search = search_text.strip().lower()
     search_columns = [
         column
@@ -531,6 +543,7 @@ def filter_expression_context(
             "member_accession",
             "organism_part",
             "experiment_accession",
+            "sample_or_condition",
         )
         if column in available
     ]
@@ -696,12 +709,24 @@ def default_columns(section: str, available: Sequence[str]) -> list[str]:
             "species_column",
             "mapping_status",
             "gene_id",
+            "experiment_accession",
+            "sample_or_condition",
+            "atlas_group_label",
             "organism_part",
             "developmental_stage",
             "condition",
             "expression_context",
-            "maximum_expression_value",
-            "median_expression_value",
+            "metadata_status",
+            "expression_unit",
+            "expression_value",
+            "expression_positive",
+            "expression_minimum",
+            "expression_lower_quartile",
+            "expression_median",
+            "expression_upper_quartile",
+            "expression_maximum",
+            "context_count",
+            "positive_context_fraction",
             "broad_expression_supported",
             "evidence_status",
             "expression_species_fraction",

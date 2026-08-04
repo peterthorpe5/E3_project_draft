@@ -16,7 +16,15 @@ testthat::test_that("glossary defines requested language and exact thresholds", 
   for (value in c("0.90", "1.00", "0.80", "0.75", "0.50", "8 Å", "4 Å")) {
     testthat::expect_match(recorded, value, fixed = TRUE)
   }
-  testthat::expect_match(recorded, "Greater than 0.0 TPM/FPKM", fixed = TRUE)
+  testthat::expect_match(recorded, "Median TPM at least 0.5", fixed = TRUE)
+  testthat::expect_false(grepl("Greater than 0.0 TPM/FPKM", recorded, fixed = TRUE))
+  definitions <- paste(glossary$`Plain-language definition`, collapse = "\n")
+  testthat::expect_match(definitions, "five-number summary", fixed = TRUE)
+  testthat::expect_match(
+    definitions,
+    "not a list of biological replicates",
+    fixed = TRUE
+  )
 })
 
 testthat::test_that("threshold help explains assessed-species denominators", {

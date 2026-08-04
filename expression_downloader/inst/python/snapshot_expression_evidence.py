@@ -27,7 +27,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-
 LOGGER = logging.getLogger("expression_evidence_snapshot")
 ACCESSION_PATTERN = re.compile(r"\bE-[A-Z0-9]{4,}-\d+\b")
 MATRIX_SUFFIXES = (
@@ -40,20 +39,18 @@ MATRIX_SUFFIXES = (
     "-fpkms.tsv.gz",
     ".fpkms.tsv.gz",
 )
-METADATA_TOKENS = ("sdrf", "experiment-design", "analysis-method")
+METADATA_TOKENS = (
+    "sdrf",
+    "configuration",
+    "experiment-design",
+    "analysis-method",
+)
 REMOTE_PAGE_TEMPLATES = {
-    "atlas_results": (
-        "https://www.ebi.ac.uk/gxa/experiments/{accession}/Results"
-    ),
+    "atlas_results": ("https://www.ebi.ac.uk/gxa/experiments/{accession}/Results"),
     "atlas_ftp_index": (
-        "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/"
-        "experiments/"
-        "{accession}/"
+        "https://ftp.ebi.ac.uk/pub/databases/microarray/data/atlas/experiments/{accession}/"
     ),
-    "biostudies_record": (
-        "https://www.ebi.ac.uk/biostudies/arrayexpress/studies/"
-        "{accession}"
-    ),
+    "biostudies_record": ("https://www.ebi.ac.uk/biostudies/arrayexpress/studies/{accession}"),
 }
 
 
@@ -96,9 +93,7 @@ def parse_boolean(value: str) -> bool:
         return True
     if normalised in {"false", "0", "no", "n"}:
         return False
-    raise argparse.ArgumentTypeError(
-        f"Expected true or false; received {value!r}"
-    )
+    raise argparse.ArgumentTypeError(f"Expected true or false; received {value!r}")
 
 
 def sha256_file(path: Path) -> str:
@@ -194,9 +189,10 @@ def write_matrix_preview(
     destination.parent.mkdir(parents=True, exist_ok=True)
     header_written = False
     data_rows = 0
-    with open_text(source) as input_handle, destination.open(
-        "w", encoding="utf-8", newline=""
-    ) as output_handle:
+    with (
+        open_text(source) as input_handle,
+        destination.open("w", encoding="utf-8", newline="") as output_handle,
+    ):
         for line in input_handle:
             if line.startswith("#"):
                 output_handle.write(line)
@@ -297,9 +293,7 @@ def collect_local_evidence(
                     copy_snapshot_file(
                         source=source,
                         snapshot_root=snapshot_root,
-                        relative_path=(
-                            Path("expression_manifests") / source.name
-                        ),
+                        relative_path=(Path("expression_manifests") / source.name),
                         category="expression_manifest",
                     )
                 )
@@ -314,17 +308,14 @@ def collect_local_evidence(
                     copy_snapshot_file(
                         source=source,
                         snapshot_root=snapshot_root,
-                        relative_path=Path("experiment_metadata")
-                        / source.relative_to(downloads),
+                        relative_path=Path("experiment_metadata") / source.relative_to(downloads),
                         category="sample_metadata_or_methods",
                     )
                 )
             elif is_expression_matrix(source):
                 preview_name = source.name.removesuffix(".gz") + ".preview.tsv"
                 relative = (
-                    Path("matrix_previews")
-                    / source.parent.relative_to(downloads)
-                    / preview_name
+                    Path("matrix_previews") / source.parent.relative_to(downloads) / preview_name
                 )
                 destination = snapshot_root / relative
                 write_matrix_preview(source, destination, preview_rows)
@@ -360,10 +351,7 @@ def collect_local_evidence(
                     continue
                 if category == "stage_07_table" and source.suffix != ".tsv":
                     continue
-                relative = (
-                    Path("workflow_expression_audit")
-                    / source.relative_to(workflow_run_root)
-                )
+                relative = Path("workflow_expression_audit") / source.relative_to(workflow_run_root)
                 records.append(
                     copy_snapshot_file(
                         source=source,
@@ -388,7 +376,7 @@ def fetch_url(url: str, timeout_seconds: int) -> tuple[bytes, str]:
 
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "E3AtlasDuckplyr-expression-snapshot/0.4.0"},
+        headers={"User-Agent": "E3AtlasDuckplyr-expression-snapshot/0.5.0"},
         method="GET",
     )
     with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
@@ -494,9 +482,7 @@ def write_snapshot_documentation(
     """
 
     path = snapshot_root / "README.txt"
-    workflow_text = (
-        str(workflow_run_root) if workflow_run_root else "not supplied"
-    )
+    workflow_text = str(workflow_run_root) if workflow_run_root else "not supplied"
     path.write_text(
         "ARIA E3 Expression Evidence Diagnostic Snapshot\n\n"
         "Purpose\n"
@@ -578,34 +564,18 @@ def build_snapshot(
 
     expression_root = expression_root.expanduser().resolve()
     output_archive = output_archive.expanduser().resolve()
-    workflow_run_root = (
-        workflow_run_root.expanduser().resolve() if workflow_run_root else None
-    )
+    workflow_run_root = workflow_run_root.expanduser().resolve() if workflow_run_root else None
     if not expression_root.is_dir():
-        raise FileNotFoundError(
-            f"Expression root does not exist: {expression_root}"
-        )
+        raise FileNotFoundError(f"Expression root does not exist: {expression_root}")
     if workflow_run_root is not None and not workflow_run_root.is_dir():
-        raise FileNotFoundError(
-            "Workflow run root does not exist: "
-            f"{workflow_run_root}"
-        )
+        raise FileNotFoundError(f"Workflow run root does not exist: {workflow_run_root}")
     if not output_archive.name.endswith(".tar.gz"):
         raise ValueError("Output archive must end with .tar.gz")
     if output_archive.exists() and not overwrite:
-        raise FileExistsError(
-            f"Output archive already exists: {output_archive}"
-        )
-    invalid_numbers = (
-        preview_rows < 1
-        or timeout_seconds < 1
-        or retries < 0
-        or delay_seconds < 0
-    )
+        raise FileExistsError(f"Output archive already exists: {output_archive}")
+    invalid_numbers = preview_rows < 1 or timeout_seconds < 1 or retries < 0 or delay_seconds < 0
     if invalid_numbers:
-        raise ValueError(
-            "Preview, timeout, retry and delay values are outside valid ranges"
-        )
+        raise ValueError("Preview, timeout, retry and delay values are outside valid ranges")
 
     with tempfile.TemporaryDirectory(
         prefix="e3_expression_snapshot_", dir=output_archive.parent
@@ -657,12 +627,8 @@ def build_snapshot(
                 category="provenance",
                 source="generated",
                 relative_path="provenance/remote_page_manifest.tsv",
-                size_bytes=(
-                    provenance / "remote_page_manifest.tsv"
-                ).stat().st_size,
-                sha256=sha256_file(
-                    provenance / "remote_page_manifest.tsv"
-                ),
+                size_bytes=(provenance / "remote_page_manifest.tsv").stat().st_size,
+                sha256=sha256_file(provenance / "remote_page_manifest.tsv"),
             )
         )
         write_tsv(

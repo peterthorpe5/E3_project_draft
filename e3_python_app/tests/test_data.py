@@ -123,11 +123,27 @@ def test_candidate_expression_context_filters(resource_db: Path) -> None:
             ),
             species="Arabidopsis_thaliana",
             organism_part="leaf",
+            metadata_status="MAPPED_WITH_TISSUE",
+            expression_positive="Positive",
             search_text="hog0001",
             maximum_rows=10,
         )
         assert len(leaf) == 1
         assert leaf.iloc[0]["organism_part"] == "leaf"
+        below_threshold = filter_expression_context(
+            connection=connection,
+            relation=relation,
+            selected_columns=("organism_part", "expression_value"),
+            expression_positive="Below threshold",
+        )
+        assert below_threshold["organism_part"].tolist() == ["root"]
+        with pytest.raises(AppError, match="Unknown expression support"):
+            filter_expression_context(
+                connection=connection,
+                relation=relation,
+                selected_columns=("gene_id",),
+                expression_positive="maybe",
+            )
         with pytest.raises(AppError, match="Unknown expression columns"):
             filter_expression_context(
                 connection=connection,

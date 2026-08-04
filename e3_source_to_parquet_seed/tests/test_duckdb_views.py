@@ -6,7 +6,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from e3parquet.duckdb_views import parquet_paths, view_name_for_parquet
+import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from e3parquet.duckdb_views import (
+    create_views_for_parquets,
+    parquet_paths,
+    view_name_for_parquet,
+)
 
 
 class TestDuckdbViewHelpers(unittest.TestCase):
@@ -46,6 +54,59 @@ class TestDuckdbViewHelpers(unittest.TestCase):
             sidecar.write_bytes(b"not parquet")
 
             self.assertEqual(parquet_paths(root, validate_magic=False), [invalid])
+
+    def test_create_views_preserves_values_and_catalogue_provenance(self) -> None:
+        """A real Parquet source should remain queryable through its view."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            derived = root / "quoted'source"
+            parquet = derived / "source_tables" / "values.parquet"
+            parquet.parent.mkdir(parents=True)
+            pq.write_table(
+                pa.table({"accession": ["P1", "P2"], "score": [0.5, 1.5]}),
+                parquet,
+            )
+            database = root / "resource.duckdb"
+
+            catalogue = create_views_for_parquets(
+                derived,
+                database,
+                overwrite=True,
+            )
+
+            self.assertEqual(
+                catalogue,
+                [
+                    {
+                        "view_name": "source_tables_values",
+                        "parquet_file": "source_tables/values.parquet",
+                        "status": "created",
+                        "error": "",
+                    }
+                ],
+            )
+            with duckdb.connect(str(database), read_only=True) as connection:
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT accession, score FROM source_tables_values "
+                        "ORDER BY accession"
+                    ).fetchall(),
+                    [("P1", 0.5), ("P2", 1.5)],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT view_name, parquet_file, status, error "
+                        "FROM parquet_view_catalog"
+                    ).fetchall(),
+                    [
+                        (
+                            "source_tables_values",
+                            "source_tables/values.parquet",
+                            "created",
+                            "",
+                        )
+                    ],
+                )
 
 
 if __name__ == "__main__":

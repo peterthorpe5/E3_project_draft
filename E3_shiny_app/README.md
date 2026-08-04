@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.7.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
+Version 0.8.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -29,7 +29,7 @@ The main sections follow the evidence path required by the grant:
    unavailable states.
 8. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
-   workflow v0.12.0 resources also retain tissue/organism part, developmental
+   workflow v0.13.0 resources also retain tissue/organism part, developmental
    stage, condition, treatment, experiment and sample context.
 9. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
@@ -154,7 +154,7 @@ Equivalent environment variables are:
 
 The raw Expression Atlas summary/table/lookup/plot tabs use the optional
 expression DuckDB. The integrated Expression evidence section uses the selected
-E3 result source. In workflow v0.12.0 resources, the normalised
+E3 result source. In workflow v0.13.0 resources, the normalised
 `candidate_expression_context_summary` relation supports tissue and context
 columns. Older resources remain readable but cannot reconstruct tissue after
 the fact; they explicitly label `NOT_MAPPED` zero counts as missing mapping,

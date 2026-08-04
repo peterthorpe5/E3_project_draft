@@ -20,8 +20,10 @@ result_section_ui <- function(id, section) {
         paste(
           "NOT_MAPPED means that no unique Atlas gene mapping was found.",
           "Zero count fields in a legacy relation are not measured zero",
-          "expression. Tissue choices appear when the selected relation",
-          "contains organism_part metadata."
+          "expression. Corrected records use the median of Atlas's five-number",
+          "summary and classify TPM values at least 0.5 as context-positive.",
+          "Tissue choices appear when the selected relation contains",
+          "organism_part metadata."
         )
       )
     },
@@ -63,6 +65,23 @@ result_section_ui <- function(id, section) {
           value = ""
         ),
         col_widths = c(3, 3, 6)
+      ),
+      bslib::layout_columns(
+        shiny::selectInput(
+          ns("expression_metadata_status"),
+          "Tissue metadata status",
+          choices = "All metadata states"
+        ),
+        shiny::selectInput(
+          ns("expression_positive"),
+          "Median TPM threshold",
+          choices = c(
+            "All values" = "",
+            "At least 0.5 TPM" = "true",
+            "Below 0.5 TPM" = "false"
+          )
+        ),
+        col_widths = c(6, 6)
       )
     },
     shiny::div(
@@ -213,6 +232,15 @@ result_section_server <- function(
           ),
           selected = ""
         )
+        shiny::updateSelectInput(
+          session,
+          "expression_metadata_status",
+          choices = expression_filter_choices(
+            "metadata_status",
+            "All metadata states"
+          ),
+          selected = ""
+        )
       }
       invisible(names)
     }
@@ -252,6 +280,8 @@ result_section_server <- function(
         input$max_rows,
         input$expression_species,
         input$expression_tissue,
+        input$expression_metadata_status,
+        input$expression_positive,
         input$expression_search
       ),
       {
@@ -283,6 +313,8 @@ result_section_server <- function(
               available_columns = available_columns(),
               species = input$expression_species %||% "",
               tissue = input$expression_tissue %||% "",
+              metadata_status = input$expression_metadata_status %||% "",
+              expression_positive = input$expression_positive %||% "",
               search = input$expression_search %||% "",
               max_rows = row_limit
             )

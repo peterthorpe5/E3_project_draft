@@ -1188,14 +1188,16 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             query="SELECT * FROM final_candidate_prioritisation ORDER BY final_rank",
             path=stage_root / "tables" / "final_candidate_prioritisation.tsv",
         )
-        connection.execute(
-            "COPY final_candidate_prioritisation TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
-            [str(stage_root / "tables" / "final_candidate_prioritisation.parquet")],
+        _copy_query_parquet(
+            connection=connection,
+            query="SELECT * FROM final_candidate_prioritisation",
+            path=stage_root / "tables" / "final_candidate_prioritisation.parquet",
         )
         master_parquet = stage_root / "tables" / MASTER_PARQUET_NAME
-        connection.execute(
-            "COPY candidate_master_results TO ? (FORMAT PARQUET, COMPRESSION ZSTD)",
-            [str(master_parquet)],
+        _copy_query_parquet(
+            connection=connection,
+            query="SELECT * FROM candidate_master_results",
+            path=master_parquet,
         )
         final_root = stage_root / "final_results"
         final_queries = {

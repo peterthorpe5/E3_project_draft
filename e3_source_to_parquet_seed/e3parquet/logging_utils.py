@@ -24,7 +24,7 @@ def configure_logging(log_path: Path, verbose: bool = False) -> logging.Logger:
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger()
-    logger.handlers.clear()
+    close_logger(logger)
     logger.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter(
@@ -33,13 +33,31 @@ def configure_logging(log_path: Path, verbose: bool = False) -> logging.Logger:
     )
 
     file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler._e3parquet_owned = True
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     console_handler = logging.StreamHandler(sys.stderr)
+    console_handler._e3parquet_owned = True
     console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
     return logger
+
+
+def close_logger(logger: logging.Logger) -> None:
+    """Flush, close and detach handlers created by this module.
+
+    Parameters
+    ----------
+    logger:
+        Logger whose handlers should be released.
+    """
+    for handler in list(logger.handlers):
+        if not getattr(handler, "_e3parquet_owned", False):
+            continue
+        handler.flush()
+        handler.close()
+        logger.removeHandler(handler)

@@ -21,10 +21,14 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.11.0 adds an immutable 100-group exploratory profile, top-five member-pocket
-sensitivity requiring US-align and TM-align agreement on the same pocket, documented gate
-sensitivity, ordered top-50 review outputs and a release-tested application hand-off. The
-completed v0.10.2 50-group result remains unchanged as the stringent primary analysis.
+Version 0.13.0 adds the corrected Expression Atlas five-number-summary contract,
+configuration-backed tissue contexts, checksum-bound TPM/FPKM selection, explicit unavailable
+expression states and a repository-wide scientific test-assurance audit. It retains the v0.11.0
+structural sensitivity and portable-review features. Earlier completed results remain immutable;
+corrected expression evidence must be integrated through a new versioned workflow run.
+
+See `TEST_ASSURANCE_AUDIT_v0_13_0.md` for the package-by-package evidence, defects found,
+coverage results, limitations and mandatory production release checks.
 
 ## Sixty-second cluster quick start
 

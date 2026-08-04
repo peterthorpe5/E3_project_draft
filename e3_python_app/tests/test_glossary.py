@@ -45,7 +45,12 @@ def test_glossary_preserves_exact_completed_thresholds() -> None:
     recorded = "\n".join(entry.recorded_rule for entry in GLOSSARY_ENTRIES)
     for expected in ("0.90", "1.00", "0.80", "0.75", "0.50", "8 Å", "4 Å"):
         assert expected in recorded
-    assert "Greater than 0.0 TPM/FPKM" in recorded
+    assert "Median TPM at least 0.5" in recorded
+    assert "Greater than 0.0 TPM/FPKM" not in recorded
+
+    definitions = "\n".join(entry.definition for entry in GLOSSARY_ENTRIES)
+    assert "five-number summary" in definitions
+    assert "not a list of biological replicates" in definitions
 
 
 def test_glossary_rows_validate_the_section() -> None:

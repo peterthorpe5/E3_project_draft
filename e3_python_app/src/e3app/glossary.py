@@ -158,16 +158,18 @@ GLOSSARY_ENTRIES = (
     ),
     GlossaryEntry(
         "Pre-structure thresholds",
-        "Positive expression measurement",
-        "A mapped gene-by-condition TPM or FPKM measurement above the configured value. This is "
-        "distinct from an unmapped gene or unavailable experiment.",
-        "Greater than 0.0 TPM/FPKM in the completed run.",
+        "Context-positive expression",
+        "A mapped gene-by-Atlas-group context whose median expression meets the configured "
+        "threshold. Each Atlas matrix cell is a five-number summary (minimum, lower quartile, "
+        "median, upper quartile and maximum); it is not a list of biological replicates.",
+        "Median TPM at least 0.5. FPKM is used only when an experiment has no TPM matrix.",
     ),
     GlossaryEntry(
         "Pre-structure thresholds",
         "Broad expression support for one mapped gene",
-        "The fraction of that gene's available Atlas measurements classified as positive.",
-        "At least 0.50 (50%) of measurements were greater than 0.0.",
+        "The fraction of that gene's imported Atlas group contexts classified as "
+        "context-positive after selecting one unit per experiment.",
+        "At least 0.50 (50%) of available contexts had median TPM at least 0.5.",
     ),
     GlossaryEntry(
         "Pre-structure thresholds",
@@ -190,14 +192,14 @@ GLOSSARY_ENTRIES = (
     GlossaryEntry(
         "Expression evidence states",
         "LIMITED_OR_ZERO_EXPRESSION",
-        "Expression was measured, but fewer than half of available measurements exceeded the "
-        "recorded positive-expression threshold.",
+        "Expression was measured, but fewer than half of available Atlas group contexts met the "
+        "recorded median-expression threshold.",
     ),
     GlossaryEntry(
         "Expression evidence states",
         "BROAD_EXPRESSION_SUPPORTED",
-        "Expression was measured and at least half of available measurements exceeded the "
-        "recorded positive-expression threshold.",
+        "Expression was measured and at least half of available Atlas group contexts met the "
+        "recorded median-expression threshold.",
     ),
     GlossaryEntry(
         "Expression evidence states",

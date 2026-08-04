@@ -182,17 +182,25 @@ scientific_glossary <- function() {
       "At least 0.80 (80%) of species with usable domain annotation."
     ),
     add(
-      "Pre-structure thresholds", "Positive expression measurement",
+      "Pre-structure thresholds", "Context-positive expression",
       paste(
-        "A mapped gene-by-condition TPM or FPKM measurement above the",
-        "configured value, distinct from an unmapped gene or unavailable experiment."
+        "A mapped gene-by-Atlas-group context whose median expression meets",
+        "the configured threshold. Each Atlas matrix cell is a five-number",
+        "summary (minimum, lower quartile, median, upper quartile and maximum);",
+        "it is not a list of biological replicates."
       ),
-      "Greater than 0.0 TPM/FPKM in the completed run."
+      paste(
+        "Median TPM at least 0.5. FPKM is used only when an experiment has",
+        "no TPM matrix."
+      )
     ),
     add(
       "Pre-structure thresholds", "Broad expression support for one mapped gene",
-      "The fraction of that gene's available Atlas measurements classified as positive.",
-      "At least 0.50 (50%) of measurements were greater than 0.0."
+      paste(
+        "The fraction of that gene's imported Atlas group contexts classified",
+        "as context-positive after selecting one unit per experiment."
+      ),
+      "At least 0.50 of contexts had median TPM at least 0.5."
     ),
     add(
       "Pre-structure thresholds",
@@ -218,15 +226,15 @@ scientific_glossary <- function() {
     add(
       "Expression evidence states", "LIMITED_OR_ZERO_EXPRESSION",
       paste(
-        "Expression was measured, but fewer than half of available measurements",
-        "exceeded the recorded positive-expression threshold."
+        "Expression was measured, but fewer than half of available Atlas group",
+        "contexts met the recorded median-expression threshold."
       )
     ),
     add(
       "Expression evidence states", "BROAD_EXPRESSION_SUPPORTED",
       paste(
-        "Expression was measured and at least half of available measurements",
-        "exceeded the recorded positive-expression threshold."
+        "Expression was measured and at least half of available Atlas group",
+        "contexts met the recorded median-expression threshold."
       )
     ),
     add(

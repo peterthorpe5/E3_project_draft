@@ -202,7 +202,10 @@ def configure_logging(path: Path, verbose: bool) -> logging.Logger:
     destination = Path(path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(LOGGER_NAME)
-    logger.handlers.clear()
+    for handler in list(logger.handlers):
+        handler.flush()
+        handler.close()
+        logger.removeHandler(handler)
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     formatter = logging.Formatter(

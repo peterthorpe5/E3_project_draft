@@ -235,8 +235,12 @@ default_result_columns <- function(section, available) {
     ),
     expression = c(
       "cluster_id", "member_accession", "species_column", "mapping_status",
-      "gene_id", "organism_part", "developmental_stage", "condition",
-      "expression_context", "maximum_expression_value", "median_expression_value",
+      "gene_id", "experiment_accession", "sample_or_condition", "organism_part",
+      "developmental_stage", "condition", "treatment",
+      "metadata_status", "expression_unit", "expression_value",
+      "expression_minimum", "expression_lower_quartile",
+      "expression_median", "expression_upper_quartile", "expression_maximum",
+      "expression_positive",
       "broad_expression_supported", "evidence_status",
       "expression_species_fraction", "expression_evidence_coverage_fraction",
       "expression_supported_species", "expression_unavailable_species"
@@ -379,6 +383,8 @@ collect_distinct_result_values <- function(
 #' @param available_columns Relation columns.
 #' @param species Optional exact species label.
 #' @param tissue Optional exact organism-part label.
+#' @param metadata_status Optional exact metadata-status label.
+#' @param expression_positive Optional logical expression-threshold state.
 #' @param search Optional partial identifier search.
 #' @param max_rows Maximum rows.
 #' @return SQL query.
@@ -388,6 +394,8 @@ build_filtered_expression_query <- function(
   available_columns,
   species = "",
   tissue = "",
+  metadata_status = "",
+  expression_positive = "",
   search = "",
   max_rows = 1000L
 ) {
@@ -411,8 +419,28 @@ build_filtered_expression_query <- function(
   predicates <- c(
     predicates,
     exact_filter("species_column", species),
-    exact_filter("organism_part", tissue)
+    exact_filter("organism_part", tissue),
+    exact_filter("metadata_status", metadata_status)
   )
+  expression_positive <- trimws(expression_positive)
+  if (
+    nzchar(expression_positive) &&
+      "expression_positive" %in% available_columns
+  ) {
+    if (!expression_positive %in% c("true", "false")) {
+      stop(
+        "expression_positive must be empty, 'true', or 'false'.",
+        call. = FALSE
+      )
+    }
+    predicates <- c(
+      predicates,
+      paste0(
+        "\"expression_positive\" = ",
+        toupper(expression_positive)
+      )
+    )
+  }
   search <- trimws(search)
   if (nzchar(search)) {
     searchable <- intersect(
@@ -465,6 +493,8 @@ build_filtered_expression_query <- function(
 #' @param available_columns Relation columns.
 #' @param species Optional exact species label.
 #' @param tissue Optional exact organism-part label.
+#' @param metadata_status Optional exact metadata-status label.
+#' @param expression_positive Optional logical expression-threshold state.
 #' @param search Optional partial identifier search.
 #' @param max_rows Maximum rows.
 #' @return Collected bounded tibble.
@@ -475,6 +505,8 @@ collect_filtered_expression_result <- function(
   available_columns,
   species = "",
   tissue = "",
+  metadata_status = "",
+  expression_positive = "",
   search = "",
   max_rows = 1000L
 ) {
@@ -486,6 +518,8 @@ collect_filtered_expression_result <- function(
       available_columns = available_columns,
       species = species,
       tissue = tissue,
+      metadata_status = metadata_status,
+      expression_positive = expression_positive,
       search = search,
       max_rows = max_rows
     )

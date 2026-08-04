@@ -92,9 +92,10 @@ detect_expression_columns <- function(expression_tsv) {
 
 #' Import one Atlas expression matrix into long Parquet using DuckDB SQL.
 #'
-#' Uses `duckplyr::db_exec()` to run DuckDB SQL over the TSV file. The full wide
-#' expression matrix is not read into R memory. The output is a long Parquet file
-#' containing one row per gene-by-sample-or-condition expression value.
+#' The former DuckDB implementation could not represent Atlas five-number
+#' summaries safely and has been retired. Use
+#' `inst/scripts/04_python_import_expression_to_parquet.sh`, which is the sole
+#' versioned scientific parser for raw Atlas baseline matrices.
 #'
 #' @param expression_tsv Path to the Expression Atlas expression TSV.
 #' @param output_parquet Output Parquet file path.
@@ -111,6 +112,14 @@ normalise_expression_to_parquet <- function(
   expression_unit,
   force = FALSE
 ) {
+  stop(
+    paste(
+      "The R/DuckDB Atlas matrix parser is retired.",
+      "Use inst/scripts/04_python_import_expression_to_parquet.sh so that",
+      "five-number summaries, checksums and schema versions are validated."
+    ),
+    call. = FALSE
+  )
   if (!local_file_is_usable(file_path = expression_tsv)) {
     return(
       tibble::tibble(

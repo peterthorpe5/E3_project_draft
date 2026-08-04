@@ -665,12 +665,12 @@ def score_candidate(
         if row.get("species_column")
         and row.get("domain_support_status")
         in {"SUPPORTED", "ANNOTATED_NO_CATALOGUED_E3_DOMAIN"}
-    }
+    }.intersection(target_present)
     domain_supported_species = {
         str(row["species_column"])
         for row in domain_rows
         if row.get("domain_support_status") == "SUPPORTED" and row.get("species_column")
-    }
+    }.intersection(domain_assessed_species)
     domain_fraction = safe_fraction(
         len(domain_supported_species), len(domain_assessed_species)
     )
