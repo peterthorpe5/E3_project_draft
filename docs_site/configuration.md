@@ -56,6 +56,9 @@ analysis:
     minimum_mapping_fraction: 0.95
     minimum_pocket_plddt_fraction: 0.7
     minimum_region_overlap: 0.25
+  computational_chemistry:
+    component_config: ../../e3_structure_guided_chemistry/config/config.example.yaml
+    conda_environment: e3_structure_guided_chemistry
   prioritisation:
     profile_name: grant_aligned_stringent_v1
     minimum_target_species_fraction: 0.9
@@ -65,6 +68,9 @@ analysis:
 Weights validated as a group must sum to `1.0`. Fractions are validated within `0` to
 `1`. Structural-alignment evidence cannot influence prioritisation unless stage `09b` is
 enabled.
+
+The chemistry component configuration is required only when optional stage `09c` is
+enabled. Disabled `09c` is the default and does not require the component environment.
 
 ## `tools`
 

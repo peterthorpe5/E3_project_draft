@@ -40,8 +40,9 @@ Execution:
   --help                 Show this help text.
 
 The preflight rejects reusable discovery, OrthoFinder, expression, domain-result and
-ligandability authorities. All scientific stages, including structural alignment, must be
-enabled. Slurm mode submits the Snakemake controller as a batch job and is safe after logout.
+ligandability authorities. All 13 core stages, including structural alignment, must be
+enabled. Optional open-source chemistry Stage 09c may remain disabled. Slurm mode submits
+the Snakemake controller as a batch job and is safe after logout.
 EOF
 }
 

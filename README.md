@@ -21,11 +21,12 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.13.0 adds the corrected Expression Atlas five-number-summary contract,
-configuration-backed tissue contexts, checksum-bound TPM/FPKM selection, explicit unavailable
-expression states and a repository-wide scientific test-assurance audit. It retains the v0.11.0
-structural sensitivity and portable-review features. Earlier completed results remain immutable;
-corrected expression evidence must be integrated through a new versioned workflow run.
+Version 0.14.0 retains the corrected Expression Atlas five-number-summary contract and adds a
+group-level Stage 08 selection correction plus optional open-source structure-guided chemistry.
+The chemistry stage is disabled by default, requires no commercial or separately negotiated
+software licence, and records FMOPhore, FrAncestor and AlphaFold3 as not run. Earlier completed
+results remain immutable; corrected evidence must be integrated through a new versioned workflow
+run.
 
 See `TEST_ASSURANCE_AUDIT_v0_13_0.md` for the package-by-package evidence, defects found,
 coverage results, limitations and mandatory production release checks.
@@ -113,8 +114,9 @@ workflow run:
     --partition general
 ```
 
-The preflight requires schema version 2, central tool settings, all 13 stages and generation
-commands for every external scientific component. It rejects previous discovery, OrthoFinder,
+The preflight requires schema version 2, central tool settings, all 13 core stages and generation
+commands for every enabled external scientific component. Optional Stage 09c may remain disabled.
+It rejects previous discovery, OrthoFinder,
 expression, domain-result and ligandability authorities. The Slurm controller is submitted as a
 batch job, so the terminal can close after submission.
 
@@ -510,6 +512,7 @@ through `--mode slurm --dry-run`.
 | `08_shortlist_gate` | Master prioritisation | Build the transparent computational structural shortlist |
 | `09_ligandability` | `e3_ligandability_pipeline` plus master adapter | Select pockets and assess pocket-region conservation |
 | `09b_structural_alignment` | `e3_structural_alignment` | Optional US-align/TM-align 3D pocket-position evidence |
+| `09c_computational_chemistry` | `e3_structure_guided_chemistry` | Optional open-source pharmacophore and fragment-priority hand-off |
 | `10_integrated_resource` | Master workflow | Create integrated DuckDB, Parquet, TSV and scientific report |
 | `11_app_ready` | Master workflow | Publish Python/Shiny hand-off configuration |
 
@@ -776,6 +779,27 @@ conda run --name e3_structural_alignment ./run_tests.sh
 The standalone interface uses named options. In normal use it is stage `09b` and may remain
 disabled when compatible structures are insufficient.
 
+### `e3_structure_guided_chemistry`
+
+Purpose: optional residue-derived 3D pharmacophore hypotheses, evolutionary
+stability/uniqueness review and open-fragment compatibility ranking.
+
+```bash
+cd e3_structure_guided_chemistry
+conda env create --file environment.yml
+conda run --name e3_structure_guided_chemistry \
+    python -m pip install --no-deps --editable .
+conda run --name e3_structure_guided_chemistry ./run_tests.sh
+
+./scripts/submit_e3_structure_guided_chemistry_slurm.sh --help
+```
+
+Only open-source components are used; no commercial or separately negotiated
+licence is required. FMOPhore, FrAncestor and AlphaFold3 are recorded as
+`NOT_RUN`, and the open method is never labelled as any of those methods.
+Stage `09c` is disabled by default, so the end-to-end workflow does not require
+this environment unless the stage is explicitly enabled.
+
 ### `e3_python_app`
 
 Purpose: read-only Streamlit exploration of a completed result.
@@ -823,6 +847,7 @@ It can alternatively use `--resource_parquet_path` or `--resource_run_dir`.
 | `expression_downloader` | Expression Atlas acquisition/import | Protein activity |
 | `e3_ligandability_pipeline` | Predicted structural confidence and cavities | Binding or degradative activity |
 | `e3_structural_alignment` | Predicted 3D position/conservation comparisons | Ligand selectivity or biochemical function |
+| `e3_structure_guided_chemistry` | Open residue pharmacophores and fragment compatibility priorities | FMO energies, docking, affinity, selectivity or PROTAC efficacy |
 | `e3_end_to_end_workflow` | Orchestration, integration, provenance and transparent prioritisation | Experimental proof |
 | Reporting apps | Read-only exploration | New scientific transformations |
 

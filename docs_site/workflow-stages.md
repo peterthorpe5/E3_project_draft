@@ -13,6 +13,7 @@
 | `08_shortlist_gate` | Ranks candidates before structural analysis | Controls expensive structure work transparently |
 | `09_ligandability` | Assesses model confidence and predicted pockets | Adds computational pocket evidence |
 | `09b_structural_alignment` | Compares pocket position in three dimensions | Tests whether predicted pockets occupy comparable regions |
+| `09c_computational_chemistry` | Builds residue-derived pharmacophores and optional open-fragment priorities | Provides an optional no-commercial-licence chemistry hand-off |
 | `10_integrated_resource` | Joins all evidence and calculates final rankings | Produces one traceable release authority |
 | `11_app_ready` | Publishes reporting-app hand-offs | Prevents apps opening an incomplete run |
 
@@ -35,6 +36,11 @@ Common modes are:
 
 Evidence mode is provenance, not decoration. A stage declared `generate` cannot silently
 fall back to reuse.
+
+Stage `09c_computational_chemistry` is disabled and non-required by default. Its
+`skipped_optional` manifest is a valid dependency for Stage 10, so ordinary runs do not
+need the chemistry environment. If enabled, its reviewed component configuration becomes
+a checksum-controlled input.
 
 ## Atomic publication
 

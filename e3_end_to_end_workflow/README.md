@@ -5,7 +5,12 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.13.0` supports three explicit production strategies:
+Version `0.14.0` retains the corrected Expression Atlas contract and adds two
+linked changes: Stage 08 now applies the structure limit to distinct
+evolutionary groups, and optional Stage 09c provides an open-source
+structure-guided chemistry hand-off without commercial-licence tools.
+
+The workflow supports four explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -32,7 +37,7 @@ development runs.
 The package Conda environment now installs both Snakemake 9 and OrthoFinder 2.5.5. A separately
 prepared OrthoFinder environment is neither used nor required for fresh workflow runs.
 
-The complete thirteen-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
+The complete fourteen-stage DAG, manifests, atomic publication, local/Slurm profiles and synthetic
 end-to-end test remain in place. The reusable current-study template contains the reviewed paths
 already known to the project and fails closed only for the ligandability resource manifest that
 must be built from the retained result roots. The future fresh template uses explicit
@@ -131,9 +136,11 @@ Before the first submission, create an immutable run YAML:
 7. Review each stage's `threads`, `memory_mb` and `runtime_minutes`.
 8. Leave `09b_structural_alignment` disabled for an orchestration test or when a group lacks
    sufficient compatible models. Enable it only after installing `e3_structural_alignment`.
-9. Keep `analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D
+9. Leave `09c_computational_chemistry` disabled unless the open-source chemistry package and its
+   reviewed component YAML have been installed. Disabled is the default and does not block Stage 10.
+10. Keep `analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D
    thresholds have been reviewed on a multi-structure result.
-10. Validate and dry-run:
+11. Validate and dry-run:
 
 ```bash
 e3-workflow validate --config config/my_immutable_run.yaml
@@ -168,6 +175,7 @@ and diagnostics.
 | `08_shortlist_gate` | native prioritisation | scored candidates, structural accessions and review template |
 | `09_ligandability` | native reuse/conservation adapter | best pockets, pocket-region conservation and validated FASTA coordinates |
 | `09b_structural_alignment` | `e3_structural_alignment` | optional US-align/TM-align pocket-position/conservation tests and interactive HTML |
+| `09c_computational_chemistry` | `e3_structure_guided_chemistry` | optional residue-derived pharmacophores and open-fragment compatibility priorities; no FMOPhore, FrAncestor or AlphaFold3 execution |
 | `10_integrated_resource` | native release assembler | complete DuckDB, candidate master Parquet, final TSV/Parquet and scientific HTML |
 | `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
 

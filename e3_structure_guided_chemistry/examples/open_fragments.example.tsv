@@ -1,0 +1,4 @@
+fragment_id	smiles	source
+EXAMPLE_001	c1ccncc1	illustrative_test_only
+EXAMPLE_002	CC(=O)N	illustrative_test_only
+EXAMPLE_003	O=C(O)c1ccccc1	illustrative_test_only

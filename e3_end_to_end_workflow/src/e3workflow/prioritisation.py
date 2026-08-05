@@ -12,11 +12,10 @@ import duckdb
 
 from e3workflow.config import WorkflowConfig
 from e3workflow.errors import StageError
-from e3workflow.io_utils import read_tsv, write_tsv
+from e3workflow.io_utils import write_tsv
 from e3workflow.orthology_groups import (
     candidate_mapping_rows,
     choose_primary_groups,
-    selected_group_members,
 )
 from e3workflow.production import find_one, find_orthology_table, split_accessions
 from e3workflow.resources import EXPRESSION_RESOURCE_TYPES, read_resource_manifest
@@ -155,6 +154,28 @@ REPRESENTATIVE_AUDIT_FIELDS = (
     "selection_reason",
 )
 
+ALL_MEMBER_STRUCTURE_FIELDS = (
+    "evolutionary_group_rank",
+    "evolutionary_group_key",
+    "computational_rank",
+    "cluster_id",
+    "primary_group_type",
+    "primary_group_id",
+    "candidate_accession",
+    "species_column",
+    "raw_identifier",
+    "parsed_entry",
+    "review_status",
+    "mapping_status",
+    "is_input_candidate",
+    "sequence_length",
+    "group_reference_length",
+    "length_ratio",
+    "likely_full_length",
+    "prestructure_score",
+    "selection_reason",
+)
+
 REVIEW_FIELDS = (
     "computational_rank",
     "cluster_id",
@@ -251,6 +272,43 @@ def build_evolutionary_group_records(
     return groups, contributors
 
 
+def apply_evolutionary_group_selection(
+    *, records: Sequence[dict[str, Any]], structure_group_limit: int
+) -> int:
+    """Select distinct evolutionary groups and flag every contributing cluster.
+
+    DeepClust can contribute more than one ranked cluster to the same primary
+    OrthoFinder group. Applying ``structure_group_limit`` directly to the
+    cluster rows therefore selects fewer evolutionary groups than requested.
+    This function derives the authoritative group order first and then
+    propagates the group-level decision back to every cluster row.
+
+    Args:
+        records: Ranked, mutable DeepClust candidate records.
+        structure_group_limit: Maximum number of distinct evolutionary groups.
+
+    Returns:
+        Number of distinct evolutionary groups selected.
+
+    Raises:
+        StageError: If ``structure_group_limit`` is not positive.
+    """
+    if structure_group_limit < 1:
+        raise StageError("structure_group_limit must be a positive integer")
+    groups, _ = build_evolutionary_group_records(records)
+    selected_keys = {
+        str(group["evolutionary_group_key"])
+        for group in groups
+        if int(group["evolutionary_group_rank"]) <= structure_group_limit
+    }
+    for record in records:
+        group_type = str(record.get("primary_group_type", ""))
+        group_id = str(record.get("primary_group_id", ""))
+        key = f"{group_type}:{group_id}" if group_type and group_id else ""
+        record["computational_structure_selected"] = key in selected_keys
+    return len(selected_keys)
+
+
 def _representative_sort_key(record: Mapping[str, Any]) -> tuple[Any, ...]:
     """Return a conservative deterministic full-length representative order."""
     ratio = float(record["length_ratio"])
@@ -272,8 +330,13 @@ def derive_structural_representatives(
     *,
     config: WorkflowConfig,
     stage_root: Path,
-) -> None:
-    """Derive one auditable representative per target species and group."""
+) -> dict[str, int]:
+    """Derive one auditable representative per target species and group.
+
+    Returns:
+        Counts for the evolutionary-group, all-member and representative
+        selection authorities.
+    """
     tables = stage_root / "tables"
     ranking_path = tables / "computational_prestructure_ranking.parquet"
     member_path = find_orthology_table(
@@ -388,6 +451,7 @@ def derive_structural_representatives(
             float(statistics.median(species_maxima)) if species_maxima else 0.0
         )
     audit_rows: list[dict[str, Any]] = []
+    all_member_rows: list[dict[str, Any]] = []
     selected_rows: list[dict[str, Any]] = []
     for (group_type, group_id, species), raw_candidates in sorted(
         candidates_by_group_species.items()
@@ -460,6 +524,32 @@ def derive_structural_representatives(
                 "selection_reason": reason,
             }
             audit_rows.append(audit)
+            all_member_rows.append(
+                {
+                    "evolutionary_group_rank": group["evolutionary_group_rank"],
+                    "evolutionary_group_key": group["evolutionary_group_key"],
+                    "computational_rank": group["lead_computational_rank"],
+                    "cluster_id": group["lead_cluster_id"],
+                    "primary_group_type": group_type,
+                    "primary_group_id": group_id,
+                    "candidate_accession": candidate["candidate_accession"],
+                    "species_column": species,
+                    "raw_identifier": candidate.get("raw_identifier", ""),
+                    "parsed_entry": candidate.get("parsed_entry", ""),
+                    "review_status": candidate.get("review_status", ""),
+                    "mapping_status": candidate.get("mapping_status", ""),
+                    "is_input_candidate": candidate.get("is_input_candidate", False),
+                    "sequence_length": candidate["sequence_length"],
+                    "group_reference_length": reference_length,
+                    "length_ratio": candidate["length_ratio"],
+                    "likely_full_length": candidate["likely_full_length"],
+                    "prestructure_score": group["best_prestructure_score"],
+                    "selection_reason": (
+                        "target-species member of a computationally selected "
+                        "evolutionary candidate group"
+                    ),
+                }
+            )
             if selected:
                 selected_rows.append(
                     {
@@ -484,6 +574,12 @@ def derive_structural_representatives(
         parquet_path=tables / "evolutionary_group_cluster_contributors.parquet",
         fieldnames=EVOLUTIONARY_CONTRIBUTOR_FIELDS,
         records=contributors,
+    )
+    write_records(
+        tsv_path=tables / "structural_analysis_accessions_all_members.tsv",
+        parquet_path=tables / "structural_analysis_accessions_all_members.parquet",
+        fieldnames=ALL_MEMBER_STRUCTURE_FIELDS,
+        records=all_member_rows,
     )
     write_records(
         tsv_path=tables / "structural_representative_selection_audit.tsv",
@@ -523,6 +619,12 @@ def derive_structural_representatives(
             "sequence_length",
         ),
     )
+    return {
+        "distinct_evolutionary_group_count": len(groups),
+        "selected_evolutionary_group_count": len(selected_groups),
+        "all_member_structural_accession_count": len(all_member_rows),
+        "selected_structural_representative_count": len(selected_rows),
+    }
 
 
 def safe_fraction(numerator: float, denominator: float) -> float:
@@ -849,10 +951,8 @@ def score_candidate(
     }
 
 
-def rank_records(
-    *, records: Sequence[dict[str, Any]], structure_group_limit: int
-) -> list[dict[str, Any]]:
-    """Sort, rank and select pre-structure records deterministically."""
+def rank_records(*, records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort and rank pre-structure cluster records deterministically."""
     ordered = sorted(
         records,
         key=lambda row: (
@@ -864,7 +964,7 @@ def rank_records(
     )
     for rank, row in enumerate(ordered, start=1):
         row["computational_rank"] = rank
-        row["computational_structure_selected"] = rank <= structure_group_limit
+        row["computational_structure_selected"] = False
     return ordered
 
 
@@ -945,19 +1045,11 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             if record.get("record_type") == "HIERARCHICAL_ORTHOGROUP"
         )
         scored.append(scored_record)
-    ranked = rank_records(
-        records=scored,
+    ranked = rank_records(records=scored)
+    selected_evolutionary_group_count = apply_evolutionary_group_selection(
+        records=ranked,
         structure_group_limit=config.analysis.prioritisation.structure_group_limit,
     )
-    selected_members = selected_group_members(
-        selected=primary_by_cluster,
-        orthogroup_membership=orthogroup_membership,
-        hierarchical_membership=hierarchical_membership,
-        target_species=config.analysis.prioritisation.target_species,
-    )
-    members_by_cluster: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for member in selected_members:
-        members_by_cluster[str(member["cluster_id"])].append(member)
     tables = stage_root / "tables"
     write_records(
         tsv_path=tables / "computational_prestructure_ranking.tsv",
@@ -965,62 +1057,11 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         fieldnames=PRESTRUCTURE_FIELDS,
         records=ranked,
     )
-    structural_rows = []
-    for row in ranked:
-        if not row["computational_structure_selected"]:
-            continue
-        cluster_id = str(row["cluster_id"])
-        primary = primary_by_cluster.get(cluster_id)
-        if primary is None:
-            continue
-        relevant = [
-            member
-            for member in members_by_cluster.get(cluster_id, [])
-            if str(member.get("member_accession", "")).strip()
-        ]
-        for mapping in sorted(
-            relevant,
-            key=lambda item: (
-                str(item.get("species_column", "")),
-                str(item["member_accession"]),
-            ),
-        ):
-            structural_rows.append(
-                {
-                    "computational_rank": row["computational_rank"],
-                    "cluster_id": cluster_id,
-                    "primary_group_type": primary["record_type"],
-                    "primary_group_id": primary["group_id"],
-                    "candidate_accession": mapping["member_accession"],
-                    "species_column": mapping.get("species_column", ""),
-                    "prestructure_score": row["prestructure_score"],
-                    "selection_reason": (
-                        "target_species_member_of_computationally_selected_primary_group"
-                    ),
-                }
-            )
-    unique_structural = {
-        (row["cluster_id"], row["candidate_accession"]): row for row in structural_rows
-    }
-    write_records(
-        tsv_path=tables / "structural_analysis_accessions_all_members.tsv",
-        parquet_path=tables / "structural_analysis_accessions_all_members.parquet",
-        fieldnames=(
-            "computational_rank",
-            "cluster_id",
-            "primary_group_type",
-            "primary_group_id",
-            "candidate_accession",
-            "species_column",
-            "prestructure_score",
-            "selection_reason",
-        ),
-        records=[unique_structural[key] for key in sorted(unique_structural)],
+    selection_counts = derive_structural_representatives(
+        config=config,
+        stage_root=stage_root,
     )
-    derive_structural_representatives(config=config, stage_root=stage_root)
-    _, selected_representatives = read_tsv(
-        tables / "structural_analysis_accessions.tsv"
-    )
+    evolutionary_groups, _ = build_evolutionary_group_records(ranked)
     review_rows = [
         {
             "computational_rank": row["computational_rank"],
@@ -1043,16 +1084,28 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             {
                 "candidate_cluster_count": len(ranked),
                 "mapped_primary_group_count": sum(bool(row["primary_group_id"]) for row in ranked),
-                "grant_aligned_stringent_pass_count": sum(
+                "grant_aligned_stringent_cluster_count": sum(
                     bool(row["grant_aligned_stringent_pass"]) for row in ranked
                 ),
-                "computational_structure_group_count": sum(
+                "grant_aligned_stringent_evolutionary_group_count": sum(
+                    bool(row["lead_grant_aligned_stringent_pass"])
+                    for row in evolutionary_groups
+                ),
+                "distinct_evolutionary_group_count": selection_counts[
+                    "distinct_evolutionary_group_count"
+                ],
+                "computational_structure_evolutionary_group_count": (
+                    selected_evolutionary_group_count
+                ),
+                "computational_structure_contributing_cluster_count": sum(
                     bool(row["computational_structure_selected"]) for row in ranked
                 ),
-                "all_member_structural_accession_count": len(unique_structural),
-                "selected_structural_representative_count": len(
-                    selected_representatives
-                ),
+                "all_member_structural_accession_count": selection_counts[
+                    "all_member_structural_accession_count"
+                ],
+                "selected_structural_representative_count": selection_counts[
+                    "selected_structural_representative_count"
+                ],
                 "score_minimum": min(
                     (float(row["prestructure_score"]) for row in ranked),
                     default=math.nan,
@@ -1071,9 +1124,13 @@ def run_prestructure_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         (
             "candidate_cluster_count",
             "mapped_primary_group_count",
-            "grant_aligned_stringent_pass_count",
-            "computational_structure_group_count",
-            "structural_accession_count",
+            "grant_aligned_stringent_cluster_count",
+            "grant_aligned_stringent_evolutionary_group_count",
+            "distinct_evolutionary_group_count",
+            "computational_structure_evolutionary_group_count",
+            "computational_structure_contributing_cluster_count",
+            "all_member_structural_accession_count",
+            "selected_structural_representative_count",
             "score_minimum",
             "score_maximum",
             "profile_name",

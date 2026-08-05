@@ -26,6 +26,7 @@ STAGE_NAMES = (
     "08_shortlist_gate",
     "09_ligandability",
     "09b_structural_alignment",
+    "09c_computational_chemistry",
     "10_integrated_resource",
     "11_app_ready",
 )
@@ -78,6 +79,7 @@ STAGE_DEPENDENCIES = {
     ),
     "09_ligandability": ("08_shortlist_gate",),
     "09b_structural_alignment": ("09_ligandability",),
+    "09c_computational_chemistry": ("09_ligandability",),
     "10_integrated_resource": (
         "03_candidate_evidence",
         "05_orthology",
@@ -85,6 +87,7 @@ STAGE_DEPENDENCIES = {
         "07_expression",
         "09_ligandability",
         "09b_structural_alignment",
+        "09c_computational_chemistry",
     ),
     "11_app_ready": ("10_integrated_resource",),
 }
@@ -150,6 +153,16 @@ STAGE_PURPOSES = {
         (
             "Sequence-aligned pocket regions do not establish that predicted pockets occupy the "
             "same three-dimensional position."
+        ),
+    ),
+    "09c_computational_chemistry": (
+        (
+            "Build open-source, residue-derived pharmacophore hypotheses for the "
+            "highest-ranked evolutionarily stable candidate pockets."
+        ),
+        (
+            "This optional stage provides a transparent computational-chemistry "
+            "hand-off without requiring commercial or restricted software."
         ),
     ),
     "10_integrated_resource": (
@@ -235,6 +248,16 @@ STAGE_INTERPRETATIONS = {
         (
             "Structural similarity and geometric pocket overlap remain computational predictions; "
             "they do not establish binding, selectivity or biochemical function."
+        ),
+    ),
+    "09c_computational_chemistry": (
+        (
+            "Checksum-bound pocket structures support residue-derived pharmacophore "
+            "hypotheses and optional open fragment compatibility ranking."
+        ),
+        (
+            "The open method is not FMOPhore, FrAncestor, docking, binding-affinity "
+            "prediction or experimental fragment screening."
         ),
     ),
     "10_integrated_resource": (
@@ -420,6 +443,14 @@ class StructuralAlignmentAnalysisConfig:
 
 
 @dataclass(frozen=True)
+class ComputationalChemistryAnalysisConfig:
+    """Optional open-source structure-guided chemistry settings."""
+
+    component_config: Path | None
+    conda_environment: str
+
+
+@dataclass(frozen=True)
 class PrioritisationConfig:
     """Grant-aligned evidence integration and ranking configuration."""
 
@@ -450,6 +481,7 @@ class AnalysisConfig:
     expression: ExpressionAnalysisConfig
     ligandability: LigandabilityAnalysisConfig
     structural_alignment: StructuralAlignmentAnalysisConfig
+    computational_chemistry: ComputationalChemistryAnalysisConfig
     prioritisation: PrioritisationConfig
 
 
@@ -523,11 +555,18 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
     """
     inputs: list[tuple[str, Path]] = []
     if config.mode == "synthetic":
-        return (
+        synthetic_inputs = [
             ("proteomes", config.proteomes_manifest),
             ("seeds", config.seeds_manifest),
             ("shortlist", config.shortlist_manifest),
-        )
+        ]
+        if config.stage("09c_computational_chemistry").enabled:
+            _append_resource(
+                synthetic_inputs,
+                "computational_chemistry_component_config",
+                config.analysis.computational_chemistry.component_config,
+            )
+        return tuple(synthetic_inputs)
     if (
         config.stage("01_prepared_proteomes").enabled
         or config.stage("02_discovery").command
@@ -584,6 +623,12 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
                 "ligandability_manifest",
                 config.resources.ligandability_manifest,
             )
+    if config.stage("09c_computational_chemistry").enabled:
+        _append_resource(
+            inputs,
+            "computational_chemistry_component_config",
+            config.analysis.computational_chemistry.component_config,
+        )
     if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         inputs.append(("shortlist", config.shortlist_manifest))
     return tuple(dict(inputs).items())
@@ -763,6 +808,10 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
     structural_alignment = _mapping(
         analysis.get("structural_alignment", {}),
         "analysis.structural_alignment",
+    )
+    computational_chemistry = _mapping(
+        analysis.get("computational_chemistry", {}),
+        "analysis.computational_chemistry",
     )
     prioritisation = _mapping(
         analysis.get("prioritisation", {}), "analysis.prioritisation"
@@ -1069,6 +1118,20 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
                 maximum=1.0,
             ),
         ),
+        computational_chemistry=ComputationalChemistryAnalysisConfig(
+            component_config=_optional_path(
+                computational_chemistry.get("component_config"),
+                base,
+                "analysis.computational_chemistry.component_config",
+            ),
+            conda_environment=_non_empty_string(
+                computational_chemistry.get(
+                    "conda_environment",
+                    "e3_structure_guided_chemistry",
+                ),
+                "analysis.computational_chemistry.conda_environment",
+            ),
+        ),
         prioritisation=PrioritisationConfig(
             profile_name=_non_empty_string(
                 prioritisation.get("profile_name", "grant_aligned_stringent_v1"),
@@ -1227,7 +1290,10 @@ def load_config(path: Path) -> WorkflowConfig:
     stages = []
     for name in STAGE_NAMES:
         item = _mapping(raw_stages.get(name, {}), f"stages.{name}")
-        optional_by_default = name == "09b_structural_alignment"
+        optional_by_default = name in {
+            "09b_structural_alignment",
+            "09c_computational_chemistry",
+        }
         enabled = item.get("enabled", not optional_by_default)
         required = item.get("required", not optional_by_default)
         if not isinstance(enabled, bool) or not isinstance(required, bool):
@@ -1335,6 +1401,17 @@ def load_config(path: Path) -> WorkflowConfig:
         raise ConfigurationError(
             "analysis.structural_alignment.require_for_final_recommendation "
             "requires the 09b_structural_alignment stage to be enabled"
+        )
+    chemistry_stage = next(
+        stage for stage in stages if stage.name == "09c_computational_chemistry"
+    )
+    if (
+        chemistry_stage.enabled
+        and analysis_config.computational_chemistry.component_config is None
+    ):
+        raise ConfigurationError(
+            "Enabled stage 09c_computational_chemistry requires "
+            "analysis.computational_chemistry.component_config"
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")

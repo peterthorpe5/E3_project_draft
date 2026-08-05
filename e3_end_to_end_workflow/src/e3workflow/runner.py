@@ -639,6 +639,24 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                     / "tables"
                     / "reused_asset_manifest.parquet"
                 ),
+                "computational_chemistry_component_config": str(
+                    config.analysis.computational_chemistry.component_config or ""
+                ),
+                "computational_chemistry_conda_environment": (
+                    config.analysis.computational_chemistry.conda_environment
+                ),
+                "evolutionary_group_ranking": str(
+                    run_root
+                    / "08_shortlist_gate"
+                    / "tables"
+                    / "evolutionary_candidate_group_ranking.parquet"
+                ),
+                "pocket_conservation_summary": str(
+                    run_root
+                    / "09_ligandability"
+                    / "tables"
+                    / "pocket_conservation_summary.parquet"
+                ),
                 "usalign_executable": (
                     config.analysis.structural_alignment.usalign_executable
                 ),

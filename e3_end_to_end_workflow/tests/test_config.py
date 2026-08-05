@@ -44,9 +44,13 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         "07_expression",
     }
     assert stage_dependencies("09b_structural_alignment") == ("09_ligandability",)
+    assert stage_dependencies("09c_computational_chemistry") == ("09_ligandability",)
     assert "09b_structural_alignment" in stage_dependencies("10_integrated_resource")
+    assert "09c_computational_chemistry" in stage_dependencies("10_integrated_resource")
     assert config.stage("09b_structural_alignment").enabled is False
     assert config.stage("09b_structural_alignment").required is False
+    assert config.stage("09c_computational_chemistry").enabled is False
+    assert config.stage("09c_computational_chemistry").required is False
     assert "04_orthofinder" in stage_ancestors("05_orthology")
     assert "02_discovery" in stage_ancestors("05_orthology")
     assert "reviewed reuse or a fresh isolated run" in stage_purpose("04_orthofinder")[0]
@@ -365,3 +369,56 @@ def test_structural_prioritisation_requires_enabled_stage(
     )
     with pytest.raises(ConfigurationError, match="requires the 09b_structural_alignment"):
         load_config(synthetic_config)
+
+
+def test_enabled_computational_chemistry_requires_component_config(
+    synthetic_config: Path,
+) -> None:
+    """An enabled chemistry stage must never receive an empty config placeholder."""
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    data["stages"]["09c_computational_chemistry"] = {
+        "enabled": True,
+        "required": False,
+        "evidence_mode": "generate",
+        "command": ["e3-chemistry", "run"],
+        "expected_outputs": ["METHOD_STATUS.tsv"],
+    }
+    synthetic_config.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="component_config"):
+        load_config(synthetic_config)
+
+
+def test_enabled_computational_chemistry_registers_controlled_config(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """The reviewed component YAML must enter the checksum-controlled inputs."""
+    component_config = tmp_path / "chemistry.yaml"
+    component_config.write_text("schema_version: 1\n", encoding="utf-8")
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    data.setdefault("analysis", {})["computational_chemistry"] = {
+        "component_config": str(component_config),
+        "conda_environment": "e3_structure_guided_chemistry",
+    }
+    data["stages"]["09c_computational_chemistry"] = {
+        "enabled": True,
+        "required": False,
+        "evidence_mode": "generate",
+        "command": ["e3-chemistry", "run"],
+        "expected_outputs": ["METHOD_STATUS.tsv"],
+    }
+    synthetic_config.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    config = load_config(synthetic_config)
+    controlled = dict(controlled_input_paths(config))
+
+    assert controlled["computational_chemistry_component_config"] == (
+        component_config.resolve()
+    )

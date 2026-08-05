@@ -10,7 +10,8 @@ requires:
 
 - schema version 2 and a non-empty central `tools` section;
 - production mode;
-- all 13 stages enabled, including structural alignment;
+- all 13 core stages enabled, including structural alignment; optional Stage
+  `09c_computational_chemistry` may remain disabled;
 - generation commands for discovery, candidate evidence, OrthoFinder, orthology,
   expression, ligandability and structural alignment;
 - no candidate-evidence, OrthoFinder, expression, domain-result or ligandability reuse

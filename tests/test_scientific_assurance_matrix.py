@@ -41,7 +41,14 @@ class ScientificAssuranceMatrixTests(unittest.TestCase):
             identity = (row["package"], row["scientific_contract"])
             self.assertNotIn(identity, identities)
             identities.add(identity)
-            self.assertIn(row["status"], {"PASS", "PENDING_R_ENVIRONMENT"})
+            self.assertIn(
+                row["status"],
+                {
+                    "PASS",
+                    "PENDING_DEPENDENCY_ENVIRONMENT",
+                    "PENDING_R_ENVIRONMENT",
+                },
+            )
 
     def test_every_python_reference_names_a_real_test(self) -> None:
         """A traceability row may not cite a misspelled or removed Python test."""

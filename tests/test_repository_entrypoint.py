@@ -27,7 +27,7 @@ class RepositoryEntrypointTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(result.stdout.strip(), "E3 project launcher 0.13.0")
+        self.assertEqual(result.stdout.strip(), "E3 project launcher 0.14.0")
 
     def test_help_documents_all_execution_modes(self) -> None:
         """The help text must explain cluster, local and legacy modes."""
@@ -115,6 +115,22 @@ class RepositoryEntrypointTests(unittest.TestCase):
             self.assertNotIn("python <<", shell)
             self.assertNotIn("python - <<", shell)
 
+    def test_expression_root_wrappers_delegate_to_tested_implementations(self) -> None:
+        """Relocated Expression Atlas launchers must not resolve missing siblings."""
+        wrappers = {
+            "run_clean_rebuild_from_existing.sh": (
+                "inst/scripts/run_clean_rebuild_from_existing.sh"
+            ),
+            "run_python_first_then_R.sh": (
+                "inst/scripts/run_python_first_then_r.sh"
+            ),
+        }
+        for wrapper_name, implementation in wrappers.items():
+            wrapper = self.repository_root / "expression_downloader" / wrapper_name
+            source = wrapper.read_text(encoding="utf-8")
+            self.assertIn(implementation, source)
+            self.assertIn('exec "${IMPLEMENTATION}" "$@"', source)
+
     def test_pytest_launchers_are_package_scoped(self) -> None:
         """Pytest launchers must not collect sibling packages accidentally."""
 
@@ -122,6 +138,7 @@ class RepositoryEntrypointTests(unittest.TestCase):
             "e3_end_to_end_workflow",
             "e3_python_app",
             "e3_structural_alignment",
+            "e3_structure_guided_chemistry",
         )
         for package_name in package_names:
             script = (
@@ -144,7 +161,7 @@ class RepositoryEntrypointTests(unittest.TestCase):
         )
         self.assertEqual(
             version.stdout.strip(),
-            "E3 fresh pipeline launcher 0.13.0",
+            "E3 fresh pipeline launcher 0.14.0",
         )
         configuration = (
             self.repository_root

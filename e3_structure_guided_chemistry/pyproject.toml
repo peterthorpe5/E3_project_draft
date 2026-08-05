@@ -3,39 +3,40 @@ requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "e3-end-to-end-workflow"
-version = "0.14.0"
-description = "Restartable Snakemake orchestration for the ARIA plant E3 discovery resource"
+name = "e3-structure-guided-chemistry"
+version = "0.1.0"
+description = "Open-source structure-guided pharmacophore and fragment prioritisation for plant E3 ligases"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "Peter Thorpe and collaborators"}]
 dependencies = [
   "duckdb>=1.4,<2",
-  "openpyxl>=3.1,<4",
-  "packaging>=24,<27",
+  "gemmi>=0.7,<1",
   "PyYAML>=6,<7",
-  "psutil>=6,<8",
 ]
 
 [project.optional-dependencies]
+fragments = [
+  "rdkit>=2024.3,<2027",
+]
 dev = [
   "coverage>=7.6,<8",
   "pycodestyle>=2.12,<3",
   "pydocstyle>=6.3,<7",
   "pytest>=8,<9",
-  "snakemake>=9,<10",
+  "rdkit>=2024.3,<2027",
 ]
 
 [project.scripts]
-e3-workflow = "e3workflow.cli:main"
+e3-chemistry = "e3chemistry.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.coverage.run]
 branch = true
-source = ["e3workflow"]
+source = ["e3chemistry"]
 omit = ["*/__main__.py"]
 
 [tool.coverage.report]
@@ -45,7 +46,7 @@ precision = 2
 
 [tool.pycodestyle]
 max-line-length = 100
-exclude = ".git,.snakemake,__pycache__,build,dist"
+exclude = ".git,__pycache__,build,dist"
 
 [tool.pydocstyle]
 convention = "google"

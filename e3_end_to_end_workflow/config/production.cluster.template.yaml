@@ -94,6 +94,12 @@ analysis:
     minimum_group_support_fraction: 0.75
     use_for_prioritisation: false
     prioritisation_weight: 0.25
+  computational_chemistry:
+    # The optional Stage 09c must remain disabled unless this open-source,
+    # no-commercial-licence
+    # component configuration has been reviewed and installed.
+    component_config: ../../e3_structure_guided_chemistry/config/config.example.yaml
+    conda_environment: e3_structure_guided_chemistry
   prioritisation:
     profile_name: CHANGE_ME_versioned_scoring_profile
     target_species: [CHANGE_ME_species_1, CHANGE_ME_species_2]
@@ -264,7 +270,12 @@ stages:
     evidence_mode: derive
     expected_outputs:
       - tables/computational_prestructure_ranking.parquet
+      - tables/evolutionary_candidate_group_ranking.parquet
+      - tables/evolutionary_group_cluster_contributors.parquet
       - tables/structural_analysis_accessions.parquet
+      - tables/structural_analysis_accessions_all_members.parquet
+      - tables/structural_representative_selection_audit.parquet
+      - tables/ligandability_accessions.tsv
       - tables/human_review_template.tsv
       - qc/prioritisation_validation.tsv
     threads: 16
@@ -348,6 +359,47 @@ stages:
     threads: 32
     memory_mb: 120000
     runtime_minutes: 2880
+  09c_computational_chemistry:
+    enabled: false
+    required: false
+    evidence_mode: disabled
+    command:
+      - conda
+      - run
+      - --no-capture-output
+      - --name
+      - "{computational_chemistry_conda_environment}"
+      - e3-chemistry
+      - run
+      - --config
+      - "{computational_chemistry_component_config}"
+      - --group-ranking
+      - "{evolutionary_group_ranking}"
+      - --selected-pockets
+      - "{selected_pockets}"
+      - --pocket-residue-mappings
+      - "{pocket_residue_mappings}"
+      - --pocket-conservation-summary
+      - "{pocket_conservation_summary}"
+      - --structure-asset-manifest
+      - "{structure_asset_manifest}"
+      - --output-dir
+      - "{stage_dir}"
+    expected_outputs:
+      - tables/chemistry_target_manifest.parquet
+      - tables/pocket_pharmacophore_features.parquet
+      - tables/group_pharmacophore_summary.parquet
+      - tables/fragment_properties.parquet
+      - tables/fragment_pharmacophore_ranking.parquet
+      - qc/computational_chemistry_validation.tsv
+      - reports/structure_guided_chemistry_summary.html
+      - provenance/run_manifest.json
+      - METHOD_STATUS.tsv
+      - COMPONENT_LICENCES.tsv
+      - MILESTONE_COVERAGE.tsv
+    threads: 4
+    memory_mb: 16000
+    runtime_minutes: 720
   10_integrated_resource:
     enabled: true
     required: true

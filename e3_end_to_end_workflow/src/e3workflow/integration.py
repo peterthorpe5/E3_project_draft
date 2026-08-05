@@ -137,6 +137,17 @@ RESOURCE_SECTIONS = {
         "structural_alignment_sensitivity",
         "evolutionary_candidate_group",
     ),
+    "chemistry_target_manifest": ("computational_chemistry", "evolutionary_candidate_group"),
+    "pocket_pharmacophore_features": ("computational_chemistry", "pharmacophore_feature"),
+    "group_pharmacophore_summary": (
+        "computational_chemistry",
+        "evolutionary_candidate_group",
+    ),
+    "fragment_properties": ("computational_chemistry", "fragment"),
+    "fragment_pharmacophore_ranking": (
+        "computational_chemistry",
+        "candidate_group_fragment",
+    ),
     "final_candidate_prioritisation": ("prioritisation", "candidate"),
     "candidate_master_results": ("prioritisation", "candidate"),
     "final_evolutionary_candidate_prioritisation": (
@@ -904,6 +915,20 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
                     "unavailable in a legacy result: %s",
                     table_name,
                 )
+    if config.stage("09c_computational_chemistry").enabled:
+        chemistry_root = config.run_root / "09c_computational_chemistry"
+        chemistry_tables = (
+            ("chemistry_target_manifest", "chemistry_target_manifest.parquet"),
+            ("pocket_pharmacophore_features", "pocket_pharmacophore_features.parquet"),
+            ("group_pharmacophore_summary", "group_pharmacophore_summary.parquet"),
+            ("fragment_properties", "fragment_properties.parquet"),
+            (
+                "fragment_pharmacophore_ranking",
+                "fragment_pharmacophore_ranking.parquet",
+            ),
+        )
+        for table_name, filename in chemistry_tables:
+            tables.append((table_name, find_one(root=chemistry_root, name=filename)))
     return tables
 
 

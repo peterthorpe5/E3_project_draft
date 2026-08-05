@@ -114,6 +114,23 @@ conda run --name e3_structural_alignment ./run_tests.sh
 ./run_e3_structural_alignment.sh --help
 ```
 
+## `e3_structure_guided_chemistry`
+
+Owns the optional open-source residue-pharmacophore, stability/uniqueness and
+fragment-compatibility hand-off.
+
+```bash
+cd e3_structure_guided_chemistry
+conda env create --file environment.yml
+conda run --name e3_structure_guided_chemistry \
+    python -m pip install --no-deps --editable .
+conda run --name e3_structure_guided_chemistry ./run_tests.sh
+./scripts/submit_e3_structure_guided_chemistry_slurm.sh --help
+```
+
+It uses open-source dependencies only. It does not run or claim FMOPhore,
+FrAncestor or AlphaFold3, and it does not report docking, affinity or binding.
+
 ## Reporting applications
 
 The Python Streamlit and R Shiny applications are read-only consumers of the integrated

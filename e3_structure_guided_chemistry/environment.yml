@@ -1,0 +1,15 @@
+name: e3_structure_guided_chemistry
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python>=3.11,<3.14
+  - pip
+  - duckdb>=1.4,<2
+  - gemmi>=0.7,<1
+  - pyyaml>=6,<7
+  - rdkit>=2024.3,<2027
+  - coverage>=7.6,<8
+  - pycodestyle>=2.12,<3
+  - pydocstyle>=6.3,<7
+  - pytest>=8,<9
