@@ -192,6 +192,7 @@ testthat::test_that("the new explorer retains every existing application tab", {
     "Glossary",
     "Computational recommendations",
     "Threshold explorer",
+    "Visual explorer",
     "Candidates",
     "Orthology",
     "Domains",

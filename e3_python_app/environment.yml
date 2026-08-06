@@ -6,6 +6,7 @@ dependencies:
   - pip
   - duckdb>=1.4,<2
   - pandas>=2.2,<3
+  - plotly>=6,<7
   - pyarrow>=18,<26
   - streamlit>=1.42,<2
   - coverage>=7.6,<8

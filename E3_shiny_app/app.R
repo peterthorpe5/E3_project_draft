@@ -23,6 +23,7 @@ source("R/query_helpers.R")
 source("R/resource_helpers.R")
 source("R/glossary.R")
 source("R/threshold_explorer.R")
+source("R/candidate_visualisations.R")
 source("R/pocket_review.R")
 source("R/module_expression_filters.R")
 source("R/module_expression_summary.R")
@@ -36,6 +37,7 @@ source("R/module_grant_overview.R")
 source("R/module_glossary.R")
 source("R/module_result_section.R")
 source("R/module_threshold_explorer.R")
+source("R/module_candidate_visualisations.R")
 source("R/module_pocket_review.R")
 
 # Configuration can come from command-line arguments, environment variables, or
@@ -86,6 +88,10 @@ ui <- bslib::page_sidebar(
     bslib::nav_panel(
       "Threshold explorer",
       threshold_explorer_ui("threshold_explorer")
+    ),
+    bslib::nav_panel(
+      "Visual explorer",
+      candidate_visualisations_ui("candidate_visualisations")
     ),
     bslib::nav_panel(
       "Candidates",
@@ -183,6 +189,11 @@ server <- function(input, output, session) {
   )
   threshold_explorer_server(
     id = "threshold_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  candidate_visualisations_server(
+    id = "candidate_visualisations",
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )

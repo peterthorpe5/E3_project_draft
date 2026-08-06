@@ -28,6 +28,57 @@ ACCESSION_COLUMNS = (
     "discovery_matched_seed_ids_calculated",
 )
 
+CANDIDATE_LANDSCAPE_RELATIONS = (
+    "final_evolutionary_candidate_prioritisation",
+    "candidate_master_results",
+    "final_candidate_prioritisation",
+    "evolutionary_candidate_group_ranking",
+    "prestructure_ranking",
+    "candidate_evidence",
+)
+
+CANDIDATE_IDENTIFIER_COLUMNS = (
+    "evolutionary_group_key",
+    "primary_group_id",
+    "cluster_id",
+    "lead_cluster_id",
+)
+
+CANDIDATE_RANK_COLUMNS = (
+    "final_evolutionary_rank",
+    "final_rank",
+    "prestructure_evolutionary_group_rank",
+    "evolutionary_group_rank",
+    "computational_rank",
+    "lead_computational_rank",
+)
+
+EXPRESSION_CONTEXT_COLUMNS = (
+    "organism_part",
+    "developmental_stage",
+    "condition",
+    "expression_context",
+    "experiment_accession",
+    "sample_or_condition",
+)
+
+DIFFERENTIAL_EFFECT_COLUMNS = (
+    "log2_fold_change",
+    "log2fc",
+    "log2_foldchange",
+    "log_fold_change",
+)
+
+DIFFERENTIAL_SIGNIFICANCE_COLUMNS = (
+    "adjusted_p_value",
+    "adjusted_pvalue",
+    "padj",
+    "fdr",
+    "q_value",
+    "p_value",
+    "pvalue",
+)
+
 SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
     "final_recommendations": {
         "title": "Computational recommendations",
@@ -375,6 +426,95 @@ def relation_columns(connection: duckdb.DuckDBPyConnection, relation: str) -> li
     return [str(row[0]) for row in rows]
 
 
+def relation_column_types(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+) -> dict[str, str]:
+    """Return the declared DuckDB type for each relation column.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Validated relation name.
+
+    Returns:
+        Ordered mapping from column name to DuckDB type text.
+    """
+    quoted = quote_identifier(relation)
+    rows = connection.execute(f"DESCRIBE SELECT * FROM {quoted}").fetchall()
+    return {str(row[0]): str(row[1]) for row in rows}
+
+
+def select_candidate_landscape_relation(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+) -> str | None:
+    """Select the best available one-row-per-candidate relation.
+
+    Args:
+        connection: Open DuckDB connection.
+
+    Returns:
+        Preferred candidate relation, or ``None`` when none is available.
+    """
+    available = set(list_relations(connection))
+    return next(
+        (
+            relation
+            for relation in CANDIDATE_LANDSCAPE_RELATIONS
+            if relation in available
+        ),
+        None,
+    )
+
+
+def collect_candidate_landscape(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    selected_columns: Sequence[str],
+    maximum_rows: int = 5000,
+) -> pd.DataFrame:
+    """Collect a bounded candidate landscape ordered by the best rank field.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Candidate-level relation.
+        selected_columns: Explicit columns required by the visualisation.
+        maximum_rows: Hard candidate-row limit.
+
+    Returns:
+        Candidate landscape rows.
+
+    Raises:
+        AppError: If columns or limits are invalid.
+    """
+    if not 1 <= maximum_rows <= 10_000:
+        raise AppError("maximum candidate landscape rows must be between 1 and 10000")
+    available = relation_columns(connection, relation)
+    selected = list(dict.fromkeys(selected_columns))
+    if not selected:
+        raise AppError("Select at least one candidate landscape column")
+    missing = sorted(set(selected).difference(available))
+    if missing:
+        raise AppError("Unknown candidate landscape columns: " + ", ".join(missing))
+    rank_column = next(
+        (column for column in CANDIDATE_RANK_COLUMNS if column in available),
+        None,
+    )
+    selected_sql = ", ".join(quote_identifier(column) for column in selected)
+    order_sql = (
+        f" ORDER BY {quote_identifier(rank_column)} NULLS LAST"
+        if rank_column is not None
+        else ""
+    )
+    query = (
+        f"SELECT {selected_sql} FROM {quote_identifier(relation)}"
+        f"{order_sql} LIMIT {int(maximum_rows)}"
+    )
+    return connection.execute(query).fetchdf()
+
+
 def relation_count(connection: duckdb.DuckDBPyConnection, relation: str) -> int:
     """Count rows in one validated relation."""
     quoted = quote_identifier(relation)
@@ -558,6 +698,527 @@ def filter_expression_context(
         f"{where_sql}{order_sql} LIMIT {int(maximum_rows)}"
     )
     return connection.execute(query, parameters).fetchdf()
+
+
+def _candidate_match_terms(
+    *,
+    available: Sequence[str],
+    identifiers: Mapping[str, object],
+) -> list[tuple[str, str]]:
+    """Resolve safe exact-match columns for one selected candidate."""
+    clean = {
+        key: str(value).strip()
+        for key, value in identifiers.items()
+        if value is not None and not pd.isna(value) and str(value).strip()
+    }
+    terms: list[tuple[str, str]] = []
+    for source, targets in (
+        ("evolutionary_group_key", ("evolutionary_group_key",)),
+        ("primary_group_id", ("primary_group_id", "group_id")),
+        ("cluster_id", ("cluster_id",)),
+        ("lead_cluster_id", ("lead_cluster_id",)),
+    ):
+        if source not in clean:
+            continue
+        terms.extend(
+            (target, clean[source]) for target in targets if target in available
+        )
+    if "cluster_id" not in clean and "lead_cluster_id" in clean and "cluster_id" in available:
+        terms.append(("cluster_id", clean["lead_cluster_id"]))
+    return list(dict.fromkeys(terms))
+
+
+def candidate_evidence_relations(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    identifiers: Mapping[str, object],
+) -> list[str]:
+    """Return relations that can be filtered to a selected candidate.
+
+    Args:
+        connection: Open DuckDB connection.
+        identifiers: Selected candidate identifiers from the landscape row.
+
+    Returns:
+        Sorted relation names containing a compatible exact-match field.
+    """
+    matched = []
+    for relation in list_relations(connection):
+        available = relation_columns(connection, relation)
+        if _candidate_match_terms(available=available, identifiers=identifiers):
+            matched.append(relation)
+    preferred = list(
+        dict.fromkeys(
+            relation
+            for specification in SECTION_SPECS.values()
+            for relation in specification["relations"]
+        )
+    )
+    order = {relation: index for index, relation in enumerate(preferred)}
+    return sorted(matched, key=lambda relation: (order.get(relation, len(order)), relation))
+
+
+def collect_candidate_evidence(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    identifiers: Mapping[str, object],
+    maximum_rows: int = 1000,
+) -> pd.DataFrame:
+    """Collect bounded rows behind one selected candidate.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Supporting evidence relation.
+        identifiers: Selected candidate identifiers from the landscape row.
+        maximum_rows: Hard result-row limit.
+
+    Returns:
+        Matching rows from the requested evidence relation.
+
+    Raises:
+        AppError: If the relation cannot be matched or the limit is invalid.
+    """
+    if not 1 <= maximum_rows <= 10_000:
+        raise AppError("maximum candidate evidence rows must be between 1 and 10000")
+    available = relation_columns(connection, relation)
+    terms = _candidate_match_terms(available=available, identifiers=identifiers)
+    if not terms:
+        raise AppError(f"{relation} has no compatible candidate identifier column")
+    where_sql = " OR ".join(
+        f"CAST({quote_identifier(column)} AS VARCHAR) = ?" for column, _ in terms
+    )
+    parameters = [value for _, value in terms]
+    query = (
+        f"SELECT * FROM {quote_identifier(relation)} WHERE ({where_sql}) "
+        f"LIMIT {int(maximum_rows)}"
+    )
+    return connection.execute(query, parameters).fetchdf()
+
+
+def collect_expression_heatmap(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    candidate_column: str,
+    candidate_ids: Sequence[str],
+    context_column: str,
+    expression_unit: str,
+    species: str = "All",
+    maximum_cells: int = 10_000,
+) -> pd.DataFrame:
+    """Aggregate candidate expression into bounded heatmap cells.
+
+    Values are never combined across expression units. Each returned cell is the
+    median across the mapped context rows for one candidate, species and selected
+    biological-context label.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Candidate expression-context relation.
+        candidate_column: Candidate identifier used for filtering and rows.
+        candidate_ids: One to 25 selected candidates.
+        context_column: Biological-context column placed on the heatmap x-axis.
+        expression_unit: Exact unit, normally ``TPM`` or ``FPKM``.
+        species: Exact species or ``All``.
+        maximum_cells: Hard aggregated-cell limit.
+
+    Returns:
+        Aggregated heatmap cells with provenance counts.
+
+    Raises:
+        AppError: If required fields, selections or limits are invalid.
+    """
+    selected_ids = list(
+        dict.fromkeys(str(value).strip() for value in candidate_ids if str(value).strip())
+    )
+    if not 1 <= len(selected_ids) <= 25:
+        raise AppError("Select between 1 and 25 candidates for the expression heatmap")
+    if not 1 <= maximum_cells <= 50_000:
+        raise AppError("maximum expression heatmap cells must be between 1 and 50000")
+    available = relation_columns(connection, relation)
+    required = {candidate_column, context_column, "expression_value"}
+    missing = sorted(required.difference(available))
+    if missing:
+        raise AppError("Expression heatmap fields are unavailable: " + ", ".join(missing))
+    if context_column not in EXPRESSION_CONTEXT_COLUMNS:
+        raise AppError(f"Unsupported expression heatmap context: {context_column}")
+    if not expression_unit.strip():
+        raise AppError("Select one expression unit; units must not be combined")
+
+    candidate_sql = quote_identifier(candidate_column)
+    context_sql = quote_identifier(context_column)
+    species_sql = (
+        "COALESCE(NULLIF(trim(CAST(species_column AS VARCHAR)), ''), 'Unknown')"
+        if "species_column" in available
+        else "'Unknown'"
+    )
+    unit_sql = (
+        "COALESCE(NULLIF(trim(CAST(expression_unit AS VARCHAR)), ''), 'Unknown')"
+        if "expression_unit" in available
+        else "'Unknown'"
+    )
+    member_count_sql = (
+        "COUNT(DISTINCT CAST(member_accession AS VARCHAR))"
+        if "member_accession" in available
+        else "0"
+    )
+    positive_fraction_sql = (
+        "AVG(CASE WHEN CAST(expression_positive AS BOOLEAN) THEN 1.0 ELSE 0.0 END)"
+        if "expression_positive" in available
+        else "NULL::DOUBLE"
+    )
+    placeholders = ", ".join("?" for _ in selected_ids)
+    conditions = [
+        f"CAST({candidate_sql} AS VARCHAR) IN ({placeholders})",
+        "TRY_CAST(expression_value AS DOUBLE) IS NOT NULL",
+    ]
+    parameters: list[object] = [*selected_ids]
+    if "expression_unit" in available:
+        conditions.append("CAST(expression_unit AS VARCHAR) = ?")
+        parameters.append(expression_unit)
+    if species != "All" and "species_column" in available:
+        conditions.append("CAST(species_column AS VARCHAR) = ?")
+        parameters.append(species)
+    query = (
+        "SELECT "
+        f"CAST({candidate_sql} AS VARCHAR) AS candidate_id, "
+        f"{species_sql} AS species, "
+        f"COALESCE(NULLIF(trim(CAST({context_sql} AS VARCHAR)), ''), 'Unknown') "
+        "AS context_label, "
+        f"{unit_sql} AS expression_unit, "
+        "median(TRY_CAST(expression_value AS DOUBLE)) AS median_expression, "
+        "COUNT(*) AS context_row_count, "
+        f"{member_count_sql} AS mapped_member_count, "
+        f"{positive_fraction_sql} AS positive_context_fraction "
+        f"FROM {quote_identifier(relation)} WHERE "
+        + " AND ".join(conditions)
+        + " GROUP BY candidate_id, species, context_label, expression_unit "
+        "ORDER BY candidate_id, species, context_label "
+        f"LIMIT {int(maximum_cells)}"
+    )
+    return connection.execute(query, parameters).fetchdf()
+
+
+def collect_expression_profile_rows(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    candidate_column: str,
+    candidate_id: str,
+    expression_unit: str,
+    species: str = "All",
+    maximum_rows: int = 10_000,
+) -> pd.DataFrame:
+    """Collect exact Atlas context rows for one linked candidate profile.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Candidate expression-context relation.
+        candidate_column: Exact candidate identifier column.
+        candidate_id: Selected candidate identifier.
+        expression_unit: Exact expression unit; units are never combined.
+        species: Exact species or ``All``.
+        maximum_rows: Hard row limit.
+
+    Returns:
+        Ordered tissue/context rows supporting the profile.
+
+    Raises:
+        AppError: If selections, columns or limits are invalid.
+    """
+    if not candidate_id.strip():
+        raise AppError("Select one candidate for the species and tissue profile")
+    if not expression_unit.strip():
+        raise AppError("Select one expression unit; units must not be combined")
+    if not 1 <= maximum_rows <= 50_000:
+        raise AppError("maximum expression profile rows must be between 1 and 50000")
+    available = relation_columns(connection, relation)
+    required = {candidate_column, "expression_value"}
+    missing = sorted(required.difference(available))
+    if missing:
+        raise AppError("Expression profile fields are unavailable: " + ", ".join(missing))
+    selected = [
+        column
+        for column in (
+            candidate_column,
+            "primary_group_type",
+            "primary_group_id",
+            "cluster_id",
+            "member_accession",
+            "member_identifier",
+            "species_column",
+            "gene_id",
+            "gene_name",
+            "experiment_accession",
+            "expression_unit",
+            "sample_or_condition",
+            "atlas_group_label",
+            "assay_ids",
+            "assay_count",
+            "organism_part",
+            "developmental_stage",
+            "genotype",
+            "cultivar",
+            "treatment",
+            "condition",
+            "expression_context",
+            "metadata_status",
+            "expression_value_statistic",
+            "expression_value",
+            "expression_minimum",
+            "expression_lower_quartile",
+            "expression_median",
+            "expression_upper_quartile",
+            "expression_maximum",
+            "expression_positive",
+        )
+        if column in available
+    ]
+    conditions = [f"CAST({quote_identifier(candidate_column)} AS VARCHAR) = ?"]
+    parameters: list[object] = [candidate_id]
+    if "expression_unit" in available:
+        conditions.append("CAST(expression_unit AS VARCHAR) = ?")
+        parameters.append(expression_unit)
+    if species != "All" and "species_column" in available:
+        conditions.append("CAST(species_column AS VARCHAR) = ?")
+        parameters.append(species)
+    order_columns = [
+        column
+        for column in (
+            "species_column",
+            "organism_part",
+            "gene_id",
+            "experiment_accession",
+            "sample_or_condition",
+        )
+        if column in available
+    ]
+    selected_sql = ", ".join(quote_identifier(column) for column in selected)
+    order_sql = ", ".join(quote_identifier(column) for column in order_columns)
+    query = (
+        f"SELECT {selected_sql} FROM {quote_identifier(relation)} WHERE "
+        + " AND ".join(conditions)
+        + (f" ORDER BY {order_sql}" if order_sql else "")
+        + f" LIMIT {int(maximum_rows)}"
+    )
+    return connection.execute(query, parameters).fetchdf()
+
+
+def collect_expression_tissue_summary(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    relation: str,
+    candidate_column: str,
+    candidate_id: str,
+    expression_unit: str,
+    species: str = "All",
+    maximum_tissues: int = 5000,
+) -> pd.DataFrame:
+    """Aggregate every matching context into complete species/tissue profiles.
+
+    The result limit is applied after aggregation. It therefore bounds the small
+    number of plotted species/tissue cells without truncating source rows before
+    medians, ranges or counts are calculated.
+
+    Args:
+        connection: Open DuckDB connection.
+        relation: Candidate expression-context relation.
+        candidate_column: Exact candidate identifier column.
+        candidate_id: Selected candidate identifier.
+        expression_unit: Exact expression unit; units are never combined.
+        species: Exact species or ``All``.
+        maximum_tissues: Hard post-aggregation species/tissue limit.
+
+    Returns:
+        Complete species/tissue summaries with medians, ranges and provenance
+        counts.
+
+    Raises:
+        AppError: If selections, required fields or limits are invalid.
+    """
+    if not candidate_id.strip():
+        raise AppError("Select one candidate for the species and tissue profile")
+    if not expression_unit.strip():
+        raise AppError("Select one expression unit; units must not be combined")
+    if not 1 <= maximum_tissues <= 10_000:
+        raise AppError("maximum expression tissues must be between 1 and 10000")
+    available = relation_columns(connection, relation)
+    required = {
+        candidate_column,
+        "species_column",
+        "organism_part",
+        "expression_value",
+    }
+    missing = sorted(required.difference(available))
+    if missing:
+        raise AppError(
+            "Expression tissue-profile fields are unavailable: "
+            + ", ".join(missing)
+        )
+    context_fallback = (
+        "NULLIF(trim(CAST(expression_context AS VARCHAR)), '')"
+        if "expression_context" in available
+        else "NULL"
+    )
+    member_count_sql = (
+        "COUNT(DISTINCT CAST(member_accession AS VARCHAR))"
+        if "member_accession" in available
+        else "0"
+    )
+    positive_fraction_sql = (
+        "AVG(CASE WHEN CAST(expression_positive AS BOOLEAN) THEN 1.0 ELSE 0.0 END)"
+        if "expression_positive" in available
+        else "NULL::DOUBLE"
+    )
+    conditions = [
+        f"CAST({quote_identifier(candidate_column)} AS VARCHAR) = ?",
+        "TRY_CAST(expression_value AS DOUBLE) IS NOT NULL",
+    ]
+    parameters: list[object] = [candidate_id]
+    if "expression_unit" in available:
+        conditions.append("CAST(expression_unit AS VARCHAR) = ?")
+        parameters.append(expression_unit)
+    if species != "All":
+        conditions.append("CAST(species_column AS VARCHAR) = ?")
+        parameters.append(species)
+    query = (
+        "SELECT "
+        "COALESCE(NULLIF(trim(CAST(species_column AS VARCHAR)), ''), 'Unknown') "
+        "AS species, "
+        "COALESCE(NULLIF(trim(CAST(organism_part AS VARCHAR)), ''), "
+        f"{context_fallback}, 'Unknown') AS tissue, "
+        "median(TRY_CAST(expression_value AS DOUBLE)) AS median_expression, "
+        "min(TRY_CAST(expression_value AS DOUBLE)) AS minimum_expression, "
+        "max(TRY_CAST(expression_value AS DOUBLE)) AS maximum_expression, "
+        "COUNT(*) AS context_row_count, "
+        f"{member_count_sql} AS mapped_member_count, "
+        f"{positive_fraction_sql} AS positive_context_fraction "
+        f"FROM {quote_identifier(relation)} WHERE "
+        + " AND ".join(conditions)
+        + " GROUP BY species, tissue ORDER BY species, tissue "
+        f"LIMIT {int(maximum_tissues)}"
+    )
+    return connection.execute(query, parameters).fetchdf()
+
+
+def differential_expression_relations(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+) -> list[dict[str, str]]:
+    """Detect relations that can support a statistically valid volcano plot.
+
+    Args:
+        connection: Open DuckDB connection.
+
+    Returns:
+        Capability records containing relation, effect, significance and label
+        columns. Empty output means that the release has no valid volcano input.
+    """
+    capabilities = []
+    for relation in list_relations(connection):
+        relation_label = relation.lower()
+        if not (
+            "expression" in relation_label
+            or "differential" in relation_label
+            or "transcript" in relation_label
+            or re.search(r"(^|_)de(_|$)", relation_label)
+        ):
+            continue
+        columns = relation_columns(connection, relation)
+        effect = next(
+            (column for column in DIFFERENTIAL_EFFECT_COLUMNS if column in columns),
+            None,
+        )
+        significance = next(
+            (
+                column
+                for column in DIFFERENTIAL_SIGNIFICANCE_COLUMNS
+                if column in columns
+            ),
+            None,
+        )
+        if effect is None or significance is None:
+            continue
+        label = next(
+            (
+                column
+                for column in (
+                    "gene_name",
+                    "gene_id",
+                    "primary_group_id",
+                    "member_accession",
+                    "cluster_id",
+                )
+                if column in columns
+            ),
+            effect,
+        )
+        capabilities.append(
+            {
+                "relation": relation,
+                "effect_column": effect,
+                "significance_column": significance,
+                "label_column": label,
+            }
+        )
+    return capabilities
+
+
+def collect_differential_expression(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    capability: Mapping[str, str],
+    maximum_rows: int = 10_000,
+) -> pd.DataFrame:
+    """Collect bounded effect-size and significance rows for a volcano plot.
+
+    Args:
+        connection: Open DuckDB connection.
+        capability: Record returned by :func:`differential_expression_relations`.
+        maximum_rows: Hard result-row limit.
+
+    Returns:
+        Standardised label, effect-size and significance columns.
+
+    Raises:
+        AppError: If the capability is invalid or the limit is unsafe.
+    """
+    if not 1 <= maximum_rows <= 50_000:
+        raise AppError("maximum differential-expression rows must be between 1 and 50000")
+    required_keys = {
+        "relation",
+        "effect_column",
+        "significance_column",
+        "label_column",
+    }
+    missing_keys = sorted(required_keys.difference(capability))
+    if missing_keys:
+        raise AppError("Incomplete differential-expression capability: " + ", ".join(missing_keys))
+    relation = str(capability["relation"])
+    available = relation_columns(connection, relation)
+    requested = {str(capability[key]) for key in required_keys if key != "relation"}
+    missing_columns = sorted(requested.difference(available))
+    if missing_columns:
+        raise AppError(
+            "Differential-expression columns are unavailable: "
+            + ", ".join(missing_columns)
+        )
+    effect = quote_identifier(str(capability["effect_column"]))
+    significance = quote_identifier(str(capability["significance_column"]))
+    label = quote_identifier(str(capability["label_column"]))
+    query = (
+        f"SELECT CAST({label} AS VARCHAR) AS label, "
+        f"TRY_CAST({effect} AS DOUBLE) AS effect_size, "
+        f"TRY_CAST({significance} AS DOUBLE) AS significance_value "
+        f"FROM {quote_identifier(relation)} "
+        f"WHERE TRY_CAST({effect} AS DOUBLE) IS NOT NULL "
+        f"AND TRY_CAST({significance} AS DOUBLE) > 0.0 "
+        f"AND TRY_CAST({significance} AS DOUBLE) <= 1.0 "
+        f"ORDER BY TRY_CAST({significance} AS DOUBLE) ASC "
+        f"LIMIT {int(maximum_rows)}"
+    )
+    return connection.execute(query).fetchdf()
 
 
 def resource_overview(

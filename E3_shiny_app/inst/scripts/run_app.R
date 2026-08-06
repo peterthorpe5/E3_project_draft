@@ -20,7 +20,7 @@ source("R/app_config.R")
 app_config <- get_app_config(args = commandArgs(trailingOnly = TRUE))
 
 shiny_args <- list(
-  appDir = repo_dir,
+  appDir = file.path(repo_dir, "app.R"),
   launch.browser = FALSE
 )
 

@@ -13,7 +13,15 @@ import streamlit.components.v1 as components
 from e3app.config import AppConfig, config_from_environment, validate_config
 from e3app.data import (
     SECTION_SPECS,
+    candidate_evidence_relations,
+    collect_candidate_evidence,
+    collect_candidate_landscape,
+    collect_differential_expression,
+    collect_expression_heatmap,
+    collect_expression_profile_rows,
+    collect_expression_tissue_summary,
     default_columns,
+    differential_expression_relations,
     distinct_text_values,
     filter_expression_context,
     grant_overview,
@@ -24,6 +32,7 @@ from e3app.data import (
     relations_for_section,
     resource_overview,
     search_accession,
+    select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
@@ -42,6 +51,24 @@ from e3app.thresholds import (
     ThresholdSettings,
     evaluate_thresholds,
     threshold_settings_from_mapping,
+)
+from e3app.visualisations import (
+    CANDIDATE_METRIC_LABELS,
+    EXPRESSION_CONTEXT_LABELS,
+    build_candidate_landscape_figure,
+    build_expression_heatmap_figure,
+    build_species_tissue_profile_figure,
+    build_volcano_figure,
+    candidate_colour_columns,
+    candidate_display_labels,
+    candidate_identifier_column,
+    candidate_identifiers_from_row,
+    candidate_landscape_columns,
+    candidate_metric_columns,
+    candidate_rank_column,
+    prepare_candidate_landscape,
+    prepare_species_tissue_summary,
+    selected_candidate_from_event,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -666,6 +693,663 @@ def _render_all_results(
         st.warning("Select at least one column.")
 
 
+def _candidate_expression_link_column(
+    *,
+    landscape_columns: Sequence[str],
+    expression_columns: Sequence[str],
+) -> str | None:
+    """Choose an exact identifier shared by candidate and expression relations."""
+    return next(
+        (
+            column
+            for column in ("primary_group_id", "cluster_id")
+            if column in landscape_columns and column in expression_columns
+        ),
+        None,
+    )
+
+
+def _linked_candidate_row(
+    frame: pd.DataFrame,
+    candidate_key: str | None,
+) -> pd.Series:
+    """Return the linked candidate row, falling back to the first ranked row."""
+    if candidate_key:
+        matches = frame[frame["_candidate_key"].eq(candidate_key)]
+        if not matches.empty:
+            return matches.iloc[0]
+    return frame.iloc[0]
+
+
+def _render_candidate_landscape(
+    *,
+    connection: object,
+    frame: pd.DataFrame,
+    relation: str,
+    identifier_column: str,
+    rank_column: str | None,
+    metric_columns: Sequence[str],
+    colour_columns: Sequence[str],
+    config: AppConfig,
+) -> str:
+    """Render the selectable multi-axis candidate landscape and evidence table."""
+    st.subheader("Interactive candidate landscape")
+    st.caption(
+        "Choose any two documented evidence scales. Point colour and size add two "
+        "further dimensions; selecting a point links the evidence tables and "
+        "expression views below."
+    )
+    control_one, control_two, control_three, control_four = st.columns(4)
+    default_x = (
+        "expression_species_fraction"
+        if "expression_species_fraction" in metric_columns
+        else metric_columns[0]
+    )
+    default_y = (
+        "final_score"
+        if "final_score" in metric_columns
+        else metric_columns[min(1, len(metric_columns) - 1)]
+    )
+    with control_one:
+        x_column = st.selectbox(
+            "X-axis",
+            metric_columns,
+            index=list(metric_columns).index(default_x),
+            format_func=lambda column: CANDIDATE_METRIC_LABELS[column],
+            key="visual_landscape_x",
+        )
+    with control_two:
+        y_column = st.selectbox(
+            "Y-axis",
+            metric_columns,
+            index=list(metric_columns).index(default_y),
+            format_func=lambda column: CANDIDATE_METRIC_LABELS[column],
+            key="visual_landscape_y",
+        )
+    with control_three:
+        colour_options = [None, *colour_columns]
+        colour_column = st.selectbox(
+            "Point colour",
+            colour_options,
+            format_func=lambda column: (
+                "Single colour"
+                if column is None
+                else CANDIDATE_METRIC_LABELS.get(
+                    column, column.replace("_", " ").title()
+                )
+            ),
+            key="visual_landscape_colour",
+        )
+    with control_four:
+        size_options = [None, *metric_columns]
+        size_column = st.selectbox(
+            "Point size",
+            size_options,
+            format_func=lambda column: (
+                "Fixed size" if column is None else CANDIDATE_METRIC_LABELS[column]
+            ),
+            key="visual_landscape_size",
+        )
+    figure = build_candidate_landscape_figure(
+        frame=frame,
+        x_column=x_column,
+        y_column=y_column,
+        colour_column=colour_column,
+        size_column=size_column,
+    )
+    selection = st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key="visual_candidate_landscape_plot",
+        on_select="rerun",
+        selection_mode="points",
+    )
+    selected_from_plot = selected_candidate_from_event(
+        event=selection,
+        frame=frame,
+    )
+    options = frame["_candidate_key"].astype(str).tolist()
+    labels = candidate_display_labels(frame=frame, rank_column=rank_column)
+    if selected_from_plot in options:
+        st.session_state["visual_selected_candidate"] = selected_from_plot
+    current = st.session_state.get("visual_selected_candidate")
+    if current not in options:
+        st.session_state["visual_selected_candidate"] = options[0]
+    selected_key = st.selectbox(
+        "Selected candidate",
+        options,
+        format_func=lambda value: labels[value],
+        key="visual_selected_candidate",
+        help="Select a point above or type to search the ranked candidate list.",
+    )
+    row = _linked_candidate_row(frame, selected_key)
+    display_columns = [
+        column
+        for column in (
+            rank_column,
+            identifier_column,
+            "primary_group_id",
+            "cluster_id",
+            "candidate_accessions",
+            "final_score",
+            "prestructure_score",
+            "target_species_fraction",
+            "domain_species_fraction",
+            "expression_species_fraction",
+            "expression_evidence_coverage_fraction",
+            "ligandability_score",
+            "pocket_conservation_score",
+            "structural_species_fraction",
+            "recommendation_status",
+            "grant_aligned_prediction_status",
+            "inclusion_reasons",
+            "exclusion_reasons",
+            "missing_evidence",
+        )
+        if column is not None and column in frame.columns
+    ]
+    st.markdown("#### Selected candidate summary")
+    st.dataframe(
+        pd.DataFrame([row[display_columns].to_dict()]),
+        use_container_width=True,
+        hide_index=True,
+    )
+    identifiers = candidate_identifiers_from_row(row=row)
+    evidence_relations = candidate_evidence_relations(
+        connection=connection,
+        identifiers=identifiers,
+    )
+    st.markdown("#### Evidence rows behind the selected candidate")
+    if not evidence_relations:
+        st.info("No loaded relation contains a compatible exact candidate identifier.")
+        return selected_key
+    evidence_relation = st.selectbox(
+        "Supporting evidence table",
+        evidence_relations,
+        index=(
+            evidence_relations.index(relation)
+            if relation in evidence_relations
+            else 0
+        ),
+        key="visual_evidence_relation",
+    )
+    evidence_limit = st.number_input(
+        "Maximum supporting rows",
+        min_value=1,
+        max_value=min(config.max_rows, 10_000),
+        value=min(config.max_rows, 1000),
+        key="visual_evidence_rows",
+    )
+    evidence = collect_candidate_evidence(
+        connection=connection,
+        relation=evidence_relation,
+        identifiers=identifiers,
+        maximum_rows=int(evidence_limit),
+    )
+    st.dataframe(evidence, use_container_width=True, hide_index=True, height=520)
+    st.download_button(
+        "Download selected candidate evidence as TSV",
+        data=evidence.to_csv(sep="\t", index=False),
+        file_name=f"{selected_key}_{evidence_relation}.tsv".replace(":", "_"),
+        mime="text/tab-separated-values",
+        key="visual_evidence_download",
+    )
+    return selected_key
+
+
+def _expression_candidate_options(
+    *,
+    frame: pd.DataFrame,
+    link_column: str,
+    rank_column: str | None,
+) -> tuple[list[str], dict[str, str]]:
+    """Build de-duplicated expression-link choices from ranked candidates."""
+    options = []
+    labels = {}
+    for _, row in frame.iterrows():
+        value = row.get(link_column)
+        if value is None or pd.isna(value) or not str(value).strip():
+            continue
+        key = str(value).strip()
+        if key in labels:
+            continue
+        rank = row.get(rank_column) if rank_column is not None else None
+        options.append(key)
+        labels[key] = (
+            key if rank is None or pd.isna(rank) else f"Rank {int(rank):,} — {key}"
+        )
+    return options, labels
+
+
+def _render_expression_heatmap(
+    *,
+    connection: object,
+    frame: pd.DataFrame,
+    selected_key: str,
+    rank_column: str | None,
+    expression_relation: str,
+) -> None:
+    """Render a linked cross-species candidate expression heatmap."""
+    st.subheader("Cross-species expression heatmap")
+    st.caption(
+        "Each cell is the median for one candidate, species and biological "
+        "context. Blank cells are unavailable mapped contexts, not measured zero."
+    )
+    expression_columns = relation_columns(connection, expression_relation)
+    link_column = _candidate_expression_link_column(
+        landscape_columns=frame.columns,
+        expression_columns=expression_columns,
+    )
+    if link_column is None:
+        st.info("Candidate and expression relations have no shared exact group identifier.")
+        return
+    options, labels = _expression_candidate_options(
+        frame=frame,
+        link_column=link_column,
+        rank_column=rank_column,
+    )
+    selected_row = _linked_candidate_row(frame, selected_key)
+    linked_value = str(selected_row.get(link_column, "")).strip()
+    current = list(st.session_state.get("visual_heatmap_candidates", []))
+    if linked_value and linked_value not in current:
+        current = [linked_value, *current]
+    if not current:
+        current = options[: min(10, len(options))]
+    st.session_state["visual_heatmap_candidates"] = [
+        value for value in current if value in options
+    ][:25]
+    selected_candidates = st.multiselect(
+        "Candidate groups (maximum 25)",
+        options,
+        format_func=lambda value: labels[value],
+        key="visual_heatmap_candidates",
+    )
+    if not selected_candidates:
+        st.info("Select at least one candidate group.")
+        return
+    if len(selected_candidates) > 25:
+        st.warning("Only the first 25 selected candidate groups are plotted.")
+        selected_candidates = selected_candidates[:25]
+    contexts = [
+        column for column in EXPRESSION_CONTEXT_LABELS if column in expression_columns
+    ]
+    units = distinct_text_values(
+        connection=connection,
+        relation=expression_relation,
+        column="expression_unit",
+    )
+    species_values = distinct_text_values(
+        connection=connection,
+        relation=expression_relation,
+        column="species_column",
+    )
+    if not contexts or not units:
+        st.info("This expression relation lacks context labels or expression units.")
+        return
+    control_one, control_two, control_three, control_four = st.columns(4)
+    with control_one:
+        context_column = st.selectbox(
+            "Heatmap context",
+            contexts,
+            format_func=lambda column: EXPRESSION_CONTEXT_LABELS[column],
+            key="visual_heatmap_context",
+        )
+    with control_two:
+        expression_unit = st.selectbox(
+            "Expression unit",
+            units,
+            key="visual_heatmap_unit",
+        )
+    with control_three:
+        species = st.selectbox(
+            "Species",
+            ["All", *species_values],
+            key="visual_heatmap_species",
+        )
+    with control_four:
+        log_transform = st.checkbox(
+            "Use log2(1 + expression)",
+            value=True,
+            key="visual_heatmap_log",
+        )
+    cells = collect_expression_heatmap(
+        connection=connection,
+        relation=expression_relation,
+        candidate_column=link_column,
+        candidate_ids=selected_candidates,
+        context_column=context_column,
+        expression_unit=expression_unit,
+        species=species,
+    )
+    if cells.empty:
+        st.info("No mapped expression rows match the selected candidates and filters.")
+        return
+    figure = build_expression_heatmap_figure(
+        cells=cells,
+        log_transform=log_transform,
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key="visual_expression_heatmap_plot",
+    )
+    st.markdown("#### Aggregated heatmap cells")
+    st.dataframe(cells, use_container_width=True, hide_index=True, height=460)
+    st.download_button(
+        "Download expression heatmap cells as TSV",
+        data=cells.to_csv(sep="\t", index=False),
+        file_name="candidate_expression_heatmap_cells.tsv",
+        mime="text/tab-separated-values",
+        key="visual_heatmap_download",
+    )
+
+
+def _render_species_tissue_profiles(
+    *,
+    connection: object,
+    frame: pd.DataFrame,
+    selected_key: str,
+    rank_column: str | None,
+    expression_relation: str,
+) -> None:
+    """Render every mapped tissue profile for a linked candidate by species."""
+    st.subheader("Linked species and tissue expression profiles")
+    st.caption(
+        "Select a candidate once and inspect all available tissue-annotated Atlas "
+        "contexts separately for each species. The plot aggregates every matching "
+        "context before applying its output bound, so the source-row display limit "
+        "cannot truncate a tissue profile. Error bars span the observed range."
+    )
+    expression_columns = relation_columns(connection, expression_relation)
+    link_column = _candidate_expression_link_column(
+        landscape_columns=frame.columns,
+        expression_columns=expression_columns,
+    )
+    if link_column is None:
+        st.info("Candidate and expression relations have no shared exact group identifier.")
+        return
+    options, labels = _expression_candidate_options(
+        frame=frame,
+        link_column=link_column,
+        rank_column=rank_column,
+    )
+    selected_row = _linked_candidate_row(frame, selected_key)
+    linked_value = str(selected_row.get(link_column, "")).strip()
+    if linked_value in options:
+        st.session_state["visual_profile_candidate"] = linked_value
+    current = st.session_state.get("visual_profile_candidate")
+    if current not in options:
+        st.session_state["visual_profile_candidate"] = options[0]
+    candidate_id = st.selectbox(
+        "Candidate group",
+        options,
+        format_func=lambda value: labels[value],
+        key="visual_profile_candidate",
+    )
+    units = distinct_text_values(
+        connection=connection,
+        relation=expression_relation,
+        column="expression_unit",
+    )
+    species_values = distinct_text_values(
+        connection=connection,
+        relation=expression_relation,
+        column="species_column",
+    )
+    if not units:
+        st.info("The candidate expression relation has no explicit expression unit.")
+        return
+    control_one, control_two, control_three, control_four = st.columns(4)
+    with control_one:
+        expression_unit = st.selectbox(
+            "Expression unit",
+            units,
+            key="visual_profile_unit",
+        )
+    with control_two:
+        species = st.selectbox(
+            "Species filter",
+            ["All", *species_values],
+            key="visual_profile_species",
+        )
+    with control_three:
+        log_transform = st.checkbox(
+            "Use log2(1 + expression)",
+            value=True,
+            key="visual_profile_log",
+        )
+    with control_four:
+        maximum_rows = st.number_input(
+            "Maximum exact source rows",
+            min_value=100,
+            max_value=50_000,
+            value=10_000,
+            step=100,
+            key="visual_profile_rows",
+        )
+    summary = collect_expression_tissue_summary(
+        connection=connection,
+        relation=expression_relation,
+        candidate_column=link_column,
+        candidate_id=candidate_id,
+        expression_unit=expression_unit,
+        species=species,
+    )
+    if summary.empty:
+        st.info("No mapped expression rows match the selected candidate and filters.")
+        return
+    rows = collect_expression_profile_rows(
+        connection=connection,
+        relation=expression_relation,
+        candidate_column=link_column,
+        candidate_id=candidate_id,
+        expression_unit=expression_unit,
+        species=species,
+        maximum_rows=int(maximum_rows),
+    )
+    profile = prepare_species_tissue_summary(
+        summary=summary,
+        log_transform=log_transform,
+    )
+    figure = build_species_tissue_profile_figure(
+        profile=profile,
+        expression_unit=expression_unit,
+        log_transform=log_transform,
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key="visual_species_tissue_profile_plot",
+    )
+    evidence_state_columns = [
+        column
+        for column in (
+            "expression_supported_species",
+            "expression_assessed_negative_species",
+            "expression_unavailable_species",
+            "lead_expression_supported_species",
+            "lead_expression_assessed_negative_species",
+            "lead_expression_unavailable_species",
+            "expression_species_fraction",
+            "expression_evidence_coverage_fraction",
+        )
+        if column in selected_row.index
+    ]
+    if evidence_state_columns:
+        st.markdown("#### Group-level expression evidence states")
+        st.dataframe(
+            pd.DataFrame([selected_row[evidence_state_columns].to_dict()]),
+            use_container_width=True,
+            hide_index=True,
+        )
+    st.markdown("#### Aggregated species/tissue profile")
+    st.dataframe(profile, use_container_width=True, hide_index=True)
+    st.markdown("#### Exact Expression Atlas rows behind the profile")
+    if len(rows) >= int(maximum_rows):
+        st.info(
+            "The exact-row table reached its selected display/download limit. "
+            "The plotted species/tissue summary is still complete because it was "
+            "aggregated before that limit."
+        )
+    st.dataframe(rows, use_container_width=True, hide_index=True, height=620)
+    st.download_button(
+        "Download exact species/tissue expression rows as TSV",
+        data=rows.to_csv(sep="\t", index=False),
+        file_name=f"{candidate_id}_species_tissue_expression.tsv".replace(":", "_"),
+        mime="text/tab-separated-values",
+        key="visual_profile_download",
+    )
+
+
+def _render_volcano_view(*, connection: object) -> None:
+    """Render a volcano plot only when a real differential relation exists."""
+    st.subheader("Differential-expression volcano plot")
+    capabilities = differential_expression_relations(connection=connection)
+    if not capabilities:
+        st.info(
+            "This release contains absolute Expression Atlas context summaries, "
+            "not candidate-level differential tests with both log2 fold changes "
+            "and P/FDR/Q values. A volcano plot would therefore be statistically "
+            "invalid and is not fabricated. This tab activates automatically if a "
+            "future release includes those fields."
+        )
+        return
+    labels = {
+        capability["relation"]: (
+            f"{capability['relation']} — {capability['effect_column']} versus "
+            f"{capability['significance_column']}"
+        )
+        for capability in capabilities
+    }
+    relation = st.selectbox(
+        "Differential-expression relation",
+        list(labels),
+        format_func=lambda value: labels[value],
+        key="visual_volcano_relation",
+    )
+    capability = next(
+        item for item in capabilities if item["relation"] == relation
+    )
+    threshold_one, threshold_two = st.columns(2)
+    with threshold_one:
+        effect_threshold = st.number_input(
+            "Absolute log2 fold-change threshold",
+            min_value=0.0,
+            max_value=20.0,
+            value=1.0,
+            step=0.1,
+            key="visual_volcano_effect",
+        )
+    with threshold_two:
+        significance_threshold = st.number_input(
+            "Significance threshold",
+            min_value=0.000001,
+            max_value=1.0,
+            value=0.05,
+            format="%.6f",
+            key="visual_volcano_significance",
+        )
+    rows = collect_differential_expression(
+        connection=connection,
+        capability=capability,
+    )
+    figure = build_volcano_figure(
+        rows=rows,
+        effect_threshold=float(effect_threshold),
+        significance_threshold=float(significance_threshold),
+        significance_label=capability["significance_column"],
+    )
+    st.plotly_chart(figure, use_container_width=True, key="visual_volcano_plot")
+    st.dataframe(rows, use_container_width=True, hide_index=True, height=520)
+    st.download_button(
+        "Download plotted differential-expression rows as TSV",
+        data=rows.to_csv(sep="\t", index=False),
+        file_name=f"{relation}_volcano_rows.tsv",
+        mime="text/tab-separated-values",
+        key="visual_volcano_download",
+    )
+
+
+def _render_visual_explorer(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render linked candidate, heatmap, species/tissue and volcano views."""
+    relation = select_candidate_landscape_relation(connection=connection)
+    if relation is None:
+        st.info("No recognised candidate-level relation is available for visualisation.")
+        return
+    available = relation_columns(connection, relation)
+    selected_columns = candidate_landscape_columns(available=available)
+    identifier_column = candidate_identifier_column(available=available)
+    if identifier_column is None:
+        st.info("The candidate relation has no stable identifier.")
+        return
+    metric_columns = candidate_metric_columns(available=available)
+    colour_columns = candidate_colour_columns(available=available)
+    rank_column = candidate_rank_column(available=available)
+    raw_frame = collect_candidate_landscape(
+        connection=connection,
+        relation=relation,
+        selected_columns=selected_columns,
+        maximum_rows=5000,
+    )
+    frame = prepare_candidate_landscape(
+        frame=raw_frame,
+        identifier_column=identifier_column,
+        metric_columns=metric_columns,
+    )
+    st.caption(
+        f"Authoritative visualisation relation: `{relation}`; "
+        f"{len(frame):,} distinct candidate groups loaded."
+    )
+    visual_tabs = st.tabs(
+        [
+            "Candidate landscape",
+            "Expression heatmap",
+            "Species & tissue expression",
+            "Volcano eligibility",
+        ]
+    )
+    with visual_tabs[0]:
+        selected_key = _render_candidate_landscape(
+            connection=connection,
+            frame=frame,
+            relation=relation,
+            identifier_column=identifier_column,
+            rank_column=rank_column,
+            metric_columns=metric_columns,
+            colour_columns=colour_columns,
+            config=config,
+        )
+    expression_relation = "candidate_expression_context_summary"
+    if expression_relation not in list_relations(connection):
+        with visual_tabs[1]:
+            st.info("This release has no candidate-by-context expression relation.")
+        with visual_tabs[2]:
+            st.info("This release has no candidate-by-context expression relation.")
+    else:
+        with visual_tabs[1]:
+            _render_expression_heatmap(
+                connection=connection,
+                frame=frame,
+                selected_key=selected_key,
+                rank_column=rank_column,
+                expression_relation=expression_relation,
+            )
+        with visual_tabs[2]:
+            _render_species_tissue_profiles(
+                connection=connection,
+                frame=frame,
+                selected_key=selected_key,
+                rank_column=rank_column,
+                expression_relation=expression_relation,
+            )
+    with visual_tabs[3]:
+        _render_volcano_view(connection=connection)
+
+
 def render_app() -> None:
     """Render the complete point-and-click ARIA E3 resource explorer."""
     st.set_page_config(page_title="ARIA Plant E3 Resource", layout="wide")
@@ -713,6 +1397,7 @@ def render_app() -> None:
                     "Glossary",
                     "Computational recommendations",
                     "Threshold explorer",
+                    "Visual explorer",
                     "Candidates",
                     "Orthology",
                     "Domains",
@@ -739,8 +1424,10 @@ def render_app() -> None:
                 )
             with tabs[3]:
                 _render_threshold_explorer(connection=connection, config=config)
+            with tabs[4]:
+                _render_visual_explorer(connection=connection, config=config)
             for tab, section in zip(
-                tabs[4:10],
+                tabs[5:11],
                 (
                     "candidates",
                     "orthology",
@@ -762,25 +1449,25 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[10]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[11]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
+                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[12]:
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[13]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="structural_alignment",
                 )
-            with tabs[13]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[14]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[15]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[15]:
+            with tabs[16]:
                 _render_section(
                     connection=connection,
                     config=config,

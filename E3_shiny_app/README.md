@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.8.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
+Version 0.9.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -16,32 +16,37 @@ The main sections follow the evidence path required by the grant:
 3. **Threshold explorer** – separate pre-structure and structurally informed
    sensitivity-analysis lists, using sliders and exact typed values while the
    primary grant-aligned result remains unchanged.
-4. **Final recommendations** – the ordered top-50 review shortlist, strict
+4. **Visual explorer** – a selectable multi-axis candidate landscape linked to
+   the exact evidence tables, a cross-species expression heatmap and every
+   available species-by-tissue Expression Atlas profile for the selected group.
+   The volcano view remains inactive unless a real differential-expression
+   relation supplies both effect sizes and P/FDR/Q values.
+5. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
    exclusion reasons.
-5. **Candidates** – combined discovery, conservation, domain, expression and
+6. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-6. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
+7. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
    species membership, member accessions and candidate-relevant sequences.
-7. **Domains** – catalogued E3-associated domain support and explicit annotation
+8. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-8. **Expression evidence** – identifier mapping and broad Expression Atlas
+9. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
    workflow v0.13.0 resources also retain tissue/organism part, developmental
    stage, condition, treatment, experiment and sample context.
-9. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+10. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-10. **Pocket conservation** – conserved pocket-bearing alignment regions and
+11. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-11. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+12. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation.
-12. **3D structures & pockets** – selected-group, rotatable member structures
+13. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
-13. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+14. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights and the original OrthoFinder-group member sequence identifiers.
-14. **Provenance and QC** – release metadata, relation catalogue and source paths.
+15. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -160,6 +165,26 @@ columns. Older resources remain readable but cannot reconstruct tissue after
 the fact; they explicitly label `NOT_MAPPED` zero counts as missing mapping,
 not biological zero expression.
 
+## Linked visual explorer
+
+The Visual explorer uses the definitive one-row-per-evolutionary-group relation
+when it is available. Its candidate landscape can map any two documented scores
+to the axes and optional evidence/status fields to point colour and size. A
+clicked point updates the selected candidate, its exact supporting relation and
+the expression views.
+
+The Expression heatmap aggregates no more than 25 selected groups at a time and
+keeps TPM and FPKM separate. The Species & tissue expression tab links the same
+candidate to every available tissue/organism-part context, faceted by species,
+with the exact underlying Expression Atlas rows available as a TSV. Missing
+mapped contexts remain blank or explicitly unavailable; they are never plotted
+as measured zero.
+
+The Volcano eligibility tab deliberately does not invent fold changes or
+significance from absolute expression values. It activates automatically only
+when a future integrated relation contains both a recognised log-fold-change
+field and a recognised P-value, adjusted-P, FDR or Q-value field.
+
 ## Portable 3D and alignment review
 
 The integrated DuckDB stores structural evidence, residue mappings and original
@@ -206,9 +231,10 @@ Rscript inst/scripts/run_tests.R
 
 The test suite covers source selection, run-directory discovery, lazy Parquet
 registration, section classification, group-level grant-overview counts,
-threshold validation and SQL, druggability near-miss reclassification, module UI
-contracts, portable pocket-review validation, selected-group sequence/model
-identifiers and the retained Expression Atlas functionality.
+threshold validation and SQL, druggability near-miss reclassification, linked
+candidate/expression visual queries, module UI contracts, portable pocket-review
+validation, selected-group sequence/model identifiers and the retained
+Expression Atlas functionality.
 
 The complete cluster-build, external-drive transfer and local launch procedure
 is in `PORTABLE_VISUALISATION_RUNBOOK_v0_6_0.md`.

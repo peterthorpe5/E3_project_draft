@@ -1,68 +1,40 @@
-ARIA plant E3 Shiny reporter v0.7.0 test note
-================================================
+ARIA plant E3 Shiny reporter v0.9.0 validation note
+==================================================
 
-The package includes the expanded test suite under tests/testthat/.
+Validation completed in the build environment on 2026-08-05:
 
-Validation completed for v0.5.0 in this development environment:
-- Every v0.5.0 R source and test file parsed without syntax errors using the
-  tree-sitter R grammar.
-- The generated evolutionary-group de-duplication SQL was executed against a
-  small DuckDB fixture and returned the expected group counts.
-- The pre-structure/structural threshold SQL design was executed against a
-  four-group DuckDB fixture. It classified the 0.325 minimum-druggability case
-  as a near-miss at 0.50 and a pass at 0.30.
+- All 53 application, helper and test R files passed the native base-R parser
+  through the R 4.6.0 WebAssembly runtime.
+- The independent tree-sitter R grammar also reported no syntax errors.
+- Six core v0.9.0 selector and SQL-builder checks executed inside base R,
+  including evolutionary-group rank preference, bounded candidate queries,
+  expression-unit isolation, complete tissue aggregation and volcano inputs.
+- The R-generated heatmap, exact-row and complete species/tissue SQL was then
+  executed with DuckDB against the corrected-expression authority containing
+  32,981,864 context rows. For `N0.HOG0000376`, it returned 231 heatmap cells,
+  the requested ten-row exact preview and 249 complete species/tissue cells.
+  The complete profile counted more source rows than the preview limit, proving
+  that the graph is aggregated before the exact-row cap.
+- The repository-level suite passed all 16 tests.
+- `git diff --check` must be rerun after applying the distribution overlay.
 
 Environment limitation:
-- R is not installed in the sandbox environment, so I could not execute the R
-  testthat suite or an R-native parse of the additive v0.6.0 files here.
-- All 43 R source/test files, including the v0.7.0 additions, passed a static
-  delimiter, quote and escape scan. The source also passed repository
-  whitespace/error validation with `git diff --check`; its complete testthat
-  run remains required on the Mac or cluster R environment.
-- Run the complete suite in the e3_shiny_app conda environment with:
 
-    Rscript inst/scripts/check_dependencies.R
-    Rscript inst/scripts/run_tests.R
+- The build environment does not contain the native R package stack required by
+  Shiny/testthat (bslib, dplyr, DT, duckplyr, ggplot2 and plotly). The complete
+  application suite must therefore be executed in the Mac `e3_shiny_app`
+  environment before committing:
 
-New v0.5.0 coverage is in:
-- tests/testthat/test_threshold_explorer.R
-- tests/testthat/test_config.R
-- tests/testthat/test_result_sections.R
+    Rscript E3_shiny_app/inst/scripts/check_dependencies.R
+    Rscript E3_shiny_app/inst/scripts/run_tests.R
 
-New v0.6.0 coverage is in:
-- tests/testthat/test_pocket_review.R
-- tests/testthat/test_config.R
+New v0.9.0 coverage is in:
+
+- tests/testthat/test_candidate_visualisations.R
+- tests/testthat/test_source_parse.R
 - tests/testthat/test_threshold_explorer.R
 
-New v0.7.0 coverage is in:
-- tests/testthat/test_glossary.R
-- tests/testthat/test_result_sections.R
-- tests/testthat/test_threshold_explorer.R
-
-The v0.7.0 tests cover glossary terminology, exact primary thresholds, the
-assessed-species denominator wording, retention of all application tabs,
-selection of the normalised candidate-by-expression-context relation and
-bounded species/tissue/identifier filtering.
-
-The v0.6.0 tests cover:
-- explicit and unique automatic pocket-review bundle discovery;
-- rejection of incomplete bundles, ambiguous discovery and unsafe page paths;
-- stable group labels and rank ordering;
-- retention of model and OrthoFinder-group member sequence identifiers;
-- separate structure and MAFFT-alignment tab contracts;
-- the new command-line configuration field; and
-- retention of every pre-existing application tab.
-
-Expected test coverage:
-- CLI/config parsing and command-line precedence.
-- Flexible DuckDB, Parquet and run-directory resource selection.
-- Evolutionary-group headline counts and cluster-level de-duplication fallback.
-- Current threshold defaults and defensive validation.
-- Pre-structure and structural candidate reclassification.
-- Manual/slider threshold UI contracts and TSV download control.
-- Expression SQL helper construction.
-- Resource DuckDB query builders.
-- Resource catalog/status summaries.
-- Small DuckDB integration tests when DBI/duckdb/duckplyr are installed.
-- Resource overview/browser/data-source UI controls.
-- Markdown data-source report generation.
+The tests cover authoritative candidate relation/identifier/rank selection,
+bounded SQL, point-to-candidate identity, exact supporting-table linkage,
+unit-separated heatmaps, complete species/tissue aggregation, raw-row retention,
+volcano capability gating and all four visual-explorer UI contracts.

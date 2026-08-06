@@ -10,7 +10,15 @@ import pytest
 from e3app.config import AppConfig
 from e3app.data import (
     _safe_relation_name,
+    candidate_evidence_relations,
+    collect_candidate_evidence,
+    collect_candidate_landscape,
+    collect_differential_expression,
+    collect_expression_heatmap,
+    collect_expression_profile_rows,
+    collect_expression_tissue_summary,
     default_columns,
+    differential_expression_relations,
     distinct_text_values,
     discover_run_parquets,
     grant_overview,
@@ -22,11 +30,13 @@ from e3app.data import (
     preview_relation,
     preview_selected_columns,
     quote_identifier,
+    relation_column_types,
     relation_columns,
     relation_count,
     relations_for_section,
     resource_overview,
     search_accession,
+    select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
 
@@ -63,6 +73,10 @@ def test_relation_queries(resource_db: Path) -> None:
         relations = list_relations(connection)
         assert "candidates" in relations
         assert relation_columns(connection, "candidates") == ["accession", "organism", "score"]
+        assert relation_column_types(
+            connection=connection,
+            relation="candidates",
+        )["score"] == "DOUBLE"
         assert relation_count(connection, "candidates") == 2
         assert relations_for_section(connection, "final_recommendations")[:3] == [
             "top_computational_review_shortlist",
@@ -95,6 +109,203 @@ def test_relation_queries(resource_db: Path) -> None:
     with pytest.raises(AppError, match="does not exist"):
         with open_read_only(resource_db.parent / "missing.duckdb"):
             pass
+
+
+def test_candidate_landscape_and_evidence_queries(resource_db: Path) -> None:
+    """Candidate plots and drill-down tables remain bounded and exact."""
+    with open_read_only(resource_db) as connection:
+        relation = select_candidate_landscape_relation(connection=connection)
+        assert relation == "candidate_master_results"
+        landscape = collect_candidate_landscape(
+            connection=connection,
+            relation=relation,
+            selected_columns=(
+                "final_rank",
+                "primary_group_id",
+                "cluster_id",
+                "final_score",
+                "expression_species_fraction",
+            ),
+            maximum_rows=100,
+        )
+        assert landscape["primary_group_id"].tolist() == ["N0.HOG0001"]
+        identifiers = {
+            "primary_group_id": "N0.HOG0001",
+            "cluster_id": "cluster_1",
+        }
+        relations = candidate_evidence_relations(
+            connection=connection,
+            identifiers=identifiers,
+        )
+        assert "candidate_expression_context_summary" in relations
+        evidence = collect_candidate_evidence(
+            connection=connection,
+            relation="candidate_expression_context_summary",
+            identifiers=identifiers,
+            maximum_rows=100,
+        )
+        assert len(evidence) == 2
+        with pytest.raises(AppError, match="landscape rows"):
+            collect_candidate_landscape(
+                connection=connection,
+                relation=relation,
+                selected_columns=("cluster_id",),
+                maximum_rows=0,
+            )
+        with pytest.raises(AppError, match="Unknown candidate landscape"):
+            collect_candidate_landscape(
+                connection=connection,
+                relation=relation,
+                selected_columns=("missing",),
+            )
+        with pytest.raises(AppError, match="compatible candidate"):
+            collect_candidate_evidence(
+                connection=connection,
+                relation="candidates",
+                identifiers=identifiers,
+            )
+
+
+def test_expression_heatmap_and_profile_queries(resource_db: Path) -> None:
+    """Expression visualisations aggregate one unit and retain exact source rows."""
+    relation = "candidate_expression_context_summary"
+    with open_read_only(resource_db) as connection:
+        cells = collect_expression_heatmap(
+            connection=connection,
+            relation=relation,
+            candidate_column="primary_group_id",
+            candidate_ids=("N0.HOG0001",),
+            context_column="organism_part",
+            expression_unit="TPM",
+            species="Arabidopsis_thaliana",
+        )
+        assert cells["context_label"].tolist() == ["leaf", "root"]
+        assert cells["median_expression"].tolist() == [4.0, 0.4]
+        rows = collect_expression_profile_rows(
+            connection=connection,
+            relation=relation,
+            candidate_column="primary_group_id",
+            candidate_id="N0.HOG0001",
+            expression_unit="TPM",
+        )
+        assert rows["organism_part"].tolist() == ["leaf", "root"]
+        summary = collect_expression_tissue_summary(
+            connection=connection,
+            relation=relation,
+            candidate_column="primary_group_id",
+            candidate_id="N0.HOG0001",
+            expression_unit="TPM",
+        )
+        assert summary["tissue"].tolist() == ["leaf", "root"]
+        assert summary["median_expression"].tolist() == [4.0, 0.4]
+        assert summary["context_row_count"].tolist() == [1, 1]
+        species_summary = collect_expression_tissue_summary(
+            connection=connection,
+            relation=relation,
+            candidate_column="primary_group_id",
+            candidate_id="N0.HOG0001",
+            expression_unit="TPM",
+            species="Arabidopsis_thaliana",
+        )
+        assert len(species_summary) == 2
+        with pytest.raises(AppError, match="between 1 and 25"):
+            collect_expression_heatmap(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_ids=(),
+                context_column="organism_part",
+                expression_unit="TPM",
+            )
+        with pytest.raises(AppError, match="Unsupported"):
+            collect_expression_heatmap(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_ids=("N0.HOG0001",),
+                context_column="gene_name",
+                expression_unit="TPM",
+            )
+        with pytest.raises(AppError, match="Select one candidate"):
+            collect_expression_profile_rows(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_id="",
+                expression_unit="TPM",
+            )
+        with pytest.raises(AppError, match="maximum expression tissues"):
+            collect_expression_tissue_summary(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_id="N0.HOG0001",
+                expression_unit="TPM",
+                maximum_tissues=0,
+            )
+        with pytest.raises(AppError, match="Select one candidate"):
+            collect_expression_tissue_summary(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_id="",
+                expression_unit="TPM",
+            )
+        with pytest.raises(AppError, match="Select one expression unit"):
+            collect_expression_tissue_summary(
+                connection=connection,
+                relation=relation,
+                candidate_column="primary_group_id",
+                candidate_id="N0.HOG0001",
+                expression_unit="",
+            )
+        with pytest.raises(AppError, match="tissue-profile fields"):
+            collect_expression_tissue_summary(
+                connection=connection,
+                relation="candidate_expression_summary",
+                candidate_column="cluster_id",
+                candidate_id="cluster_1",
+                expression_unit="TPM",
+            )
+
+
+def test_differential_expression_capability(tmp_path: Path) -> None:
+    """Volcano input activates only with effect and significance columns."""
+    path = tmp_path / "differential.duckdb"
+    with duckdb.connect(str(path)) as connection:
+        connection.execute(
+            "CREATE TABLE differential_expression("
+            "gene_id VARCHAR, log2_fold_change DOUBLE, adjusted_p_value DOUBLE)"
+        )
+        connection.execute(
+            "INSERT INTO differential_expression VALUES "
+            "('GENE1', 2.0, 0.001), ('GENE2', -1.5, 0.02), "
+            "('INVALID', 1.0, 0.0)"
+        )
+        connection.execute(
+            "CREATE TABLE structural_change("
+            "gene_id VARCHAR, log2_fold_change DOUBLE, adjusted_p_value DOUBLE)"
+        )
+    with open_read_only(path) as connection:
+        capabilities = differential_expression_relations(connection=connection)
+        assert capabilities == [
+            {
+                "relation": "differential_expression",
+                "effect_column": "log2_fold_change",
+                "significance_column": "adjusted_p_value",
+                "label_column": "gene_id",
+            }
+        ]
+        rows = collect_differential_expression(
+            connection=connection,
+            capability=capabilities[0],
+        )
+        assert rows["label"].tolist() == ["GENE1", "GENE2"]
+        with pytest.raises(AppError, match="Incomplete"):
+            collect_differential_expression(
+                connection=connection,
+                capability={"relation": "differential_expression"},
+            )
 
 
 def test_candidate_expression_context_filters(resource_db: Path) -> None:

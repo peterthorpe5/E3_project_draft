@@ -48,40 +48,42 @@ result_section_ui <- function(id, section) {
       col_widths = c(5, 3, 4)
     ),
     if (identical(section, "expression")) {
-      bslib::layout_columns(
-        shiny::selectInput(
-          ns("expression_species"),
-          "Species",
-          choices = "All species"
+      shiny::tagList(
+        bslib::layout_columns(
+          shiny::selectInput(
+            ns("expression_species"),
+            "Species",
+            choices = "All species"
+          ),
+          shiny::selectInput(
+            ns("expression_tissue"),
+            "Tissue / organism part",
+            choices = "All tissues"
+          ),
+          shiny::textInput(
+            ns("expression_search"),
+            "Candidate group, accession or gene",
+            value = ""
+          ),
+          col_widths = c(3, 3, 6)
         ),
-        shiny::selectInput(
-          ns("expression_tissue"),
-          "Tissue / organism part",
-          choices = "All tissues"
-        ),
-        shiny::textInput(
-          ns("expression_search"),
-          "Candidate group, accession or gene",
-          value = ""
-        ),
-        col_widths = c(3, 3, 6)
-      ),
-      bslib::layout_columns(
-        shiny::selectInput(
-          ns("expression_metadata_status"),
-          "Tissue metadata status",
-          choices = "All metadata states"
-        ),
-        shiny::selectInput(
-          ns("expression_positive"),
-          "Median TPM threshold",
-          choices = c(
-            "All values" = "",
-            "At least 0.5 TPM" = "true",
-            "Below 0.5 TPM" = "false"
-          )
-        ),
-        col_widths = c(6, 6)
+        bslib::layout_columns(
+          shiny::selectInput(
+            ns("expression_metadata_status"),
+            "Tissue metadata status",
+            choices = "All metadata states"
+          ),
+          shiny::selectInput(
+            ns("expression_positive"),
+            "Median TPM threshold",
+            choices = c(
+              "All values" = "",
+              "At least 0.5 TPM" = "true",
+              "Below 0.5 TPM" = "false"
+            )
+          ),
+          col_widths = c(6, 6)
+        )
       )
     },
     shiny::div(
@@ -210,7 +212,9 @@ result_section_server <- function(
               relation = relation,
               column = column
             ),
-            error = function(error) character()
+            error = function(error) {
+              character()
+            }
           )
           c(stats::setNames("", all_label), values)
         }
