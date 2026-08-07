@@ -1,4 +1,4 @@
-
+#!/bin/bash
 ## 6. launch the Python application
 
 
