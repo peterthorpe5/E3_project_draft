@@ -216,7 +216,7 @@ def _spatial_signature(records: Sequence[Mapping[str, Any]]) -> Counter[str]:
             float(left["y_angstrom"]),
             float(left["z_angstrom"]),
         )
-        for right in records[left_index + 1 :]:
+        for right in records[left_index + 1:]:
             right_type = str(right["feature_type"])
             right_coordinate = Coordinate(
                 float(right["x_angstrom"]),
