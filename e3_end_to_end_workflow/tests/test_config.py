@@ -398,10 +398,13 @@ def test_enabled_computational_chemistry_registers_controlled_config(
 ) -> None:
     """The reviewed component YAML must enter the checksum-controlled inputs."""
     component_config = tmp_path / "chemistry.yaml"
-    component_config.write_text("schema_version: 1\n", encoding="utf-8")
+    component_config.write_text("schema_version: 2\n", encoding="utf-8")
+    candidate_manifest = tmp_path / "candidate_manifest.tsv"
+    candidate_manifest.write_text("panel_order\n1\n", encoding="utf-8")
     data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
     data.setdefault("analysis", {})["computational_chemistry"] = {
         "component_config": str(component_config),
+        "candidate_manifest": str(candidate_manifest),
         "conda_environment": "e3_structure_guided_chemistry",
     }
     data["stages"]["09c_computational_chemistry"] = {
@@ -422,3 +425,34 @@ def test_enabled_computational_chemistry_registers_controlled_config(
     assert controlled["computational_chemistry_component_config"] == (
         component_config.resolve()
     )
+    assert controlled["computational_chemistry_candidate_manifest"] == (
+        candidate_manifest.resolve()
+    )
+
+
+def test_enabled_computational_chemistry_requires_candidate_manifest(
+    synthetic_config: Path,
+    tmp_path: Path,
+) -> None:
+    """Enabled v0.2.0 chemistry must not restore automatic rank selection."""
+    component_config = tmp_path / "chemistry.yaml"
+    component_config.write_text("schema_version: 2\n", encoding="utf-8")
+    data = yaml.safe_load(synthetic_config.read_text(encoding="utf-8"))
+    data.setdefault("analysis", {})["computational_chemistry"] = {
+        "component_config": str(component_config),
+        "conda_environment": "e3_structure_guided_chemistry",
+    }
+    data["stages"]["09c_computational_chemistry"] = {
+        "enabled": True,
+        "required": False,
+        "evidence_mode": "generate",
+        "command": ["e3-chemistry", "run"],
+        "expected_outputs": ["METHOD_STATUS.tsv"],
+    }
+    synthetic_config.write_text(
+        yaml.safe_dump(data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="candidate_manifest"):
+        load_config(synthetic_config)

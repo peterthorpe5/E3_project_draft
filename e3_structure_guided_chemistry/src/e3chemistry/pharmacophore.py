@@ -28,7 +28,11 @@ FEATURE_FIELDS = (
     "z_angstrom",
     "conserved_component_fraction",
     "mean_chemical_group_conservation",
+    "mapping_fraction",
+    "pocket_plddt_fraction",
     "stable_region_supported",
+    "mapping_quality_supported",
+    "pocket_confidence_supported",
     "method",
     "interpretation",
 )
@@ -46,15 +50,32 @@ GROUP_SUMMARY_FIELDS = (
     "feature_signature",
     "conserved_component_fraction",
     "mean_chemical_group_conservation",
+    "mapping_fraction",
+    "pocket_plddt_fraction",
     "maximum_other_group_feature_similarity",
     "maximum_other_group_spatial_similarity",
     "maximum_other_group_similarity",
     "pharmacophore_uniqueness_score",
     "stable_region_supported",
+    "mapping_quality_supported",
+    "pocket_confidence_supported",
     "unique_region_supported",
     "chemistry_handoff_status",
+    "chemistry_handoff_failure_reasons",
     "method",
     "interpretation",
+)
+
+SENSITIVITY_FIELDS = (
+    "minimum_conserved_component_fraction",
+    "minimum_chemical_group_conservation",
+    "minimum_mapping_fraction",
+    "minimum_pocket_plddt_fraction",
+    "minimum_uniqueness_score",
+    "ready_group_count",
+    "ready_group_fraction",
+    "ready_evolutionary_group_keys",
+    "is_configured_threshold_combination",
 )
 
 DONOR_ATOMS = {
@@ -185,7 +206,15 @@ def build_feature_records(
                     "z_angstrom": round(coordinate.z, 6),
                     "conserved_component_fraction": conserved_fraction,
                     "mean_chemical_group_conservation": chemical_conservation,
+                    "mapping_fraction": target["mapping_fraction"],
+                    "pocket_plddt_fraction": target["pocket_plddt_fraction"],
                     "stable_region_supported": stable,
+                    "mapping_quality_supported": target[
+                        "mapping_quality_supported"
+                    ],
+                    "pocket_confidence_supported": target[
+                        "pocket_confidence_supported"
+                    ],
                     "method": config.method_name,
                     "interpretation": (
                         "residue-derived pharmacophore hypothesis; not an FMO energy, "
@@ -295,9 +324,40 @@ def summarise_groups(
             and float(target["mean_chemical_group_conservation"])
             >= config.minimum_chemical_group_conservation
         )
+        mapping_supported = (
+            float(target["mapping_fraction"]) >= config.minimum_mapping_fraction
+        )
+        confidence_supported = (
+            float(target["pocket_plddt_fraction"])
+            >= config.minimum_pocket_plddt_fraction
+        )
         unique = bool(group_features) and uniqueness >= config.minimum_uniqueness_score
+        failure_reasons = []
         if not group_features:
             status = "NO_RESOLVED_PHARMACOPHORE_FEATURES"
+            failure_reasons.append(status)
+        if not mapping_supported:
+            failure_reasons.append("INSUFFICIENT_MAPPING_QUALITY")
+        if not confidence_supported:
+            failure_reasons.append("INSUFFICIENT_POCKET_CONFIDENCE")
+        if (
+            float(target["conserved_component_fraction"])
+            < config.minimum_conserved_component_fraction
+        ):
+            failure_reasons.append("INSUFFICIENT_CONSERVED_COMPONENT")
+        if (
+            float(target["mean_chemical_group_conservation"])
+            < config.minimum_chemical_group_conservation
+        ):
+            failure_reasons.append("INSUFFICIENT_CHEMICAL_GROUP_CONSERVATION")
+        if group_features and not unique:
+            failure_reasons.append("INSUFFICIENT_BETWEEN_GROUP_UNIQUENESS")
+        if not group_features:
+            status = "NO_RESOLVED_PHARMACOPHORE_FEATURES"
+        elif not mapping_supported:
+            status = "INSUFFICIENT_MAPPING_QUALITY"
+        elif not confidence_supported:
+            status = "INSUFFICIENT_POCKET_CONFIDENCE"
         elif not stable:
             status = "INSUFFICIENT_EVOLUTIONARY_STABILITY"
         elif not unique:
@@ -325,6 +385,8 @@ def summarise_groups(
                 "mean_chemical_group_conservation": target[
                     "mean_chemical_group_conservation"
                 ],
+                "mapping_fraction": target["mapping_fraction"],
+                "pocket_plddt_fraction": target["pocket_plddt_fraction"],
                 "maximum_other_group_feature_similarity": round(
                     maximum_feature_similarity,
                     6,
@@ -336,8 +398,11 @@ def summarise_groups(
                 "maximum_other_group_similarity": round(maximum_similarity, 6),
                 "pharmacophore_uniqueness_score": round(uniqueness, 6),
                 "stable_region_supported": stable,
+                "mapping_quality_supported": mapping_supported,
+                "pocket_confidence_supported": confidence_supported,
                 "unique_region_supported": unique,
                 "chemistry_handoff_status": status,
+                "chemistry_handoff_failure_reasons": ";".join(failure_reasons),
                 "method": config.method_name,
                 "interpretation": (
                     "open residue-feature and pair-distance comparison; uniqueness "
@@ -352,6 +417,72 @@ def summarise_groups(
             str(row["evolutionary_group_key"]),
         ),
     )
+
+
+def threshold_sensitivity(
+    *,
+    group_summaries: Sequence[Mapping[str, Any]],
+    config: ChemistryConfig,
+) -> list[dict[str, Any]]:
+    """Evaluate a transparent grid around the configured chemistry gates."""
+    conservation_thresholds = sorted(
+        {0.25, 0.5, 0.75, config.minimum_conserved_component_fraction}
+    )
+    confidence_thresholds = sorted(
+        {0.5, 0.7, 0.9, config.minimum_pocket_plddt_fraction}
+    )
+    uniqueness_thresholds = sorted(
+        {0.05, 0.1, 0.2, config.minimum_uniqueness_score}
+    )
+    rows = []
+    denominator = len(group_summaries)
+    for conservation_threshold in conservation_thresholds:
+        for confidence_threshold in confidence_thresholds:
+            for uniqueness_threshold in uniqueness_thresholds:
+                ready_keys = sorted(
+                    str(row["evolutionary_group_key"])
+                    for row in group_summaries
+                    if int(row["feature_count"]) > 0
+                    and float(row["conserved_component_fraction"])
+                    >= conservation_threshold
+                    and float(row["mean_chemical_group_conservation"])
+                    >= config.minimum_chemical_group_conservation
+                    and float(row["mapping_fraction"])
+                    >= config.minimum_mapping_fraction
+                    and float(row["pocket_plddt_fraction"])
+                    >= confidence_threshold
+                    and float(row["pharmacophore_uniqueness_score"])
+                    >= uniqueness_threshold
+                )
+                rows.append(
+                    {
+                        "minimum_conserved_component_fraction": (
+                            conservation_threshold
+                        ),
+                        "minimum_chemical_group_conservation": (
+                            config.minimum_chemical_group_conservation
+                        ),
+                        "minimum_mapping_fraction": config.minimum_mapping_fraction,
+                        "minimum_pocket_plddt_fraction": confidence_threshold,
+                        "minimum_uniqueness_score": uniqueness_threshold,
+                        "ready_group_count": len(ready_keys),
+                        "ready_group_fraction": (
+                            round(len(ready_keys) / denominator, 6)
+                            if denominator
+                            else 0.0
+                        ),
+                        "ready_evolutionary_group_keys": ";".join(ready_keys),
+                        "is_configured_threshold_combination": (
+                            conservation_threshold
+                            == config.minimum_conserved_component_fraction
+                            and confidence_threshold
+                            == config.minimum_pocket_plddt_fraction
+                            and uniqueness_threshold
+                            == config.minimum_uniqueness_score
+                        ),
+                    }
+                )
+    return rows
 
 
 def euclidean_distance(left: Coordinate, right: Coordinate) -> float:

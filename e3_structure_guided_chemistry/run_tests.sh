@@ -13,7 +13,7 @@ python -m pycodestyle src tests --max-line-length=100
 python -m pydocstyle src tests
 python -m coverage erase
 python -m coverage run --branch -m pytest -q "${SCRIPT_DIR}/tests"
-python -m coverage report --fail-under=90
+python -m coverage report --fail-under=95
 bash -n \
     run_e3_structure_guided_chemistry.sh \
     run_tests.sh \

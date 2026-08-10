@@ -24,6 +24,17 @@ def test_slurm_launcher_help_and_open_defaults(package_root: Path) -> None:
     assert "--run-root PATH" in result.stdout
     assert "default: barton" in result.stdout
     assert "--config PATH" in result.stdout
+    assert "--candidate-manifest PATH" in result.stdout
+
+    prepare = package_root / "scripts" / "prepare_expanded_candidate_manifest.sh"
+    prepare_result = subprocess.run(
+        [str(prepare), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "--maximum-rank INTEGER" in prepare_result.stdout
+    assert "--decided-by TEXT" in prepare_result.stdout
 
 
 def test_shells_do_not_embed_python(package_root: Path) -> None:

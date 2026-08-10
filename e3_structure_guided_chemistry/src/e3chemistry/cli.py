@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from e3chemistry import __version__
+from e3chemistry.candidate_manifest import prepare_candidate_manifest_files
 from e3chemistry.config import load_config
 from e3chemistry.errors import ChemistryError
 from e3chemistry.pipeline import run_pipeline
@@ -30,8 +31,27 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate = subparsers.add_parser("validate-config", help="Validate YAML and licence policy.")
     validate.add_argument("--config", type=Path, required=True)
+    prepare = subparsers.add_parser(
+        "prepare-candidate-manifest",
+        help="Prepare a reviewable expanded or approved candidate panel.",
+    )
+    prepare.add_argument("--config", type=Path, required=True)
+    prepare.add_argument("--group-ranking", type=Path, required=True)
+    prepare.add_argument("--selected-pockets", type=Path, required=True)
+    prepare.add_argument("--pocket-residue-mappings", type=Path, required=True)
+    prepare.add_argument("--structure-asset-manifest", type=Path, required=True)
+    prepare.add_argument("--output-dir", type=Path, required=True)
+    prepare.add_argument("--maximum-rank", type=int, default=200)
+    prepare.add_argument(
+        "--decision-basis",
+        choices=("EXPANDED_COMPUTATIONAL_SCREEN", "PROJECT_LEAD_APPROVED"),
+        required=True,
+    )
+    prepare.add_argument("--decided-by", required=True)
+    prepare.add_argument("--rationale", required=True)
     run = subparsers.add_parser("run", help="Run the complete open chemistry workflow.")
     run.add_argument("--config", type=Path, required=True)
+    run.add_argument("--candidate-manifest", type=Path, required=True)
     run.add_argument("--group-ranking", type=Path, required=True)
     run.add_argument("--selected-pockets", type=Path, required=True)
     run.add_argument("--pocket-residue-mappings", type=Path, required=True)
@@ -61,9 +81,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config.allow_restricted_licence_tools
                 ),
             }
+        elif args.command == "prepare-candidate-manifest":
+            config = load_config(args.config)
+            result = prepare_candidate_manifest_files(
+                config=config,
+                group_ranking_path=args.group_ranking,
+                selected_pockets_path=args.selected_pockets,
+                pocket_residue_mappings_path=args.pocket_residue_mappings,
+                structure_asset_manifest_path=args.structure_asset_manifest,
+                output_dir=args.output_dir,
+                maximum_rank=args.maximum_rank,
+                decision_basis=args.decision_basis,
+                decided_by=args.decided_by,
+                rationale=args.rationale,
+            )
         else:
             result = run_pipeline(
                 config_path=args.config,
+                candidate_manifest_path=args.candidate_manifest,
                 group_ranking_path=args.group_ranking,
                 selected_pockets_path=args.selected_pockets,
                 pocket_residue_mappings_path=args.pocket_residue_mappings,

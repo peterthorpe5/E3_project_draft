@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-structure-guided-chemistry"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source structure-guided pharmacophore and fragment prioritisation for plant E3 ligases"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ omit = ["*/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 90
+fail_under = 95
 precision = 2
 
 [tool.pycodestyle]

@@ -21,7 +21,8 @@ def test_prepare_only_configuration_is_valid(tmp_path: Path) -> None:
     config = load_config(write_config(tmp_path / "config.yaml"))
 
     assert config.fragment_screening_mode == "prepare_only"
-    assert config.group_limit == 10
+    assert config.maximum_candidate_groups == 200
+    assert config.minimum_pocket_plddt_fraction == pytest.approx(0.7)
     assert config.digest
     assert {item.name for item in config.declared_components} == {"DuckDB", "Gemmi"}
 
@@ -43,7 +44,7 @@ def test_open_screen_resolves_relative_fragment_library(tmp_path: Path) -> None:
     ("mutator", "message"),
     [
         (lambda data: data.update({"unknown": True}), "Unknown top-level"),
-        (lambda data: data.update({"schema_version": 2}), "schema_version"),
+        (lambda data: data.update({"schema_version": 1}), "schema_version"),
         (
             lambda data: data["licensing"].update(
                 {"allow_restricted_licence_tools": True}
@@ -51,12 +52,12 @@ def test_open_screen_resolves_relative_fragment_library(tmp_path: Path) -> None:
             "must remain false",
         ),
         (
-            lambda data: data["method"].update({"group_limit": 0}),
+            lambda data: data["method"].update({"maximum_candidate_groups": 0}),
             "positive integer",
         ),
         (
-            lambda data: data["method"].update({"group_limit": 101}),
-            "must not exceed 100",
+            lambda data: data["method"].update({"maximum_candidate_groups": 501}),
+            "must not exceed 500",
         ),
         (
             lambda data: data["method"].update(
@@ -67,6 +68,52 @@ def test_open_screen_resolves_relative_fragment_library(tmp_path: Path) -> None:
         (
             lambda data: data["method"].update({"name": "FMOPhore"}),
             "open_structure_guided",
+        ),
+        (
+            lambda data: data["method"].update({"unknown_method_key": True}),
+            "Unknown method keys",
+        ),
+        (
+            lambda data: data["fragment_screening"].update({"mode": "commercial"}),
+            "mode must be one of",
+        ),
+        (
+            lambda data: data["fragment_screening"].update(
+                {"mode": "open_fragment_screen", "fragment_library": None}
+            ),
+            "requires fragment_screening.fragment_library",
+        ),
+        (
+            lambda data: data["fragment_screening"].update({"fragment_library": 1}),
+            "path string or null",
+        ),
+        (
+            lambda data: data["licensing"].update(
+                {"allow_restricted_licence_tools": "false"}
+            ),
+            "must be a boolean",
+        ),
+        (
+            lambda data: data["licensing"].update({"declared_components": {}}),
+            "must be a list",
+        ),
+        (
+            lambda data: data["licensing"]["declared_components"][0].update(
+                {"name": ""}
+            ),
+            "invalid name",
+        ),
+        (
+            lambda data: data["licensing"]["declared_components"][0].update(
+                {"spdx": ""}
+            ),
+            "invalid SPDX",
+        ),
+        (
+            lambda data: data["provenance"].update(
+                {"require_clean_tracked_source": "true"}
+            ),
+            "require_clean_tracked_source must be a boolean",
         ),
     ],
 )
@@ -95,6 +142,24 @@ def test_open_screen_requires_existing_library(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="does not exist"):
         load_config(config_path)
+
+
+def test_malformed_yaml_and_mapping_are_rejected(tmp_path: Path) -> None:
+    """Unreadable YAML structures must not be interpreted as defaults."""
+    malformed = tmp_path / "malformed.yaml"
+    malformed.write_text("[", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="Could not read"):
+        load_config(malformed)
+
+    wrong_mapping = tmp_path / "wrong_mapping.yaml"
+    wrong_mapping.write_text("1: value\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="string keys"):
+        load_config(wrong_mapping)
+
+    null_config = tmp_path / "null.yaml"
+    null_config.write_text("null\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="schema_version"):
+        load_config(null_config)
 
 
 def test_non_open_spdx_is_rejected() -> None:

@@ -80,6 +80,30 @@ def test_input_validation_helpers_reject_malformed_tables(tmp_path: Path) -> Non
     unknown.write_text("a,b\n1,2\n", encoding="utf-8")
     with pytest.raises(InputValidationError, match="TSV or Parquet"):
         read_records(unknown)
+    headerless = tmp_path / "headerless.tsv"
+    headerless.write_text("\n", encoding="utf-8")
+    with pytest.raises(InputValidationError, match="no header"):
+        read_tsv(headerless)
+    with pytest.raises(InputValidationError, match="contains no records"):
+        require_columns(records=[], required=("a",), label="empty test")
+    with pytest.raises(InputValidationError, match="Parquet input is missing"):
+        read_records(tmp_path / "missing.parquet")
+    invalid_parquet = tmp_path / "invalid.parquet"
+    invalid_parquet.write_text("not parquet\n", encoding="utf-8")
+    with pytest.raises(InputValidationError, match="Could not read Parquet"):
+        read_records(invalid_parquet)
+
+
+def test_invalid_parquet_publication_is_atomic(tmp_path: Path) -> None:
+    """DuckDB publication errors must remove the temporary Parquet."""
+    with pytest.raises(InputValidationError, match="Could not publish Parquet"):
+        write_records(
+            tsv_path=tmp_path / "duplicate.tsv",
+            parquet_path=tmp_path / "duplicate.parquet",
+            records=[],
+            fieldnames=("duplicate", "duplicate"),
+        )
+    assert not (tmp_path / ".duplicate.parquet.partial").exists()
 
 
 def test_structure_assets_locators_and_residue_loading(tmp_path: Path) -> None:
@@ -138,4 +162,128 @@ def test_structure_asset_checksum_and_conflict_fail_closed(tmp_path: Path) -> No
                 {"accession": "P1", "path": first, "sha256": sha256_file(first)},
                 {"accession": "P1", "model_path": second, "sha256": sha256_file(second)},
             ]
+        )
+
+
+def test_unusable_assets_and_malformed_mapping_rows_fail_closed(tmp_path: Path) -> None:
+    """Empty accessions, missing models and invalid pocket IDs cannot be selected."""
+    unsupported = tmp_path / "model.txt"
+    unsupported.write_text("not a structure\n", encoding="utf-8")
+    with pytest.raises(InputValidationError, match="no usable structure"):
+        resolve_structure_assets(
+            [
+                {"accession": "", "path": unsupported},
+                {"accession": "P1", "path": ""},
+                {"accession": "P2", "path": unsupported},
+            ]
+        )
+    with pytest.raises(InputValidationError, match="must be an integer"):
+        mapped_residue_locators(
+            records=[
+                {
+                    "accession": "P1",
+                    "pocket_number": "bad",
+                    "mapping_status": "MAPPED",
+                }
+            ],
+            accession="P1",
+            pocket_number=1,
+        )
+
+
+def test_mapping_filters_and_unresolved_residues_are_explicit(tmp_path: Path) -> None:
+    """All mapping filters and partial structure resolution must be deterministic."""
+    structure = write_pdb(tmp_path / "model.pdb")
+    asset = resolve_structure_assets(
+        [{"accession": "P1", "path": structure, "sha256": sha256_file(structure)}]
+    )["P1"]
+    mappings = [
+        {
+            "accession": "OTHER",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": 1,
+        },
+        {
+            "accession": "P1",
+            "pocket_number": 2,
+            "mapping_status": "MAPPED",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": 1,
+        },
+        {
+            "accession": "P1",
+            "pocket_number": 1,
+            "mapping_status": "UNMAPPED",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": 1,
+        },
+        {
+            "accession": "P1",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_auth_chain": "",
+            "model_auth_seq_id": "",
+        },
+        {
+            "accession": "P1",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_auth_chain": "A",
+            "model_auth_seq_id": 1,
+        },
+    ]
+    locators = mapped_residue_locators(
+        records=mappings,
+        accession="P1",
+        pocket_number=1,
+    )
+    locators.append(
+        {"chain_id": "Z", "sequence_id": "999", "insertion_code": ""}
+    )
+
+    residues = load_pocket_residues(
+        asset=asset,
+        pocket_number=1,
+        locators=locators,
+    )
+
+    assert len(residues) == 1
+    with pytest.raises(InputValidationError, match="No mapped pocket residue"):
+        load_pocket_residues(
+            asset=asset,
+            pocket_number=1,
+            locators=[
+                {"chain_id": "Z", "sequence_id": "999", "insertion_code": ""}
+            ],
+        )
+
+
+def test_structure_without_models_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty coordinate file must not be treated as a resolved structure."""
+    empty_structure = tmp_path / "empty.pdb"
+    empty_structure.write_text("REMARK no atoms\nEND\n", encoding="utf-8")
+    asset = resolve_structure_assets(
+        [
+            {
+                "accession": "P1",
+                "path": empty_structure,
+                "sha256": sha256_file(empty_structure),
+            }
+        ]
+    )["P1"]
+    import gemmi
+
+    monkeypatch.setattr(gemmi, "read_structure", lambda path: [])
+
+    with pytest.raises(InputValidationError, match="contains no models"):
+        load_pocket_residues(
+            asset=asset,
+            pocket_number=1,
+            locators=[
+                {"chain_id": "A", "sequence_id": "1", "insertion_code": ""}
+            ],
         )

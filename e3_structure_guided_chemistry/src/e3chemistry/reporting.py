@@ -16,7 +16,7 @@ def _table(records: Sequence[Mapping[str, Any]], fields: Sequence[str]) -> str:
         return "<p>No rows were produced.</p>"
     headings = "".join(f"<th>{html.escape(field)}</th>" for field in fields)
     rows = []
-    for record in records[:20]:
+    for record in records[:500]:
         cells = "".join(
             f"<td>{html.escape(str(record.get(field, '')))}</td>" for field in fields
         )
@@ -45,6 +45,8 @@ def write_report(
             "evolutionary_group_key",
             "candidate_accession",
             "pocket_number",
+            "mapping_fraction",
+            "pocket_plddt_fraction",
             "target_status",
         ),
     )
@@ -54,8 +56,10 @@ def write_report(
             "evolutionary_group_rank",
             "evolutionary_group_key",
             "feature_count",
+            "pocket_plddt_fraction",
             "pharmacophore_uniqueness_score",
             "chemistry_handoff_status",
+            "chemistry_handoff_failure_reasons",
         ),
     )
     fragment_table = _table(
@@ -78,8 +82,8 @@ th,td{{border:1px solid #bbb;padding:0.35rem;text-align:left;vertical-align:top}
 th{{background:#e9eef5}}.warning{{border-left:5px solid #b26a00;padding:0.8rem;background:#fff4df}}
 </style></head><body>
 <h1>E3 structure-guided chemistry</h1>
-<p>Method: <code>{html.escape(config.method_name)}</code>. Selected group limit:
-{config.group_limit}. Groups ready for open fragment prioritisation: {ready} of
+<p>Method: <code>{html.escape(config.method_name)}</code>. Explicit candidate
+panel: {len(targets)} groups. Groups ready for open fragment prioritisation: {ready} of
 {len(group_summaries)}. Fragment ranking rows: {len(fragment_rankings)}.</p>
 <div class="warning"><strong>Method boundary.</strong> FMOPhore, FrAncestor and
 AlphaFold3 were not run. The reported features are residue-derived hypotheses

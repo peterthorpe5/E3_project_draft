@@ -642,6 +642,9 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                 "computational_chemistry_component_config": str(
                     config.analysis.computational_chemistry.component_config or ""
                 ),
+                "computational_chemistry_candidate_manifest": str(
+                    config.analysis.computational_chemistry.candidate_manifest or ""
+                ),
                 "computational_chemistry_conda_environment": (
                     config.analysis.computational_chemistry.conda_environment
                 ),

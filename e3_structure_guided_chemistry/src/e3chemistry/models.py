@@ -20,15 +20,18 @@ class ChemistryConfig:
 
     source_path: Path
     method_name: str
-    group_limit: int
+    maximum_candidate_groups: int
     minimum_conserved_component_fraction: float
     minimum_chemical_group_conservation: float
+    minimum_mapping_fraction: float
+    minimum_pocket_plddt_fraction: float
     minimum_uniqueness_score: float
     maximum_fragments_per_group: int
     fragment_screening_mode: str
     fragment_library: Path | None
     allow_restricted_licence_tools: bool
     declared_components: tuple[ComponentLicence, ...]
+    require_clean_tracked_source: bool
     digest: str
 
 

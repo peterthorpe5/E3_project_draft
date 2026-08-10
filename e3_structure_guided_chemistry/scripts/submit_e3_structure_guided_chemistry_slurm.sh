@@ -9,6 +9,7 @@ readonly JOB_SCRIPT="${SCRIPT_DIR}/slurm_e3_structure_guided_chemistry_job.sh"
 
 RUN_ROOT=""
 CONFIG=""
+CANDIDATE_MANIFEST=""
 OUTPUT_DIR=""
 ACCOUNT="barton"
 PARTITION="barton"
@@ -24,6 +25,7 @@ usage() {
         "Required:" \
         "  --run-root PATH          Completed workflow run through Stage 09." \
         "  --config PATH            Reviewed chemistry component YAML." \
+        "  --candidate-manifest PATH Explicit reviewed candidate panel TSV." \
         "  --output-dir PATH        New standalone output directory." \
         "" \
         "Slurm options:" \
@@ -47,11 +49,12 @@ require_value() {
 
 while (($#)); do
     case "$1" in
-        --run-root|--config|--output-dir|--account|--partition|--walltime|--memory|--cpus|--conda-environment)
+        --run-root|--config|--candidate-manifest|--output-dir|--account|--partition|--walltime|--memory|--cpus|--conda-environment)
             require_value "$1" "${2:-}"
             case "$1" in
                 --run-root) RUN_ROOT="$2" ;;
                 --config) CONFIG="$2" ;;
+                --candidate-manifest) CANDIDATE_MANIFEST="$2" ;;
                 --output-dir) OUTPUT_DIR="$2" ;;
                 --account) ACCOUNT="$2" ;;
                 --partition) PARTITION="$2" ;;
@@ -74,8 +77,8 @@ while (($#)); do
     esac
 done
 
-if [[ -z "${RUN_ROOT}" || -z "${CONFIG}" || -z "${OUTPUT_DIR}" ]]; then
-    printf 'ERROR: --run-root, --config and --output-dir are required.\n' >&2
+if [[ -z "${RUN_ROOT}" || -z "${CONFIG}" || -z "${CANDIDATE_MANIFEST}" || -z "${OUTPUT_DIR}" ]]; then
+    printf 'ERROR: --run-root, --config, --candidate-manifest and --output-dir are required.\n' >&2
     exit 2
 fi
 if [[ ! -d "${RUN_ROOT}" ]]; then
@@ -84,6 +87,11 @@ if [[ ! -d "${RUN_ROOT}" ]]; then
 fi
 if [[ ! -s "${CONFIG}" ]]; then
     printf 'ERROR: component config is missing or empty: %s\n' "${CONFIG}" >&2
+    exit 2
+fi
+if [[ ! -s "${CANDIDATE_MANIFEST}" ]]; then
+    printf 'ERROR: candidate manifest is missing or empty: %s\n' \
+        "${CANDIDATE_MANIFEST}" >&2
     exit 2
 fi
 if [[ -e "${OUTPUT_DIR}" ]]; then
@@ -136,6 +144,7 @@ JOB_ID="$(
         --package-root "${PACKAGE_ROOT}" \
         --conda-environment "${CONDA_ENVIRONMENT}" \
         --config "${CONFIG}" \
+        --candidate-manifest "${CANDIDATE_MANIFEST}" \
         --group-ranking "${GROUP_RANKING}" \
         --selected-pockets "${SELECTED_POCKETS}" \
         --pocket-residue-mappings "${POCKET_MAPPINGS}" \

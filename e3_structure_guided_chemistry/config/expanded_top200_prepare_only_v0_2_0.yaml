@@ -18,7 +18,5 @@ licensing:
       spdx: MIT
     - name: Gemmi
       spdx: MPL-2.0
-    - name: RDKit
-      spdx: BSD-3-Clause
 provenance:
   require_clean_tracked_source: true

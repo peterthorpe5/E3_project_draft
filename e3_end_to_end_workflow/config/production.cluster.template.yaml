@@ -99,6 +99,7 @@ analysis:
     # no-commercial-licence
     # component configuration has been reviewed and installed.
     component_config: ../../e3_structure_guided_chemistry/config/config.example.yaml
+    candidate_manifest: CHANGE_ME_candidate_manifest.tsv
     conda_environment: e3_structure_guided_chemistry
   prioritisation:
     profile_name: CHANGE_ME_versioned_scoring_profile
@@ -373,6 +374,8 @@ stages:
       - run
       - --config
       - "{computational_chemistry_component_config}"
+      - --candidate-manifest
+      - "{computational_chemistry_candidate_manifest}"
       - --group-ranking
       - "{evolutionary_group_ranking}"
       - --selected-pockets
@@ -389,6 +392,7 @@ stages:
       - tables/chemistry_target_manifest.parquet
       - tables/pocket_pharmacophore_features.parquet
       - tables/group_pharmacophore_summary.parquet
+      - tables/threshold_sensitivity.parquet
       - tables/fragment_properties.parquet
       - tables/fragment_pharmacophore_ranking.parquet
       - qc/computational_chemistry_validation.tsv

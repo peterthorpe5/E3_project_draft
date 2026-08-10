@@ -85,10 +85,16 @@ def load_config(path: Path) -> ChemistryConfig:
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Could not read configuration {source}: {exc}") from exc
     root = _mapping(raw, "configuration")
-    if root.get("schema_version") != 1:
-        raise ConfigurationError("schema_version must be 1")
+    if root.get("schema_version") != 2:
+        raise ConfigurationError("schema_version must be 2")
     unknown_root = set(root).difference(
-        {"schema_version", "method", "fragment_screening", "licensing"}
+        {
+            "schema_version",
+            "method",
+            "fragment_screening",
+            "licensing",
+            "provenance",
+        }
     )
     if unknown_root:
         raise ConfigurationError(
@@ -97,6 +103,36 @@ def load_config(path: Path) -> ChemistryConfig:
     method = _mapping(root.get("method"), "method")
     screening = _mapping(root.get("fragment_screening"), "fragment_screening")
     licensing = _mapping(root.get("licensing"), "licensing")
+    provenance = _mapping(root.get("provenance"), "provenance")
+    allowed_sections = {
+        "method": {
+            "name",
+            "maximum_candidate_groups",
+            "minimum_conserved_component_fraction",
+            "minimum_chemical_group_conservation",
+            "minimum_mapping_fraction",
+            "minimum_pocket_plddt_fraction",
+            "minimum_uniqueness_score",
+            "maximum_fragments_per_group",
+        },
+        "fragment_screening": {"mode", "fragment_library"},
+        "licensing": {
+            "allow_restricted_licence_tools",
+            "declared_components",
+        },
+        "provenance": {"require_clean_tracked_source"},
+    }
+    for section_name, section in (
+        ("method", method),
+        ("fragment_screening", screening),
+        ("licensing", licensing),
+        ("provenance", provenance),
+    ):
+        unknown = set(section).difference(allowed_sections[section_name])
+        if unknown:
+            raise ConfigurationError(
+                f"Unknown {section_name} keys: " + ", ".join(sorted(unknown))
+            )
     method_name = method.get("name", "open_structure_guided_pharmacophore_v1")
     if method_name != "open_structure_guided_pharmacophore_v1":
         raise ConfigurationError(
@@ -144,14 +180,19 @@ def load_config(path: Path) -> ChemistryConfig:
         components=components,
         fragment_screening_mode=mode,
     )
+    require_clean_source = provenance.get("require_clean_tracked_source", True)
+    if not isinstance(require_clean_source, bool):
+        raise ConfigurationError(
+            "provenance.require_clean_tracked_source must be a boolean"
+        )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return ChemistryConfig(
         source_path=source,
         method_name=method_name,
-        group_limit=_bounded_positive_integer(
-            method.get("group_limit", 10),
-            label="method.group_limit",
-            maximum=100,
+        maximum_candidate_groups=_bounded_positive_integer(
+            method.get("maximum_candidate_groups", 200),
+            label="method.maximum_candidate_groups",
+            maximum=500,
         ),
         minimum_conserved_component_fraction=_fraction(
             method.get("minimum_conserved_component_fraction", 0.5),
@@ -160,6 +201,14 @@ def load_config(path: Path) -> ChemistryConfig:
         minimum_chemical_group_conservation=_fraction(
             method.get("minimum_chemical_group_conservation", 0.5),
             "method.minimum_chemical_group_conservation",
+        ),
+        minimum_mapping_fraction=_fraction(
+            method.get("minimum_mapping_fraction", 0.8),
+            "method.minimum_mapping_fraction",
+        ),
+        minimum_pocket_plddt_fraction=_fraction(
+            method.get("minimum_pocket_plddt_fraction", 0.7),
+            "method.minimum_pocket_plddt_fraction",
         ),
         minimum_uniqueness_score=_fraction(
             method.get("minimum_uniqueness_score", 0.1),
@@ -173,5 +222,6 @@ def load_config(path: Path) -> ChemistryConfig:
         fragment_library=fragment_library,
         allow_restricted_licence_tools=allow_restricted,
         declared_components=validated_components,
+        require_clean_tracked_source=require_clean_source,
         digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
     )

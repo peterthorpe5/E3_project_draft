@@ -38,6 +38,9 @@ def write_config(
     *,
     mode: str = "prepare_only",
     fragment_library: Path | None = None,
+    minimum_mapping_fraction: float = 0.8,
+    minimum_pocket_plddt_fraction: float = 0.7,
+    require_clean_tracked_source: bool = False,
 ) -> Path:
     """Write one valid open-source chemistry configuration."""
     components = [
@@ -47,12 +50,14 @@ def write_config(
     if mode == "open_fragment_screen":
         components.append({"name": "RDKit", "spdx": "BSD-3-Clause"})
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "method": {
             "name": "open_structure_guided_pharmacophore_v1",
-            "group_limit": 10,
+            "maximum_candidate_groups": 200,
             "minimum_conserved_component_fraction": 0.5,
             "minimum_chemical_group_conservation": 0.5,
+            "minimum_mapping_fraction": minimum_mapping_fraction,
+            "minimum_pocket_plddt_fraction": minimum_pocket_plddt_fraction,
             "minimum_uniqueness_score": 0.1,
             "maximum_fragments_per_group": 10,
         },
@@ -65,6 +70,9 @@ def write_config(
         "licensing": {
             "allow_restricted_licence_tools": False,
             "declared_components": components,
+        },
+        "provenance": {
+            "require_clean_tracked_source": require_clean_tracked_source,
         },
     }
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
@@ -122,6 +130,7 @@ def scientific_inputs(tmp_path: Path) -> dict[str, Path]:
             {
                 "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
                 "primary_group_id": "HOG1",
+                "cluster_id": "DC1",
                 "candidate_accession": "P00001",
                 "species_column": "Species_one",
                 "pocket_number": 1,
@@ -173,6 +182,27 @@ def scientific_inputs(tmp_path: Path) -> dict[str, Path]:
             }
         ],
     )
+    candidate_manifest = write_tsv(
+        tmp_path / "candidate_manifest.tsv",
+        [
+            {
+                "panel_order": 1,
+                "evolutionary_group_rank": 1,
+                "evolutionary_group_key": "HIERARCHICAL_ORTHOGROUP:HOG1",
+                "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+                "primary_group_id": "HOG1",
+                "cluster_id": "DC1",
+                "candidate_accession": "P00001",
+                "species_column": "Species_one",
+                "pocket_number": 1,
+                "structure_sha256": digest,
+                "decision_basis": "EXPANDED_COMPUTATIONAL_SCREEN",
+                "decided_by": "Unit test",
+                "decided_at_utc": "2026-08-10T12:00:00+00:00",
+                "rationale": "Controlled test candidate",
+            }
+        ],
+    )
     fragments = write_tsv(
         tmp_path / "fragments.tsv",
         [
@@ -187,5 +217,6 @@ def scientific_inputs(tmp_path: Path) -> dict[str, Path]:
         "mappings": mappings,
         "conservation": conservation,
         "assets": assets,
+        "candidate_manifest": candidate_manifest,
         "fragments": fragments,
     }

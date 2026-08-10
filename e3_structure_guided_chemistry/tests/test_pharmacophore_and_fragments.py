@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -18,10 +19,12 @@ from e3chemistry.fragments import (
 )
 from e3chemistry.models import Coordinate, ResidueGeometry
 from e3chemistry.pharmacophore import (
+    _weighted_jaccard,
     build_feature_records,
     euclidean_distance,
     residue_feature_points,
     summarise_groups,
+    threshold_sensitivity,
 )
 
 
@@ -60,6 +63,10 @@ def _target(key: str = "HOG:H1") -> dict[str, object]:
         "pocket_number": 1,
         "conserved_component_fraction": 0.9,
         "mean_chemical_group_conservation": 0.8,
+        "mapping_fraction": 1.0,
+        "pocket_plddt_fraction": 1.0,
+        "mapping_quality_supported": True,
+        "pocket_confidence_supported": True,
     }
 
 
@@ -71,6 +78,9 @@ def test_residue_features_and_distance() -> None:
     assert {"hydrogen_bond_donor", "positive_ionisable"}.issubset(lysine)
     assert {"hydrogen_bond_acceptor", "negative_ionisable"}.issubset(aspartate)
     assert euclidean_distance(Coordinate(0, 0, 0), Coordinate(3, 4, 0)) == 5.0
+    hydrophobic = {name for name, _ in residue_feature_points(_residue("VAL"))}
+    assert "hydrophobic" in hydrophobic
+    assert _weighted_jaccard(Counter(), Counter()) == 0.0
 
 
 def test_feature_records_and_group_uniqueness(tmp_path: Path) -> None:
@@ -107,6 +117,81 @@ def test_group_without_features_is_not_ready(tmp_path: Path) -> None:
     summary = summarise_groups(targets=[_target()], features=[], config=config)[0]
 
     assert summary["chemistry_handoff_status"] == "NO_RESOLVED_PHARMACOPHORE_FEATURES"
+    sensitivity = threshold_sensitivity(group_summaries=[], config=config)
+    assert all(row["ready_group_fraction"] == 0.0 for row in sensitivity)
+
+
+@pytest.mark.parametrize(
+    ("changes", "status", "reason"),
+    [
+        (
+            {"mapping_fraction": 0.1},
+            "INSUFFICIENT_MAPPING_QUALITY",
+            "INSUFFICIENT_MAPPING_QUALITY",
+        ),
+        (
+            {"conserved_component_fraction": 0.1},
+            "INSUFFICIENT_EVOLUTIONARY_STABILITY",
+            "INSUFFICIENT_CONSERVED_COMPONENT",
+        ),
+        (
+            {"mean_chemical_group_conservation": 0.1},
+            "INSUFFICIENT_EVOLUTIONARY_STABILITY",
+            "INSUFFICIENT_CHEMICAL_GROUP_CONSERVATION",
+        ),
+    ],
+)
+def test_each_hand_off_gate_has_an_explicit_reason(
+    tmp_path: Path,
+    changes: dict[str, float],
+    status: str,
+    reason: str,
+) -> None:
+    """Mapping and both stability failures must remain distinguishable."""
+    config = load_config(write_config(tmp_path / "config.yaml"))
+    target = {**_target(), **changes}
+    features = build_feature_records(
+        target=target,
+        residues=[_residue("LYS")],
+        config=config,
+    )
+
+    summary = summarise_groups(targets=[target], features=features, config=config)[0]
+
+    assert summary["chemistry_handoff_status"] == status
+    assert reason in summary["chemistry_handoff_failure_reasons"]
+
+
+def test_non_unique_group_is_not_ready(tmp_path: Path) -> None:
+    """A configured exact uniqueness requirement must reject identical groups."""
+    config = replace(
+        load_config(write_config(tmp_path / "config.yaml")),
+        minimum_uniqueness_score=1.0,
+    )
+    first_target = _target("HOG:H1")
+    second_target = {**_target("HOG:H2"), "evolutionary_group_rank": 2}
+    first = build_feature_records(
+        target=first_target,
+        residues=[_residue("LYS")],
+        config=config,
+    )
+    second = build_feature_records(
+        target=second_target,
+        residues=[_residue("LYS")],
+        config=config,
+    )
+
+    summaries = summarise_groups(
+        targets=[first_target, second_target],
+        features=first + second,
+        config=config,
+    )
+
+    assert all(
+        row["chemistry_handoff_status"]
+        == "INSUFFICIENT_BETWEEN_GROUP_UNIQUENESS"
+        for row in summaries
+    )
 
 
 def test_rdkit_fragment_properties_and_invalid_smiles() -> None:

@@ -447,6 +447,7 @@ class ComputationalChemistryAnalysisConfig:
     """Optional open-source structure-guided chemistry settings."""
 
     component_config: Path | None
+    candidate_manifest: Path | None
     conda_environment: str
 
 
@@ -566,6 +567,11 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
                 "computational_chemistry_component_config",
                 config.analysis.computational_chemistry.component_config,
             )
+            _append_resource(
+                synthetic_inputs,
+                "computational_chemistry_candidate_manifest",
+                config.analysis.computational_chemistry.candidate_manifest,
+            )
         return tuple(synthetic_inputs)
     if (
         config.stage("01_prepared_proteomes").enabled
@@ -628,6 +634,11 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
             inputs,
             "computational_chemistry_component_config",
             config.analysis.computational_chemistry.component_config,
+        )
+        _append_resource(
+            inputs,
+            "computational_chemistry_candidate_manifest",
+            config.analysis.computational_chemistry.candidate_manifest,
         )
     if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         inputs.append(("shortlist", config.shortlist_manifest))
@@ -1124,6 +1135,11 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
                 base,
                 "analysis.computational_chemistry.component_config",
             ),
+            candidate_manifest=_optional_path(
+                computational_chemistry.get("candidate_manifest"),
+                base,
+                "analysis.computational_chemistry.candidate_manifest",
+            ),
             conda_environment=_non_empty_string(
                 computational_chemistry.get(
                     "conda_environment",
@@ -1412,6 +1428,14 @@ def load_config(path: Path) -> WorkflowConfig:
         raise ConfigurationError(
             "Enabled stage 09c_computational_chemistry requires "
             "analysis.computational_chemistry.component_config"
+        )
+    if (
+        chemistry_stage.enabled
+        and analysis_config.computational_chemistry.candidate_manifest is None
+    ):
+        raise ConfigurationError(
+            "Enabled stage 09c_computational_chemistry requires "
+            "analysis.computational_chemistry.candidate_manifest"
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")
