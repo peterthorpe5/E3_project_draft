@@ -74,23 +74,23 @@ def write_config(
 def write_pdb(path: Path) -> Path:
     """Write a valid two-residue protein pocket fixture."""
     path.write_text(
-        """ATOM      1  N   LYS A   1      10.000  10.000  10.000  1.00 80.00           N  
-ATOM      2  CA  LYS A   1      11.000  10.000  10.000  1.00 80.00           C  
-ATOM      3  C   LYS A   1      12.000  10.000  10.000  1.00 80.00           C  
-ATOM      4  O   LYS A   1      13.000  10.000  10.000  1.00 80.00           O  
-ATOM      5  CB  LYS A   1      11.000  11.000  10.000  1.00 80.00           C  
-ATOM      6  CG  LYS A   1      11.000  12.000  10.000  1.00 80.00           C  
-ATOM      7  CD  LYS A   1      11.000  13.000  10.000  1.00 80.00           C  
-ATOM      8  CE  LYS A   1      11.000  14.000  10.000  1.00 80.00           C  
-ATOM      9  NZ  LYS A   1      11.000  15.000  10.000  1.00 80.00           N  
-ATOM     10  N   ASP A   2      12.000   9.000  10.000  1.00 85.00           N  
-ATOM     11  CA  ASP A   2      13.000   9.000  10.000  1.00 85.00           C  
-ATOM     12  C   ASP A   2      14.000   9.000  10.000  1.00 85.00           C  
-ATOM     13  O   ASP A   2      15.000   9.000  10.000  1.00 85.00           O  
-ATOM     14  CB  ASP A   2      13.000   8.000  10.000  1.00 85.00           C  
-ATOM     15  CG  ASP A   2      13.000   7.000  10.000  1.00 85.00           C  
-ATOM     16  OD1 ASP A   2      12.000   6.500  10.000  1.00 85.00           O  
-ATOM     17  OD2 ASP A   2      14.000   6.500  10.000  1.00 85.00           O  
+        """ATOM      1  N   LYS A   1      10.000  10.000  10.000  1.00 80.00           N
+ATOM      2  CA  LYS A   1      11.000  10.000  10.000  1.00 80.00           C
+ATOM      3  C   LYS A   1      12.000  10.000  10.000  1.00 80.00           C
+ATOM      4  O   LYS A   1      13.000  10.000  10.000  1.00 80.00           O
+ATOM      5  CB  LYS A   1      11.000  11.000  10.000  1.00 80.00           C
+ATOM      6  CG  LYS A   1      11.000  12.000  10.000  1.00 80.00           C
+ATOM      7  CD  LYS A   1      11.000  13.000  10.000  1.00 80.00           C
+ATOM      8  CE  LYS A   1      11.000  14.000  10.000  1.00 80.00           C
+ATOM      9  NZ  LYS A   1      11.000  15.000  10.000  1.00 80.00           N
+ATOM     10  N   ASP A   2      12.000   9.000  10.000  1.00 85.00           N
+ATOM     11  CA  ASP A   2      13.000   9.000  10.000  1.00 85.00           C
+ATOM     12  C   ASP A   2      14.000   9.000  10.000  1.00 85.00           C
+ATOM     13  O   ASP A   2      15.000   9.000  10.000  1.00 85.00           O
+ATOM     14  CB  ASP A   2      13.000   8.000  10.000  1.00 85.00           C
+ATOM     15  CG  ASP A   2      13.000   7.000  10.000  1.00 85.00           C
+ATOM     16  OD1 ASP A   2      12.000   6.500  10.000  1.00 85.00           O
+ATOM     17  OD2 ASP A   2      14.000   6.500  10.000  1.00 85.00           O
 TER      18      ASP A   2
 END
 """,
