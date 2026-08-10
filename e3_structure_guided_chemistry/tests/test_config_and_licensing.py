@@ -112,7 +112,7 @@ def test_non_open_spdx_is_rejected() -> None:
 
 def test_required_component_and_conflicting_declarations_are_rejected() -> None:
     """Missing or inconsistent component provenance must fail validation."""
-    with pytest.raises(ConfigurationError, match="Gemmi"):
+    with pytest.raises(ConfigurationError, match="(?i)gemmi"):
         validate_licence_policy(
             allow_restricted_licence_tools=False,
             components=(ComponentLicence(name="DuckDB", spdx="MIT"),),
