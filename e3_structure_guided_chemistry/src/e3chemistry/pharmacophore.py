@@ -30,6 +30,8 @@ FEATURE_FIELDS = (
     "mean_chemical_group_conservation",
     "mapping_fraction",
     "pocket_plddt_fraction",
+    "druggability_score",
+    "mapped_residue_count",
     "stable_region_supported",
     "mapping_quality_supported",
     "pocket_confidence_supported",
@@ -52,6 +54,8 @@ GROUP_SUMMARY_FIELDS = (
     "mean_chemical_group_conservation",
     "mapping_fraction",
     "pocket_plddt_fraction",
+    "druggability_score",
+    "mapped_residue_count",
     "maximum_other_group_feature_similarity",
     "maximum_other_group_spatial_similarity",
     "maximum_other_group_similarity",
@@ -59,7 +63,12 @@ GROUP_SUMMARY_FIELDS = (
     "stable_region_supported",
     "mapping_quality_supported",
     "pocket_confidence_supported",
+    "druggability_supported",
+    "mapped_residue_count_supported",
     "unique_region_supported",
+    "biology_and_structure_supported",
+    "high_confidence_core_supported",
+    "chemistry_review_tier",
     "chemistry_handoff_status",
     "chemistry_handoff_failure_reasons",
     "method",
@@ -72,10 +81,22 @@ SENSITIVITY_FIELDS = (
     "minimum_mapping_fraction",
     "minimum_pocket_plddt_fraction",
     "minimum_uniqueness_score",
+    "minimum_druggability_score",
+    "minimum_mapped_residue_count",
     "ready_group_count",
     "ready_group_fraction",
-    "ready_evolutionary_group_keys",
     "is_configured_threshold_combination",
+)
+
+ONE_AT_A_TIME_SENSITIVITY_FIELDS = (
+    "gate",
+    "threshold",
+    "threshold_type",
+    "ready_group_count",
+    "ready_group_fraction",
+    "change_from_configured_count",
+    "ready_evolutionary_group_keys",
+    "is_configured_threshold",
 )
 
 DONOR_ATOMS = {
@@ -208,6 +229,8 @@ def build_feature_records(
                     "mean_chemical_group_conservation": chemical_conservation,
                     "mapping_fraction": target["mapping_fraction"],
                     "pocket_plddt_fraction": target["pocket_plddt_fraction"],
+                    "druggability_score": target["druggability_score"],
+                    "mapped_residue_count": target["mapped_residue_count"],
                     "stable_region_supported": stable,
                     "mapping_quality_supported": target[
                         "mapping_quality_supported"
@@ -288,35 +311,47 @@ def summarise_groups(
         key: _spatial_signature(group_features)
         for key, group_features in features_by_group.items()
     }
-    summaries = []
-    for target in targets:
-        key = str(target["evolutionary_group_key"])
-        group_features = features_by_group.get(key, [])
-        signature = feature_signatures.get(key, Counter())
-        spatial_signature = spatial_signatures.get(key, Counter())
-        feature_similarities = []
-        spatial_similarities = []
-        combined_similarities = []
-        for other_key, other_signature in feature_signatures.items():
-            if other_key == key:
-                continue
-            feature_similarity = _weighted_jaccard(signature, other_signature)
+    pairwise_maxima = {
+        key: {"feature": 0.0, "spatial": 0.0, "combined": 0.0}
+        for key in feature_signatures
+    }
+    signature_keys = sorted(feature_signatures)
+    for left_index, key in enumerate(signature_keys):
+        for other_key in signature_keys[left_index + 1:]:
+            feature_similarity = _weighted_jaccard(
+                feature_signatures[key], feature_signatures[other_key]
+            )
+            spatial_signature = spatial_signatures.get(key, Counter())
             other_spatial = spatial_signatures.get(other_key, Counter())
             spatial_similarity = _weighted_jaccard(
-                spatial_signature,
-                other_spatial,
+                spatial_signature, other_spatial
             )
             combined_similarity = (
                 0.4 * feature_similarity + 0.6 * spatial_similarity
                 if spatial_signature and other_spatial
                 else feature_similarity
             )
-            feature_similarities.append(feature_similarity)
-            spatial_similarities.append(spatial_similarity)
-            combined_similarities.append(combined_similarity)
-        maximum_feature_similarity = max(feature_similarities, default=0.0)
-        maximum_spatial_similarity = max(spatial_similarities, default=0.0)
-        maximum_similarity = max(combined_similarities, default=0.0)
+            for current_key in (key, other_key):
+                pairwise_maxima[current_key]["feature"] = max(
+                    pairwise_maxima[current_key]["feature"], feature_similarity
+                )
+                pairwise_maxima[current_key]["spatial"] = max(
+                    pairwise_maxima[current_key]["spatial"], spatial_similarity
+                )
+                pairwise_maxima[current_key]["combined"] = max(
+                    pairwise_maxima[current_key]["combined"], combined_similarity
+                )
+    summaries = []
+    for target in targets:
+        key = str(target["evolutionary_group_key"])
+        group_features = features_by_group.get(key, [])
+        signature = feature_signatures.get(key, Counter())
+        maxima = pairwise_maxima.get(
+            key, {"feature": 0.0, "spatial": 0.0, "combined": 0.0}
+        )
+        maximum_feature_similarity = maxima["feature"]
+        maximum_spatial_similarity = maxima["spatial"]
+        maximum_similarity = maxima["combined"]
         uniqueness = max(0.0, min(1.0, 1.0 - maximum_similarity))
         stable = (
             float(target["conserved_component_fraction"])
@@ -330,6 +365,14 @@ def summarise_groups(
         confidence_supported = (
             float(target["pocket_plddt_fraction"])
             >= config.minimum_pocket_plddt_fraction
+        )
+        druggability_supported = (
+            float(target["druggability_score"])
+            >= config.minimum_druggability_score
+        )
+        residue_count_supported = (
+            int(target["mapped_residue_count"])
+            >= config.minimum_mapped_residue_count
         )
         unique = bool(group_features) and uniqueness >= config.minimum_uniqueness_score
         failure_reasons = []
@@ -352,6 +395,35 @@ def summarise_groups(
             failure_reasons.append("INSUFFICIENT_CHEMICAL_GROUP_CONSERVATION")
         if group_features and not unique:
             failure_reasons.append("INSUFFICIENT_BETWEEN_GROUP_UNIQUENESS")
+        if not druggability_supported:
+            failure_reasons.append("INSUFFICIENT_REPRESENTATIVE_DRUGGABILITY")
+        if not residue_count_supported:
+            failure_reasons.append("INSUFFICIENT_MAPPED_POCKET_RESIDUES")
+        biology_supported = bool(
+            group_features
+            and mapping_supported
+            and confidence_supported
+            and stable
+            and unique
+        )
+        configured_handoff = bool(
+            biology_supported
+            and druggability_supported
+            and residue_count_supported
+        )
+        high_confidence = bool(
+            configured_handoff
+            and float(target["conserved_component_fraction"])
+            >= config.high_confidence_conserved_component_fraction
+            and float(target["mean_chemical_group_conservation"])
+            >= config.high_confidence_chemical_group_conservation
+            and float(target["pocket_plddt_fraction"])
+            >= config.high_confidence_pocket_plddt_fraction
+            and float(target["druggability_score"])
+            >= config.high_confidence_druggability_score
+            and int(target["mapped_residue_count"])
+            >= config.high_confidence_mapped_residue_count
+        )
         if not group_features:
             status = "NO_RESOLVED_PHARMACOPHORE_FEATURES"
         elif not mapping_supported:
@@ -362,8 +434,24 @@ def summarise_groups(
             status = "INSUFFICIENT_EVOLUTIONARY_STABILITY"
         elif not unique:
             status = "INSUFFICIENT_BETWEEN_GROUP_UNIQUENESS"
+        elif not druggability_supported:
+            status = "INSUFFICIENT_REPRESENTATIVE_DRUGGABILITY"
+        elif not residue_count_supported:
+            status = "INSUFFICIENT_MAPPED_POCKET_RESIDUES"
         else:
             status = "READY_FOR_OPEN_FRAGMENT_PRIORITISATION"
+        if high_confidence:
+            review_tier = "TIER_1_HIGH_CONFIDENCE_REVIEW"
+        elif configured_handoff:
+            review_tier = "TIER_2_CONFIGURED_CHEMISTRY_HANDOFF"
+        elif biology_supported and not druggability_supported:
+            review_tier = "STRUCTURALLY_SUPPORTED_LOW_DRUGGABILITY"
+        elif biology_supported and not residue_count_supported:
+            review_tier = "STRUCTURALLY_SUPPORTED_SMALL_MAPPED_POCKET"
+        elif biology_supported:
+            review_tier = "STRUCTURALLY_SUPPORTED_CHEMISTRY_LIMITED"
+        else:
+            review_tier = "NOT_SUPPORTED_AT_CONFIGURED_GATES"
         feature_types = sorted(signature)
         summaries.append(
             {
@@ -387,6 +475,8 @@ def summarise_groups(
                 ],
                 "mapping_fraction": target["mapping_fraction"],
                 "pocket_plddt_fraction": target["pocket_plddt_fraction"],
+                "druggability_score": target["druggability_score"],
+                "mapped_residue_count": target["mapped_residue_count"],
                 "maximum_other_group_feature_similarity": round(
                     maximum_feature_similarity,
                     6,
@@ -400,7 +490,12 @@ def summarise_groups(
                 "stable_region_supported": stable,
                 "mapping_quality_supported": mapping_supported,
                 "pocket_confidence_supported": confidence_supported,
+                "druggability_supported": druggability_supported,
+                "mapped_residue_count_supported": residue_count_supported,
                 "unique_region_supported": unique,
+                "biology_and_structure_supported": biology_supported,
+                "high_confidence_core_supported": high_confidence,
+                "chemistry_review_tier": review_tier,
                 "chemistry_handoff_status": status,
                 "chemistry_handoff_failure_reasons": ";".join(failure_reasons),
                 "method": config.method_name,
@@ -428,60 +523,195 @@ def threshold_sensitivity(
     conservation_thresholds = sorted(
         {0.25, 0.5, 0.75, config.minimum_conserved_component_fraction}
     )
+    chemical_thresholds = sorted(
+        {0.5, 0.6, 0.8, config.minimum_chemical_group_conservation}
+    )
     confidence_thresholds = sorted(
         {0.5, 0.7, 0.9, config.minimum_pocket_plddt_fraction}
     )
     uniqueness_thresholds = sorted(
-        {0.05, 0.1, 0.2, config.minimum_uniqueness_score}
+        {0.1, 0.2, 0.25, 0.3, 0.4, 0.5, config.minimum_uniqueness_score}
+    )
+    druggability_thresholds = sorted(
+        {0.2, 0.5, 0.7, config.minimum_druggability_score}
     )
     rows = []
     denominator = len(group_summaries)
     for conservation_threshold in conservation_thresholds:
-        for confidence_threshold in confidence_thresholds:
-            for uniqueness_threshold in uniqueness_thresholds:
-                ready_keys = sorted(
-                    str(row["evolutionary_group_key"])
-                    for row in group_summaries
-                    if int(row["feature_count"]) > 0
-                    and float(row["conserved_component_fraction"])
-                    >= conservation_threshold
-                    and float(row["mean_chemical_group_conservation"])
-                    >= config.minimum_chemical_group_conservation
-                    and float(row["mapping_fraction"])
-                    >= config.minimum_mapping_fraction
-                    and float(row["pocket_plddt_fraction"])
-                    >= confidence_threshold
-                    and float(row["pharmacophore_uniqueness_score"])
-                    >= uniqueness_threshold
-                )
-                rows.append(
-                    {
-                        "minimum_conserved_component_fraction": (
-                            conservation_threshold
-                        ),
-                        "minimum_chemical_group_conservation": (
-                            config.minimum_chemical_group_conservation
-                        ),
-                        "minimum_mapping_fraction": config.minimum_mapping_fraction,
-                        "minimum_pocket_plddt_fraction": confidence_threshold,
-                        "minimum_uniqueness_score": uniqueness_threshold,
-                        "ready_group_count": len(ready_keys),
-                        "ready_group_fraction": (
-                            round(len(ready_keys) / denominator, 6)
-                            if denominator
-                            else 0.0
-                        ),
-                        "ready_evolutionary_group_keys": ";".join(ready_keys),
-                        "is_configured_threshold_combination": (
-                            conservation_threshold
-                            == config.minimum_conserved_component_fraction
-                            and confidence_threshold
-                            == config.minimum_pocket_plddt_fraction
-                            and uniqueness_threshold
-                            == config.minimum_uniqueness_score
-                        ),
-                    }
-                )
+        for chemical_threshold in chemical_thresholds:
+            for confidence_threshold in confidence_thresholds:
+                for uniqueness_threshold in uniqueness_thresholds:
+                    for druggability_threshold in druggability_thresholds:
+                        ready_count = sum(
+                            _passes_thresholds(
+                                row=row,
+                                conserved_component=conservation_threshold,
+                                chemical_conservation=chemical_threshold,
+                                mapping=config.minimum_mapping_fraction,
+                                pocket_plddt=confidence_threshold,
+                                uniqueness=uniqueness_threshold,
+                                druggability=druggability_threshold,
+                                mapped_residue_count=(
+                                    config.minimum_mapped_residue_count
+                                ),
+                            )
+                            for row in group_summaries
+                        )
+                        rows.append(
+                            {
+                                "minimum_conserved_component_fraction": (
+                                    conservation_threshold
+                                ),
+                                "minimum_chemical_group_conservation": (
+                                    chemical_threshold
+                                ),
+                                "minimum_mapping_fraction": (
+                                    config.minimum_mapping_fraction
+                                ),
+                                "minimum_pocket_plddt_fraction": (
+                                    confidence_threshold
+                                ),
+                                "minimum_uniqueness_score": uniqueness_threshold,
+                                "minimum_druggability_score": (
+                                    druggability_threshold
+                                ),
+                                "minimum_mapped_residue_count": (
+                                    config.minimum_mapped_residue_count
+                                ),
+                                "ready_group_count": ready_count,
+                                "ready_group_fraction": (
+                                    round(ready_count / denominator, 6)
+                                    if denominator
+                                    else 0.0
+                                ),
+                                "is_configured_threshold_combination": (
+                                    conservation_threshold
+                                    == config.minimum_conserved_component_fraction
+                                    and chemical_threshold
+                                    == config.minimum_chemical_group_conservation
+                                    and confidence_threshold
+                                    == config.minimum_pocket_plddt_fraction
+                                    and uniqueness_threshold
+                                    == config.minimum_uniqueness_score
+                                    and druggability_threshold
+                                    == config.minimum_druggability_score
+                                ),
+                            }
+                        )
+    return rows
+
+
+def _passes_thresholds(
+    *,
+    row: Mapping[str, Any],
+    conserved_component: float,
+    chemical_conservation: float,
+    mapping: float,
+    pocket_plddt: float,
+    uniqueness: float,
+    druggability: float,
+    mapped_residue_count: int,
+) -> bool:
+    """Return whether one summary passes an explicit threshold set."""
+    return bool(
+        int(row["feature_count"]) > 0
+        and float(row["conserved_component_fraction"]) >= conserved_component
+        and float(row["mean_chemical_group_conservation"])
+        >= chemical_conservation
+        and float(row["mapping_fraction"]) >= mapping
+        and float(row["pocket_plddt_fraction"]) >= pocket_plddt
+        and float(row["pharmacophore_uniqueness_score"]) >= uniqueness
+        and float(row["druggability_score"]) >= druggability
+        and int(row["mapped_residue_count"]) >= mapped_residue_count
+    )
+
+
+def one_at_a_time_sensitivity(
+    *,
+    group_summaries: Sequence[Mapping[str, Any]],
+    config: ChemistryConfig,
+) -> list[dict[str, Any]]:
+    """Vary each gate alone while holding every other gate configured."""
+    thresholds: dict[str, tuple[str, Sequence[float | int]]] = {
+        "conserved_component_fraction": (
+            "fraction",
+            sorted({0.25, 0.5, 0.75, config.minimum_conserved_component_fraction}),
+        ),
+        "chemical_group_conservation": (
+            "fraction",
+            sorted({0.5, 0.6, 0.8, config.minimum_chemical_group_conservation}),
+        ),
+        "mapping_fraction": (
+            "fraction",
+            sorted({0.8, 0.95, 1.0, config.minimum_mapping_fraction}),
+        ),
+        "pocket_plddt_fraction": (
+            "fraction",
+            sorted({0.5, 0.7, 0.9, config.minimum_pocket_plddt_fraction}),
+        ),
+        "uniqueness_score": (
+            "fraction",
+            sorted({0.1, 0.2, 0.25, 0.3, 0.4, 0.5, config.minimum_uniqueness_score}),
+        ),
+        "druggability_score": (
+            "fraction",
+            sorted({0.2, 0.5, 0.7, config.minimum_druggability_score}),
+        ),
+        "mapped_residue_count": (
+            "count",
+            sorted({5, 10, 15, config.minimum_mapped_residue_count}),
+        ),
+    }
+    configured = {
+        "conserved_component_fraction": config.minimum_conserved_component_fraction,
+        "chemical_group_conservation": config.minimum_chemical_group_conservation,
+        "mapping_fraction": config.minimum_mapping_fraction,
+        "pocket_plddt_fraction": config.minimum_pocket_plddt_fraction,
+        "uniqueness_score": config.minimum_uniqueness_score,
+        "druggability_score": config.minimum_druggability_score,
+        "mapped_residue_count": config.minimum_mapped_residue_count,
+    }
+    denominator = len(group_summaries)
+
+    def passing_keys(values: Mapping[str, float | int]) -> list[str]:
+        return sorted(
+            str(row["evolutionary_group_key"])
+            for row in group_summaries
+            if _passes_thresholds(
+                row=row,
+                conserved_component=float(values["conserved_component_fraction"]),
+                chemical_conservation=float(values["chemical_group_conservation"]),
+                mapping=float(values["mapping_fraction"]),
+                pocket_plddt=float(values["pocket_plddt_fraction"]),
+                uniqueness=float(values["uniqueness_score"]),
+                druggability=float(values["druggability_score"]),
+                mapped_residue_count=int(values["mapped_residue_count"]),
+            )
+        )
+
+    configured_count = len(passing_keys(configured))
+    rows: list[dict[str, Any]] = []
+    for gate, (threshold_type, values) in thresholds.items():
+        for threshold in values:
+            scenario = dict(configured)
+            scenario[gate] = threshold
+            keys = passing_keys(scenario)
+            rows.append(
+                {
+                    "gate": gate,
+                    "threshold": threshold,
+                    "threshold_type": threshold_type,
+                    "ready_group_count": len(keys),
+                    "ready_group_fraction": (
+                        round(len(keys) / denominator, 6) if denominator else 0.0
+                    ),
+                    "change_from_configured_count": (
+                        len(keys) - configured_count
+                    ),
+                    "ready_evolutionary_group_keys": ";".join(keys),
+                    "is_configured_threshold": threshold == configured[gate],
+                }
+            )
     return rows
 
 

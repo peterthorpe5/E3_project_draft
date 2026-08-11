@@ -25,7 +25,14 @@ class ChemistryConfig:
     minimum_chemical_group_conservation: float
     minimum_mapping_fraction: float
     minimum_pocket_plddt_fraction: float
+    minimum_druggability_score: float
+    minimum_mapped_residue_count: int
     minimum_uniqueness_score: float
+    high_confidence_conserved_component_fraction: float
+    high_confidence_chemical_group_conservation: float
+    high_confidence_pocket_plddt_fraction: float
+    high_confidence_druggability_score: float
+    high_confidence_mapped_residue_count: int
     maximum_fragments_per_group: int
     fragment_screening_mode: str
     fragment_library: Path | None

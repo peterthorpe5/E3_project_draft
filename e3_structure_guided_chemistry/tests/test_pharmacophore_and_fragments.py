@@ -24,6 +24,7 @@ from e3chemistry.pharmacophore import (
     euclidean_distance,
     residue_feature_points,
     summarise_groups,
+    one_at_a_time_sensitivity,
     threshold_sensitivity,
 )
 
@@ -65,6 +66,8 @@ def _target(key: str = "HOG:H1") -> dict[str, object]:
         "mean_chemical_group_conservation": 0.8,
         "mapping_fraction": 1.0,
         "pocket_plddt_fraction": 1.0,
+        "druggability_score": 0.8,
+        "mapped_residue_count": 12,
         "mapping_quality_supported": True,
         "pocket_confidence_supported": True,
     }
@@ -105,6 +108,7 @@ def test_feature_records_and_group_uniqueness(tmp_path: Path) -> None:
     )
 
     assert all(row["stable_region_supported"] for row in summaries)
+    assert all(row["druggability_supported"] for row in summaries)
     assert all(float(row["pharmacophore_uniqueness_score"]) > 0 for row in summaries)
     assert all("maximum_other_group_spatial_similarity" in row for row in summaries)
     assert "not an FMO energy" in first[0]["interpretation"]
@@ -119,6 +123,18 @@ def test_group_without_features_is_not_ready(tmp_path: Path) -> None:
     assert summary["chemistry_handoff_status"] == "NO_RESOLVED_PHARMACOPHORE_FEATURES"
     sensitivity = threshold_sensitivity(group_summaries=[], config=config)
     assert all(row["ready_group_fraction"] == 0.0 for row in sensitivity)
+    one_at_a_time = one_at_a_time_sensitivity(
+        group_summaries=[summary], config=config
+    )
+    assert {row["gate"] for row in one_at_a_time} == {
+        "conserved_component_fraction",
+        "chemical_group_conservation",
+        "mapping_fraction",
+        "pocket_plddt_fraction",
+        "uniqueness_score",
+        "druggability_score",
+        "mapped_residue_count",
+    }
 
 
 @pytest.mark.parametrize(

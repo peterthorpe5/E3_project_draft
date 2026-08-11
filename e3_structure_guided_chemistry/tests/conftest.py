@@ -50,15 +50,22 @@ def write_config(
     if mode == "open_fragment_screen":
         components.append({"name": "RDKit", "spdx": "BSD-3-Clause"})
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "method": {
-            "name": "open_structure_guided_pharmacophore_v1",
-            "maximum_candidate_groups": 200,
+            "name": "open_structure_guided_pharmacophore_v2",
+            "maximum_candidate_groups": 2500,
             "minimum_conserved_component_fraction": 0.5,
             "minimum_chemical_group_conservation": 0.5,
             "minimum_mapping_fraction": minimum_mapping_fraction,
             "minimum_pocket_plddt_fraction": minimum_pocket_plddt_fraction,
+            "minimum_druggability_score": 0.5,
+            "minimum_mapped_residue_count": 2,
             "minimum_uniqueness_score": 0.1,
+            "high_confidence_conserved_component_fraction": 0.75,
+            "high_confidence_chemical_group_conservation": 0.8,
+            "high_confidence_pocket_plddt_fraction": 0.9,
+            "high_confidence_druggability_score": 0.5,
+            "high_confidence_mapped_residue_count": 2,
             "maximum_fragments_per_group": 10,
         },
         "fragment_screening": {
@@ -167,6 +174,11 @@ def scientific_inputs(tmp_path: Path) -> dict[str, Path]:
             {
                 "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
                 "primary_group_id": "HOG1",
+                "cluster_id": "DC1",
+                "structured_accession_count": 10,
+                "conserved_component_accession_count": 9,
+                "structured_species_count": 5,
+                "conserved_component_species_count": 4,
                 "conserved_component_fraction": 0.9,
                 "mean_chemical_group_conservation": 0.8,
             }

@@ -85,8 +85,8 @@ def load_config(path: Path) -> ChemistryConfig:
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"Could not read configuration {source}: {exc}") from exc
     root = _mapping(raw, "configuration")
-    if root.get("schema_version") != 2:
-        raise ConfigurationError("schema_version must be 2")
+    if root.get("schema_version") not in {2, 3}:
+        raise ConfigurationError("schema_version must be 2 or 3")
     unknown_root = set(root).difference(
         {
             "schema_version",
@@ -112,7 +112,14 @@ def load_config(path: Path) -> ChemistryConfig:
             "minimum_chemical_group_conservation",
             "minimum_mapping_fraction",
             "minimum_pocket_plddt_fraction",
+            "minimum_druggability_score",
+            "minimum_mapped_residue_count",
             "minimum_uniqueness_score",
+            "high_confidence_conserved_component_fraction",
+            "high_confidence_chemical_group_conservation",
+            "high_confidence_pocket_plddt_fraction",
+            "high_confidence_druggability_score",
+            "high_confidence_mapped_residue_count",
             "maximum_fragments_per_group",
         },
         "fragment_screening": {"mode", "fragment_library"},
@@ -133,10 +140,14 @@ def load_config(path: Path) -> ChemistryConfig:
             raise ConfigurationError(
                 f"Unknown {section_name} keys: " + ", ".join(sorted(unknown))
             )
-    method_name = method.get("name", "open_structure_guided_pharmacophore_v1")
-    if method_name != "open_structure_guided_pharmacophore_v1":
+    method_name = method.get("name", "open_structure_guided_pharmacophore_v2")
+    if method_name not in {
+        "open_structure_guided_pharmacophore_v1",
+        "open_structure_guided_pharmacophore_v2",
+    }:
         raise ConfigurationError(
-            "method.name must be open_structure_guided_pharmacophore_v1"
+            "method.name must be open_structure_guided_pharmacophore_v1 or "
+            "open_structure_guided_pharmacophore_v2"
         )
     mode = screening.get("mode", "prepare_only")
     if mode not in SCREENING_MODES:
@@ -190,9 +201,9 @@ def load_config(path: Path) -> ChemistryConfig:
         source_path=source,
         method_name=method_name,
         maximum_candidate_groups=_bounded_positive_integer(
-            method.get("maximum_candidate_groups", 200),
+            method.get("maximum_candidate_groups", 2500),
             label="method.maximum_candidate_groups",
-            maximum=500,
+            maximum=10000,
         ),
         minimum_conserved_component_fraction=_fraction(
             method.get("minimum_conserved_component_fraction", 0.5),
@@ -210,9 +221,39 @@ def load_config(path: Path) -> ChemistryConfig:
             method.get("minimum_pocket_plddt_fraction", 0.7),
             "method.minimum_pocket_plddt_fraction",
         ),
+        minimum_druggability_score=_fraction(
+            method.get("minimum_druggability_score", 0.5),
+            "method.minimum_druggability_score",
+        ),
+        minimum_mapped_residue_count=_bounded_positive_integer(
+            method.get("minimum_mapped_residue_count", 10),
+            label="method.minimum_mapped_residue_count",
+            maximum=10000,
+        ),
         minimum_uniqueness_score=_fraction(
             method.get("minimum_uniqueness_score", 0.1),
             "method.minimum_uniqueness_score",
+        ),
+        high_confidence_conserved_component_fraction=_fraction(
+            method.get("high_confidence_conserved_component_fraction", 0.75),
+            "method.high_confidence_conserved_component_fraction",
+        ),
+        high_confidence_chemical_group_conservation=_fraction(
+            method.get("high_confidence_chemical_group_conservation", 0.8),
+            "method.high_confidence_chemical_group_conservation",
+        ),
+        high_confidence_pocket_plddt_fraction=_fraction(
+            method.get("high_confidence_pocket_plddt_fraction", 0.9),
+            "method.high_confidence_pocket_plddt_fraction",
+        ),
+        high_confidence_druggability_score=_fraction(
+            method.get("high_confidence_druggability_score", 0.5),
+            "method.high_confidence_druggability_score",
+        ),
+        high_confidence_mapped_residue_count=_bounded_positive_integer(
+            method.get("high_confidence_mapped_residue_count", 10),
+            label="method.high_confidence_mapped_residue_count",
+            maximum=10000,
         ),
         maximum_fragments_per_group=_positive_integer(
             method.get("maximum_fragments_per_group", 100),

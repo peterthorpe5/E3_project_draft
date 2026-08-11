@@ -117,13 +117,17 @@ fi
 readonly GROUP_RANKING="${RUN_ROOT}/08_shortlist_gate/tables/evolutionary_candidate_group_ranking.parquet"
 readonly STAGE09_TABLES="${RUN_ROOT}/09_ligandability/tables"
 readonly SELECTED_POCKETS="${STAGE09_TABLES}/selected_pockets.parquet"
+readonly RANKED_POCKETS="${STAGE09_TABLES}/ranked_member_pockets.parquet"
 readonly POCKET_MAPPINGS="${STAGE09_TABLES}/reused_pocket_residue_mappings.parquet"
 readonly CONSERVATION="${STAGE09_TABLES}/pocket_conservation_summary.parquet"
 readonly ASSET_MANIFEST="${STAGE09_TABLES}/reused_asset_manifest.parquet"
+readonly INTEGRATED_EVIDENCE="${RUN_ROOT}/10_integrated_resource/final_results/final_evolutionary_candidate_prioritisation.parquet"
+readonly STRUCTURAL_ALIGNMENT="${RUN_ROOT}/09b_structural_alignment/structural_alignment/tables/structural_alignment_summary.parquet"
 
 for required_file in \
     "${GROUP_RANKING}" \
     "${SELECTED_POCKETS}" \
+    "${RANKED_POCKETS}" \
     "${POCKET_MAPPINGS}" \
     "${CONSERVATION}" \
     "${ASSET_MANIFEST}"
@@ -136,8 +140,8 @@ do
 done
 
 mkdir -p -- "$(dirname -- "${OUTPUT_DIR}")"
-JOB_ID="$(
-    sbatch \
+SBATCH_COMMAND=(
+    sbatch
         --parsable \
         --job-name=e3_open_chemistry \
         --account="${ACCOUNT}" \
@@ -154,11 +158,23 @@ JOB_ID="$(
         --candidate-manifest "${CANDIDATE_MANIFEST}" \
         --group-ranking "${GROUP_RANKING}" \
         --selected-pockets "${SELECTED_POCKETS}" \
+        --ranked-pockets "${RANKED_POCKETS}" \
         --pocket-residue-mappings "${POCKET_MAPPINGS}" \
         --pocket-conservation-summary "${CONSERVATION}" \
         --structure-asset-manifest "${ASSET_MANIFEST}" \
         --output-dir "${OUTPUT_DIR}"
-)"
+)
+if [[ -s "${INTEGRATED_EVIDENCE}" ]]; then
+    SBATCH_COMMAND+=(--integrated-evidence "${INTEGRATED_EVIDENCE}")
+else
+    printf 'WARNING: Stage 10 integrated evidence is unavailable; the chemistry run will retain Stage 08/09 evidence only.\n' >&2
+fi
+if [[ -s "${STRUCTURAL_ALIGNMENT}" ]]; then
+    SBATCH_COMMAND+=(--structural-alignment-summary "${STRUCTURAL_ALIGNMENT}")
+else
+    printf 'WARNING: Stage 09b structural alignment summary is unavailable; no 3D-alignment fields will be joined.\n' >&2
+fi
+JOB_ID="$("${SBATCH_COMMAND[@]}")"
 
 if [[ -n "${JOB_ID_FILE}" ]]; then
     mkdir -p -- "$(dirname -- "${JOB_ID_FILE}")"

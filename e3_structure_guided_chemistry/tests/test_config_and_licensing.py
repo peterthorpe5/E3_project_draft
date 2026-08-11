@@ -21,8 +21,10 @@ def test_prepare_only_configuration_is_valid(tmp_path: Path) -> None:
     config = load_config(write_config(tmp_path / "config.yaml"))
 
     assert config.fragment_screening_mode == "prepare_only"
-    assert config.maximum_candidate_groups == 200
+    assert config.maximum_candidate_groups == 2500
     assert config.minimum_pocket_plddt_fraction == pytest.approx(0.7)
+    assert config.minimum_druggability_score == pytest.approx(0.5)
+    assert config.minimum_mapped_residue_count == 2
     assert config.digest
     assert {item.name for item in config.declared_components} == {"DuckDB", "Gemmi"}
 
@@ -56,8 +58,8 @@ def test_open_screen_resolves_relative_fragment_library(tmp_path: Path) -> None:
             "positive integer",
         ),
         (
-            lambda data: data["method"].update({"maximum_candidate_groups": 501}),
-            "must not exceed 500",
+            lambda data: data["method"].update({"maximum_candidate_groups": 10001}),
+            "must not exceed 10000",
         ),
         (
             lambda data: data["method"].update(

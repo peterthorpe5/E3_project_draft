@@ -38,6 +38,14 @@ def write_report(
         == "READY_FOR_OPEN_FRAGMENT_PRIORITISATION"
         for row in group_summaries
     )
+    biology_supported = sum(
+        bool(row.get("biology_and_structure_supported"))
+        for row in group_summaries
+    )
+    tier_one = sum(
+        row.get("chemistry_review_tier") == "TIER_1_HIGH_CONFIDENCE_REVIEW"
+        for row in group_summaries
+    )
     target_table = _table(
         targets,
         (
@@ -45,8 +53,10 @@ def write_report(
             "evolutionary_group_key",
             "candidate_accession",
             "pocket_number",
+            "druggability_score",
             "mapping_fraction",
             "pocket_plddt_fraction",
+            "mapped_residue_count",
             "target_status",
         ),
     )
@@ -56,8 +66,13 @@ def write_report(
             "evolutionary_group_rank",
             "evolutionary_group_key",
             "feature_count",
+            "conserved_component_fraction",
+            "mean_chemical_group_conservation",
+            "druggability_score",
+            "mapped_residue_count",
             "pocket_plddt_fraction",
             "pharmacophore_uniqueness_score",
+            "chemistry_review_tier",
             "chemistry_handoff_status",
             "chemistry_handoff_failure_reasons",
         ),
@@ -84,11 +99,25 @@ th{{background:#e9eef5}}.warning{{border-left:5px solid #b26a00;padding:0.8rem;b
 <h1>E3 structure-guided chemistry</h1>
 <p>Method: <code>{html.escape(config.method_name)}</code>. Explicit candidate
 panel: {len(targets)} groups. Groups ready for open fragment prioritisation: {ready} of
-{len(group_summaries)}. Fragment ranking rows: {len(fragment_rankings)}.</p>
+{len(group_summaries)}. Biology/structure-supported groups before the druggability and
+mapped-residue hand-off gates: {biology_supported}. High-confidence review tier: {tier_one}.
+Fragment ranking rows: {len(fragment_rankings)}.</p>
 <div class="warning"><strong>Method boundary.</strong> FMOPhore, FrAncestor and
 AlphaFold3 were not run. The reported features are residue-derived hypotheses
 from existing checksum-bound structures and predicted pockets. Scores do not
 establish binding, affinity, selectivity, E3 activity or PROTAC efficacy.</div>
+<h2>How to interpret the result</h2>
+<p>The workflow converts chemically relevant pocket residues into transparent three-dimensional
+feature points and asks whether each feature pattern is sufficiently conserved, structurally
+credible and distinct from the other screened groups. Mapping and pocket pLDDT are eligibility
+floors. Among eligible Stage 09 representative pockets, the most druggable pocket is selected.
+The open-fragment hand-off additionally requires the configured FPocket druggability score and
+minimum mapped-residue count. These are prioritisation filters, not evidence that a ligand
+binds.</p>
+<p><strong>Review tiers.</strong> Tier 1 satisfies the configured hand-off and the stricter
+high-confidence conservation, chemical-conservation, pLDDT, druggability and pocket-size review
+thresholds. Tier 2 satisfies the configured hand-off. Structurally supported lower tiers preserve
+groups that pass biological/structural gates but have weaker representative-pocket chemistry.</p>
 <h2>Target preparation</h2>
 {target_table}
 <h2>Pharmacophore hand-off</h2>

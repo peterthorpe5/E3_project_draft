@@ -7,9 +7,10 @@ RUN_ROOT=""
 CONFIG=""
 OUTPUT_DIR=""
 DECIDED_BY=""
-MAXIMUM_RANK="200"
+MAXIMUM_RANK=""
+ALL_RANKED_GROUPS="true"
 CONDA_ENVIRONMENT="e3_structure_guided_chemistry"
-RATIONALE="Expanded computational screen of the completed Stage 08 top-200 authority using quality-first mapped-pocket selection; not project-lead approval."
+RATIONALE="Expanded computational screen of every ranked group having eligible structural evidence; not project-lead approval."
 
 usage() {
     printf '%s\n' \
@@ -17,12 +18,13 @@ usage() {
         "" \
         "Required:" \
         "  --run-root PATH          Completed workflow run through Stage 09." \
-        "  --config PATH            Reviewed v0.2.x chemistry YAML." \
+        "  --config PATH            Reviewed v0.3.x chemistry YAML." \
         "  --output-dir PATH        New candidate-manifest directory." \
         "  --decided-by TEXT        Person authorising the expanded screen." \
         "" \
         "Optional:" \
-        "  --maximum-rank INTEGER   Maximum Stage 08 rank (default: 200)." \
+        "  --maximum-rank INTEGER   Intentionally restrict the Stage 08 rank." \
+        "  --all-ranked-groups      Assess every Stage 08 ranked group (default)." \
         "  --rationale TEXT         Decision rationale stored in every row." \
         "  --conda-environment NAME Environment name." \
         "  --help                   Show this help."
@@ -46,11 +48,16 @@ while (($#)); do
                 --config) CONFIG="$2" ;;
                 --output-dir) OUTPUT_DIR="$2" ;;
                 --decided-by) DECIDED_BY="$2" ;;
-                --maximum-rank) MAXIMUM_RANK="$2" ;;
+                --maximum-rank) MAXIMUM_RANK="$2"; ALL_RANKED_GROUPS="false" ;;
                 --rationale) RATIONALE="$2" ;;
                 --conda-environment) CONDA_ENVIRONMENT="$2" ;;
             esac
             shift 2
+            ;;
+        --all-ranked-groups)
+            MAXIMUM_RANK=""
+            ALL_RANKED_GROUPS="true"
+            shift
             ;;
         --help|-h)
             usage
@@ -68,7 +75,7 @@ if [[ -z "${RUN_ROOT}" || -z "${CONFIG}" || -z "${OUTPUT_DIR}" || -z "${DECIDED_
     printf 'ERROR: --run-root, --config, --output-dir and --decided-by are required.\n' >&2
     exit 2
 fi
-if [[ ! "${MAXIMUM_RANK}" =~ ^[1-9][0-9]*$ ]]; then
+if [[ "${ALL_RANKED_GROUPS}" == "false" && ! "${MAXIMUM_RANK}" =~ ^[1-9][0-9]*$ ]]; then
     printf 'ERROR: --maximum-rank must be a positive integer.\n' >&2
     exit 2
 fi
@@ -92,12 +99,14 @@ fi
 readonly GROUP_RANKING="${RUN_ROOT}/08_shortlist_gate/tables/evolutionary_candidate_group_ranking.parquet"
 readonly STAGE09_TABLES="${RUN_ROOT}/09_ligandability/tables"
 readonly SELECTED_POCKETS="${STAGE09_TABLES}/selected_pockets.parquet"
+readonly RANKED_POCKETS="${STAGE09_TABLES}/ranked_member_pockets.parquet"
 readonly POCKET_MAPPINGS="${STAGE09_TABLES}/reused_pocket_residue_mappings.parquet"
 readonly ASSET_MANIFEST="${STAGE09_TABLES}/reused_asset_manifest.parquet"
 
 for required_file in \
     "${GROUP_RANKING}" \
     "${SELECTED_POCKETS}" \
+    "${RANKED_POCKETS}" \
     "${POCKET_MAPPINGS}" \
     "${ASSET_MANIFEST}"
 do
@@ -108,6 +117,11 @@ do
     fi
 done
 
+SCOPE_ARGS=(--all-ranked-groups)
+if [[ "${ALL_RANKED_GROUPS}" == "false" ]]; then
+    SCOPE_ARGS=(--maximum-rank "${MAXIMUM_RANK}")
+fi
+
 conda run \
     --no-capture-output \
     --name "${CONDA_ENVIRONMENT}" \
@@ -115,10 +129,11 @@ conda run \
     --config "${CONFIG}" \
     --group-ranking "${GROUP_RANKING}" \
     --selected-pockets "${SELECTED_POCKETS}" \
+    --ranked-pockets "${RANKED_POCKETS}" \
     --pocket-residue-mappings "${POCKET_MAPPINGS}" \
     --structure-asset-manifest "${ASSET_MANIFEST}" \
     --output-dir "${OUTPUT_DIR}" \
-    --maximum-rank "${MAXIMUM_RANK}" \
+    "${SCOPE_ARGS[@]}" \
     --decision-basis EXPANDED_COMPUTATIONAL_SCREEN \
     --decided-by "${DECIDED_BY}" \
     --rationale "${RATIONALE}"

@@ -64,7 +64,11 @@ def test_prepare_only_pipeline_contract(
     assert int(result["pharmacophore_feature_count"]) >= 2
     assert (output / "tables/group_pharmacophore_summary.parquet").is_file()
     sensitivity = read_records(output / "tables/threshold_sensitivity.parquet")
-    assert len(sensitivity) == 27
+    assert len(sensitivity) > 400
+    assert (
+        output / "tables/threshold_sensitivity_one_at_a_time.parquet"
+    ).is_file()
+    assert (output / "tables/integrated_candidate_evidence.parquet").is_file()
     assert sum(bool(row["is_configured_threshold_combination"]) for row in sensitivity) == 1
     assert (output / "tables/fragment_pharmacophore_ranking.parquet").is_file()
     assert (output / "reports/structure_guided_chemistry_summary.html").is_file()
@@ -191,6 +195,28 @@ def test_low_confidence_pocket_is_not_chemistry_ready(
     ]
     target = read_records(output / "tables/chemistry_target_manifest.tsv")[0]
     assert target["pocket_confidence_supported"] == "false"
+
+
+def test_low_druggability_pocket_is_retained_but_not_handoff_ready(
+    tmp_path: Path,
+    scientific_inputs: dict[str, Path],
+) -> None:
+    """Biological support must remain visible when druggability fails."""
+    pockets = read_records(scientific_inputs["pockets"])
+    pockets[0]["druggability_score"] = 0.1
+    altered_inputs = dict(scientific_inputs)
+    altered_inputs["pockets"] = write_tsv(tmp_path / "low_drug.tsv", pockets)
+
+    _, output = _run(tmp_path=tmp_path, scientific_inputs=altered_inputs)
+
+    summary = read_records(output / "tables/group_pharmacophore_summary.tsv")[0]
+    assert summary["biology_and_structure_supported"] == "true"
+    assert summary["chemistry_handoff_status"] == (
+        "INSUFFICIENT_REPRESENTATIVE_DRUGGABILITY"
+    )
+    assert summary["chemistry_review_tier"] == (
+        "STRUCTURALLY_SUPPORTED_LOW_DRUGGABILITY"
+    )
 
 
 @pytest.mark.parametrize(

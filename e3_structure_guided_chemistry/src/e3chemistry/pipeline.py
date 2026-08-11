@@ -13,6 +13,12 @@ from e3chemistry import __version__
 from e3chemistry.candidate_manifest import validate_candidate_manifest
 from e3chemistry.config import load_config
 from e3chemistry.errors import InputValidationError
+from e3chemistry.evidence import (
+    FIELD_DICTIONARY_FIELDS,
+    build_field_dictionary,
+    build_integrated_evidence,
+    integrated_fieldnames,
+)
 from e3chemistry.fragments import (
     FRAGMENT_PROPERTY_FIELDS,
     FRAGMENT_RANKING_FIELDS,
@@ -32,8 +38,10 @@ from e3chemistry.models import ChemistryConfig, StructureAsset
 from e3chemistry.pharmacophore import (
     FEATURE_FIELDS,
     GROUP_SUMMARY_FIELDS,
+    ONE_AT_A_TIME_SENSITIVITY_FIELDS,
     SENSITIVITY_FIELDS,
     build_feature_records,
+    one_at_a_time_sensitivity,
     summarise_groups,
     threshold_sensitivity,
 )
@@ -66,6 +74,10 @@ TARGET_FIELDS = (
     "pocket_plddt_fraction",
     "pocket_confidence_supported",
     "conserved_component_fraction",
+    "structured_accession_count",
+    "conserved_component_accession_count",
+    "structured_species_count",
+    "conserved_component_species_count",
     "mean_chemical_group_conservation",
     "structure_path",
     "structure_sha256",
@@ -102,6 +114,8 @@ QC_FIELDS = (
     "resolved_structure_target_count",
     "pharmacophore_feature_count",
     "chemistry_ready_group_count",
+    "biology_and_structure_supported_group_count",
+    "high_confidence_core_group_count",
     "fragment_library_record_count",
     "valid_rule_of_three_fragment_count",
     "fragment_ranking_count",
@@ -143,6 +157,12 @@ def _group_key(record: Mapping[str, Any]) -> tuple[str, str]:
     return (_text(record.get("primary_group_type")), _text(record.get("primary_group_id")))
 
 
+def _cluster_group_key(record: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Return primary group and DeepClust cluster identity."""
+    group_type, group_id = _group_key(record)
+    return group_type, group_id, _text(record.get("cluster_id"))
+
+
 def select_chemistry_targets(
     *,
     candidate_manifest: Sequence[Mapping[str, Any]],
@@ -181,12 +201,23 @@ def select_chemistry_targets(
         required=(
             "primary_group_type",
             "primary_group_id",
+            "cluster_id",
+            "structured_accession_count",
+            "conserved_component_accession_count",
+            "structured_species_count",
+            "conserved_component_species_count",
             "conserved_component_fraction",
             "mean_chemical_group_conservation",
         ),
         label="pocket conservation summary",
     )
-    conservation_by_group = {_group_key(row): row for row in conservation}
+    conservation_by_group = {
+        _cluster_group_key(row): row for row in conservation
+    }
+    if len(conservation_by_group) != len(conservation):
+        raise InputValidationError(
+            "Pocket conservation summary contains duplicate group/cluster rows"
+        )
     ranking_by_key = {
         _text(row.get("evolutionary_group_key")): row for row in group_ranking
     }
@@ -220,7 +251,14 @@ def select_chemistry_targets(
             raise InputValidationError(
                 f"Candidate manifest identity conflicts with Stage 08 ranking: {group_key}"
             )
-        conservation_row = conservation_by_group.get(key, {})
+        conservation_row = conservation_by_group.get(
+            (key[0], key[1], _text(manifest_row["cluster_id"])), {}
+        )
+        if not conservation_row:
+            raise InputValidationError(
+                "Candidate manifest target has no exact pocket-conservation row: "
+                f"{group_key}/{manifest_row['cluster_id']}"
+            )
         accession = _text(manifest_row["candidate_accession"]).upper()
         pocket_number = int(manifest_row["pocket_number"])
         matching_pockets = [
@@ -289,6 +327,22 @@ def select_chemistry_targets(
                 ),
                 "conserved_component_fraction": _float(
                     conservation_row.get("conserved_component_fraction")
+                ),
+                "structured_accession_count": _integer(
+                    conservation_row.get("structured_accession_count"),
+                    "structured_accession_count",
+                ),
+                "conserved_component_accession_count": _integer(
+                    conservation_row.get("conserved_component_accession_count"),
+                    "conserved_component_accession_count",
+                ),
+                "structured_species_count": _integer(
+                    conservation_row.get("structured_species_count"),
+                    "structured_species_count",
+                ),
+                "conserved_component_species_count": _integer(
+                    conservation_row.get("conserved_component_species_count"),
+                    "conserved_component_species_count",
                 ),
                 "mean_chemical_group_conservation": _float(
                     conservation_row.get("mean_chemical_group_conservation")
@@ -435,6 +489,9 @@ def run_pipeline(
     pocket_conservation_summary_path: Path,
     structure_asset_manifest_path: Path,
     output_dir: Path,
+    integrated_evidence_path: Path | None = None,
+    ranked_pockets_path: Path | None = None,
+    structural_alignment_summary_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run the complete open structure-guided chemistry workflow."""
     config = load_config(config_path)
@@ -471,6 +528,14 @@ def run_pipeline(
     }
     if config.fragment_library is not None:
         inputs["fragment_library"] = config.fragment_library
+    if integrated_evidence_path is not None:
+        inputs["integrated_evidence"] = integrated_evidence_path.expanduser().resolve()
+    if ranked_pockets_path is not None:
+        inputs["ranked_pockets"] = ranked_pockets_path.expanduser().resolve()
+    if structural_alignment_summary_path is not None:
+        inputs["structural_alignment_summary"] = (
+            structural_alignment_summary_path.expanduser().resolve()
+        )
     for label, path in inputs.items():
         if not path.is_file() or path.stat().st_size == 0:
             raise InputValidationError(f"{label} input is missing or empty: {path}")
@@ -536,6 +601,28 @@ def run_pipeline(
         group_summaries=group_summaries,
         config=config,
     )
+    one_at_a_time_rows = one_at_a_time_sensitivity(
+        group_summaries=group_summaries,
+        config=config,
+    )
+    integrated_rows = build_integrated_evidence(
+        group_ranking=group_ranking,
+        selected_pockets=selected_pockets,
+        conservation=conservation,
+        targets=targets,
+        group_summaries=group_summaries,
+        integrated_evidence=(
+            read_records(inputs["integrated_evidence"])
+            if "integrated_evidence" in inputs
+            else ()
+        ),
+        structural_alignment=(
+            read_records(inputs["structural_alignment_summary"])
+            if "structural_alignment_summary" in inputs
+            else ()
+        ),
+    )
+    field_dictionary = build_field_dictionary(records=integrated_rows)
     fragment_properties: list[dict[str, Any]] = []
     fragment_rankings: list[dict[str, Any]] = []
     if config.fragment_screening_mode == "open_fragment_screen":
@@ -573,6 +660,34 @@ def run_pipeline(
         records=sensitivity_rows,
         fieldnames=SENSITIVITY_FIELDS,
     )
+    write_records(
+        tsv_path=tables / "threshold_sensitivity_one_at_a_time.tsv",
+        parquet_path=tables / "threshold_sensitivity_one_at_a_time.parquet",
+        records=one_at_a_time_rows,
+        fieldnames=ONE_AT_A_TIME_SENSITIVITY_FIELDS,
+    )
+    write_records(
+        tsv_path=tables / "integrated_candidate_evidence.tsv",
+        parquet_path=tables / "integrated_candidate_evidence.parquet",
+        records=integrated_rows,
+        fieldnames=integrated_fieldnames(integrated_rows),
+    )
+    write_tsv(
+        path=tables / "integrated_candidate_evidence_field_dictionary.tsv",
+        records=field_dictionary,
+        fieldnames=FIELD_DICTIONARY_FIELDS,
+    )
+    if "ranked_pockets" in inputs:
+        ranked_pockets = read_records(inputs["ranked_pockets"])
+        ranked_fields = sorted(
+            {str(field) for row in ranked_pockets for field in row}
+        )
+        write_records(
+            tsv_path=tables / "ranked_member_pocket_evidence.tsv",
+            parquet_path=tables / "ranked_member_pocket_evidence.parquet",
+            records=ranked_pockets,
+            fieldnames=ranked_fields,
+        )
     write_records(
         tsv_path=tables / "fragment_properties.tsv",
         parquet_path=tables / "fragment_properties.parquet",
@@ -622,6 +737,14 @@ def run_pipeline(
             == "READY_FOR_OPEN_FRAGMENT_PRIORITISATION"
             for row in group_summaries
         ),
+        "biology_and_structure_supported_group_count": sum(
+            bool(row["biology_and_structure_supported"])
+            for row in group_summaries
+        ),
+        "high_confidence_core_group_count": sum(
+            bool(row["high_confidence_core_supported"])
+            for row in group_summaries
+        ),
         "fragment_library_record_count": len(fragment_properties),
         "valid_rule_of_three_fragment_count": sum(
             row.get("fragment_status") == "READY" for row in fragment_properties
@@ -659,7 +782,7 @@ def run_pipeline(
         if path.is_file() and path.relative_to(destination).parts[0] != "logs"
     )
     manifest = {
-        "schema_version": 2,
+        "schema_version": 3,
         "package_version": __version__,
         "method": config.method_name,
         "configuration_digest": config.digest,

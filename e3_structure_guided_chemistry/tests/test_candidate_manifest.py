@@ -11,6 +11,8 @@ import pytest
 
 from conftest import write_config, write_tsv
 from e3chemistry.candidate_manifest import (
+    _float,
+    _mapped_pocket_counts,
     prepare_candidate_manifest,
     prepare_candidate_manifest_files,
     validate_candidate_manifest,
@@ -41,6 +43,7 @@ def test_prepare_candidate_manifest_files_and_provenance(
         selected_pockets_path=scientific_inputs["pockets"],
         pocket_residue_mappings_path=scientific_inputs["mappings"],
         structure_asset_manifest_path=scientific_inputs["assets"],
+        ranked_pockets_path=scientific_inputs["pockets"],
         output_dir=output,
         maximum_rank=200,
         decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
@@ -56,9 +59,12 @@ def test_prepare_candidate_manifest_files_and_provenance(
     provenance = json.loads(
         (output / "candidate_manifest_provenance.json").read_text(encoding="utf-8")
     )
-    assert provenance["schema_version"] == 2
+    assert provenance["schema_version"] == 3
     assert provenance["candidate_manifest"]["sha256"]
     assert provenance["inputs"]["group_ranking"]["sha256"]
+    assert (output / "candidate_pocket_selection_audit.parquet").is_file()
+    assert (output / "candidate_universe_audit.tsv").is_file()
+    assert (output / "ranked_member_pocket_evidence.parquet").is_file()
 
     with pytest.raises(InputValidationError, match="not empty"):
         prepare_candidate_manifest_files(
@@ -79,7 +85,7 @@ def test_quality_first_selection_and_missing_group_exclusion(
     tmp_path: Path,
     scientific_inputs: dict[str, Path],
 ) -> None:
-    """Confidence must outrank druggability and unresolved groups remain audited."""
+    """Eligibility floors precede druggability and unresolved groups remain audited."""
     config = load_config(write_config(tmp_path / "config.yaml"))
     ranking = read_records(scientific_inputs["ranking"])
     ranking.append(
@@ -125,9 +131,46 @@ def test_quality_first_selection_and_missing_group_exclusion(
 
     assert manifest[0]["pocket_number"] == 1
     assert exclusions[0]["evolutionary_group_key"].endswith("HOG2")
-    assert exclusions[0]["exclusion_reason"] == (
-        "NO_CHECKSUM_BOUND_MAPPED_POCKET_STRUCTURE"
+    assert exclusions[0]["exclusion_reason"] == "NO_POCKET_EVIDENCE_IN_SOURCE_RUN"
+
+
+def test_selection_prefers_most_druggable_pocket_after_eligibility_floors(
+    tmp_path: Path,
+    scientific_inputs: dict[str, Path],
+) -> None:
+    """pLDDT and mapping are floors; druggability orders eligible pockets."""
+    config = load_config(write_config(tmp_path / "config.yaml"))
+    ranking = read_records(scientific_inputs["ranking"])
+    pockets = read_records(scientific_inputs["pockets"])
+    pockets.append(
+        {
+            **pockets[0],
+            "pocket_number": 2,
+            "druggability_score": 0.95,
+            "conservative_fraction_plddt_ge_70": 0.8,
+        }
     )
+    mappings = read_records(scientific_inputs["mappings"])
+    mappings.append({**mappings[0], "pocket_number": 2})
+    assets = resolve_structure_assets(read_records(scientific_inputs["assets"]))
+
+    manifest, exclusions = prepare_candidate_manifest(
+        config=config,
+        group_ranking=ranking,
+        selected_pockets=pockets,
+        mappings=mappings,
+        assets=assets,
+        maximum_rank=None,
+        decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
+        decided_by="Peter Thorpe",
+        rationale="Full-universe test screen",
+        decided_at_utc="2026-08-11T08:00:00Z",
+    )
+
+    assert exclusions == []
+    assert manifest[0]["pocket_number"] == 2
+    assert manifest[0]["selection_druggability_score"] == pytest.approx(0.95)
+    assert manifest[0]["eligible_pocket_count"] == 2
 
 
 def test_preparation_reassigns_or_excludes_overlapping_candidate_pockets(
@@ -330,4 +373,70 @@ def test_candidate_manifest_preparation_argument_errors(
             decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
             decided_by="Peter Thorpe",
             rationale="Expanded test screen",
+        )
+
+
+def test_candidate_numeric_parsing_and_mapping_filters_fail_closed() -> None:
+    """Malformed scores must fail and only mapped, identified residues count."""
+    assert _float(None, default=0.25) == pytest.approx(0.25)
+    assert _float("") == pytest.approx(0.0)
+    with pytest.raises(InputValidationError, match="numeric"):
+        _float("not-a-number")
+    with pytest.raises(InputValidationError, match="finite"):
+        _float("nan")
+
+    counts = _mapped_pocket_counts(
+        [
+            {"accession": "P1", "pocket_number": 1, "mapping_status": "MAPPED"},
+            {"accession": "P1", "pocket_number": 1, "mapping_status": "UNMAPPED"},
+            {"accession": "", "pocket_number": 2, "mapping_status": "MAPPED"},
+        ]
+    )
+    assert counts == {("P1", 1): 1}
+
+
+def test_candidate_universe_cap_and_file_destination_are_enforced(
+    tmp_path: Path,
+    scientific_inputs: dict[str, Path],
+) -> None:
+    """Full-universe mode must still respect the configured safety cap."""
+    config = load_config(write_config(tmp_path / "config.yaml"))
+    ranking = read_records(scientific_inputs["ranking"])
+    ranking.extend(
+        {
+            **ranking[0],
+            "evolutionary_group_rank": rank,
+            "evolutionary_group_key": f"HIERARCHICAL_ORTHOGROUP:HOG{rank}",
+            "primary_group_id": f"HOG{rank}",
+            "lead_cluster_id": f"DC{rank}",
+        }
+        for rank in range(2, config.maximum_candidate_groups + 2)
+    )
+    with pytest.raises(InputValidationError, match="maximum_candidate_groups"):
+        prepare_candidate_manifest(
+            config=config,
+            group_ranking=ranking,
+            selected_pockets=read_records(scientific_inputs["pockets"]),
+            mappings=read_records(scientific_inputs["mappings"]),
+            assets=resolve_structure_assets(read_records(scientific_inputs["assets"])),
+            maximum_rank=None,
+            decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
+            decided_by="Peter Thorpe",
+            rationale="Full-universe safety-cap test",
+        )
+
+    destination = tmp_path / "output-is-a-file"
+    destination.write_text("occupied\n", encoding="utf-8")
+    with pytest.raises(InputValidationError, match="is a file"):
+        prepare_candidate_manifest_files(
+            config=config,
+            group_ranking_path=scientific_inputs["ranking"],
+            selected_pockets_path=scientific_inputs["pockets"],
+            pocket_residue_mappings_path=scientific_inputs["mappings"],
+            structure_asset_manifest_path=scientific_inputs["assets"],
+            output_dir=destination,
+            maximum_rank=1,
+            decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
+            decided_by="Peter Thorpe",
+            rationale="Destination validation test",
         )

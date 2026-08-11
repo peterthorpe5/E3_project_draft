@@ -10,6 +10,7 @@ from typing import Sequence
 
 from e3chemistry import __version__
 from e3chemistry.candidate_manifest import prepare_candidate_manifest_files
+from e3chemistry.campaign_config import write_full_universe_config
 from e3chemistry.config import load_config
 from e3chemistry.errors import ChemistryError
 from e3chemistry.pipeline import run_pipeline
@@ -31,6 +32,15 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate = subparsers.add_parser("validate-config", help="Validate YAML and licence policy.")
     validate.add_argument("--config", type=Path, required=True)
+    campaign = subparsers.add_parser(
+        "prepare-full-universe-workflow-config",
+        help="Generate an immutable upstream full-universe structural config.",
+    )
+    campaign.add_argument("--template", type=Path, required=True)
+    campaign.add_argument("--output", type=Path, required=True)
+    campaign.add_argument("--run-name", required=True)
+    campaign.add_argument("--parent-run-root", type=Path, required=True)
+    campaign.add_argument("--structure-group-limit", type=int, required=True)
     prepare = subparsers.add_parser(
         "prepare-candidate-manifest",
         help="Prepare a reviewable expanded or approved candidate panel.",
@@ -40,8 +50,11 @@ def _parser() -> argparse.ArgumentParser:
     prepare.add_argument("--selected-pockets", type=Path, required=True)
     prepare.add_argument("--pocket-residue-mappings", type=Path, required=True)
     prepare.add_argument("--structure-asset-manifest", type=Path, required=True)
+    prepare.add_argument("--ranked-pockets", type=Path)
     prepare.add_argument("--output-dir", type=Path, required=True)
-    prepare.add_argument("--maximum-rank", type=int, default=200)
+    scope = prepare.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--maximum-rank", type=int)
+    scope.add_argument("--all-ranked-groups", action="store_true")
     prepare.add_argument(
         "--decision-basis",
         choices=("EXPANDED_COMPUTATIONAL_SCREEN", "PROJECT_LEAD_APPROVED"),
@@ -57,6 +70,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--pocket-residue-mappings", type=Path, required=True)
     run.add_argument("--pocket-conservation-summary", type=Path, required=True)
     run.add_argument("--structure-asset-manifest", type=Path, required=True)
+    run.add_argument("--integrated-evidence", type=Path)
+    run.add_argument("--ranked-pockets", type=Path)
+    run.add_argument("--structural-alignment-summary", type=Path)
     run.add_argument("--output-dir", type=Path, required=True)
     return parser
 
@@ -81,6 +97,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                     config.allow_restricted_licence_tools
                 ),
             }
+        elif args.command == "prepare-full-universe-workflow-config":
+            result = write_full_universe_config(
+                template_path=args.template,
+                output_path=args.output,
+                run_name=args.run_name,
+                parent_run_root=args.parent_run_root,
+                structure_group_limit=args.structure_group_limit,
+            )
         elif args.command == "prepare-candidate-manifest":
             config = load_config(args.config)
             result = prepare_candidate_manifest_files(
@@ -89,8 +113,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 selected_pockets_path=args.selected_pockets,
                 pocket_residue_mappings_path=args.pocket_residue_mappings,
                 structure_asset_manifest_path=args.structure_asset_manifest,
+                ranked_pockets_path=args.ranked_pockets,
                 output_dir=args.output_dir,
-                maximum_rank=args.maximum_rank,
+                maximum_rank=(
+                    None if args.all_ranked_groups else args.maximum_rank
+                ),
                 decision_basis=args.decision_basis,
                 decided_by=args.decided_by,
                 rationale=args.rationale,
@@ -106,6 +133,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     args.pocket_conservation_summary
                 ),
                 structure_asset_manifest_path=args.structure_asset_manifest,
+                integrated_evidence_path=args.integrated_evidence,
+                ranked_pockets_path=args.ranked_pockets,
+                structural_alignment_summary_path=(
+                    args.structural_alignment_summary
+                ),
                 output_dir=args.output_dir,
             )
     except ChemistryError as exc:

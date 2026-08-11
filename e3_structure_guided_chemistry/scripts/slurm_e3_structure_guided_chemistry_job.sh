@@ -28,7 +28,7 @@ while (($#)); do
             CONDA_ENVIRONMENT="$2"
             shift 2
             ;;
-        --config|--candidate-manifest|--group-ranking|--selected-pockets|--pocket-residue-mappings|--pocket-conservation-summary|--structure-asset-manifest|--output-dir)
+        --config|--candidate-manifest|--group-ranking|--selected-pockets|--ranked-pockets|--pocket-residue-mappings|--pocket-conservation-summary|--structure-asset-manifest|--integrated-evidence|--structural-alignment-summary|--output-dir)
             require_value "$1" "${2:-}"
             RUN_ARGUMENTS+=("$1" "$2")
             shift 2
