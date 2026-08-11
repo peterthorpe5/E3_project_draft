@@ -921,6 +921,12 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
             ("chemistry_target_manifest", "chemistry_target_manifest.parquet"),
             ("pocket_pharmacophore_features", "pocket_pharmacophore_features.parquet"),
             ("group_pharmacophore_summary", "group_pharmacophore_summary.parquet"),
+            ("threshold_sensitivity", "threshold_sensitivity.parquet"),
+            (
+                "threshold_sensitivity_one_at_a_time",
+                "threshold_sensitivity_one_at_a_time.parquet",
+            ),
+            ("integrated_candidate_evidence", "integrated_candidate_evidence.parquet"),
             ("fragment_properties", "fragment_properties.parquet"),
             (
                 "fragment_pharmacophore_ranking",
@@ -929,6 +935,16 @@ def _resource_tables(config: WorkflowConfig) -> list[tuple[str, Path]]:
         )
         for table_name, filename in chemistry_tables:
             tables.append((table_name, find_one(root=chemistry_root, name=filename)))
+        ranked_pockets = sorted(
+            chemistry_root.rglob("ranked_member_pocket_evidence.parquet")
+        )
+        if len(ranked_pockets) > 1:
+            raise StageError(
+                "Expected at most one ranked_member_pocket_evidence.parquet "
+                f"below {chemistry_root}; observed {len(ranked_pockets)}"
+            )
+        if ranked_pockets:
+            tables.append(("ranked_member_pocket_evidence", ranked_pockets[0]))
     return tables
 
 

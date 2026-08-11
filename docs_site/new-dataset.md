@@ -3,6 +3,33 @@
 The workflow is species-count agnostic. A new panel should be introduced through
 manifests and a new immutable configuration, not by editing Python source.
 
+## Current fresh-run readiness
+
+The repository-level launcher and DAG are restart-safe, but the checked-in
+production template is deliberately not yet a submit-ready new-panel recipe.
+`validate-fresh` now rejects every unresolved `CHANGE_ME` marker. Do not replace
+an adapter marker with a plausible command merely to make validation pass: the
+command must be tested against the stage's exact input and output contract.
+
+| Branch | Current status for a genuinely new panel |
+|---|---|
+| Input and proteome preparation | Native and tested |
+| Discovery | Requires a package-compatible fresh-discovery adapter |
+| Candidate-evidence publication | Requires fresh Discovery output to be bound to the standard Parquet contract |
+| OrthoFinder | Native external tool contract is defined |
+| Orthology reconciliation | Package exists; a stage adapter must bind its nested run layout to the standard Stage 05 paths |
+| InterPro domains | Native and tested |
+| Expression | Requires a fresh Expression Atlas acquisition/import adapter; legacy manifests are forbidden in strict fresh mode |
+| Prioritisation | Native and tested once upstream contracts are present |
+| Ligandability and 3D alignment | Native distributed implementations are tested |
+| Computational chemistry | Native all-group campaign is integrated in workflow v0.15.0 |
+| DuckDB and app hand-off | Native and shared by R Shiny and Python |
+
+Therefore, a successful configuration preflight or Snakemake dry run is not by
+itself evidence that the scientific executables can complete a new-panel run.
+The release gate must include a bounded real-proteome smoke run through every
+adapter before the expanded production submission.
+
 ## Recommended layout
 
 ```text

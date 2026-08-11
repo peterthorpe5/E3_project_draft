@@ -26,6 +26,16 @@ def _fresh_config(package_root: Path, tmp_path: Path) -> Path:
     for tool in data["tools"].values():
         if tool.get("expected_version") == "CHANGE_ME_REVIEWED_VERSION":
             tool["expected_version"] = "1.0.0"
+    def replace_markers(value: object) -> object:
+        if isinstance(value, str):
+            return value.replace("CHANGE_ME", "fixture")
+        if isinstance(value, list):
+            return [replace_markers(item) for item in value]
+        if isinstance(value, dict):
+            return {key: replace_markers(item) for key, item in value.items()}
+        return value
+
+    data = replace_markers(data)
     path = tmp_path / "fresh.yaml"
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return path
@@ -42,6 +52,22 @@ def test_complete_fresh_configuration_is_accepted(
     assert result["stage_count"] == 13
     assert result["maximum_stage_threads"] == 32
     assert result["tool_count"] == 7
+
+
+def test_fresh_template_uses_integrated_workflow_chemistry_command(
+    package_root: Path,
+) -> None:
+    """Stage 09c must preserve `conda run` and invoke the workflow campaign."""
+    data = yaml.safe_load(
+        (package_root / "config" / "production.cluster.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    command = data["stages"]["09c_computational_chemistry"]["command"]
+
+    assert command[:2] == ["conda", "run"]
+    assert "e3-chemistry" in command
+    assert command[command.index("e3-chemistry") + 1] == "run-workflow-campaign"
 
 
 @pytest.mark.parametrize(

@@ -300,6 +300,43 @@ def test_cli_prepares_expanded_candidate_manifest(
     assert (output / "candidate_manifest.tsv").is_file()
 
 
+def test_cli_runs_workflow_campaign_without_hand_written_manifest(
+    tmp_path: Path,
+    scientific_inputs: dict[str, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The end-to-end command must prepare and analyse the current full panel."""
+    output = tmp_path / "workflow_campaign"
+    status = main(
+        [
+            "run-workflow-campaign",
+            "--config",
+            str(write_config(tmp_path / "workflow_config.yaml")),
+            "--group-ranking",
+            str(scientific_inputs["ranking"]),
+            "--selected-pockets",
+            str(scientific_inputs["pockets"]),
+            "--pocket-residue-mappings",
+            str(scientific_inputs["mappings"]),
+            "--pocket-conservation-summary",
+            str(scientific_inputs["conservation"]),
+            "--structure-asset-manifest",
+            str(scientific_inputs["assets"]),
+            "--output-dir",
+            str(output),
+        ]
+    )
+
+    assert status == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "complete"
+    assert payload["candidate_panel"]["included_group_count"] == 1
+    assert (
+        output / "provenance" / "candidate_panel" / "candidate_manifest.tsv"
+    ).is_file()
+    assert (output / "tables" / "integrated_candidate_evidence.parquet").is_file()
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [

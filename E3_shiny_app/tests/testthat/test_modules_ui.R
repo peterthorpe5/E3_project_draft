@@ -1,10 +1,12 @@
-testthat::test_that("expression filter UI contains expected namespaced controls", {
-  ui_text <- paste(as.character(expression_filters_ui("filters")), collapse = "\n")
+testthat::test_that("application omits the retired raw-expression interface", {
+  app_text <- paste(readLines(file.path(repo_dir, "app.R")), collapse = "\n")
 
-  testthat::expect_match(ui_text, "filters-species_column", fixed = TRUE)
-  testthat::expect_match(ui_text, "filters-expression_unit", fixed = TRUE)
-  testthat::expect_match(ui_text, "filters-gene_search", fixed = TRUE)
-  testthat::expect_match(ui_text, "filters-apply_filters", fixed = TRUE)
+  testthat::expect_false(grepl("Raw Expression Atlas filters", app_text, fixed = TRUE))
+  testthat::expect_false(grepl("expression_filters_ui", app_text, fixed = TRUE))
+  testthat::expect_false(grepl("expression_filters_server", app_text, fixed = TRUE))
+  testthat::expect_false(grepl('"Expression summary"', app_text, fixed = TRUE))
+  testthat::expect_false(grepl('"Expression table"', app_text, fixed = TRUE))
+  testthat::expect_false(grepl('"Visualise expression"', app_text, fixed = TRUE))
 })
 
 testthat::test_that("summary UI contains value boxes and metadata output", {

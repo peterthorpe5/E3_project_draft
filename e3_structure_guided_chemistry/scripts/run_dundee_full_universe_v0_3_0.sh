@@ -7,8 +7,8 @@ readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly CHEMISTRY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 readonly REPOSITORY_ROOT="$(cd -- "${CHEMISTRY_ROOT}/.." && pwd -P)"
 readonly WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"
-readonly EXPECTED_CHEMISTRY_VERSION="0.3.0"
-readonly EXPECTED_WORKFLOW_VERSION="0.14.1"
+readonly EXPECTED_CHEMISTRY_VERSION="0.3.1"
+readonly EXPECTED_WORKFLOW_VERSION="0.15.0"
 
 RUNS_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs"
 PARENT_RUN_ROOT="${RUNS_ROOT}/grant_aligned_corrected_expression_structural_top200_v0_14_0_20260805"
@@ -37,7 +37,7 @@ usage() {
         "Usage: run_dundee_full_universe_v0_3_0.sh [options]" \
         "" \
         "One restart-safe command for the 1,972-group upstream structural campaign" \
-        "and the subsequent v0.3.0 chemistry assessment. Re-run the same command" \
+        "and the subsequent v0.3.1 chemistry assessment. Re-run the same command" \
         "after the controller finishes; completed work is never resubmitted." \
         "" \
         "Optional overrides:" \
@@ -275,6 +275,24 @@ manifest_is_complete() {
             "${manifest_path}"
 }
 
+report_failed_controller() {
+    local metadata_path="$1"
+    local controller_log
+    local previous_job_id
+    previous_job_id="$(awk -F '\t' 'NR == 2 {print $1; exit}' "${metadata_path}")"
+    controller_log="$(awk -F '\t' 'NR == 2 {print $5; exit}' "${metadata_path}")"
+    printf 'Previous controller %s failed; only incomplete work will be resumed.\n' \
+        "${previous_job_id:-UNKNOWN}" >&2
+    if [[ -n "${controller_log}" && -s "${controller_log}" ]]; then
+        printf 'Final 80 lines from failed controller log %s:\n' \
+            "${controller_log}" >&2
+        tail -n 80 -- "${controller_log}" >&2
+    else
+        printf 'WARNING: failed controller log is unavailable: %s\n' \
+            "${controller_log:-NOT_RECORDED}" >&2
+    fi
+}
+
 APP_READY_MANIFEST="${FULL_RUN_ROOT}/11_app_ready/stage_manifest.json"
 CONTROLLER_METADATA="${FULL_RUN_ROOT}/workflow_control/controller.slurm.tsv"
 CONTROLLER_LAUNCHER="${WORKFLOW_ROOT}/submit_e3_controller_slurm.sh"
@@ -299,6 +317,11 @@ if ! manifest_is_complete "${APP_READY_MANIFEST}"; then
             printf 'ERROR: controller state is not safe to interpret; no submission was attempted.\n' >&2
             exit 2
         fi
+        if grep -Eq '^Controller: (FAILED|BOOT_FAIL|CANCELLED|DEADLINE|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|REVOKED|TIMEOUT)$' \
+            <<<"${CONTROLLER_STATUS}"
+        then
+            report_failed_controller "${CONTROLLER_METADATA}"
+        fi
     fi
 
     printf 'Submitting or safely resuming the full structural campaign.\n'
@@ -317,7 +340,9 @@ if ! manifest_is_complete "${APP_READY_MANIFEST}"; then
         --partition "${PARTITION}" \
         --max-jobs "${MAX_JOBS}" \
         --resume
-    printf 'Upstream work was submitted. Re-run this same command after the controller completes; chemistry is intentionally not submitted yet.\n'
+    NEW_CONTROLLER_JOB="$(awk -F '\t' 'NR == 2 {print $1; exit}' "${CONTROLLER_METADATA}")"
+    printf 'Upstream controller %s was submitted or resumed. Chemistry correctly remains pending until its structural inputs are complete. Re-run this same command after controller %s finishes.\n' \
+        "${NEW_CONTROLLER_JOB}" "${NEW_CONTROLLER_JOB}"
     exit 0
 fi
 

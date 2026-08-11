@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.9.0 is the grant-focused R reporter for the PT_E3_8 workflow. It is a
+Version 0.10.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -47,6 +47,9 @@ The main sections follow the evidence path required by the grant:
 14. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights and the original OrthoFinder-group member sequence identifiers.
 15. **Provenance and QC** – release metadata, relation catalogue and source paths.
+16. **Computational chemistry** – chemistry hand-off decisions, review tiers,
+    sensitivity analysis, residue-derived pharmacophore features and optional
+    fragment-ranking evidence.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -157,9 +160,9 @@ Equivalent environment variables are:
 - `E3_SHINY_HOST`
 - `E3_SHINY_PORT`
 
-The raw Expression Atlas summary/table/lookup/plot tabs use the optional
-expression DuckDB. The integrated Expression evidence section uses the selected
-E3 result source. In workflow v0.13.0 resources, the normalised
+The retired raw Expression Atlas sidebar and its four legacy tabs are no longer
+part of the application. Candidate-level and tissue-context expression evidence
+is read from the integrated E3 result source. In workflow v0.13.0 resources, the normalised
 `candidate_expression_context_summary` relation supports tissue and context
 columns. Older resources remain readable but cannot reconstruct tissue after
 the fact; they explicitly label `NOT_MAPPED` zero counts as missing mapping,

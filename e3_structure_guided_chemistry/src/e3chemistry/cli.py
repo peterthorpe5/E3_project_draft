@@ -74,6 +74,22 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--ranked-pockets", type=Path)
     run.add_argument("--structural-alignment-summary", type=Path)
     run.add_argument("--output-dir", type=Path, required=True)
+    workflow = subparsers.add_parser(
+        "run-workflow-campaign",
+        help=(
+            "Prepare a checksum-bound all-group candidate manifest from the current "
+            "workflow run and execute chemistry without a hand-written panel."
+        ),
+    )
+    workflow.add_argument("--config", type=Path, required=True)
+    workflow.add_argument("--group-ranking", type=Path, required=True)
+    workflow.add_argument("--selected-pockets", type=Path, required=True)
+    workflow.add_argument("--pocket-residue-mappings", type=Path, required=True)
+    workflow.add_argument("--pocket-conservation-summary", type=Path, required=True)
+    workflow.add_argument("--structure-asset-manifest", type=Path, required=True)
+    workflow.add_argument("--ranked-pockets", type=Path)
+    workflow.add_argument("--structural-alignment-summary", type=Path)
+    workflow.add_argument("--output-dir", type=Path, required=True)
     return parser
 
 
@@ -122,6 +138,39 @@ def main(argv: Sequence[str] | None = None) -> int:
                 decided_by=args.decided_by,
                 rationale=args.rationale,
             )
+        elif args.command == "run-workflow-campaign":
+            config = load_config(args.config)
+            destination = args.output_dir.expanduser().resolve()
+            panel_dir = destination / "provenance" / "candidate_panel"
+            preparation = prepare_candidate_manifest_files(
+                config=config,
+                group_ranking_path=args.group_ranking,
+                selected_pockets_path=args.selected_pockets,
+                pocket_residue_mappings_path=args.pocket_residue_mappings,
+                structure_asset_manifest_path=args.structure_asset_manifest,
+                ranked_pockets_path=args.ranked_pockets,
+                output_dir=panel_dir,
+                maximum_rank=None,
+                decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
+                decided_by="end-to-end workflow",
+                rationale=(
+                    "Complete computational campaign generated from the current "
+                    "checksum-bound Stage 08 and Stage 09 authorities."
+                ),
+            )
+            result = run_pipeline(
+                config_path=args.config,
+                candidate_manifest_path=Path(preparation["candidate_manifest"]),
+                group_ranking_path=args.group_ranking,
+                selected_pockets_path=args.selected_pockets,
+                pocket_residue_mappings_path=args.pocket_residue_mappings,
+                pocket_conservation_summary_path=args.pocket_conservation_summary,
+                structure_asset_manifest_path=args.structure_asset_manifest,
+                ranked_pockets_path=args.ranked_pockets,
+                structural_alignment_summary_path=args.structural_alignment_summary,
+                output_dir=destination,
+            )
+            result["candidate_panel"] = preparation
         else:
             result = run_pipeline(
                 config_path=args.config,

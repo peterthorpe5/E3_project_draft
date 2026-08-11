@@ -195,6 +195,25 @@ SECTION_SPECS: Mapping[str, Mapping[str, object]] = {
             "candidate_master_results",
         ),
     },
+    "computational_chemistry": {
+        "title": "Structure-guided computational chemistry",
+        "description": (
+            "Which structurally usable and evolutionarily supported pockets are "
+            "ready for chemistry review, which gates determine that status, and "
+            "what residue-derived pharmacophore features support each decision?"
+        ),
+        "relations": (
+            "integrated_candidate_evidence",
+            "group_pharmacophore_summary",
+            "chemistry_target_manifest",
+            "threshold_sensitivity",
+            "threshold_sensitivity_one_at_a_time",
+            "ranked_member_pocket_evidence",
+            "pocket_pharmacophore_features",
+            "fragment_pharmacophore_ranking",
+            "fragment_properties",
+        ),
+    },
     "provenance": {
         "title": "Provenance and quality control",
         "description": (
@@ -278,6 +297,15 @@ CANONICAL_PARQUET_RELATIONS = {
     "structural_pocket_sensitivity_group_summary": (
         "structural_pocket_sensitivity_group_summary"
     ),
+    "chemistry_target_manifest": "chemistry_target_manifest",
+    "pocket_pharmacophore_features": "pocket_pharmacophore_features",
+    "group_pharmacophore_summary": "group_pharmacophore_summary",
+    "threshold_sensitivity": "threshold_sensitivity",
+    "threshold_sensitivity_one_at_a_time": "threshold_sensitivity_one_at_a_time",
+    "integrated_candidate_evidence": "integrated_candidate_evidence",
+    "ranked_member_pocket_evidence": "ranked_member_pocket_evidence",
+    "fragment_properties": "fragment_properties",
+    "fragment_pharmacophore_ranking": "fragment_pharmacophore_ranking",
 }
 
 
@@ -1259,6 +1287,10 @@ def infer_capability(relation: str, columns: Sequence[str]) -> str:
                 "final_evolutionary_candidate_prioritisation",
                 "final_candidate_exclusion_audit",
             ),
+        ),
+        (
+            "computational_chemistry",
+            ("chemistry", "pharmacophore", "fragment"),
         ),
         ("structural_alignment", ("structural_alignment", "tm_score", "centroid_distance")),
         ("pocket_conservation", ("pocket_conservation", "pocket_sequence_coordinate")),

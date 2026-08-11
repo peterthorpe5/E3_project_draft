@@ -49,6 +49,18 @@ testthat::test_that("grant-facing relation classification is stable", {
   )
 })
 
+testthat::test_that("computational chemistry has a dedicated result section", {
+  relations <- c("group_pharmacophore_summary", "threshold_sensitivity")
+  testthat::expect_equal(
+    infer_result_section("group_pharmacophore_summary"),
+    "computational_chemistry"
+  )
+  testthat::expect_equal(
+    relations_for_result_section(relations, "computational_chemistry"),
+    relations
+  )
+})
+
 testthat::test_that("each result section chooses only available default columns", {
   available <- c(
     "final_rank",

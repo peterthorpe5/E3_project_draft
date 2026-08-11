@@ -79,7 +79,10 @@ STAGE_DEPENDENCIES = {
     ),
     "09_ligandability": ("08_shortlist_gate",),
     "09b_structural_alignment": ("09_ligandability",),
-    "09c_computational_chemistry": ("09_ligandability",),
+    "09c_computational_chemistry": (
+        "09_ligandability",
+        "09b_structural_alignment",
+    ),
     "10_integrated_resource": (
         "03_candidate_evidence",
         "05_orthology",
@@ -635,11 +638,13 @@ def controlled_input_paths(config: WorkflowConfig) -> tuple[tuple[str, Path], ..
             "computational_chemistry_component_config",
             config.analysis.computational_chemistry.component_config,
         )
-        _append_resource(
-            inputs,
-            "computational_chemistry_candidate_manifest",
-            config.analysis.computational_chemistry.candidate_manifest,
-        )
+        if config.analysis.computational_chemistry.candidate_manifest is not None:
+            inputs.append(
+                (
+                    "computational_chemistry_candidate_manifest",
+                    config.analysis.computational_chemistry.candidate_manifest,
+                )
+            )
     if config.stage("08_shortlist_gate").enabled and config.shortlist_manifest.is_file():
         inputs.append(("shortlist", config.shortlist_manifest))
     return tuple(dict(inputs).items())
@@ -1429,13 +1434,22 @@ def load_config(path: Path) -> WorkflowConfig:
             "Enabled stage 09c_computational_chemistry requires "
             "analysis.computational_chemistry.component_config"
         )
+    uses_generated_chemistry_panel = "run-workflow-campaign" in chemistry_stage.command
     if (
         chemistry_stage.enabled
         and analysis_config.computational_chemistry.candidate_manifest is None
+        and not uses_generated_chemistry_panel
     ):
         raise ConfigurationError(
             "Enabled stage 09c_computational_chemistry requires "
-            "analysis.computational_chemistry.candidate_manifest"
+            "analysis.computational_chemistry.candidate_manifest unless its command "
+            "uses run-workflow-campaign."
+        )
+    if chemistry_stage.enabled and mode == "production" and not structural_stage.enabled:
+        raise ConfigurationError(
+            "Enabled stage 09c_computational_chemistry requires stage "
+            "09b_structural_alignment to be enabled so chemistry includes the "
+            "current structural comparison."
         )
     canonical = json.dumps(root, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     default_shortlist = inputs.get("shortlist_manifest", "synthetic_shortlist.tsv")

@@ -59,6 +59,9 @@ def test_identifier_and_capability_classification() -> None:
     assert infer_capability("gate_sensitivity_summary", []) == "final_recommendations"
     assert infer_capability("structural_alignment_summary", []) == "structural_alignment"
     assert infer_capability("pocket_conservation_summary", []) == "pocket_conservation"
+    assert infer_capability("group_pharmacophore_summary", []) == (
+        "computational_chemistry"
+    )
     assert infer_capability("scores", ["fpocket_score"]) == "ligandability"
     assert infer_capability("atlas", ["tpm"]) == "expression"
     assert infer_capability("source_manifest", []) == "provenance"

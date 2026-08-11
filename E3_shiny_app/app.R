@@ -25,11 +25,6 @@ source("R/glossary.R")
 source("R/threshold_explorer.R")
 source("R/candidate_visualisations.R")
 source("R/pocket_review.R")
-source("R/module_expression_filters.R")
-source("R/module_expression_summary.R")
-source("R/module_expression_table.R")
-source("R/module_gene_lookup.R")
-source("R/module_expression_plots.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
@@ -49,30 +44,10 @@ pocket_review_config <- prepare_pocket_review(
 )
 pocket_review_config <- register_pocket_review_resource(pocket_review_config)
 
-ui <- bslib::page_sidebar(
+ui <- bslib::page_navbar(
   title = "ARIA Plant E3 Evidence Reporter",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
-  sidebar = bslib::sidebar(
-    shiny::h4("Data release"),
-    shiny::p(
-      class = "small",
-      paste0(
-        "Mode: ", app_config$resource_source$mode,
-        "\nSource: ", app_config$resource_source$path
-      )
-    ),
-    shiny::hr(),
-    shiny::h4("Raw Expression Atlas filters"),
-    shiny::p(
-      class = "small text-muted",
-      "These apply only to the four raw Expression Atlas tabs. Integrated ",
-      "candidate-expression evidence has its own grant-facing section."
-    ),
-    expression_filters_ui("filters"),
-    width = 380
-  ),
-  shiny::includeCSS("www/app.css"),
-  bslib::navset_card_tab(
+  header = shiny::includeCSS("www/app.css"),
     bslib::nav_panel(
       "Grant overview",
       grant_overview_ui("grant_overview")
@@ -130,6 +105,10 @@ ui <- bslib::page_sidebar(
       result_section_ui("alignment_results", "structural_alignment")
     ),
     bslib::nav_panel(
+      "Computational chemistry",
+      result_section_ui("chemistry_results", "computational_chemistry")
+    ),
+    bslib::nav_panel(
       "All results",
       resource_browser_ui("resource_browser")
     ),
@@ -140,22 +119,6 @@ ui <- bslib::page_sidebar(
     bslib::nav_panel(
       "Files used",
       data_sources_ui("data_sources")
-    ),
-    bslib::nav_panel(
-      "Expression summary",
-      expression_summary_ui("summary")
-    ),
-    bslib::nav_panel(
-      "Expression table",
-      expression_table_ui("table")
-    ),
-    bslib::nav_panel(
-      "Gene lookup",
-      gene_lookup_ui("gene_lookup")
-    ),
-    bslib::nav_panel(
-      "Visualise expression",
-      expression_plot_ui("expression_plot")
     ),
     bslib::nav_panel(
       "About",
@@ -178,7 +141,6 @@ ui <- bslib::page_sidebar(
       shiny::h4("Configured paths"),
       shiny::verbatimTextOutput("configured_paths")
     )
-  )
 )
 
 server <- function(input, output, session) {
@@ -257,6 +219,12 @@ server <- function(input, output, session) {
     app_config$max_table_rows
   )
   result_section_server(
+    "chemistry_results",
+    "computational_chemistry",
+    app_config$resource_source,
+    app_config$max_table_rows
+  )
+  result_section_server(
     "provenance_results",
     "provenance",
     app_config$resource_source,
@@ -270,40 +238,6 @@ server <- function(input, output, session) {
   data_sources_server(
     id = "data_sources",
     resource_derived_dir = app_config$resource_derived_dir
-  )
-
-  # Filters are collected as ordinary scalar values. Summary, table, and gene
-  # lookup modules turn those values into SQL and let DuckDB do the heavy work.
-  filters <- expression_filters_server(
-    id = "filters",
-    duckdb_path = app_config$expression_duckdb_path,
-    default_expression_unit = app_config$default_expression_unit
-  )
-
-  expression_summary_server(
-    id = "summary",
-    duckdb_path = app_config$expression_duckdb_path,
-    filters = filters
-  )
-
-  expression_table_server(
-    id = "table",
-    duckdb_path = app_config$expression_duckdb_path,
-    filters = filters,
-    max_rows = app_config$max_table_rows
-  )
-
-  gene_lookup_server(
-    id = "gene_lookup",
-    duckdb_path = app_config$expression_duckdb_path,
-    max_rows = app_config$max_table_rows
-  )
-
-  expression_plot_server(
-    id = "expression_plot",
-    duckdb_path = app_config$expression_duckdb_path,
-    filters = filters,
-    default_max_rows = min(app_config$max_table_rows, 5000L)
   )
 
   output$configured_paths <- shiny::renderText({

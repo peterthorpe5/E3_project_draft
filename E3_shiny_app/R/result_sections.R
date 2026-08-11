@@ -111,6 +111,25 @@ result_section_specs <- list(
       "structural_alignments"
     )
   ),
+  computational_chemistry = list(
+    title = "Structure-guided computational chemistry",
+    question = paste(
+      "Which structurally usable and evolutionarily supported pockets are",
+      "ready for chemistry review, which gates determine that status, and",
+      "what residue-derived pharmacophore features support each decision?"
+    ),
+    relations = c(
+      "integrated_candidate_evidence",
+      "group_pharmacophore_summary",
+      "chemistry_target_manifest",
+      "threshold_sensitivity",
+      "threshold_sensitivity_one_at_a_time",
+      "ranked_member_pocket_evidence",
+      "pocket_pharmacophore_features",
+      "fragment_pharmacophore_ranking",
+      "fragment_properties"
+    )
+  ),
   provenance = list(
     title = "Provenance and quality control",
     question = paste(
@@ -132,6 +151,9 @@ infer_result_section <- function(relation) {
     }
   }
   text <- tolower(relation)
+  if (grepl("chemistry|pharmacophore|fragment", text)) {
+    return("computational_chemistry")
+  }
   if (grepl("align|tm_score|centroid", text)) {
     return("structural_alignment")
   }
@@ -268,6 +290,17 @@ default_result_columns <- function(section, available) {
       "three_dimensional_alignment_status",
       "mean_structural_residue_match_fraction",
       "mean_structural_chemical_group_conservation"
+    ),
+    computational_chemistry = c(
+      "evolutionary_group_rank", "evolutionary_group_key",
+      "primary_group_type", "primary_group_id", "cluster_id",
+      "candidate_accession", "species_column", "pocket_number",
+      "druggability_score", "mapped_residue_count",
+      "pocket_plddt_fraction", "conserved_component_fraction",
+      "chemical_conservation_fraction", "uniqueness_score",
+      "chemistry_review_tier", "chemistry_handoff_status",
+      "chemistry_handoff_failure_reasons", "feature_type",
+      "feature_count", "fragment_id", "compatibility_score"
     ),
     provenance = c(
       "relation_name", "app_section", "row_granularity", "source_parquet",

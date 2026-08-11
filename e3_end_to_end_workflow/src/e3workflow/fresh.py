@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from e3workflow.config import WorkflowConfig, load_config
 from e3workflow.errors import ConfigurationError
 
@@ -30,7 +32,6 @@ COMMAND_REQUIRED = frozenset(
         "04_orthofinder",
         "05_orthology",
         "07_expression",
-        "09_ligandability",
         "09b_structural_alignment",
     }
 )
@@ -79,6 +80,16 @@ def validate_fresh_config(
     Returns:
         Machine-readable clean-room preflight summary.
     """
+    try:
+        raw_config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfigurationError(
+            f"Fresh configuration is not readable YAML: {config_path}: {exc}"
+        ) from exc
+    if _contains_placeholder(raw_config):
+        raise ConfigurationError(
+            "Fresh complete run contains an unresolved CHANGE_ME marker"
+        )
     config = load_config(config_path)
     if config.mode != "production":
         raise ConfigurationError("Fresh end-to-end execution requires run.mode: production")

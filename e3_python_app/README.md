@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.6.0 is the tested Streamlit companion to `E3_shiny_app` 0.9.0. Both
+Version 0.7.0 is the tested Streamlit companion to `E3_shiny_app` 0.10.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -109,7 +109,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.6.0 quality gate comprises 48 passing tests at 95% branch-aware coverage
+The v0.7.0 quality gate comprises 48 passing tests at 95% branch-aware coverage
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review and headless Streamlit behaviour.
 

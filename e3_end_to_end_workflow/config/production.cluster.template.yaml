@@ -74,9 +74,8 @@ analysis:
     minimum_expression_value: 0.5
     broad_positive_fraction: 0.5
   ligandability:
-    # Set reuse_only when stage 09 uses the internal reusable-evidence adapter. A fresh stage-09
-    # external command must publish the same standard tables declared below.
-    mode: reuse_only
+    mode: generate
+    component_config: ../../e3_ligandability_pipeline/config/config.example.yaml
     mafft_executable: mafft
     minimum_druggability_score: 0.5
     minimum_mapping_fraction: 0.95
@@ -95,11 +94,8 @@ analysis:
     use_for_prioritisation: false
     prioritisation_weight: 0.25
   computational_chemistry:
-    # The optional Stage 09c must remain disabled unless this open-source,
-    # no-commercial-licence
-    # component configuration has been reviewed and installed.
     component_config: ../../e3_structure_guided_chemistry/config/config.example.yaml
-    candidate_manifest: CHANGE_ME_candidate_manifest.tsv
+    candidate_manifest: ""
     conda_environment: e3_structure_guided_chemistry
   prioritisation:
     profile_name: CHANGE_ME_versioned_scoring_profile
@@ -286,14 +282,7 @@ stages:
     enabled: true
     required: true
     evidence_mode: generate
-    command:
-      - "{tool_ligandability_executable}"
-      - --accessions
-      - "{run_root}/08_shortlist_gate/tables/structural_analysis_accessions.tsv"
-      - --output-dir
-      - "{stage_dir}"
-      - --threads
-      - "{tool_ligandability_threads}"
+    command: []
     expected_outputs:
       - tables/selected_pockets.parquet
       - tables/structural_prediction_status.parquet
@@ -361,9 +350,9 @@ stages:
     memory_mb: 120000
     runtime_minutes: 2880
   09c_computational_chemistry:
-    enabled: false
-    required: false
-    evidence_mode: disabled
+    enabled: true
+    required: true
+    evidence_mode: generate
     command:
       - conda
       - run
@@ -371,11 +360,10 @@ stages:
       - --name
       - "{computational_chemistry_conda_environment}"
       - e3-chemistry
+      - run-workflow-campaign
       - run
       - --config
       - "{computational_chemistry_component_config}"
-      - --candidate-manifest
-      - "{computational_chemistry_candidate_manifest}"
       - --group-ranking
       - "{evolutionary_group_ranking}"
       - --selected-pockets
@@ -386,6 +374,10 @@ stages:
       - "{pocket_conservation_summary}"
       - --structure-asset-manifest
       - "{structure_asset_manifest}"
+      - --ranked-pockets
+      - "{ranked_member_pockets}"
+      - --structural-alignment-summary
+      - "{structural_alignment_summary}"
       - --output-dir
       - "{stage_dir}"
     expected_outputs:
@@ -393,6 +385,8 @@ stages:
       - tables/pocket_pharmacophore_features.parquet
       - tables/group_pharmacophore_summary.parquet
       - tables/threshold_sensitivity.parquet
+      - tables/threshold_sensitivity_one_at_a_time.parquet
+      - tables/integrated_candidate_evidence.parquet
       - tables/fragment_properties.parquet
       - tables/fragment_pharmacophore_ranking.parquet
       - qc/computational_chemistry_validation.tsv

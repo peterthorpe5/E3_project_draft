@@ -1407,6 +1407,7 @@ def render_app() -> None:
                     "3D structures & pockets",
                     "Pocket-aligned sequences",
                     "3D alignment",
+                    "Computational chemistry",
                     "Accession search",
                     "All results",
                     "Provenance and QC",
@@ -1460,14 +1461,20 @@ def render_app() -> None:
                     section="structural_alignment",
                 )
             with tabs[14]:
-                _render_search(connection=connection, max_rows=config.max_rows)
+                _render_section(
+                    connection=connection,
+                    config=config,
+                    section="computational_chemistry",
+                )
             with tabs[15]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[16]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[16]:
+            with tabs[17]:
                 _render_section(
                     connection=connection,
                     config=config,

@@ -44,7 +44,10 @@ def test_load_valid_config_and_lookup(synthetic_config: Path) -> None:
         "07_expression",
     }
     assert stage_dependencies("09b_structural_alignment") == ("09_ligandability",)
-    assert stage_dependencies("09c_computational_chemistry") == ("09_ligandability",)
+    assert stage_dependencies("09c_computational_chemistry") == (
+        "09_ligandability",
+        "09b_structural_alignment",
+    )
     assert "09b_structural_alignment" in stage_dependencies("10_integrated_resource")
     assert "09c_computational_chemistry" in stage_dependencies("10_integrated_resource")
     assert config.stage("09b_structural_alignment").enabled is False

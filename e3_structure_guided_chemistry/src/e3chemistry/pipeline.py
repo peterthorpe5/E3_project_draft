@@ -510,10 +510,21 @@ def run_pipeline(
         raise InputValidationError(f"Output directory is a file: {destination}")
     if destination.exists():
         existing_scientific_outputs = [
-            path for path in destination.iterdir() if path.name != "logs"
+            path
+            for path in destination.iterdir()
+            if path.name not in {"logs", "provenance"}
         ]
         if existing_scientific_outputs:
             raise InputValidationError(f"Output directory is not empty: {destination}")
+        provenance = destination / "provenance"
+        if provenance.exists():
+            unexpected_provenance = [
+                path for path in provenance.iterdir() if path.name != "candidate_panel"
+            ]
+            if unexpected_provenance:
+                raise InputValidationError(
+                    f"Output provenance directory is not empty: {provenance}"
+                )
     destination.mkdir(parents=True, exist_ok=True)
     inputs = {
         "config": config.source_path,

@@ -660,6 +660,19 @@ def execute_stage(config: WorkflowConfig, stage_name: str, verbose: bool = False
                     / "tables"
                     / "pocket_conservation_summary.parquet"
                 ),
+                "ranked_member_pockets": str(
+                    run_root
+                    / "09_ligandability"
+                    / "tables"
+                    / "ranked_member_pockets.parquet"
+                ),
+                "structural_alignment_summary": str(
+                    run_root
+                    / "09b_structural_alignment"
+                    / "structural_alignment"
+                    / "tables"
+                    / "structural_alignment_summary.parquet"
+                ),
                 "usalign_executable": (
                     config.analysis.structural_alignment.usalign_executable
                 ),

@@ -18,7 +18,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 21
+    assert len(app.tabs) == 22
     assert app.tabs[1].label == "Glossary"
     assert app.tabs[2].label == "Computational recommendations"
     assert app.tabs[3].label == "Threshold explorer"
@@ -30,6 +30,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Expression heatmap" in tab_labels
     assert "Species & tissue expression" in tab_labels
     assert "Volcano eligibility" in tab_labels
+    assert "Computational chemistry" in tab_labels
     assert len(app.multiselect) >= 8
     assert any("Columns to display" in item.label for item in app.multiselect)
     metric_labels = [metric.label for metric in app.metric]
@@ -62,7 +63,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 21
+    assert len(app.tabs) == 22
 
 
 def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: Path) -> None:
