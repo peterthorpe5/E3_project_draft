@@ -1,42 +1,30 @@
-# Copy to an immutable run-specific file and replace each CHANGE_ME path.
-# This profile deliberately reuses reviewed authorities while rebuilding all downstream joins,
-# rankings, conserved-pocket calculations, reports and application resources.
-schema_version: 2
+# Corrected-expression comparison run using Expression Atlas v0.5.1.
+# Reuse only validated Stages 02-06, recompute Stages 07-08 with the
+# v0.13.0 median-expression contract, and stop after Stage 08 before
+# deciding which structural candidates require regeneration.
+schema_version: 1
 run:
-  name: grant_aligned_full_reuse_v0_1_0_20260722
+  name: grant_aligned_corrected_expression_top200_v0_13_0_20260804
   mode: production
-  project_root: /home/pthorpe001/data/2026_E3_protac/E3_project_draft
-  output_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_end_to_end_runs
+  project_root: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft
+  output_root: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs
+  parent_run_root: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs/grant_aligned_reuse_q9sa03_only_v0_7_3_20260724
+
 inputs:
-  # These three schema-required paths are not consumed when their fresh branches are disabled.
-  proteomes_manifest: /CHANGE_ME/not_used_by_reuse_profile/proteomes.tsv
-  seeds_manifest: /CHANGE_ME/not_used_by_reuse_profile/seeds.tsv
+  proteomes_manifest: /CHANGE_ME/not_used_by_parent_reuse/proteomes.tsv
+  seeds_manifest: /CHANGE_ME/not_used_by_parent_reuse/seeds.tsv
   shortlist_manifest: /CHANGE_ME/not_used_by_computational_gate/shortlist.tsv
-  candidate_evidence: /home/pthorpe001/data/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/candidate_evidence/e3_cluster_candidate_evidence.parquet
-  candidate_evidence_manifest: /home/pthorpe001/data/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/provenance/e3_cluster_candidate_evidence_manifest.json
-  orthofinder_archive: /home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/OrthoFinder/Results_Feb26.tar.gz
-  orthology_species_manifest: /home/pthorpe001/data/2026_E3_protac/E3_project_draft/e3_orthology_integration/config/species_manifest_results_feb26.tsv
-  inherited_sqlite: /home/pthorpe001/data/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/E3_database/e3_ligase_sqlite_db.db
-  expression_manifest: /home/pthorpe001/data/2026_E3_protac/analysis/expression_atlas_ftp_full/manifests/e3_workflow_expression_resources.tsv
-  ligandability_manifest: /CHANGE_ME/e3_workflow_ligandability_resources.tsv
+  candidate_evidence: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/candidate_evidence/e3_cluster_candidate_evidence.parquet
+  candidate_evidence_manifest: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_PROTAC_curated/derived_v0_4_0/provenance/e3_cluster_candidate_evidence_manifest.json
+  orthofinder_archive: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/OrthoFinder/Results_Feb26.tar.gz
+  orthology_species_manifest: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft/e3_orthology_integration/config/species_manifest_results_feb26.tsv
+  inherited_sqlite: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/SSD_back_up_July_2026/Erin_Butterfield_data/Main_folder/E3_database/e3_ligase_sqlite_db.db
+  expression_manifest: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/expression_atlas_rebuild_v0_5_1_20260804/manifests/e3_workflow_expression_resources.tsv
+  ligandability_manifest: ""
   domain_annotation_manifest: ""
-  domain_cache_root: /home/pthorpe001/data/2026_E3_protac/analysis/e3_resource_cache/interpro
+  domain_cache_root: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_resource_cache/interpro
   e3_domain_catalogue: ../data/e3_domain_catalogue.tsv
-tools:
-  orthology:
-    executable: python
-    expected_version: 0.1.4
-    conda_environment: e3_orthology
-    parameters:
-      module: e3orthology
-      expected_species_count: 60
-      threads: 8
-  structural_alignment:
-    executable: bash
-    expected_version: 0.2.0
-    conda_environment: e3_structural_alignment
-    parameters:
-      threads: 16
+
 analysis:
   domains:
     mode: interpro_api_cache
@@ -50,13 +38,23 @@ analysis:
     minimum_expression_value: 0.5
     broad_positive_fraction: 0.5
   ligandability:
-    mode: reuse_only
+    mode: generate
+    component_config: ../../e3_ligandability_pipeline/config/structural_completion.cluster.yaml
+    conda_environment: e3_ligandability
+    shard_threads: 4
+    shard_memory_mb: 16000
+    shard_runtime_minutes: 480
     mafft_executable: mafft
     minimum_druggability_score: 0.5
     minimum_mapping_fraction: 0.95
     minimum_pocket_plddt_fraction: 0.7
     minimum_region_overlap: 0.25
   structural_alignment:
+    conda_environment: e3_structural_alignment
+    shard_threads: 4
+    shard_memory_mb: 16000
+    shard_runtime_minutes: 480
+    member_pocket_top_k: 5
     usalign_executable: USalign
     tmalign_executable: TMalign
     distance_threshold_angstrom: 4.0
@@ -66,11 +64,13 @@ analysis:
     minimum_structural_residue_match_fraction: 0.5
     minimum_structural_chemical_group_conservation: 0.6
     minimum_group_support_fraction: 0.75
-    # Leave false until a reviewed multi-structure run validates the 3D thresholds.
+    # Preserve the reviewed pre-structure ordering. The 3D evidence is reported
+    # separately and acts only as an explicit eligibility/support gate.
     use_for_prioritisation: false
+    require_for_final_recommendation: true
     prioritisation_weight: 0.25
   prioritisation:
-    profile_name: grant_aligned_stringent_v1
+    profile_name: grant_aligned_corrected_expression_v1
     target_species:
       - Arabidopsis_thaliana
       - Brachypodium_distachyon
@@ -94,8 +94,8 @@ analysis:
     minimum_target_species_fraction: 0.9
     minimum_expression_species_fraction: 0.8
     minimum_domain_species_fraction: 0.8
-    structure_group_limit: 50
-    final_candidate_limit: 10
+    structure_group_limit: 200
+    final_candidate_limit: 50
     discovery_weight: 0.10
     orthology_weight: 0.35
     domain_weight: 0.20
@@ -105,13 +105,15 @@ analysis:
     prestructure_final_weight: 0.60
     structural_final_weight: 0.40
     minimum_structural_species_fraction: 0.75
+
 benchmarking:
   sample_interval_seconds: 5.0
   collect_slurm_accounting: true
 reporting:
-  preview_rows: 15
-  max_table_columns: 16
+  preview_rows: 20
+  max_table_columns: 18
   max_chart_items: 25
+
 stages:
   00_inputs:
     enabled: true
@@ -132,7 +134,7 @@ stages:
   02_discovery:
     enabled: true
     required: true
-    evidence_mode: reuse
+    evidence_mode: parent_reuse
     expected_outputs: [discovery_authority.tsv]
     threads: 1
     memory_mb: 8000
@@ -140,17 +142,17 @@ stages:
   03_candidate_evidence:
     enabled: true
     required: true
-    evidence_mode: reuse
+    evidence_mode: parent_reuse
     expected_outputs:
       - candidate_evidence/e3_cluster_candidate_evidence.parquet
       - candidate_evidence_summary.tsv
-    threads: 2
-    memory_mb: 16000
-    runtime_minutes: 120
+    threads: 1
+    memory_mb: 8000
+    runtime_minutes: 60
   04_orthofinder:
     enabled: true
     required: true
-    evidence_mode: reuse
+    evidence_mode: parent_reuse
     expected_outputs:
       - orthofinder_authority.tsv
       - orthofinder_reuse_validation.tsv
@@ -160,42 +162,12 @@ stages:
       - Results/Phylogenetic_Hierarchical_Orthogroups/N0.tsv
       - Results/Species_Tree/SpeciesTree_rooted_node_labels.txt
     threads: 2
-    memory_mb: 32000
-    runtime_minutes: 720
+    memory_mb: 16000
+    runtime_minutes: 240
   05_orthology:
     enabled: true
     required: true
-    evidence_mode: derive
-    command:
-      - conda
-      - run
-      - --no-capture-output
-      - --name
-      - "{tool_orthology_conda_environment}"
-      - "{tool_orthology_executable}"
-      - -m
-      - "{tool_orthology_module}"
-      - --project-root
-      - "{project_root}"
-      - --orthofinder-results-dir
-      - "{run_root}/04_orthofinder/Results"
-      - --results-directory-name
-      - Results
-      - --candidate-evidence
-      - "{run_root}/03_candidate_evidence/candidate_evidence/e3_cluster_candidate_evidence.parquet"
-      - --sqlite-database
-      - "{inherited_sqlite}"
-      - --species-manifest
-      - "{orthology_species_manifest}"
-      - --output-root
-      - "{stage_dir}"
-      - --run-name
-      - orthology
-      - --expected-species-count
-      - "{tool_orthology_expected_species_count}"
-      - --threads
-      - "{tool_orthology_threads}"
-      - --resume
+    evidence_mode: parent_reuse
     expected_outputs:
       - orthology/tables/candidate_membership_mapping.parquet
       - orthology/tables/candidate_group_member_sequences.parquet
@@ -203,21 +175,21 @@ stages:
       - orthology/tables/hierarchical_membership.parquet
       - orthology/tables/candidate_cluster_orthology_summary.parquet
       - orthology/qc/validation_checks.tsv
-    threads: 8
-    memory_mb: 64000
-    runtime_minutes: 720
+    threads: 2
+    memory_mb: 16000
+    runtime_minutes: 240
   06_domains:
     enabled: true
     required: true
-    evidence_mode: download
+    evidence_mode: parent_reuse
     expected_outputs:
       - tables/domain_hits.parquet
       - tables/domain_summary.parquet
       - raw/interpro_cache_inventory.tsv
       - qc/domain_validation.tsv
-    threads: 16
-    memory_mb: 32000
-    runtime_minutes: 1440
+    threads: 2
+    memory_mb: 16000
+    runtime_minutes: 240
   07_expression:
     enabled: true
     required: true
@@ -228,8 +200,8 @@ stages:
       - tables/candidate_expression_summary.parquet
       - tables/candidate_expression_context_summary.parquet
       - qc/expression_validation.tsv
-    threads: 16
-    memory_mb: 64000
+    threads: 8
+    memory_mb: 256000
     runtime_minutes: 1440
   08_shortlist_gate:
     enabled: true
@@ -237,83 +209,61 @@ stages:
     evidence_mode: derive
     expected_outputs:
       - tables/computational_prestructure_ranking.parquet
-      - tables/structural_analysis_accessions.parquet
+      - tables/structural_analysis_accessions_all_members.parquet
       - tables/human_review_template.tsv
       - qc/prioritisation_validation.tsv
+      - tables/evolutionary_candidate_group_ranking.tsv
+      - tables/evolutionary_candidate_group_ranking.parquet
+      - tables/evolutionary_group_cluster_contributors.tsv
+      - tables/evolutionary_group_cluster_contributors.parquet
+      - tables/structural_analysis_accessions.tsv
+      - tables/structural_analysis_accessions.parquet
+      - tables/structural_representative_selection_audit.tsv
+      - tables/structural_representative_selection_audit.parquet
+      - tables/ligandability_accessions.tsv
     threads: 8
     memory_mb: 64000
     runtime_minutes: 720
   09_ligandability:
     enabled: true
     required: true
-    evidence_mode: reuse
+    evidence_mode: generate
     expected_outputs:
+      - generated_ligandability/provenance/resource_manifest.tsv
+      - generated_ligandability/qc/distributed_ligandability_summary.tsv
+      - tables/reused_asset_manifest.parquet
+      - tables/reused_pocket_residue_mappings.parquet
       - tables/selected_pockets.parquet
+      - tables/ranked_member_pockets.parquet
       - tables/structural_prediction_status.parquet
       - tables/pocket_conservation_summary.parquet
       - tables/pocket_conservation_members.parquet
       - tables/pocket_sequence_coordinates.parquet
+      - tables/ranked_pocket_sequence_coordinates.parquet
       - qc/ligandability_validation.tsv
-    threads: 32
-    memory_mb: 160000
-    runtime_minutes: 2880
+    threads: 8
+    memory_mb: 32000
+    runtime_minutes: 720
   09b_structural_alignment:
-    # Optional by design. Set enabled/required to true only when at least two compatible models
-    # per candidate group are available. A disabled stage publishes a valid skipped manifest.
-    enabled: false
-    required: false
-    evidence_mode: disabled
-    command:
-      - conda
-      - run
-      - --no-capture-output
-      - --name
-      - "{tool_structural_alignment_conda_environment}"
-      - "{tool_structural_alignment_executable}"
-      - "{project_root}/e3_structural_alignment/run_e3_structural_alignment.sh"
-      - --selected-pockets
-      - "{selected_pockets}"
-      - --pocket-residue-mappings
-      - "{pocket_residue_mappings}"
-      - --pocket-sequence-coordinates
-      - "{pocket_sequence_coordinates}"
-      - --asset-manifest
-      - "{structure_asset_manifest}"
-      - --output-dir
-      - "{stage_dir}/structural_alignment"
-      - --usalign-executable
-      - "{usalign_executable}"
-      - --tmalign-executable
-      - "{tmalign_executable}"
-      - --threads
-      - "{tool_structural_alignment_threads}"
-      - --distance-threshold-angstrom
-      - "{structural_distance_threshold_angstrom}"
-      - --maximum-centroid-distance-angstrom
-      - "{structural_maximum_centroid_distance_angstrom}"
-      - --minimum-pocket-overlap-fraction
-      - "{structural_minimum_pocket_overlap_fraction}"
-      - --minimum-global-tm-score
-      - "{structural_minimum_global_tm_score}"
-      - --minimum-structural-residue-match-fraction
-      - "{structural_minimum_residue_match_fraction}"
-      - --minimum-structural-chemical-group-conservation
-      - "{structural_minimum_chemical_group_conservation}"
-      - --minimum-group-support-fraction
-      - "{structural_minimum_group_support_fraction}"
-      - --resume
+    enabled: true
+    required: true
+    evidence_mode: generate
     expected_outputs:
       - structural_alignment/tables/structural_alignments.parquet
       - structural_alignment/tables/pocket_comparisons.parquet
       - structural_alignment/tables/pocket_residue_matches.parquet
       - structural_alignment/tables/structural_alignment_summary.parquet
+      - structural_alignment/tables/structural_pocket_sensitivity_comparisons.parquet
+      - structural_alignment/tables/structural_pocket_sensitivity_residue_matches.parquet
+      - structural_alignment/tables/structural_pocket_sensitivity_member_summary.parquet
+      - structural_alignment/tables/structural_pocket_sensitivity_group_summary.parquet
       - structural_alignment/qc/structural_alignment_validation.tsv
       - structural_alignment/reports/structural_alignment_summary.html
       - structural_alignment/interactive/structural_alignment_browser.html
       - structural_alignment/provenance/run_manifest.json
-    threads: 16
-    memory_mb: 64000
-    runtime_minutes: 1440
+    threads: 8
+    memory_mb: 32000
+    runtime_minutes: 720
   10_integrated_resource:
     enabled: true
     required: true
@@ -324,6 +274,28 @@ stages:
       - tables/final_candidate_prioritisation.parquet
       - tables/e3_candidate_master_results.parquet
       - reports/final_computational_prioritisation.html
+      - final_results/final_candidate_recommendations.xlsx
+      - final_results/final_computational_prioritisation.html
+      - final_results/final_evolutionary_candidate_prioritisation.tsv
+      - final_results/final_evolutionary_candidate_prioritisation.parquet
+      - final_results/top_20_computational_review_shortlist.tsv
+      - final_results/top_20_computational_review_shortlist.parquet
+      - final_results/top_computational_review_shortlist.tsv
+      - final_results/top_computational_review_shortlist.parquet
+      - final_results/top_50_computational_review_shortlist.tsv
+      - final_results/top_50_computational_review_shortlist.parquet
+      - final_results/grant_aligned_predicted_candidates.tsv
+      - final_results/grant_aligned_predicted_candidates.parquet
+      - final_results/final_evolutionary_group_cluster_contributors.tsv
+      - final_results/final_evolutionary_group_cluster_contributors.parquet
+      - final_results/final_candidate_exclusion_audit.tsv
+      - final_results/final_candidate_exclusion_audit.parquet
+      - final_results/gate_sensitivity_detail.tsv
+      - final_results/gate_sensitivity_detail.parquet
+      - final_results/gate_sensitivity_summary.tsv
+      - final_results/gate_sensitivity_summary.parquet
+      - final_results/README.txt
+      - final_results/final_results_manifest.json
       - provenance/integrated_resource_manifest.json
       - qc/integrated_resource_validation.tsv
     threads: 16
