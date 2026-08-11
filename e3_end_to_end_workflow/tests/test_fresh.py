@@ -26,6 +26,7 @@ def _fresh_config(package_root: Path, tmp_path: Path) -> Path:
     for tool in data["tools"].values():
         if tool.get("expected_version") == "CHANGE_ME_REVIEWED_VERSION":
             tool["expected_version"] = "1.0.0"
+
     def replace_markers(value: object) -> object:
         if isinstance(value, str):
             return value.replace("CHANGE_ME", "fixture")
