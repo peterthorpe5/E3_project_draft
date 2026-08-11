@@ -129,7 +129,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.14.0" in result.stderr
+    assert "source package is 0.14.1" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -161,6 +161,7 @@ def test_slurm_controller_launcher_contract(package_root: Path) -> None:
     assert "controller.slurm.tsv" in launcher
     assert "controller_submission.lock" in launcher
     assert "--controller-runtime" in launcher
+    assert "--controller-qos" in launcher
     assert "--controller-memory-mb" in launcher
     assert "--status" in launcher
     assert "squeue" in launcher
@@ -190,7 +191,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.14.0\\n'
+        printf 'e3-workflow 0.14.1\\n'
         ;;
     diagnose-install|diagnose-slurm-executor|validate)
         exit 0
@@ -373,6 +374,8 @@ esac
             "6000",
             "--controller-runtime",
             "2-00:00:00",
+            "--controller-qos",
+            "4week",
             "--max-jobs",
             "7",
             "--resume",
@@ -393,6 +396,8 @@ esac
     assert arguments[arguments.index("--mem") + 1] == "6000M"
     assert "--time" in arguments
     assert arguments[arguments.index("--time") + 1] == "2-00:00:00"
+    assert "--qos" in arguments
+    assert arguments[arguments.index("--qos") + 1] == "4week"
     assert "--source-root" in arguments
     assert arguments[arguments.index("--source-root") + 1] == str(package_root)
     assert "--max-jobs" in arguments
@@ -403,6 +408,8 @@ esac
     rows = metadata.read_text(encoding="utf-8").splitlines()
     assert rows[0].startswith("job_id\tsubmitted_at_utc")
     assert rows[1].startswith("98765\t")
+    assert rows[0].endswith("controller_qos")
+    assert rows[1].endswith("4week")
 
     unavailable_accounting_environment = environment.copy()
     unavailable_accounting_environment["FAKE_SACCT_MODE"] = "failed"
@@ -649,7 +656,7 @@ def test_slurm_spool_copy_uses_explicit_source_root(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.14.0\\n'
+        printf 'e3-workflow 0.14.1\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -770,7 +777,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.14.0\\n'
+        printf 'e3-workflow 0.14.1\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

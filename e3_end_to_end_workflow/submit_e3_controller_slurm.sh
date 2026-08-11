@@ -11,6 +11,7 @@ CONTROLLER_ACCOUNT=""
 CONTROLLER_PARTITION=""
 CONTROLLER_MEMORY_MB="4000"
 CONTROLLER_RUNTIME="3-00:00:00"
+CONTROLLER_QOS=""
 CONDA_ENVIRONMENT="e3_end_to_end_workflow"
 CONDA_EXECUTABLE="${CONDA_EXE:-}"
 CHILD_ACCOUNT="barton"
@@ -53,6 +54,7 @@ Controller allocation:
   --controller-partition NAME   Slurm partition (default: value of --partition).
   --controller-memory-mb INT    Controller memory in MiB (default: 4000).
   --controller-runtime TIME     Controller walltime (default: 3-00:00:00).
+  --controller-qos NAME         Optional controller-only Slurm quality of service.
   --conda-environment NAME      Conda environment (default: active environment or
                                 e3_end_to_end_workflow).
   --conda-executable PATH       Conda executable (default: CONDA_EXE or PATH).
@@ -181,6 +183,11 @@ while (($#)); do
             CONTROLLER_RUNTIME="$2"
             shift 2
             ;;
+        --controller-qos)
+            require_option_value "$1" "${2-}"
+            CONTROLLER_QOS="$2"
+            shift 2
+            ;;
         --conda-environment)
             require_option_value "$1" "${2-}"
             CONDA_ENVIRONMENT="$2"
@@ -276,6 +283,9 @@ CONTROLLER_ACCOUNT="${CONTROLLER_ACCOUNT:-${CHILD_ACCOUNT}}"
 CONTROLLER_PARTITION="${CONTROLLER_PARTITION:-${CHILD_PARTITION}}"
 validate_scheduler_name "--controller-account" "${CONTROLLER_ACCOUNT}"
 validate_scheduler_name "--controller-partition" "${CONTROLLER_PARTITION}"
+if [[ -n "${CONTROLLER_QOS}" ]]; then
+    validate_scheduler_name "--controller-qos" "${CONTROLLER_QOS}"
+fi
 
 for command_name in flock; do
     command -v "${command_name}" >/dev/null || {
@@ -514,12 +524,17 @@ fi
 SAFE_RUN_NAME="${RUN_NAME//[^A-Za-z0-9_-]/_}"
 SAFE_RUN_NAME="${SAFE_RUN_NAME:0:80}"
 SLURM_LOG="${LOG_DIRECTORY}/controller_slurm_%j.log"
+CONTROLLER_QOS_ARGS=()
+if [[ -n "${CONTROLLER_QOS}" ]]; then
+    CONTROLLER_QOS_ARGS=(--qos "${CONTROLLER_QOS}")
+fi
 SBATCH_COMMAND=(
     sbatch
     --parsable
     --job-name "e3ctl_${SAFE_RUN_NAME}"
     --account "${CONTROLLER_ACCOUNT}"
     --partition "${CONTROLLER_PARTITION}"
+    "${CONTROLLER_QOS_ARGS[@]}"
     --cpus-per-task 1
     --mem "${CONTROLLER_MEMORY_MB}M"
     --time "${CONTROLLER_RUNTIME}"
@@ -553,8 +568,8 @@ SUBMITTED_JOB_ID="${JOB_ID}"
 METADATA_TEMP="${METADATA_FILE}.partial.$$"
 {
     printf 'job_id\tsubmitted_at_utc\trun_name\tconfiguration\tcontroller_log\t'
-    printf 'conda_environment\tcontroller_account\tcontroller_partition\n'
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    printf 'conda_environment\tcontroller_account\tcontroller_partition\tcontroller_qos\n'
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "${JOB_ID}" \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
         "${RUN_NAME}" \
@@ -562,7 +577,8 @@ METADATA_TEMP="${METADATA_FILE}.partial.$$"
         "${SLURM_LOG//%j/${JOB_ID}}" \
         "${CONDA_ENVIRONMENT}" \
         "${CONTROLLER_ACCOUNT}" \
-        "${CONTROLLER_PARTITION}"
+        "${CONTROLLER_PARTITION}" \
+        "${CONTROLLER_QOS}"
 } >"${METADATA_TEMP}"
 mv -- "${METADATA_TEMP}" "${METADATA_FILE}"
 
