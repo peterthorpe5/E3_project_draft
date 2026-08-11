@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,23 @@ import yaml
 
 from e3workflow.config import load_config
 from e3workflow.control import initialise_stage_tokens
+
+
+def test_scatter_task_wildcards_accept_five_digit_indices(
+    package_root: Path,
+) -> None:
+    """Scatter rules must resolve task indices above the four-digit boundary."""
+    snakefile = (package_root / "workflow" / "Snakefile").read_text(
+        encoding="utf-8"
+    )
+    patterns = re.findall(r'task="([^"]+)"', snakefile)
+
+    assert len(patterns) == 2
+    for pattern in patterns:
+        assert re.fullmatch(pattern, "0000") is not None
+        assert re.fullmatch(pattern, "9999") is not None
+        assert re.fullmatch(pattern, "10000") is not None
+        assert re.fullmatch(pattern, "23663") is not None
 
 
 def test_structural_completion_snakefile_builds_full_scatter_dag(

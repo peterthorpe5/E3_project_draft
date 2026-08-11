@@ -170,7 +170,7 @@ if DISTRIBUTED_LIGANDABILITY:
         conda:
             "../environment.yml"
         wildcard_constraints:
-            task="\\d{4}"
+            task="[0-9]+"
         shell:
             """
             set -o pipefail
@@ -246,7 +246,7 @@ if DISTRIBUTED_STRUCTURAL_ALIGNMENT:
         conda:
             "../environment.yml"
         wildcard_constraints:
-            task="\\d{4}"
+            task="[0-9]+"
         shell:
             """
             set -o pipefail
