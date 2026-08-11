@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate and run the staged Dundee full-universe structural/chemistry campaign.
+# Orchestrate the staged Dundee full-universe structural/chemistry campaign.
 
 set -Eeuo pipefail
 
@@ -36,9 +36,9 @@ usage() {
     printf '%s\n' \
         "Usage: run_dundee_full_universe_v0_3_0.sh [options]" \
         "" \
-        "One restart-safe command for the 1,972-group upstream structural campaign" \
-        "and the subsequent v0.3.1 chemistry assessment. Re-run the same command" \
-        "after the controller finishes; completed work is never resubmitted." \
+        "Lightweight, restart-safe login-node orchestration for the 1,972-group" \
+        "structural campaign and subsequent v0.3.1 chemistry assessment." \
+        "Package installation and testing must first pass in the Slurm validation job." \
         "" \
         "Optional overrides:" \
         "  --runs-root PATH              Workflow output root." \
@@ -118,6 +118,12 @@ while (($#)); do
     esac
 done
 
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    printf 'ERROR: run this lightweight orchestration shell from a login node, not Slurm job %s.\n' \
+        "${SLURM_JOB_ID}" >&2
+    exit 2
+fi
+
 FULL_RUN_ROOT="${RUNS_ROOT}/${FULL_RUN_NAME}"
 for integer_setting in STRUCTURE_GROUP_LIMIT MAX_JOBS CHEMISTRY_CPUS; do
     value="${!integer_setting}"
@@ -182,80 +188,19 @@ printf 'Checking tracked workflow and chemistry source.\n'
 assert_clean_package "e3_end_to_end_workflow"
 assert_clean_package "e3_structure_guided_chemistry"
 SOURCE_COMMIT="$(git -C "${REPOSITORY_ROOT}" rev-parse HEAD)"
-
-printf 'Refreshing editable package installations.\n'
-conda run \
-    --no-capture-output \
-    --name "${WORKFLOW_ENVIRONMENT}" \
-    python -m pip install --no-deps --editable "${WORKFLOW_ROOT}"
-conda run \
-    --no-capture-output \
-    --name "${CHEMISTRY_ENVIRONMENT}" \
-    python -m pip install --no-deps --editable "${CHEMISTRY_ROOT}"
-
-WORKFLOW_VERSION="$(
-    conda run \
-        --no-capture-output \
-        --name "${WORKFLOW_ENVIRONMENT}" \
-        e3-workflow --version
-)"
-WORKFLOW_VERSION="${WORKFLOW_VERSION##* }"
-CHEMISTRY_VERSION="$(
-    conda run \
-        --no-capture-output \
-        --name "${CHEMISTRY_ENVIRONMENT}" \
-        e3-chemistry --version
-)"
-if [[ "${WORKFLOW_VERSION}" != "${EXPECTED_WORKFLOW_VERSION}" ]]; then
-    printf 'ERROR: expected workflow package %s but observed %s.\n' \
-        "${EXPECTED_WORKFLOW_VERSION}" "${WORKFLOW_VERSION}" >&2
-    exit 2
-fi
-if [[ "${CHEMISTRY_VERSION}" != "${EXPECTED_CHEMISTRY_VERSION}" ]]; then
-    printf 'ERROR: expected chemistry package %s but observed %s.\n' \
-        "${EXPECTED_CHEMISTRY_VERSION}" "${CHEMISTRY_VERSION}" >&2
-    exit 2
-fi
-
 VALIDATION_DIR="${RUNS_ROOT}/software_validation"
-validate_package() {
-    local label="$1"
-    local version="$2"
-    local environment_name="$3"
-    local package_root="$4"
-    local receipt="${VALIDATION_DIR}/${label}_${version}_${SOURCE_COMMIT}.passed.tsv"
-    local partial
-    if [[ -s "${receipt}" ]]; then
-        printf 'Validation already passed for %s at Git commit %s.\n' \
-            "${label}" "${SOURCE_COMMIT}"
-        return 0
-    fi
-    printf 'Running complete validation for %s at Git commit %s.\n' \
-        "${label}" "${SOURCE_COMMIT}"
-    conda run \
-        --no-capture-output \
-        --name "${environment_name}" \
-        bash "${package_root}/run_tests.sh"
-    mkdir -p -- "${VALIDATION_DIR}"
-    partial="${receipt}.partial"
-    printf 'package\tpackage_version\tgit_commit\tvalidated_at_utc\n%s\t%s\t%s\t%s\n' \
-        "${label}" \
-        "${version}" \
-        "${SOURCE_COMMIT}" \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"${partial}"
-    mv -- "${partial}" "${receipt}"
-}
-
-validate_package \
-    "e3_end_to_end_workflow" \
-    "${EXPECTED_WORKFLOW_VERSION}" \
-    "${WORKFLOW_ENVIRONMENT}" \
-    "${WORKFLOW_ROOT}"
-validate_package \
-    "e3_structure_guided_chemistry" \
-    "${EXPECTED_CHEMISTRY_VERSION}" \
-    "${CHEMISTRY_ENVIRONMENT}" \
-    "${CHEMISTRY_ROOT}"
+WORKFLOW_RECEIPT="${VALIDATION_DIR}/e3_end_to_end_workflow_${EXPECTED_WORKFLOW_VERSION}_${SOURCE_COMMIT}.passed.tsv"
+CHEMISTRY_RECEIPT="${VALIDATION_DIR}/e3_structure_guided_chemistry_${EXPECTED_CHEMISTRY_VERSION}_${SOURCE_COMMIT}.passed.tsv"
+if [[ ! -s "${WORKFLOW_RECEIPT}" || ! -s "${CHEMISTRY_RECEIPT}" ]]; then
+    printf 'ERROR: compute-node validation has not passed for Git commit %s.\n' \
+        "${SOURCE_COMMIT}" >&2
+    printf 'Submit it from this repository checkout with:\n\n' >&2
+    printf '  sbatch %q\n\n' \
+        "${SCRIPT_DIR}/validate_dundee_full_universe_v0_3_1.slurm.sh" >&2
+    printf 'After that job completes successfully, rerun this orchestration shell on the login node.\n' >&2
+    exit 2
+fi
+printf 'Compute-node validation receipts match Git commit %s.\n' "${SOURCE_COMMIT}"
 
 printf 'Generating or verifying the immutable 1,972-group workflow configuration.\n'
 conda run \
