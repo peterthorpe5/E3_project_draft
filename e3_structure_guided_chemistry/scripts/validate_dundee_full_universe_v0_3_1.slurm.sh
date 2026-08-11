@@ -6,14 +6,20 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --output=e3_m2_validation.%j.log
+#SBATCH --chdir=/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft
 
 # Install and validate the Milestone 2 packages on a Dundee compute node.
 
 set -Eeuo pipefail
 
+readonly EXPECTED_REPOSITORY_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft"
+cd -- "${EXPECTED_REPOSITORY_ROOT}"
+
+
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly CHEMISTRY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-readonly REPOSITORY_ROOT="$(cd -- "${CHEMISTRY_ROOT}/.." && pwd -P)"
+readonly REPOSITORY_ROOT="${EXPECTED_REPOSITORY_ROOT}"
+
 readonly WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"
 readonly EXPECTED_CHEMISTRY_VERSION="0.3.1"
 readonly EXPECTED_WORKFLOW_VERSION="0.15.0"
