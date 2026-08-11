@@ -20,6 +20,7 @@ bash -n \
     scripts/prepare_expanded_candidate_manifest.sh \
     scripts/run_dundee_expanded_top200_v0_2_1.sh \
     scripts/run_dundee_full_universe_v0_3_0.sh \
+    scripts/validate_dundee_full_universe_v0_3_1.slurm.sh \
     scripts/submit_e3_structure_guided_chemistry_slurm.sh \
     scripts/slurm_e3_structure_guided_chemistry_job.sh
 

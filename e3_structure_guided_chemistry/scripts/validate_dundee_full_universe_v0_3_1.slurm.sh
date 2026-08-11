@@ -12,18 +12,10 @@
 
 set -Eeuo pipefail
 
-readonly EXPECTED_REPOSITORY_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft"
-cd -- "${EXPECTED_REPOSITORY_ROOT}"
-
-
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly CHEMISTRY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
-readonly REPOSITORY_ROOT="${EXPECTED_REPOSITORY_ROOT}"
-
-readonly WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"
 readonly EXPECTED_CHEMISTRY_VERSION="0.3.1"
 readonly EXPECTED_WORKFLOW_VERSION="0.15.0"
 
+REPOSITORY_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft"
 RUNS_ROOT="/gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs"
 WORKFLOW_ENVIRONMENT="e3_end_to_end_workflow"
 CHEMISTRY_ENVIRONMENT="e3_structure_guided_chemistry"
@@ -36,6 +28,7 @@ usage() {
         "Successful validation is recorded against the exact Git commit." \
         "" \
         "Options:" \
+        "  --repository-root PATH        E3_project_draft Git checkout." \
         "  --runs-root PATH              Workflow output root." \
         "  --workflow-environment NAME   End-to-end Conda environment." \
         "  --chemistry-environment NAME  Chemistry Conda environment." \
@@ -53,9 +46,10 @@ require_value() {
 
 while (($#)); do
     case "$1" in
-        --runs-root|--workflow-environment|--chemistry-environment)
+        --repository-root|--runs-root|--workflow-environment|--chemistry-environment)
             require_value "$1" "${2:-}"
             case "$1" in
+                --repository-root) REPOSITORY_ROOT="$2" ;;
                 --runs-root) RUNS_ROOT="$2" ;;
                 --workflow-environment) WORKFLOW_ENVIRONMENT="$2" ;;
                 --chemistry-environment) CHEMISTRY_ENVIRONMENT="$2" ;;
@@ -72,6 +66,24 @@ while (($#)); do
             exit 2
             ;;
     esac
+done
+
+if [[ ! -d "${REPOSITORY_ROOT}" ]]; then
+    printf 'ERROR: repository root is unavailable: %s\n' \
+        "${REPOSITORY_ROOT}" >&2
+    exit 2
+fi
+REPOSITORY_ROOT="$(cd -- "${REPOSITORY_ROOT}" && pwd -P)"
+readonly REPOSITORY_ROOT
+readonly WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"
+readonly CHEMISTRY_ROOT="${REPOSITORY_ROOT}/e3_structure_guided_chemistry"
+
+for required_directory in "${WORKFLOW_ROOT}" "${CHEMISTRY_ROOT}"; do
+    if [[ ! -d "${required_directory}" ]]; then
+        printf 'ERROR: package directory is unavailable: %s\n' \
+            "${required_directory}" >&2
+        exit 2
+    fi
 done
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then

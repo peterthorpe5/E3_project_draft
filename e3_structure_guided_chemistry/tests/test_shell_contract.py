@@ -65,3 +65,37 @@ def test_shells_do_not_embed_python(package_root: Path) -> None:
         assert "python -c" not in source
         assert "python <<" not in source
         assert "python - <<" not in source
+
+
+def test_full_universe_validation_and_orchestration_are_separated(
+    package_root: Path,
+) -> None:
+    """Heavy validation and login-node orchestration must remain separated."""
+    scripts = package_root / "scripts"
+    validation = (
+        scripts / "validate_dundee_full_universe_v0_3_1.slurm.sh"
+    ).read_text(encoding="utf-8")
+    orchestration = (
+        scripts / "run_dundee_full_universe_v0_3_0.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "#SBATCH --time=02:00:00" in validation
+    assert "#SBATCH --chdir=/gpfs/uod-scale-01/cluster" in validation
+    assert "BASH_SOURCE" not in validation
+    assert 'CHEMISTRY_ROOT="${REPOSITORY_ROOT}/e3_structure_guided_chemistry"' in (
+        validation
+    )
+    assert 'WORKFLOW_ROOT="${REPOSITORY_ROOT}/e3_end_to_end_workflow"' in (
+        validation
+    )
+    assert "if [[ -z \"${SLURM_JOB_ID:-}\" ]]" in validation
+    assert "pip install --no-deps --editable" in validation
+    assert 'bash "${package_root}/run_tests.sh"' in validation
+    assert ".passed.tsv" in validation
+
+    assert "if [[ -n \"${SLURM_JOB_ID:-}\" ]]" in orchestration
+    assert "pip install" not in orchestration
+    assert "run_tests.sh" not in orchestration
+    assert "WORKFLOW_RECEIPT=" in orchestration
+    assert "CHEMISTRY_RECEIPT=" in orchestration
+    assert "validate_dundee_full_universe_v0_3_1.slurm.sh" in orchestration
