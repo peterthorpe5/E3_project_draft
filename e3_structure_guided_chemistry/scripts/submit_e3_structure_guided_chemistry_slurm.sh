@@ -17,6 +17,7 @@ WALLTIME="12:00:00"
 MEMORY="16G"
 CPUS="4"
 CONDA_ENVIRONMENT="e3_structure_guided_chemistry"
+JOB_ID_FILE=""
 
 usage() {
     printf '%s\n' \
@@ -35,6 +36,7 @@ usage() {
         "  --memory SIZE            Memory (default: 16G)." \
         "  --cpus INTEGER           CPUs (default: 4)." \
         "  --conda-environment NAME Environment name." \
+        "  --job-id-file PATH       New TSV submission receipt." \
         "  --help                   Show this help."
 }
 
@@ -49,7 +51,7 @@ require_value() {
 
 while (($#)); do
     case "$1" in
-        --run-root|--config|--candidate-manifest|--output-dir|--account|--partition|--walltime|--memory|--cpus|--conda-environment)
+        --run-root|--config|--candidate-manifest|--output-dir|--account|--partition|--walltime|--memory|--cpus|--conda-environment|--job-id-file)
             require_value "$1" "${2:-}"
             case "$1" in
                 --run-root) RUN_ROOT="$2" ;;
@@ -62,6 +64,7 @@ while (($#)); do
                 --memory) MEMORY="$2" ;;
                 --cpus) CPUS="$2" ;;
                 --conda-environment) CONDA_ENVIRONMENT="$2" ;;
+                --job-id-file) JOB_ID_FILE="$2" ;;
             esac
             shift 2
             ;;
@@ -96,6 +99,10 @@ if [[ ! -s "${CANDIDATE_MANIFEST}" ]]; then
 fi
 if [[ -e "${OUTPUT_DIR}" ]]; then
     printf 'ERROR: output already exists: %s\n' "${OUTPUT_DIR}" >&2
+    exit 2
+fi
+if [[ -n "${JOB_ID_FILE}" && -e "${JOB_ID_FILE}" ]]; then
+    printf 'ERROR: job-ID receipt already exists: %s\n' "${JOB_ID_FILE}" >&2
     exit 2
 fi
 if [[ ! "${CPUS}" =~ ^[1-9][0-9]*$ ]]; then
@@ -152,6 +159,16 @@ JOB_ID="$(
         --structure-asset-manifest "${ASSET_MANIFEST}" \
         --output-dir "${OUTPUT_DIR}"
 )"
+
+if [[ -n "${JOB_ID_FILE}" ]]; then
+    mkdir -p -- "$(dirname -- "${JOB_ID_FILE}")"
+    RECEIPT_PARTIAL="${JOB_ID_FILE}.partial"
+    printf 'job_id\tsubmitted_at_utc\toutput_dir\n%s\t%s\t%s\n' \
+        "${JOB_ID}" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        "${OUTPUT_DIR}" > "${RECEIPT_PARTIAL}"
+    mv -- "${RECEIPT_PARTIAL}" "${JOB_ID_FILE}"
+fi
 
 printf 'Submitted open-source E3 chemistry job: %s\n' "${JOB_ID}"
 printf 'Slurm log: %s\n' "${OUTPUT_DIR}.slurm.${JOB_ID}.log"

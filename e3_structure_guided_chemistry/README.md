@@ -1,7 +1,7 @@
 # E3 structure-guided chemistry
 
 This package converts validated Stage 08 and Stage 09 E3 authorities into an
-auditable, licence-safe computational-chemistry hand-off. Version 0.2.0 removes
+auditable, licence-safe computational-chemistry hand-off. Version 0.2.1 removes
 automatic top-rank selection: every analysed target must be fixed in an
 explicit candidate manifest by evolutionary group, accession, pocket number
 and structure checksum.
@@ -40,15 +40,17 @@ Two decision bases are supported and cannot be mixed within one manifest:
 | `EXPANDED_COMPUTATIONAL_SCREEN` | A reproducible broad screen for candidate review; not project-lead approval |
 | `PROJECT_LEAD_APPROVED` | A panel explicitly approved for the definitive analysis |
 
-The supplied expanded-panel command considers the Stage 08 top 200, chooses
-one quality-first checksum-bound mapped pocket per group and writes both the
-included manifest and an exclusion audit. Pocket confidence and mapping
-quality are prioritised before druggability. Candidates below a scientific
-hand-off threshold remain visible in the result with explicit failure reasons.
+The supplied expanded-panel command considers the Stage 08 top 200 and chooses
+one quality-first checksum-bound mapped pocket per group. Accession/pocket
+pairs are unique across the panel: an overlapping group receives its next-best
+eligible unassigned pocket or an audited exclusion if none remains. Pocket
+confidence and mapping quality are prioritised before druggability. Candidates
+below a scientific hand-off threshold remain visible in the result with
+explicit failure reasons.
 
 ## Gates
 
-The v0.2.0 production configuration requires:
+The v0.2.x production configuration requires:
 
 - conserved-component fraction at least 0.50;
 - mean chemical-group conservation at least 0.50;
@@ -71,15 +73,27 @@ thresholds. The configured combination is marked explicitly.
 
 ## Expanded top-200 cluster run
 
-From the package directory, first prepare the explicit screen manifest:
+For the Dundee production project, the complete checked route is one command:
+
+```bash
+scripts/run_dundee_expanded_top200_v0_2_1.sh
+```
+
+The launcher refreshes the editable installation, validates source and tests
+once per Git commit, prepares the panel if needed, and submits only when the
+fixed output has neither completed nor already been submitted. Its recorded
+defaults reproduce the agreed Stage 08/09 authority, output locations and
+Barton Slurm resources. Re-running the command is safe.
+
+For a different installation, first prepare the explicit screen manifest:
 
 ```bash
 RUN_ROOT=/path/to/completed_top200_workflow_run
-PANEL_DIR=/path/to/milestone2_candidate_panel_expanded_top200_v0_2_0_20260810
+PANEL_DIR=/path/to/milestone2_candidate_panel_expanded_top200_v0_2_1_20260811
 
 scripts/prepare_expanded_candidate_manifest.sh \
     --run-root "${RUN_ROOT}" \
-    --config config/expanded_top200_prepare_only_v0_2_0.yaml \
+    --config config/expanded_top200_prepare_only_v0_2_1.yaml \
     --output-dir "${PANEL_DIR}" \
     --maximum-rank 200 \
     --decided-by "Peter Thorpe"
@@ -91,9 +105,9 @@ Review `candidate_manifest.tsv`, `candidate_manifest_exclusions.tsv` and
 ```bash
 scripts/submit_e3_structure_guided_chemistry_slurm.sh \
     --run-root "${RUN_ROOT}" \
-    --config config/expanded_top200_prepare_only_v0_2_0.yaml \
+    --config config/expanded_top200_prepare_only_v0_2_1.yaml \
     --candidate-manifest "${PANEL_DIR}/candidate_manifest.tsv" \
-    --output-dir /path/to/milestone2_open_chemistry_expanded_top200_v0_2_0_20260810
+    --output-dir /path/to/milestone2_open_chemistry_expanded_top200_v0_2_1_20260811
 ```
 
 The launcher defaults to Slurm account and partition `barton`. The production
@@ -106,7 +120,7 @@ package source dirty.
 
 ```bash
 ./run_e3_structure_guided_chemistry.sh \
-    --config config/expanded_top200_prepare_only_v0_2_0.yaml \
+    --config config/expanded_top200_prepare_only_v0_2_1.yaml \
     --candidate-manifest /path/candidate_manifest.tsv \
     --group-ranking /path/evolutionary_candidate_group_ranking.parquet \
     --selected-pockets /path/selected_pockets.parquet \

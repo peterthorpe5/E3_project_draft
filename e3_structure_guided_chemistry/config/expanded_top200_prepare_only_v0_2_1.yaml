@@ -1,0 +1,22 @@
+schema_version: 2
+method:
+  name: open_structure_guided_pharmacophore_v1
+  maximum_candidate_groups: 200
+  minimum_conserved_component_fraction: 0.5
+  minimum_chemical_group_conservation: 0.5
+  minimum_mapping_fraction: 0.8
+  minimum_pocket_plddt_fraction: 0.7
+  minimum_uniqueness_score: 0.1
+  maximum_fragments_per_group: 100
+fragment_screening:
+  mode: prepare_only
+  fragment_library: null
+licensing:
+  allow_restricted_licence_tools: false
+  declared_components:
+    - name: DuckDB
+      spdx: MIT
+    - name: Gemmi
+      spdx: MPL-2.0
+provenance:
+  require_clean_tracked_source: true

@@ -18,6 +18,7 @@ from e3chemistry.candidate_manifest import (
 from e3chemistry.config import load_config
 from e3chemistry.errors import InputValidationError
 from e3chemistry.io_utils import read_records
+from e3chemistry.models import StructureAsset
 from e3chemistry.structures import resolve_structure_assets
 
 
@@ -55,6 +56,7 @@ def test_prepare_candidate_manifest_files_and_provenance(
     provenance = json.loads(
         (output / "candidate_manifest_provenance.json").read_text(encoding="utf-8")
     )
+    assert provenance["schema_version"] == 2
     assert provenance["candidate_manifest"]["sha256"]
     assert provenance["inputs"]["group_ranking"]["sha256"]
 
@@ -126,6 +128,97 @@ def test_quality_first_selection_and_missing_group_exclusion(
     assert exclusions[0]["exclusion_reason"] == (
         "NO_CHECKSUM_BOUND_MAPPED_POCKET_STRUCTURE"
     )
+
+
+def test_preparation_reassigns_or_excludes_overlapping_candidate_pockets(
+    tmp_path: Path,
+    scientific_inputs: dict[str, Path],
+) -> None:
+    """Overlapping groups must use a unique alternative or remain audited."""
+    config = load_config(write_config(tmp_path / "config.yaml"))
+    ranking = read_records(scientific_inputs["ranking"])
+    ranking.extend(
+        [
+            {
+                "evolutionary_group_rank": 2,
+                "evolutionary_group_key": "HIERARCHICAL_ORTHOGROUP:HOG2",
+                "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+                "primary_group_id": "HOG2",
+                "lead_cluster_id": "DC2",
+            },
+            {
+                "evolutionary_group_rank": 3,
+                "evolutionary_group_key": "HIERARCHICAL_ORTHOGROUP:HOG3",
+                "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+                "primary_group_id": "HOG3",
+                "lead_cluster_id": "DC3",
+            },
+        ]
+    )
+    original_pocket = read_records(scientific_inputs["pockets"])[0]
+    pockets = [original_pocket]
+    for group_id, cluster_id in (("HOG2", "DC2"), ("HOG3", "DC3")):
+        pockets.append(
+            {
+                **original_pocket,
+                "primary_group_id": group_id,
+                "cluster_id": cluster_id,
+            }
+        )
+    pockets.append(
+        {
+            **original_pocket,
+            "primary_group_id": "HOG2",
+            "cluster_id": "DC2_ALT",
+            "candidate_accession": "P00002",
+            "species_column": "Species_two",
+            "pocket_number": 2,
+            "druggability_score": 0.7,
+            "conservative_fraction_plddt_ge_70": 0.8,
+        }
+    )
+    mappings = read_records(scientific_inputs["mappings"])
+    mappings.append(
+        {
+            **mappings[0],
+            "accession": "P00002",
+            "pocket_number": 2,
+        }
+    )
+    first_asset = resolve_structure_assets(
+        read_records(scientific_inputs["assets"])
+    )["P00001"]
+    assets = {
+        "P00001": first_asset,
+        "P00002": StructureAsset(
+            accession="P00002",
+            path=first_asset.path,
+            sha256=first_asset.sha256,
+        ),
+    }
+
+    manifest, exclusions = prepare_candidate_manifest(
+        config=config,
+        group_ranking=ranking,
+        selected_pockets=pockets,
+        mappings=mappings,
+        assets=assets,
+        maximum_rank=3,
+        decision_basis="EXPANDED_COMPUTATIONAL_SCREEN",
+        decided_by="Peter Thorpe",
+        rationale="Expanded test screen",
+        decided_at_utc="2026-08-11T07:45:00Z",
+    )
+
+    assert [row["candidate_accession"] for row in manifest] == ["P00001", "P00002"]
+    assert [row["panel_order"] for row in manifest] == [1, 2]
+    assert len(exclusions) == 1
+    assert exclusions[0]["evolutionary_group_key"].endswith("HOG3")
+    assert exclusions[0]["exclusion_reason"] == (
+        "ALL_ELIGIBLE_CANDIDATE_POCKETS_ALREADY_ASSIGNED"
+    )
+    assert exclusions[0]["conflicting_candidate_pockets"] == "P00001/1"
+    assert exclusions[0]["retained_evolutionary_group_keys"].endswith("HOG1")
 
 
 @pytest.mark.parametrize(

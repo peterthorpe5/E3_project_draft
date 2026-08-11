@@ -17,6 +17,8 @@ python -m coverage report --fail-under=95
 bash -n \
     run_e3_structure_guided_chemistry.sh \
     run_tests.sh \
+    scripts/prepare_expanded_candidate_manifest.sh \
+    scripts/run_dundee_expanded_top200_v0_2_1.sh \
     scripts/submit_e3_structure_guided_chemistry_slurm.sh \
     scripts/slurm_e3_structure_guided_chemistry_job.sh
 

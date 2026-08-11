@@ -25,6 +25,7 @@ def test_slurm_launcher_help_and_open_defaults(package_root: Path) -> None:
     assert "default: barton" in result.stdout
     assert "--config PATH" in result.stdout
     assert "--candidate-manifest PATH" in result.stdout
+    assert "--job-id-file PATH" in result.stdout
 
     prepare = package_root / "scripts" / "prepare_expanded_candidate_manifest.sh"
     prepare_result = subprocess.run(
@@ -35,6 +36,20 @@ def test_slurm_launcher_help_and_open_defaults(package_root: Path) -> None:
     )
     assert "--maximum-rank INTEGER" in prepare_result.stdout
     assert "--decided-by TEXT" in prepare_result.stdout
+
+    complete = (
+        package_root / "scripts" / "run_dundee_expanded_top200_v0_2_1.sh"
+    )
+    complete_result = subprocess.run(
+        [str(complete), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "complete checked Dundee v0.2.1" in complete_result.stdout
+    assert "All project paths and Slurm settings have production defaults" in (
+        complete_result.stdout
+    )
 
 
 def test_shells_do_not_embed_python(package_root: Path) -> None:

@@ -53,6 +53,8 @@ EXCLUSION_FIELDS = (
     "primary_group_id",
     "cluster_id",
     "exclusion_reason",
+    "conflicting_candidate_pockets",
+    "retained_evolutionary_group_keys",
 )
 
 DECISION_BASES = frozenset(
@@ -93,6 +95,14 @@ def _float(value: Any, *, default: float = 0.0) -> float:
 def _group_key(record: Mapping[str, Any]) -> tuple[str, str]:
     """Return the primary group type and identifier."""
     return (_text(record.get("primary_group_type")), _text(record.get("primary_group_id")))
+
+
+def _target_key(record: Mapping[str, Any]) -> tuple[str, int]:
+    """Return the normalised candidate accession and pocket identifier."""
+    return (
+        _text(record.get("candidate_accession")).upper(),
+        _integer(record.get("pocket_number"), "pocket_number"),
+    )
 
 
 def _validate_utc(value: str, label: str) -> None:
@@ -337,6 +347,7 @@ def prepare_candidate_manifest(
     )
     manifest: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
+    assigned_targets: dict[tuple[str, int], str] = {}
     for group in ranked_groups:
         key = _group_key(group)
         candidates = []
@@ -358,11 +369,47 @@ def prepare_candidate_manifest(
                     "exclusion_reason": (
                         "NO_CHECKSUM_BOUND_MAPPED_POCKET_STRUCTURE"
                     ),
+                    "conflicting_candidate_pockets": "",
+                    "retained_evolutionary_group_keys": "",
                 }
             )
             continue
-        pocket = candidates[0]
+        available_candidates = [
+            candidate
+            for candidate in candidates
+            if _target_key(candidate) not in assigned_targets
+        ]
+        if not available_candidates:
+            conflicting_targets = sorted({_target_key(candidate) for candidate in candidates})
+            exclusions.append(
+                {
+                    "evolutionary_group_rank": group["evolutionary_group_rank"],
+                    "evolutionary_group_key": group["evolutionary_group_key"],
+                    "primary_group_type": key[0],
+                    "primary_group_id": key[1],
+                    "cluster_id": group["lead_cluster_id"],
+                    "exclusion_reason": (
+                        "ALL_ELIGIBLE_CANDIDATE_POCKETS_ALREADY_ASSIGNED"
+                    ),
+                    "conflicting_candidate_pockets": ";".join(
+                        f"{accession}/{pocket_number}"
+                        for accession, pocket_number in conflicting_targets
+                    ),
+                    "retained_evolutionary_group_keys": ";".join(
+                        sorted(
+                            {
+                                assigned_targets[target]
+                                for target in conflicting_targets
+                            }
+                        )
+                    ),
+                }
+            )
+            continue
+        pocket = available_candidates[0]
         accession = _text(pocket.get("candidate_accession")).upper()
+        target_key = _target_key(pocket)
+        assigned_targets[target_key] = _text(group.get("evolutionary_group_key"))
         manifest.append(
             {
                 "panel_order": len(manifest) + 1,
@@ -453,7 +500,7 @@ def prepare_candidate_manifest_files(
         fieldnames=EXCLUSION_FIELDS,
     )
     provenance = {
-        "schema_version": 1,
+        "schema_version": 2,
         "created_at_utc": utc_now(),
         "decision_basis": manifest[0]["decision_basis"],
         "maximum_rank": maximum_rank,

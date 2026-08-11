@@ -17,7 +17,7 @@ usage() {
         "" \
         "Required:" \
         "  --run-root PATH          Completed workflow run through Stage 09." \
-        "  --config PATH            Reviewed v0.2.0 chemistry YAML." \
+        "  --config PATH            Reviewed v0.2.x chemistry YAML." \
         "  --output-dir PATH        New candidate-manifest directory." \
         "  --decided-by TEXT        Person authorising the expanded screen." \
         "" \
