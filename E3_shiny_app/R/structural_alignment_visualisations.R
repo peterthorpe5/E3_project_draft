@@ -150,7 +150,7 @@ build_structural_alignment_plot <- function(data) {
     mode = "markers",
     marker = list(size = 9, opacity = 0.8)
   )
-  plotly::layout(
+  plot <- plotly::layout(
     plot,
     xaxis = list(
       title = "Minimum TM-score",
@@ -182,4 +182,5 @@ build_structural_alignment_plot <- function(data) {
       )
     )
   )
+  plotly::plotly_build(plot)
 }

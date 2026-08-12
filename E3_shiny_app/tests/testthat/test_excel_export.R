@@ -142,7 +142,10 @@ testthat::test_that("formatted Excel has filters, frozen headers and formats", {
   dir.create(extracted)
   utils::unzip(zipfile = output, exdir = extracted)
   sheet_xml <- paste(
-    readLines(file.path(extracted, "xl", "worksheets", "sheet1.xml")),
+    readLines(
+      file.path(extracted, "xl", "worksheets", "sheet1.xml"),
+      warn = FALSE
+    ),
     collapse = ""
   )
   table_files <- list.files(
@@ -153,7 +156,10 @@ testthat::test_that("formatted Excel has filters, frozen headers and formats", {
   testthat::expect_length(table_files, 1L)
   table_xml <- paste(readLines(table_files[[1L]], warn = FALSE), collapse = "")
   styles_xml <- paste(
-    readLines(file.path(extracted, "xl", "styles.xml")),
+    readLines(
+      file.path(extracted, "xl", "styles.xml"),
+      warn = FALSE
+    ),
     collapse = ""
   )
   testthat::expect_match(sheet_xml, "state=\"frozen\"")

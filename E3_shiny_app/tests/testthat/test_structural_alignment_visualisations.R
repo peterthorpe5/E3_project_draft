@@ -48,6 +48,10 @@ testthat::test_that("structural alignment data and plot retain thresholds", {
   plot <- build_structural_alignment_plot(data = data)
   testthat::expect_s3_class(plot, "plotly")
   testthat::expect_length(plot$x$layout$shapes, 2L)
+  testthat::expect_equal(plot$x$layout$shapes[[1L]]$x0, 0.5)
+  testthat::expect_equal(plot$x$layout$shapes[[1L]]$x1, 0.5)
+  testthat::expect_equal(plot$x$layout$shapes[[2L]]$y0, 0.5)
+  testthat::expect_equal(plot$x$layout$shapes[[2L]]$y1, 0.5)
   testthat::expect_error(
     prepare_structural_alignment_plot_data(data = data.frame(score = 1)),
     "paired TM-score"
