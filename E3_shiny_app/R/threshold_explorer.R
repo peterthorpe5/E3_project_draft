@@ -202,6 +202,26 @@ normalise_threshold_settings <- function(settings = list()) {
   values
 }
 
+#' Build matched pre-structure and structural settings.
+#'
+#' Both result sets use the same thresholds and row scope. Only the evaluation
+#' mode differs, preventing the two displayed lists from silently drifting onto
+#' different control values.
+#'
+#' @param settings Named shared threshold settings.
+#' @return Named list containing `prestructure` and `structural` settings.
+paired_threshold_settings <- function(settings = list()) {
+  shared <- normalise_threshold_settings(settings = settings)
+  list(
+    prestructure = normalise_threshold_settings(
+      settings = utils::modifyList(shared, list(mode = "prestructure"))
+    ),
+    structural = normalise_threshold_settings(
+      settings = utils::modifyList(shared, list(mode = "structural"))
+    )
+  )
+}
+
 #' Return settings that vary only the final druggability threshold.
 #'
 #' @param minimum_druggability_score Inclusive minimum score required for every

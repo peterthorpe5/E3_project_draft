@@ -126,6 +126,7 @@ testthat::test_that("candidate landscape is interactive and validates its axes",
     source = "candidate_test"
   )
   testthat::expect_s3_class(plot, "plotly")
+  testthat::expect_true("plotly_click" %in% plot$x$shinyEvents)
   testthat::expect_error(
     build_candidate_visual_landscape_plot(
       candidate_tbl = candidates,

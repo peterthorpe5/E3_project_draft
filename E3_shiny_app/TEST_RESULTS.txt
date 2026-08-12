@@ -1,40 +1,27 @@
-ARIA plant E3 Shiny reporter v0.9.0 validation note
-==================================================
+ARIA plant E3 Shiny reporter v0.10.5 validation hand-off
+=======================================================
 
-Validation completed in the build environment on 2026-08-05:
+Build-environment checks completed on 2026-08-12:
 
-- All 53 application, helper and test R files passed the native base-R parser
-  through the R 4.6.0 WebAssembly runtime.
-- The independent tree-sitter R grammar also reported no syntax errors.
-- Six core v0.9.0 selector and SQL-builder checks executed inside base R,
-  including evolutionary-group rank preference, bounded candidate queries,
-  expression-unit isolation, complete tissue aggregation and volcano inputs.
-- The R-generated heatmap, exact-row and complete species/tissue SQL was then
-  executed with DuckDB against the corrected-expression authority containing
-  32,981,864 context rows. For `N0.HOG0000376`, it returned 231 heatmap cells,
-  the requested ten-row exact preview and 249 complete species/tissue cells.
-  The complete profile counted more source rows than the preview limit, proving
-  that the graph is aggregated before the exact-row cap.
-- The repository-level suite passed all 16 tests.
-- `git diff --check` must be rerun after applying the distribution overlay.
+- Delimiters and quoted regions are balanced in all five changed R source and
+  regression-test files.
+- The paired-settings regression test verifies that the pre-structure and
+  structural settings differ only by evaluation mode.
+- The UI regression test checks both table identifiers and all four paired
+  download controls.
+- The Plotly regression test now checks explicit `plotly_click` registration.
+- The companion Python v0.7.5 suite passes all 93 tests with 95% branch-aware
+  coverage, including its headless paired-table application test.
 
 Environment limitation:
 
-- The build environment does not contain the native R package stack required by
-  Shiny/testthat (bslib, dplyr, DT, duckplyr, ggplot2 and plotly). The complete
-  application suite must therefore be executed in the Mac `e3_shiny_app`
-  environment before committing:
+- This build environment does not contain R/Rscript or the native Shiny package
+  stack, so the complete R testthat suite could not be executed here.
+- The preceding v0.10.4 hotfix suite passed on the target Mac. Re-run the full
+  suite after applying v0.10.5:
 
     Rscript E3_shiny_app/inst/scripts/check_dependencies.R
     Rscript E3_shiny_app/inst/scripts/run_tests.R
 
-New v0.9.0 coverage is in:
-
-- tests/testthat/test_candidate_visualisations.R
-- tests/testthat/test_source_parse.R
-- tests/testthat/test_threshold_explorer.R
-
-The tests cover authoritative candidate relation/identifier/rank selection,
-bounded SQL, point-to-candidate identity, exact supporting-table linkage,
-unit-separated heatmaps, complete species/tissue aggregation, raw-row retention,
-volcano capability gating and all four visual-explorer UI contracts.
+The two `test_script_utils.R` skips remain expected when the R session does not
+provide a `--file` argument.

@@ -16,6 +16,27 @@ testthat::test_that("current thresholds match the completed grant-aligned run", 
   )
 })
 
+testthat::test_that("paired explorer settings differ only by evaluation mode", {
+  paired <- paired_threshold_settings(list(
+    target_species_fraction = 0.75,
+    minimum_druggability_score = 0.35,
+    result_scope = "pass_near"
+  ))
+  testthat::expect_identical(names(paired), c("prestructure", "structural"))
+  testthat::expect_identical(paired$prestructure$mode, "prestructure")
+  testthat::expect_identical(paired$structural$mode, "structural")
+  differing <- names(paired$prestructure)[vapply(
+    names(paired$prestructure),
+    function(field) {
+      !identical(paired$prestructure[[field]], paired$structural[[field]])
+    },
+    logical(1)
+  )]
+  testthat::expect_identical(differing, "mode")
+  testthat::expect_equal(paired$prestructure$target_species_fraction, 0.75)
+  testthat::expect_equal(paired$structural$minimum_druggability_score, 0.35)
+})
+
 testthat::test_that("focused final-gate settings change only druggability", {
   recorded <- final_druggability_settings(
     minimum_druggability_score = RECORDED_MINIMUM_DRUGGABILITY_SCORE
@@ -424,7 +445,7 @@ testthat::test_that("threshold explorer reclassifies a druggability near-miss", 
   )
 })
 
-testthat::test_that("threshold explorer UI exposes sliders, typed values and TSV", {
+testthat::test_that("threshold explorer UI exposes two clearly labelled tables", {
   ui <- paste(
     as.character(threshold_explorer_ui(id = "explorer")),
     collapse = "\n"
@@ -433,16 +454,18 @@ testthat::test_that("threshold explorer UI exposes sliders, typed values and TSV
   testthat::expect_match(ui, "explorer-target_species_fraction")
   testthat::expect_match(ui, "explorer-minimum_druggability_score_slider")
   testthat::expect_match(ui, "explorer-additional_thresholds")
-  testthat::expect_match(
-    ui,
-    "Pre-structure + structural thresholds",
-    fixed = TRUE
-  )
+  testthat::expect_match(ui, "Two matched result sets", fixed = TRUE)
   testthat::expect_match(ui, "explorer-additional_prestructure_thresholds")
   testthat::expect_match(ui, "explorer-additional_structural_thresholds")
-  testthat::expect_match(ui, "explorer-download_tsv")
-  testthat::expect_match(ui, "explorer-download_excel")
-  testthat::expect_match(ui, "Download custom candidate list as Excel")
+  testthat::expect_match(ui, "Pre-structure candidate list", fixed = TRUE)
+  testthat::expect_match(ui, "Structurally informed candidate list", fixed = TRUE)
+  testthat::expect_match(ui, "explorer-prestructure_candidate_table")
+  testthat::expect_match(ui, "explorer-structural_candidate_table")
+  testthat::expect_match(ui, "explorer-prestructure_download_tsv")
+  testthat::expect_match(ui, "explorer-prestructure_download_excel")
+  testthat::expect_match(ui, "explorer-structural_download_tsv")
+  testthat::expect_match(ui, "explorer-structural_download_excel")
+  testthat::expect_false(grepl("explorer-mode", ui, fixed = TRUE))
   testthat::expect_match(ui, "NOT_STRUCTURALLY_ASSESSED")
 })
 

@@ -361,13 +361,14 @@ build_candidate_visual_landscape_plot <- function(
     arguments$sizes <- c(8, 30)
   }
   plot <- do.call(plotly::plot_ly, arguments)
-  plotly::layout(
+  plot <- plotly::layout(
     plot,
     xaxis = list(title = candidate_visual_metric_label(x_column)),
     yaxis = list(title = candidate_visual_metric_label(y_column)),
     dragmode = "select",
     margin = list(l = 60, r = 20, t = 20, b = 60)
   )
+  plotly::event_register(plot, "plotly_click")
 }
 
 #' Candidate selector labels.

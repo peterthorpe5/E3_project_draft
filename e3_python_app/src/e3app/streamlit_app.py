@@ -68,8 +68,8 @@ from e3app.thresholds import (
     evaluate_thresholds,
     final_druggability_settings,
     final_druggability_source_missing_columns,
+    paired_threshold_settings,
     select_threshold_relation,
-    threshold_settings_from_mapping,
 )
 from e3app.visualisations import (
     CANDIDATE_METRIC_LABELS,
@@ -1013,25 +1013,20 @@ def _reset_threshold_controls() -> None:
         st.session_state[f"threshold_{field}_number"] = defaults[field]
     for field in LOGICAL_THRESHOLD_FIELDS:
         st.session_state[f"threshold_{field}"] = defaults[field]
-    st.session_state["threshold_mode"] = defaults["mode"]
     st.session_state["threshold_result_scope"] = defaults["result_scope"]
+    st.session_state.pop("threshold_mode", None)
 
 
-def _active_threshold_settings() -> ThresholdSettings:
-    """Render explorer controls and return their validated settings."""
+def _active_threshold_settings() -> tuple[ThresholdSettings, ThresholdSettings]:
+    """Render shared controls and return matched settings for both tables."""
     defaults = ThresholdSettings()
     if st.button("Reset current defaults", key="threshold_reset"):
         _reset_threshold_controls()
         st.rerun()
-    st.radio(
-        "Prioritisation view",
-        options=("prestructure", "structural"),
-        format_func=lambda value: {
-            "prestructure": "Pre-structure prioritisation",
-            "structural": "Structurally informed prioritisation",
-        }[value],
-        key="threshold_mode",
-        horizontal=True,
+    st.markdown(
+        "**Two matched result sets are shown below.** The pre-structure table "
+        "uses the biological evidence gates. The structurally informed table "
+        "uses the same gates plus every structural requirement."
     )
     st.selectbox(
         "Rows to show",
@@ -1045,7 +1040,6 @@ def _active_threshold_settings() -> ThresholdSettings:
     )
     st.markdown("##### Pre-structure thresholds")
     values: dict[str, object] = {
-        "mode": st.session_state["threshold_mode"],
         "result_scope": st.session_state["threshold_result_scope"],
         "target_species_fraction": _threshold_pair(
             "target_species_fraction",
@@ -1082,44 +1076,47 @@ def _active_threshold_settings() -> ThresholdSettings:
             key="threshold_require_expression_evidence",
         )
 
-    if values["mode"] == "structural":
-        st.markdown("##### Structural thresholds")
-        values["structural_species_fraction"] = _threshold_pair(
-            "structural_species_fraction",
-            "Minimum structurally supported species fraction",
-            defaults.structural_species_fraction,
+    st.markdown("##### Structural thresholds")
+    st.caption(
+        "These controls affect only the structurally informed table. The "
+        "pre-structure table is unchanged when they move."
+    )
+    values["structural_species_fraction"] = _threshold_pair(
+        "structural_species_fraction",
+        "Minimum structurally supported species fraction",
+        defaults.structural_species_fraction,
+    )
+    values["minimum_druggability_score"] = _threshold_pair(
+        "minimum_druggability_score",
+        "Minimum member druggability score",
+        defaults.minimum_druggability_score,
+    )
+    structural_one, structural_two, structural_three = st.columns(3)
+    with structural_one:
+        values["require_conserved_region"] = st.checkbox(
+            "Require conserved pocket-bearing sequence region",
+            value=defaults.require_conserved_region,
+            key="threshold_require_conserved_region",
         )
-        values["minimum_druggability_score"] = _threshold_pair(
-            "minimum_druggability_score",
-            "Minimum member druggability score",
-            defaults.minimum_druggability_score,
+    with structural_two:
+        values["require_all_member_mapping"] = st.checkbox(
+            "Require every assessed member to pass pocket mapping",
+            value=defaults.require_all_member_mapping,
+            key="threshold_require_all_member_mapping",
         )
-        structural_one, structural_two, structural_three = st.columns(3)
-        with structural_one:
-            values["require_conserved_region"] = st.checkbox(
-                "Require conserved pocket-bearing sequence region",
-                value=defaults.require_conserved_region,
-                key="threshold_require_conserved_region",
-            )
-        with structural_two:
-            values["require_all_member_mapping"] = st.checkbox(
-                "Require every assessed member to pass pocket mapping",
-                value=defaults.require_all_member_mapping,
-                key="threshold_require_all_member_mapping",
-            )
-        with structural_three:
-            values["require_strict_3d"] = st.checkbox(
-                "Require strictly conserved corresponding 3D pocket",
-                value=defaults.require_strict_3d,
-                key="threshold_require_strict_3d",
-            )
-        values["include_not_assessed"] = st.checkbox(
-            "Also display groups not structurally assessed",
-            value=defaults.include_not_assessed,
-            key="threshold_include_not_assessed",
-            help="These groups remain labelled NOT_STRUCTURALLY_ASSESSED.",
+    with structural_three:
+        values["require_strict_3d"] = st.checkbox(
+            "Require strictly conserved corresponding 3D pocket",
+            value=defaults.require_strict_3d,
+            key="threshold_require_strict_3d",
         )
-    return threshold_settings_from_mapping(values, defaults=defaults)
+    values["include_not_assessed"] = st.checkbox(
+        "Also display groups not structurally assessed",
+        value=defaults.include_not_assessed,
+        key="threshold_include_not_assessed",
+        help="These groups remain labelled NOT_STRUCTURALLY_ASSESSED.",
+    )
+    return paired_threshold_settings(values=values, defaults=defaults)
 
 
 def _render_threshold_explorer(
@@ -1135,7 +1132,7 @@ def _render_threshold_explorer(
     )
     control_column, explanation_column = st.columns((2, 1))
     with control_column:
-        settings = _active_threshold_settings()
+        prestructure_settings, structural_settings = _active_threshold_settings()
         requested_rows = st.number_input(
             "Maximum displayed rows",
             min_value=1,
@@ -1155,24 +1152,34 @@ def _render_threshold_explorer(
             "calculations. Changing coordinate, overlap or TM-score rules requires "
             "rerunning the scientific workflow."
         )
-    relation, result, summary = evaluate_thresholds(
+    relation, prestructure_result, prestructure_summary = evaluate_thresholds(
         connection,
-        settings,
+        prestructure_settings,
         int(requested_rows),
     )
+    structural_relation, structural_result, structural_summary = evaluate_thresholds(
+        connection,
+        structural_settings,
+        int(requested_rows),
+    )
+    if structural_relation != relation:
+        raise AppError("Paired threshold evaluations selected different sources")
     metric_columns = st.columns(4)
     metric_columns[0].metric(
         "Evaluated evolutionary groups",
-        f"{summary['evaluated_count']:,}",
+        f"{prestructure_summary['evaluated_count']:,}",
     )
-    metric_columns[1].metric("Custom passes", f"{summary['pass_count']:,}")
+    metric_columns[1].metric(
+        "Pre-structure passes",
+        f"{prestructure_summary['pass_count']:,}",
+    )
     metric_columns[2].metric(
-        "One-gate near-misses",
-        f"{summary['near_miss_count']:,}",
+        "Structurally assessed",
+        f"{structural_summary['structurally_assessed_count']:,}",
     )
     metric_columns[3].metric(
-        "Structurally assessed",
-        f"{summary['structurally_assessed_count']:,}",
+        "Structurally informed passes",
+        f"{structural_summary['pass_count']:,}",
     )
     if relation == "final_evolutionary_candidate_prioritisation":
         st.caption(f"Using `{relation}`: one row per evolutionary group.")
@@ -1181,13 +1188,34 @@ def _render_threshold_explorer(
             f"Using `{relation}` as a compatibility source, with one deterministic "
             "lead row retained per evolutionary group."
         )
-    _display_dataframe(frame=result, height=700)
+    st.markdown("### Pre-structure candidate list")
+    st.caption(
+        "Applies target-species, mandatory-species, E3-domain and expression "
+        "gates. Structural controls do not affect this table. "
+        f"One-gate near-misses: {prestructure_summary['near_miss_count']:,}."
+    )
+    _display_dataframe(frame=prestructure_result, height=700)
     render_table_downloads(
-        frame=result,
-        file_stem=f"aria_e3_{settings.mode}_custom_thresholds",
-        tsv_label="Download custom candidate list as TSV",
-        excel_label="Download custom candidate list as Excel",
-        key="threshold_download",
+        frame=prestructure_result,
+        file_stem="aria_e3_prestructure_custom_thresholds",
+        tsv_label="Download pre-structure candidate list as TSV",
+        excel_label="Download pre-structure candidate list as Excel",
+        key="threshold_prestructure_download",
+    )
+    st.markdown("### Structurally informed candidate list")
+    st.caption(
+        "Applies every pre-structure gate plus pocket conservation, mapping, "
+        "structural coverage, member druggability and strict 3D requirements. "
+        "Only structurally assessed groups can pass. "
+        f"One-gate near-misses: {structural_summary['near_miss_count']:,}."
+    )
+    _display_dataframe(frame=structural_result, height=700)
+    render_table_downloads(
+        frame=structural_result,
+        file_stem="aria_e3_structural_custom_thresholds",
+        tsv_label="Download structurally informed candidate list as TSV",
+        excel_label="Download structurally informed candidate list as Excel",
+        key="threshold_structural_download",
     )
 
 

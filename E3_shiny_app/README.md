@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.10.3 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.10.5 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -99,10 +99,15 @@ The threshold explorer always starts from the current primary-analysis values:
 | Minimum structurally supported species fraction | 0.75 |
 | Minimum member druggability score | 0.50 |
 
-The default view applies the pre-structure and structural threshold sets
-together and displays them as two open sections, matching the Python reporter.
-Users can switch to a pre-structure-only sensitivity view without losing the
-structural values. A multiple-selection control can optionally add post-hoc
+The explorer now calculates two matched lists at the same time. The
+**Pre-structure candidate list** applies the target-species,
+mandatory-species, E3-domain and expression gates. The **Structurally informed
+candidate list** applies those same gates plus the selected pocket conservation,
+mapping, structural coverage, member druggability and strict 3D requirements.
+There is no hidden mode switch, and moving a structural control affects only
+the second table. Each list has its own TSV and formatted Excel downloads.
+
+A multiple-selection control can optionally add post-hoc
 gates for recorded aggregate scores such as evidence completeness, mean pocket
 pLDDT support, predictor agreement, pocket-region overlap, cross-aligner
 TM-score, 3D pocket overlap and structural chemical-group conservation. Those
@@ -116,7 +121,7 @@ E3-associated domain. Unassessed species are reported separately; they are not
 silently counted as domain failures or passes. The explorer shows this
 definition directly below the slider.
 
-The structural view also defaults to requiring a conserved pocket-bearing
+The structurally informed list also defaults to requiring a conserved pocket-bearing
 sequence region, acceptable mapping in every assessed member and a strictly
 conserved corresponding 3D pocket. The displayed druggability value is the
 minimum across assessed members, so moving that slider directly re-evaluates the
@@ -125,10 +130,10 @@ values. The app labels groups outside the 200-group structural
 analysis as `NOT_STRUCTURALLY_ASSESSED`; it never turns missing assessment into a
 structural failure or pass.
 
-`PASS` means that every selected gate is met. `NEAR_MISS` means that one
-conceptual gate is not met. The exported TSV includes the selected numeric
-thresholds in every row; the companion Excel download contains the same data,
-so an exploratory list remains interpretable after it leaves the app.
+`PASS` means that every gate for that table is met. `NEAR_MISS` means that one
+conceptual gate is not met. Each exported TSV includes the selected numeric
+thresholds in every row; its companion Excel download contains the same data,
+so either exploratory list remains interpretable after it leaves the app.
 Slider-generated results are sensitivity analyses and do not replace the
 locked primary analysis.
 

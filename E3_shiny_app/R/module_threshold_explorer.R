@@ -54,14 +54,13 @@ threshold_explorer_ui <- function(id) {
     bslib::layout_columns(
       bslib::card(
         bslib::card_header("Analysis and output"),
-        shiny::radioButtons(
-          inputId = ns("mode"),
-          label = "Threshold sets to apply",
-          choices = c(
-            "Pre-structure thresholds only" = "prestructure",
-            "Pre-structure + structural thresholds" = "structural"
-          ),
-          selected = defaults$mode
+        shiny::p(
+          shiny::strong("Two matched result sets are shown below."),
+          paste(
+            "The pre-structure table uses the biological evidence gates. The",
+            "structurally informed table uses those same gates plus every",
+            "structural requirement in the second panel."
+          )
         ),
         shiny::selectizeInput(
           inputId = ns("additional_thresholds"),
@@ -166,15 +165,11 @@ threshold_explorer_ui <- function(id) {
       ),
       bslib::accordion_panel(
         "Structural thresholds",
-        shiny::conditionalPanel(
-          condition = "input.mode !== 'structural'",
-          ns = ns,
-          shiny::p(
-            class = "text-muted",
-            paste(
-              "These values are retained but are applied only when",
-              "Pre-structure + structural thresholds is selected above."
-            )
+        shiny::p(
+          class = "text-muted",
+          paste(
+            "These controls affect only the structurally informed table. The",
+            "pre-structure table is unchanged when they move."
           )
         ),
         threshold_pair_ui(
@@ -232,36 +227,75 @@ threshold_explorer_ui <- function(id) {
         shiny::textOutput(ns("evaluated_count"))
       ),
       bslib::value_box(
-        "Custom passes",
-        shiny::textOutput(ns("pass_count"))
-      ),
-      bslib::value_box(
-        "One-gate near-misses",
-        shiny::textOutput(ns("near_miss_count"))
+        "Pre-structure passes",
+        shiny::textOutput(ns("prestructure_pass_count"))
       ),
       bslib::value_box(
         "Structurally assessed",
         shiny::textOutput(ns("structurally_assessed_count"))
+      ),
+      bslib::value_box(
+        "Structurally informed passes",
+        shiny::textOutput(ns("structural_pass_count"))
+      )
+    ),
+    shiny::h3("Pre-structure candidate list"),
+    shiny::p(
+      class = "text-muted",
+      paste(
+        "Applies target-species, mandatory-species, E3-domain and expression",
+        "gates. Structural controls do not affect this table."
       )
     ),
     shiny::div(
       class = "threshold-table-actions",
       tabular_download_buttons(
         ns = ns,
-        tsv_id = "download_tsv",
-        excel_id = "download_excel",
-        tsv_label = "Download custom candidate list as TSV",
-        excel_label = "Download custom candidate list as Excel"
+        tsv_id = "prestructure_download_tsv",
+        excel_id = "prestructure_download_excel",
+        tsv_label = "Download pre-structure candidate list as TSV",
+        excel_label = "Download pre-structure candidate list as Excel"
       ),
       shiny::span(
         class = "small text-muted",
         paste(
-          "Both downloads repeat the active numeric thresholds in every",
+          "The downloads repeat the active numeric thresholds in every",
           "result row."
         )
       )
     ),
-    shinycssloaders::withSpinner(DT::DTOutput(ns("candidate_table")))
+    shinycssloaders::withSpinner(
+      DT::DTOutput(ns("prestructure_candidate_table"))
+    ),
+    shiny::h3("Structurally informed candidate list"),
+    shiny::p(
+      class = "text-muted",
+      paste(
+        "Applies every pre-structure gate plus pocket conservation, mapping,",
+        "structural coverage, member druggability and strict 3D requirements.",
+        "Only structurally assessed groups can pass."
+      )
+    ),
+    shiny::div(
+      class = "threshold-table-actions",
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "structural_download_tsv",
+        excel_id = "structural_download_excel",
+        tsv_label = "Download structurally informed candidate list as TSV",
+        excel_label = "Download structurally informed candidate list as Excel"
+      ),
+      shiny::span(
+        class = "small text-muted",
+        paste(
+          "The downloads repeat the active numeric thresholds in every",
+          "result row."
+        )
+      )
+    ),
+    shinycssloaders::withSpinner(
+      DT::DTOutput(ns("structural_candidate_table"))
+    )
   )
 }
 
@@ -370,11 +404,6 @@ threshold_explorer_server <- function(
         inputId = "result_scope",
         selected = defaults$result_scope
       )
-      shiny::updateRadioButtons(
-        session = session,
-        inputId = "mode",
-        selected = defaults$mode
-      )
       shiny::updateSelectizeInput(
         session = session,
         inputId = "additional_thresholds",
@@ -459,7 +488,6 @@ threshold_explorer_server <- function(
 
     active_settings <- shiny::reactive({
       values <- list(
-        mode = input$mode %||% defaults$mode,
         result_scope = input$result_scope %||% defaults$result_scope,
         additional_thresholds = input$additional_thresholds %||% character()
       )
@@ -469,7 +497,7 @@ threshold_explorer_server <- function(
       for (field in logical_fields) {
         values[[field]] <- input[[field]] %||% defaults[[field]]
       }
-      normalise_threshold_settings(settings = values)
+      paired_threshold_settings(settings = values)
     })
 
     query_request <- shiny::reactive({
@@ -487,75 +515,105 @@ threshold_explorer_server <- function(
     })
     debounced_request <- shiny::debounce(query_request, millis = 300L)
 
-    displayed <- shiny::reactive({
-      request <- debounced_request()
-      if (!nzchar(request$context$relation)) {
-        return(tibble::tibble(message = request$context$message))
-      }
-      tryCatch(
-        collect_threshold_results(
-          resource_source = resource_source,
-          relation = request$context$relation,
-          available = request$context$columns,
-          settings = request$settings,
-          max_rows = request$max_rows
-        ),
-        error = function(error) {
-          shiny::showNotification(
-            paste("Could not evaluate candidate thresholds:", conditionMessage(error)),
-            type = "error",
-            duration = NULL
-          )
-          tibble::tibble(error = conditionMessage(error))
-        }
+    empty_summary <- function() {
+      tibble::tibble(
+        evaluated_count = 0,
+        pass_count = 0,
+        near_miss_count = 0,
+        structurally_assessed_count = 0,
+        not_structurally_assessed_count = 0
       )
-    })
+    }
 
-    summary_counts <- shiny::reactive({
+    paired_results <- shiny::reactive({
       request <- debounced_request()
       if (!nzchar(request$context$relation)) {
-        return(tibble::tibble(
-          evaluated_count = 0,
-          pass_count = 0,
-          near_miss_count = 0,
-          structurally_assessed_count = 0,
-          not_structurally_assessed_count = 0
+        unavailable <- list(
+          data = tibble::tibble(message = request$context$message),
+          summary = empty_summary()
+        )
+        return(list(
+          prestructure = unavailable,
+          structural = unavailable
         ))
       }
-      tryCatch(
-        collect_threshold_summary(
-          resource_source = resource_source,
-          relation = request$context$relation,
-          available = request$context$columns,
-          settings = request$settings
-        ),
-        error = function(error) {
-          shiny::showNotification(
-            paste("Could not summarise candidate thresholds:", conditionMessage(error)),
-            type = "error",
-            duration = NULL
-          )
-          tibble::tibble(
-            evaluated_count = 0,
-            pass_count = 0,
-            near_miss_count = 0,
-            structurally_assessed_count = 0,
-            not_structurally_assessed_count = 0
-          )
-        }
+      collect_one <- function(mode) {
+        settings <- request$settings[[mode]]
+        data <- tryCatch(
+          collect_threshold_results(
+            resource_source = resource_source,
+            relation = request$context$relation,
+            available = request$context$columns,
+            settings = settings,
+            max_rows = request$max_rows
+          ),
+          error = function(error) {
+            shiny::showNotification(
+              paste0(
+                "Could not evaluate the ", mode,
+                " candidate list: ", conditionMessage(error)
+              ),
+              type = "error",
+              duration = NULL
+            )
+            tibble::tibble(error = conditionMessage(error))
+          }
+        )
+        summary <- tryCatch(
+          collect_threshold_summary(
+            resource_source = resource_source,
+            relation = request$context$relation,
+            available = request$context$columns,
+            settings = settings
+          ),
+          error = function(error) {
+            shiny::showNotification(
+              paste0(
+                "Could not summarise the ", mode,
+                " candidate list: ", conditionMessage(error)
+              ),
+              type = "error",
+              duration = NULL
+            )
+            empty_summary()
+          }
+        )
+        list(data = data, summary = summary)
+      }
+      list(
+        prestructure = collect_one(mode = "prestructure"),
+        structural = collect_one(mode = "structural")
       )
     })
 
-    render_count <- function(column) {
+    prestructure_displayed <- shiny::reactive({
+      paired_results()$prestructure$data
+    })
+    structural_displayed <- shiny::reactive({
+      paired_results()$structural$data
+    })
+    render_count <- function(mode, column) {
       shiny::renderText({
-        format_summary_count(summary_counts()[[column]][[1L]])
+        format_summary_count(
+          paired_results()[[mode]]$summary[[column]][[1L]]
+        )
       })
     }
-    output$evaluated_count <- render_count(column = "evaluated_count")
-    output$pass_count <- render_count(column = "pass_count")
-    output$near_miss_count <- render_count(column = "near_miss_count")
+    output$evaluated_count <- render_count(
+      mode = "prestructure",
+      column = "evaluated_count"
+    )
+    output$prestructure_pass_count <- render_count(
+      mode = "prestructure",
+      column = "pass_count"
+    )
     output$structurally_assessed_count <- render_count(
+      mode = "structural",
       column = "structurally_assessed_count"
+    )
+    output$structural_pass_count <- render_count(
+      mode = "structural",
+      column = "pass_count"
     )
     output$source_scope <- shiny::renderText({
       current_context <- context()
@@ -578,9 +636,9 @@ threshold_explorer_server <- function(
       )
     })
 
-    output$candidate_table <- DT::renderDT({
+    output$prestructure_candidate_table <- DT::renderDT({
       readable_datatable(
-        displayed(),
+        prestructure_displayed(),
         rownames = FALSE,
         filter = "top",
         extensions = "Buttons",
@@ -593,16 +651,31 @@ threshold_explorer_server <- function(
         )
       )
     })
-    output$download_tsv <- shiny::downloadHandler(
+    output$structural_candidate_table <- DT::renderDT({
+      readable_datatable(
+        structural_displayed(),
+        rownames = FALSE,
+        filter = "top",
+        extensions = "Buttons",
+        options = list(
+          pageLength = 25,
+          scrollX = TRUE,
+          deferRender = TRUE,
+          dom = "Bfrtip",
+          buttons = c("colvis")
+        )
+      )
+    })
+    output$prestructure_download_tsv <- shiny::downloadHandler(
       filename = function() {
         paste0(
-          "aria_e3_", active_settings()$mode,
-          "_custom_thresholds_", format(Sys.Date(), "%Y%m%d"), ".tsv"
+          "aria_e3_prestructure_custom_thresholds_",
+          format(Sys.Date(), "%Y%m%d"), ".tsv"
         )
       },
       content = function(path) {
         utils::write.table(
-          displayed(),
+          prestructure_displayed(),
           file = path,
           sep = "\t",
           quote = TRUE,
@@ -611,20 +684,52 @@ threshold_explorer_server <- function(
         )
       }
     )
-    output$download_excel <- shiny::downloadHandler(
+    output$prestructure_download_excel <- shiny::downloadHandler(
       filename = function() {
         paste0(
-          "aria_e3_", active_settings()$mode,
-          "_custom_thresholds_", format(Sys.Date(), "%Y%m%d"), ".xlsx"
+          "aria_e3_prestructure_custom_thresholds_",
+          format(Sys.Date(), "%Y%m%d"), ".xlsx"
         )
       },
       content = function(path) {
         write_formatted_excel(
-          data = displayed(),
+          data = prestructure_displayed(),
           path = path
         )
       }
     )
-    displayed
+    output$structural_download_tsv <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          "aria_e3_structural_custom_thresholds_",
+          format(Sys.Date(), "%Y%m%d"), ".tsv"
+        )
+      },
+      content = function(path) {
+        utils::write.table(
+          structural_displayed(),
+          file = path,
+          sep = "\t",
+          quote = TRUE,
+          row.names = FALSE,
+          na = ""
+        )
+      }
+    )
+    output$structural_download_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          "aria_e3_structural_custom_thresholds_",
+          format(Sys.Date(), "%Y%m%d"), ".xlsx"
+        )
+      },
+      content = function(path) {
+        write_formatted_excel(
+          data = structural_displayed(),
+          path = path
+        )
+      }
+    )
+    paired_results
   })
 }

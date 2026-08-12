@@ -300,14 +300,14 @@ def test_render_table_downloads_preserves_tsv_and_adds_excel(
 
 
 def test_every_streamlit_tsv_table_uses_paired_downloads() -> None:
-    """All thirteen tabular locations use the paired TSV/Excel export helper."""
+    """All fourteen tabular locations use the paired TSV/Excel export helper."""
     source = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "e3app"
         / "streamlit_app.py"
     ).read_text(encoding="utf-8")
-    assert source.count("render_table_downloads(") == 13
-    assert source.count("tsv_label=") == 13
-    assert source.count("excel_label=") == 13
+    assert source.count("render_table_downloads(") == 14
+    assert source.count("tsv_label=") == 14
+    assert source.count("excel_label=") == 14
     assert "to_csv(sep=\"\\t\"" not in source

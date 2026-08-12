@@ -51,11 +51,20 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Milestone 1 pre-structure passes" in metric_labels
     app.text_input[0].set_value("Q9SA03").run()
     assert not app.exception
-    app.radio[0].set_value("structural").run()
-    assert not app.exception
     assert any(
         slider.label == "Minimum member druggability score"
         for slider in app.slider
+    )
+    metric_labels = [metric.label for metric in app.metric]
+    assert "Pre-structure passes" in metric_labels
+    assert "Structurally informed passes" in metric_labels
+    assert any(
+        "### Pre-structure candidate list" in markdown.value
+        for markdown in app.markdown
+    )
+    assert any(
+        "### Structurally informed candidate list" in markdown.value
+        for markdown in app.markdown
     )
     focused_sliders = [
         slider

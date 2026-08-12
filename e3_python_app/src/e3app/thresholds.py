@@ -152,6 +152,37 @@ def threshold_settings_from_mapping(
     return validate_threshold_settings(settings)
 
 
+def paired_threshold_settings(
+    *,
+    values: Mapping[str, object],
+    defaults: ThresholdSettings | None = None,
+) -> tuple[ThresholdSettings, ThresholdSettings]:
+    """Build matched pre-structure and structural explorer settings.
+
+    Both settings retain the same thresholds and result scope; only their
+    evaluation mode differs. A supplied ``mode`` value is deliberately ignored
+    so a stale UI state cannot make the paired result sets inconsistent.
+
+    Args:
+        values: Shared named threshold overrides.
+        defaults: Optional baseline settings.
+
+    Returns:
+        Pre-structure settings followed by structural settings.
+    """
+    shared_values = dict(values)
+    shared_values.pop("mode", None)
+    prestructure = threshold_settings_from_mapping(
+        {**shared_values, "mode": "prestructure"},
+        defaults=defaults,
+    )
+    structural = threshold_settings_from_mapping(
+        {**shared_values, "mode": "structural"},
+        defaults=defaults,
+    )
+    return prestructure, structural
+
+
 def final_druggability_settings(
     *,
     minimum_druggability_score: float,

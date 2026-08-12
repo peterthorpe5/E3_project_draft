@@ -22,6 +22,7 @@ from e3app.thresholds import (
     final_druggability_settings,
     final_druggability_source_missing_columns,
     group_source_sql,
+    paired_threshold_settings,
     select_member_druggability_relation,
     select_threshold_relation,
     threshold_result_columns,
@@ -104,6 +105,28 @@ def test_threshold_defaults_and_validation() -> None:
         validate_threshold_settings(
             replace(defaults, result_scope="unknown")  # type: ignore[arg-type]
         )
+
+
+def test_paired_threshold_settings_differ_only_by_mode() -> None:
+    """Both displayed lists must use the same user-selected controls."""
+    prestructure, structural = paired_threshold_settings(
+        values={
+            "mode": "structural",
+            "target_species_fraction": 0.75,
+            "minimum_druggability_score": 0.35,
+            "result_scope": "pass_near",
+        }
+    )
+    assert prestructure.mode == "prestructure"
+    assert structural.mode == "structural"
+    differing = {
+        field
+        for field in prestructure.__dataclass_fields__
+        if getattr(prestructure, field) != getattr(structural, field)
+    }
+    assert differing == {"mode"}
+    assert prestructure.target_species_fraction == 0.75
+    assert structural.minimum_druggability_score == 0.35
 
 
 def test_focused_final_druggability_settings_change_only_the_last_gate() -> None:
