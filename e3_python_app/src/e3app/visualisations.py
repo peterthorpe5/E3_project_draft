@@ -131,6 +131,9 @@ STRUCTURAL_ALIGNMENT_COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
     ),
 }
 
+FINAL_GATE_CLUSTER_COLUMNS = ("lead_cluster_id", "cluster_id")
+FINAL_GATE_RANK_COLUMNS = ("final_evolutionary_rank", "final_rank")
+
 
 def candidate_identifier_column(*, available: Sequence[str]) -> str | None:
     """Choose the best stable candidate identifier from available columns.
@@ -145,6 +148,194 @@ def candidate_identifier_column(*, available: Sequence[str]) -> str | None:
         (column for column in CANDIDATE_IDENTIFIER_PREFERENCE if column in available),
         None,
     )
+
+
+def prepare_final_gate_druggability_distribution(
+    *,
+    scores: pd.DataFrame,
+    eligible_groups: pd.DataFrame,
+    max_groups: int = 30,
+) -> tuple[pd.DataFrame, bool]:
+    """Join member scores to groups that reach the final druggability gate.
+
+    Args:
+        scores: Selected-pocket member scores keyed by ``cluster_id``.
+        eligible_groups: Groups passing every fixed final gate when the
+            druggability threshold is set to zero.
+        max_groups: Maximum number of ranked groups retained in the plot.
+
+    Returns:
+        Prepared member-level rows and whether eligible groups were truncated.
+
+    Raises:
+        AppError: If inputs or required identifiers are invalid.
+    """
+    if not isinstance(scores, pd.DataFrame) or not isinstance(
+        eligible_groups, pd.DataFrame
+    ):
+        raise AppError("Final-gate druggability inputs must be pandas data frames")
+    if not 1 <= max_groups <= 100:
+        raise AppError("maximum plotted druggability groups must be between 1 and 100")
+    required_scores = {"cluster_id", "member_accession", "druggability_score"}
+    missing_scores = sorted(required_scores.difference(scores.columns))
+    if missing_scores:
+        raise AppError(
+            "Member druggability rows are missing: " + ", ".join(missing_scores)
+        )
+    cluster_column = next(
+        (
+            column
+            for column in FINAL_GATE_CLUSTER_COLUMNS
+            if column in eligible_groups.columns
+        ),
+        None,
+    )
+    if cluster_column is None:
+        raise AppError("Eligible final-gate groups lack a lead cluster identifier")
+    rank_column = next(
+        (
+            column
+            for column in FINAL_GATE_RANK_COLUMNS
+            if column in eligible_groups.columns
+        ),
+        None,
+    )
+
+    metadata_columns = [cluster_column]
+    for column in (rank_column, "primary_group_id", "primary_group_type"):
+        if column is not None and column in eligible_groups.columns:
+            metadata_columns.append(column)
+    metadata = eligible_groups.loc[:, list(dict.fromkeys(metadata_columns))].copy()
+    metadata[cluster_column] = metadata[cluster_column].astype("string").str.strip()
+    metadata = metadata.loc[metadata[cluster_column].fillna("").ne("")].copy()
+    if rank_column is not None:
+        metadata["_plot_rank"] = pd.to_numeric(
+            metadata[rank_column], errors="coerce"
+        )
+    else:
+        metadata["_plot_rank"] = math.inf
+    metadata = (
+        metadata.sort_values(
+            ["_plot_rank", cluster_column],
+            na_position="last",
+            kind="stable",
+        )
+        .drop_duplicates(cluster_column, keep="first")
+        .reset_index(drop=True)
+    )
+    truncated = len(metadata) > max_groups
+    metadata = metadata.head(max_groups).copy()
+    metadata = metadata.rename(columns={cluster_column: "_eligible_cluster_id"})
+
+    prepared_scores = scores.copy()
+    prepared_scores["cluster_id"] = (
+        prepared_scores["cluster_id"].astype("string").str.strip()
+    )
+    prepared_scores["druggability_score"] = pd.to_numeric(
+        prepared_scores["druggability_score"], errors="coerce"
+    )
+    prepared_scores = prepared_scores.loc[
+        prepared_scores["cluster_id"].fillna("").ne("")
+        & prepared_scores["druggability_score"].between(0.0, 1.0)
+    ].copy()
+    prepared = metadata.merge(
+        prepared_scores,
+        left_on="_eligible_cluster_id",
+        right_on="cluster_id",
+        how="inner",
+        validate="one_to_many",
+    )
+    if prepared.empty:
+        return prepared, truncated
+
+    group_ids = (
+        prepared["primary_group_id"].astype("string").fillna("").str.strip()
+        if "primary_group_id" in prepared.columns
+        else pd.Series("", index=prepared.index, dtype="string")
+    )
+    prepared["group_label"] = [
+        f"{group_id} · {cluster_id}" if group_id else str(cluster_id)
+        for group_id, cluster_id in zip(
+            group_ids,
+            prepared["_eligible_cluster_id"],
+            strict=True,
+        )
+    ]
+    prepared["member_accession"] = (
+        prepared["member_accession"].astype("string").fillna("Unknown member")
+    )
+    if "species" not in prepared.columns:
+        prepared["species"] = "Unknown"
+    prepared["species"] = prepared["species"].astype("string").fillna("Unknown")
+    return prepared.reset_index(drop=True), truncated
+
+
+def build_final_gate_druggability_boxplot(
+    *,
+    frame: pd.DataFrame,
+    threshold: float,
+) -> go.Figure:
+    """Build horizontal member-score box plots with the selected gate line.
+
+    Args:
+        frame: Output of ``prepare_final_gate_druggability_distribution``.
+        threshold: Inclusive final-gate threshold shown as a reference line.
+
+    Returns:
+        Plotly box-plot figure.
+
+    Raises:
+        AppError: If no usable values exist or the threshold is invalid.
+    """
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+        raise AppError("Druggability plot threshold must be a number from 0 to 1")
+    if not 0.0 <= float(threshold) <= 1.0:
+        raise AppError("Druggability plot threshold must be a number from 0 to 1")
+    required = {"group_label", "member_accession", "druggability_score"}
+    if not isinstance(frame, pd.DataFrame) or not required.issubset(frame.columns):
+        raise AppError("Druggability distribution rows lack required plot fields")
+    if frame.empty:
+        raise AppError("No member-level druggability scores are available to plot")
+    group_order = frame["group_label"].drop_duplicates().tolist()
+    hover_data: dict[str, object] = {
+        "member_accession": True,
+        "species": True,
+        "cluster_id": False,
+        "group_label": False,
+        "druggability_score": ":.3f",
+    }
+    if "pocket_number" in frame.columns:
+        hover_data["pocket_number"] = True
+    figure = px.box(
+        frame,
+        x="druggability_score",
+        y="group_label",
+        points="all",
+        hover_name="member_accession",
+        hover_data=hover_data,
+        category_orders={"group_label": list(reversed(group_order))},
+        labels={
+            "druggability_score": "Selected-pocket druggability score",
+            "group_label": "Lead cluster / evolutionary group",
+            "member_accession": "Member accession",
+            "species": "Species",
+            "pocket_number": "Pocket number",
+        },
+    )
+    figure.update_traces(jitter=0.32, pointpos=0, marker={"size": 7, "opacity": 0.72})
+    figure.add_vline(
+        x=float(threshold),
+        line_dash="dash",
+        annotation_text=f"Selected threshold = {float(threshold):.2f}",
+        annotation_position="top right",
+    )
+    figure.update_xaxes(range=[0, 1])
+    figure.update_layout(
+        showlegend=False,
+        height=max(360, 82 + 54 * len(group_order)),
+        margin={"l": 20, "r": 20, "t": 45, "b": 20},
+    )
+    return figure
 
 
 def candidate_rank_column(*, available: Sequence[str]) -> str | None:

@@ -61,8 +61,14 @@ from e3app.ranking import (
 from e3app.thresholds import (
     LOGICAL_THRESHOLD_FIELDS,
     NUMERIC_THRESHOLD_FIELDS,
+    RECORDED_MINIMUM_DRUGGABILITY_SCORE,
     ThresholdSettings,
+    collect_member_druggability_scores,
+    compare_final_druggability_passes,
     evaluate_thresholds,
+    final_druggability_settings,
+    final_druggability_source_missing_columns,
+    select_threshold_relation,
     threshold_settings_from_mapping,
 )
 from e3app.visualisations import (
@@ -70,6 +76,7 @@ from e3app.visualisations import (
     EXPRESSION_CONTEXT_LABELS,
     build_candidate_landscape_figure,
     build_expression_heatmap_figure,
+    build_final_gate_druggability_boxplot,
     build_species_tissue_profile_figure,
     build_structural_alignment_figure,
     build_volcano_figure,
@@ -81,6 +88,7 @@ from e3app.visualisations import (
     candidate_metric_columns,
     candidate_rank_column,
     prepare_candidate_landscape,
+    prepare_final_gate_druggability_distribution,
     prepare_species_tissue_summary,
     selected_candidate_from_event,
     structural_alignment_plot_columns,
@@ -500,6 +508,207 @@ def _render_ranking_sensitivity(
     )
 
 
+def _render_final_druggability_sensitivity(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render a focused sensitivity analysis for the last strict gate.
+
+    Args:
+        connection: Open read-only DuckDB connection.
+        config: Validated application configuration.
+    """
+    st.markdown("### Sensitivity analysis: final all-members druggability gate")
+    st.warning(
+        "This control does not alter the authoritative recorded result. It changes "
+        "only the final minimum-member druggability threshold in memory; every "
+        "other recorded pre-structure and structural gate remains fixed."
+    )
+    st.caption(
+        "The rule is inclusive: a group passes this gate when its minimum selected-"
+        "pocket druggability score is greater than or equal to the selected value. "
+        "The recorded production threshold is 0.50."
+    )
+    reset_column, _ = st.columns([1, 3])
+    with reset_column:
+        if st.button(
+            "Reset to recorded 0.50",
+            key="recommendation_druggability_reset",
+        ):
+            st.session_state["recommendation_druggability_threshold"] = (
+                RECORDED_MINIMUM_DRUGGABILITY_SCORE
+            )
+    selected_threshold = st.slider(
+        "Minimum member druggability required for every assessed member",
+        min_value=0.0,
+        max_value=1.0,
+        value=RECORDED_MINIMUM_DRUGGABILITY_SCORE,
+        step=0.01,
+        key="recommendation_druggability_threshold",
+        help=(
+            "Only this one gate changes. Lower values are more permissive; higher "
+            "values are more stringent. Equality passes because the rule uses ≥."
+        ),
+    )
+
+    relation = select_threshold_relation(list_relations(connection))
+    if relation is None:
+        st.info(
+            "No evolutionary-group relation is available for this focused "
+            "sensitivity analysis. The recorded recommendation tables above remain "
+            "available."
+        )
+        return
+    available = relation_columns(connection, relation)
+    missing = final_druggability_source_missing_columns(available)
+    if missing:
+        st.info(
+            f"`{relation}` does not retain every field required to recalculate the "
+            "complete final gate intersection. Missing: " + ", ".join(missing) + "."
+        )
+        return
+
+    row_limit = min(config.max_rows, 10_000)
+    selected_settings = final_druggability_settings(
+        minimum_druggability_score=float(selected_threshold),
+    )
+    recorded_settings = final_druggability_settings(
+        minimum_druggability_score=RECORDED_MINIMUM_DRUGGABILITY_SCORE,
+    )
+    try:
+        _, selected_rows, selected_summary = evaluate_thresholds(
+            connection,
+            selected_settings,
+            row_limit,
+        )
+        if float(selected_threshold) == RECORDED_MINIMUM_DRUGGABILITY_SCORE:
+            recorded_rows = selected_rows.copy()
+            recorded_summary = dict(selected_summary)
+        else:
+            _, recorded_rows, recorded_summary = evaluate_thresholds(
+                connection,
+                recorded_settings,
+                row_limit,
+            )
+        selected_rows, changed_rows = compare_final_druggability_passes(
+            recorded=recorded_rows,
+            selected=selected_rows,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+
+    recorded_passes = recorded_summary["pass_count"]
+    selected_passes = selected_summary["pass_count"]
+    difference = selected_passes - recorded_passes
+    metric_one, metric_two, metric_three = st.columns(3)
+    metric_one.metric("Recorded passes at 0.50", recorded_passes)
+    metric_two.metric(
+        f"Sensitivity passes at {selected_threshold:.2f}",
+        selected_passes,
+        delta=f"{difference:+d} versus recorded",
+        delta_color="off",
+    )
+    metric_three.metric(
+        "Groups changing pass status",
+        len(changed_rows),
+    )
+    st.caption(
+        f"Sensitivity source: `{relation}`. The displayed list contains groups "
+        f"passing every fixed recorded gate when minimum member druggability is "
+        f"required to be ≥ {selected_threshold:.2f}."
+    )
+    st.markdown("#### Member druggability distributions at the last gate")
+    try:
+        _, eligible_rows, _ = evaluate_thresholds(
+            connection,
+            final_druggability_settings(minimum_druggability_score=0.0),
+            row_limit,
+        )
+        cluster_column = next(
+            (
+                column
+                for column in ("lead_cluster_id", "cluster_id")
+                if column in eligible_rows.columns
+            ),
+            None,
+        )
+        if cluster_column is None:
+            raise AppError("Eligible groups lack a lead cluster identifier")
+        score_groups = eligible_rows.copy()
+        rank_column = next(
+            (
+                column
+                for column in ("final_evolutionary_rank", "final_rank")
+                if column in score_groups.columns
+            ),
+            None,
+        )
+        if rank_column is not None:
+            score_groups["_boxplot_rank"] = pd.to_numeric(
+                score_groups[rank_column],
+                errors="coerce",
+            )
+            score_groups = score_groups.sort_values(
+                ["_boxplot_rank", cluster_column],
+                na_position="last",
+                kind="stable",
+            )
+        score_groups = score_groups.drop_duplicates(cluster_column).head(30)
+        score_relation, member_scores = collect_member_druggability_scores(
+            connection=connection,
+            cluster_ids=(
+                score_groups[cluster_column].dropna().astype(str).tolist()
+            ),
+            max_rows=10_000,
+        )
+        plot_rows, truncated = prepare_final_gate_druggability_distribution(
+            scores=member_scores,
+            eligible_groups=eligible_rows,
+            max_groups=30,
+        )
+        figure = build_final_gate_druggability_boxplot(
+            frame=plot_rows,
+            threshold=float(selected_threshold),
+        )
+    except AppError as exc:
+        st.info(f"The member-level box plot is unavailable: {exc}")
+    else:
+        st.plotly_chart(
+            figure,
+            width="stretch",
+            config={"displaylogo": False},
+            key="recommendation_druggability_boxplot",
+        )
+        st.caption(
+            "Each point is one assessed member's retained selected-pocket score. "
+            "Boxes summarise lead clusters that pass every other fixed final gate; "
+            f"the dashed line is the selected threshold. Score source: `{score_relation}`."
+        )
+        if truncated:
+            st.info("The plot is limited to the first 30 eligible groups by final rank.")
+    if selected_rows.empty:
+        st.info("No evolutionary group passes the complete selected gate intersection.")
+    else:
+        _display_dataframe(frame=selected_rows, height=620)
+        render_table_downloads(
+            frame=selected_rows,
+            file_stem=(
+                "final_druggability_sensitivity_"
+                f"threshold_{selected_threshold:.2f}".replace(".", "p")
+            ),
+            tsv_label="Download sensitivity candidate list as TSV",
+            excel_label="Download sensitivity candidate list as Excel",
+            key="recommendation_druggability_download",
+        )
+    with st.expander("Groups entering or leaving relative to recorded 0.50"):
+        if changed_rows.empty:
+            st.info("No group changes pass status at the selected threshold.")
+        else:
+            _display_dataframe(frame=changed_rows, height=360)
+
+
 def _render_computational_recommendations(
     *, connection: object, config: AppConfig
 ) -> None:
@@ -509,14 +718,19 @@ def _render_computational_recommendations(
     st.caption(str(specification["description"]))
     st.info(
         "A full explanation of every ranking formula, recorded weight, ordering "
-        "rule and tie-break appears below the result table, followed by a "
-        "non-authoritative weighting-sensitivity explorer."
+        "rule and tie-break appears below the result table. A focused final-gate "
+        "slider and a non-authoritative weighting-sensitivity explorer are also "
+        "provided without rewriting the recorded result."
     )
     _render_section(
         connection=connection,
         config=config,
         section="final_recommendations",
         show_heading=False,
+    )
+    _render_final_druggability_sensitivity(
+        connection=connection,
+        config=config,
     )
     st.markdown(RANKING_METHODOLOGY_MARKDOWN)
     with st.expander(

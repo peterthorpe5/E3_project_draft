@@ -57,6 +57,18 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         slider.label == "Minimum member druggability score"
         for slider in app.slider
     )
+    focused_sliders = [
+        slider
+        for slider in app.slider
+        if slider.label
+        == "Minimum member druggability required for every assessed member"
+    ]
+    assert len(focused_sliders) == 1
+    assert focused_sliders[0].value == 0.50
+    assert any(
+        "recorded production threshold is 0.50" in caption.value
+        for caption in app.caption
+    )
 
 
 def test_app_reports_missing_database(monkeypatch: object, tmp_path: Path) -> None:
@@ -67,6 +79,42 @@ def test_app_reports_missing_database(monkeypatch: object, tmp_path: Path) -> No
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert app.error
     assert "does not exist" in app.error[0].value
+
+
+def test_final_druggability_slider_recalculates_the_focused_pass_list(
+    recommendation_threshold_db: Path,
+    monkeypatch: object,
+) -> None:
+    """Changing only the final threshold updates counts without app errors."""
+    monkeypatch.setenv(
+        "E3_RESOURCE_DUCKDB",
+        str(recommendation_threshold_db),
+    )
+    monkeypatch.setenv("E3_MAX_TABLE_ROWS", "100")
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=10).run()
+    assert not app.exception
+    focused = next(
+        slider
+        for slider in app.slider
+        if slider.label
+        == "Minimum member druggability required for every assessed member"
+    )
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Recorded passes at 0.50"] == "1"
+    assert metrics["Sensitivity passes at 0.50"] == "1"
+
+    focused.set_value(0.30).run()
+    assert not app.exception
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Recorded passes at 0.50"] == "1"
+    assert metrics["Sensitivity passes at 0.30"] == "2"
+    assert metrics["Groups changing pass status"] == "1"
+    assert any(
+        "Each point is one assessed member's retained selected-pocket score"
+        in caption.value
+        for caption in app.caption
+    )
 
 
 def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -> None:

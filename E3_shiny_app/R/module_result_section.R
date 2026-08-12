@@ -553,6 +553,101 @@ ranking_methodology_ui <- function(ns) {
   )
 }
 
+#' Focused sensitivity controls for the final all-members druggability gate.
+#'
+#' @param ns Shiny namespace function.
+#' @return Shiny card containing the slider, counts, tables and downloads.
+final_druggability_sensitivity_ui <- function(ns) {
+  recorded <- RECORDED_MINIMUM_DRUGGABILITY_SCORE
+  bslib::card(
+    class = "final-druggability-sensitivity-card",
+    bslib::card_header(
+      "Sensitivity analysis: final all-members druggability gate"
+    ),
+    shiny::div(
+      class = "alert alert-warning",
+      paste(
+        "This control does not alter the authoritative recorded result. It",
+        "changes only the final minimum-member druggability threshold in",
+        "memory; every other recorded pre-structure and structural gate",
+        "remains fixed."
+      )
+    ),
+    shiny::p(
+      paste(
+        "The rule is inclusive: a group passes this gate when its minimum",
+        "selected-pocket druggability score is greater than or equal to the",
+        "selected value. The recorded production threshold is 0.50."
+      )
+    ),
+    bslib::layout_columns(
+      shiny::sliderInput(
+        ns("final_druggability_threshold"),
+        "Minimum member druggability required for every assessed member",
+        min = 0,
+        max = 1,
+        value = recorded,
+        step = 0.01
+      ),
+      shiny::div(
+        class = "pt-4",
+        shiny::actionButton(
+          ns("final_druggability_reset"),
+          "Reset to recorded 0.50",
+          class = "btn-primary"
+        )
+      ),
+      col_widths = c(8, 4)
+    ),
+    shiny::p(
+      class = "small text-muted",
+      paste(
+        "Lower values are more permissive and higher values are more",
+        "stringent. Equality passes because the recorded rule uses ≥."
+      )
+    ),
+    bslib::layout_columns(
+      bslib::value_box(
+        "Recorded passes at 0.50",
+        shiny::textOutput(ns("final_druggability_recorded_passes"))
+      ),
+      bslib::value_box(
+        "Sensitivity passes",
+        shiny::textOutput(ns("final_druggability_selected_passes"))
+      ),
+      bslib::value_box(
+        "Difference from recorded",
+        shiny::textOutput(ns("final_druggability_difference"))
+      ),
+      bslib::value_box(
+        "Groups changing pass status",
+        shiny::textOutput(ns("final_druggability_changed_count"))
+      )
+    ),
+    shiny::uiOutput(ns("final_druggability_notice")),
+    shiny::h5("Member druggability distributions at the last gate"),
+    shiny::uiOutput(ns("final_druggability_plot_notice")),
+    shinycssloaders::withSpinner(
+      plotly::plotlyOutput(ns("final_druggability_boxplot"), height = "650px")
+    ),
+    shiny::h5("Sensitivity candidate list"),
+    tabular_download_buttons(
+      ns = ns,
+      tsv_id = "final_druggability_download_tsv",
+      excel_id = "final_druggability_download_excel",
+      tsv_label = "Download sensitivity candidate list as TSV",
+      excel_label = "Download sensitivity candidate list as Excel"
+    ),
+    shinycssloaders::withSpinner(
+      DT::DTOutput(ns("final_druggability_result_table"))
+    ),
+    shiny::h5("Groups entering or leaving relative to recorded 0.50"),
+    shinycssloaders::withSpinner(
+      DT::DTOutput(ns("final_druggability_changes_table"))
+    )
+  )
+}
+
 #' Result-section UI.
 #'
 #' @param id Module identifier.
@@ -718,6 +813,9 @@ result_section_ui <- function(id, section) {
       )
     },
     shinycssloaders::withSpinner(DT::DTOutput(ns("result_table"))),
+    if (identical(section, "final_recommendations")) {
+      final_druggability_sensitivity_ui(ns)
+    },
     if (identical(section, "final_recommendations")) {
       ranking_methodology_ui(ns)
     }
@@ -1077,6 +1175,402 @@ result_section_server <- function(
     }
     if (identical(section, "final_recommendations")) {
       defaults <- recorded_ranking_weights()
+      shiny::observeEvent(input$final_druggability_reset, {
+        shiny::updateSliderInput(
+          session,
+          "final_druggability_threshold",
+          value = RECORDED_MINIMUM_DRUGGABILITY_SCORE
+        )
+      })
+
+      final_druggability_context <- shiny::reactive({
+        if (!resource_source_available(resource_source)) {
+          return(list(
+            relation = "",
+            columns = character(),
+            error = "No E3 result source is configured."
+          ))
+        }
+        relations <- tryCatch(
+          collect_resource_view_names(resource_source),
+          error = function(error) character()
+        )
+        relation <- select_threshold_relation(relations)
+        if (!nzchar(relation)) {
+          return(list(
+            relation = "",
+            columns = character(),
+            error = paste(
+              "No evolutionary-group relation is available for the focused",
+              "final-gate sensitivity analysis."
+            )
+          ))
+        }
+        columns <- tryCatch(
+          as.character(
+            collect_resource_columns(resource_source, relation)$column_name
+          ),
+          error = function(error) character()
+        )
+        missing <- final_druggability_source_missing_columns(columns)
+        if (length(missing) > 0L) {
+          return(list(
+            relation = relation,
+            columns = columns,
+            error = paste0(
+              relation,
+              " does not retain every field required to recalculate the ",
+              "complete final gate intersection. Missing: ",
+              paste(missing, collapse = ", "),
+              "."
+            )
+          ))
+        }
+        list(relation = relation, columns = columns, error = "")
+      })
+
+      final_druggability_results <- shiny::reactive({
+        context <- final_druggability_context()
+        if (nzchar(context$error)) {
+          return(list(
+            error = context$error,
+            relation = context$relation,
+            threshold = RECORDED_MINIMUM_DRUGGABILITY_SCORE,
+            selected = tibble::tibble(),
+            changes = tibble::tibble(),
+            selected_passes = NA_integer_,
+            recorded_passes = NA_integer_
+          ))
+        }
+        selected_threshold <- suppressWarnings(as.numeric(
+          input$final_druggability_threshold %||%
+            RECORDED_MINIMUM_DRUGGABILITY_SCORE
+        ))
+        row_limit <- min(max(1L, as.integer(max_rows)), 10000L)
+        tryCatch({
+          selected_settings <- final_druggability_settings(
+            minimum_druggability_score = selected_threshold
+          )
+          recorded_settings <- final_druggability_settings(
+            minimum_druggability_score =
+              RECORDED_MINIMUM_DRUGGABILITY_SCORE
+          )
+          selected <- collect_threshold_results(
+            resource_source = resource_source,
+            relation = context$relation,
+            available = context$columns,
+            settings = selected_settings,
+            max_rows = row_limit
+          )
+          selected_summary <- collect_threshold_summary(
+            resource_source = resource_source,
+            relation = context$relation,
+            available = context$columns,
+            settings = selected_settings
+          )
+          if (
+            isTRUE(all.equal(
+              selected_threshold,
+              RECORDED_MINIMUM_DRUGGABILITY_SCORE
+            ))
+          ) {
+            recorded <- selected
+            recorded_summary <- selected_summary
+          } else {
+            recorded <- collect_threshold_results(
+              resource_source = resource_source,
+              relation = context$relation,
+              available = context$columns,
+              settings = recorded_settings,
+              max_rows = row_limit
+            )
+            recorded_summary <- collect_threshold_summary(
+              resource_source = resource_source,
+              relation = context$relation,
+              available = context$columns,
+              settings = recorded_settings
+            )
+          }
+          comparison <- compare_final_druggability_passes(
+            recorded = recorded,
+            selected = selected
+          )
+          list(
+            error = "",
+            relation = context$relation,
+            threshold = selected_threshold,
+            selected = comparison$selected,
+            changes = comparison$changes,
+            selected_passes = as.integer(selected_summary$pass_count[[1L]]),
+            recorded_passes = as.integer(recorded_summary$pass_count[[1L]])
+          )
+        }, error = function(error) {
+          list(
+            error = conditionMessage(error),
+            relation = context$relation,
+            threshold = selected_threshold,
+            selected = tibble::tibble(),
+            changes = tibble::tibble(),
+            selected_passes = NA_integer_,
+            recorded_passes = NA_integer_
+          )
+        })
+      })
+
+      final_druggability_plot_data <- shiny::reactive({
+        result <- final_druggability_results()
+        context <- final_druggability_context()
+        empty <- list(
+          error = result$error,
+          relation = "",
+          data = tibble::tibble(),
+          truncated = FALSE,
+          threshold = result$threshold
+        )
+        if (nzchar(result$error) || nzchar(context$error)) {
+          return(empty)
+        }
+        row_limit <- min(max(1L, as.integer(max_rows)), 10000L)
+        tryCatch({
+          eligible <- collect_threshold_results(
+            resource_source = resource_source,
+            relation = context$relation,
+            available = context$columns,
+            settings = final_druggability_settings(
+              minimum_druggability_score = 0
+            ),
+            max_rows = row_limit
+          )
+          cluster_columns <- c("lead_cluster_id", "cluster_id")
+          cluster_column <- cluster_columns[
+            cluster_columns %in% names(eligible)
+          ]
+          if (length(cluster_column) == 0L) {
+            stop(
+              "Eligible groups lack a lead cluster identifier.",
+              call. = FALSE
+            )
+          }
+          cluster_column <- cluster_column[[1L]]
+          score_groups <- eligible
+          rank_columns <- c("final_evolutionary_rank", "final_rank")
+          rank_column <- rank_columns[rank_columns %in% names(score_groups)]
+          if (length(rank_column) > 0L) {
+            plot_rank <- suppressWarnings(as.numeric(
+              score_groups[[rank_column[[1L]]]]
+            ))
+            score_groups <- score_groups[
+              order(
+                plot_rank,
+                score_groups[[cluster_column]],
+                na.last = TRUE
+              ),
+              ,
+              drop = FALSE
+            ]
+          }
+          score_groups <- score_groups[
+            !duplicated(score_groups[[cluster_column]]),
+            ,
+            drop = FALSE
+          ]
+          score_groups <- utils::head(score_groups, 30L)
+          member_scores <- collect_member_druggability_scores(
+            resource_source = resource_source,
+            cluster_ids = score_groups[[cluster_column]],
+            max_rows = 10000L
+          )
+          prepared <- prepare_final_gate_druggability_data(
+            scores = member_scores$data,
+            eligible_groups = eligible,
+            max_groups = 30L
+          )
+          list(
+            error = "",
+            relation = member_scores$relation,
+            data = prepared$data,
+            truncated = prepared$truncated,
+            threshold = result$threshold
+          )
+        }, error = function(error) {
+          empty$error <- conditionMessage(error)
+          empty
+        })
+      })
+
+      final_druggability_count <- function(field) {
+        value <- final_druggability_results()[[field]]
+        if (length(value) != 1L || is.na(value)) {
+          return("—")
+        }
+        format(value, big.mark = ",")
+      }
+      output$final_druggability_recorded_passes <- shiny::renderText({
+        final_druggability_count("recorded_passes")
+      })
+      output$final_druggability_selected_passes <- shiny::renderText({
+        result <- final_druggability_results()
+        if (is.na(result$selected_passes)) {
+          return("—")
+        }
+        paste0(
+          format(result$selected_passes, big.mark = ","),
+          " at ",
+          formatC(result$threshold, format = "f", digits = 2L)
+        )
+      })
+      output$final_druggability_difference <- shiny::renderText({
+        result <- final_druggability_results()
+        if (is.na(result$selected_passes) || is.na(result$recorded_passes)) {
+          return("—")
+        }
+        sprintf("%+d", result$selected_passes - result$recorded_passes)
+      })
+      output$final_druggability_changed_count <- shiny::renderText({
+        result <- final_druggability_results()
+        if (nzchar(result$error)) {
+          return("—")
+        }
+        format(nrow(result$changes), big.mark = ",")
+      })
+      output$final_druggability_notice <- shiny::renderUI({
+        result <- final_druggability_results()
+        if (nzchar(result$error)) {
+          return(shiny::div(class = "alert alert-info", result$error))
+        }
+        shiny::div(
+          class = "alert alert-secondary",
+          paste0(
+            "Sensitivity source: ", result$relation, ". The list contains ",
+            "groups passing every fixed recorded gate when minimum member ",
+            "druggability is required to be ≥ ",
+            formatC(result$threshold, format = "f", digits = 2L),
+            "."
+          )
+        )
+      })
+      output$final_druggability_plot_notice <- shiny::renderUI({
+        result <- final_druggability_plot_data()
+        if (nzchar(result$error)) {
+          return(shiny::div(
+            class = "alert alert-info",
+            paste0("The member-level box plot is unavailable: ", result$error)
+          ))
+        }
+        notes <- paste0(
+          "Each point is one assessed member's retained selected-pocket score. ",
+          "Boxes summarise lead clusters that pass every other fixed final ",
+          "gate; the dashed line is the selected threshold. Score source: ",
+          result$relation,
+          "."
+        )
+        if (isTRUE(result$truncated)) {
+          notes <- paste(
+            notes,
+            "The plot is limited to the first 30 eligible groups by final rank."
+          )
+        }
+        shiny::p(class = "small text-muted", notes)
+      })
+      output$final_druggability_boxplot <- plotly::renderPlotly({
+        result <- final_druggability_plot_data()
+        if (nzchar(result$error) || nrow(result$data) == 0L) {
+          return(NULL)
+        }
+        build_final_gate_druggability_plot(
+          data = result$data,
+          threshold = result$threshold
+        )
+      })
+      output$final_druggability_result_table <- DT::renderDT({
+        result <- final_druggability_results()
+        data <- result$selected
+        if (nrow(data) == 0L) {
+          message <- if (nzchar(result$error)) {
+            result$error
+          } else {
+            paste(
+              "No evolutionary group passes the complete selected gate",
+              "intersection."
+            )
+          }
+          data <- tibble::tibble(message = message)
+        }
+        readable_datatable(
+          data,
+          rownames = FALSE,
+          filter = "top",
+          options = list(
+            pageLength = 25,
+            scrollX = TRUE,
+            deferRender = TRUE,
+            dom = "tip"
+          )
+        )
+      })
+      output$final_druggability_changes_table <- DT::renderDT({
+        result <- final_druggability_results()
+        changes <- result$changes
+        if (nrow(changes) == 0L) {
+          message <- if (nzchar(result$error)) {
+            result$error
+          } else {
+            "No group changes pass status at the selected threshold."
+          }
+          changes <- tibble::tibble(message = message)
+        }
+        readable_datatable(
+          changes,
+          rownames = FALSE,
+          filter = "top",
+          options = list(pageLength = 15, scrollX = TRUE, dom = "tip")
+        )
+      })
+      output$final_druggability_download_tsv <- shiny::downloadHandler(
+        filename = function() {
+          threshold <- formatC(
+            final_druggability_results()$threshold,
+            format = "f",
+            digits = 2L
+          )
+          paste0(
+            "final_druggability_sensitivity_threshold_",
+            sub(".", "p", threshold, fixed = TRUE),
+            ".tsv"
+          )
+        },
+        content = function(path) {
+          utils::write.table(
+            final_druggability_results()$selected,
+            file = path,
+            sep = "\t",
+            quote = TRUE,
+            row.names = FALSE,
+            na = ""
+          )
+        }
+      )
+      output$final_druggability_download_excel <- shiny::downloadHandler(
+        filename = function() {
+          threshold <- formatC(
+            final_druggability_results()$threshold,
+            format = "f",
+            digits = 2L
+          )
+          paste0(
+            "final_druggability_sensitivity_threshold_",
+            sub(".", "p", threshold, fixed = TRUE),
+            ".xlsx"
+          )
+        },
+        content = function(path) {
+          write_formatted_excel(
+            data = final_druggability_results()$selected,
+            path = path
+          )
+        }
+      )
+
       shiny::observeEvent(input$ranking_reset_weights, {
         for (group in names(defaults)) {
           for (component in names(defaults[[group]])) {

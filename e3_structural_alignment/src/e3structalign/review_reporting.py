@@ -344,8 +344,9 @@ document.getElementById("picked").textContent=
 `${best.atom.resn} chain ${best.atom.chain||"?"} residue ${best.atom.resi||"?"}`+
 `${anns.length?" · "+anns.map(a=>
 `pocket ${a.pocket_number} rank ${a.selection_rank}`).join(", "):""}`;}});
-document.getElementById("reset").onclick=()=>{rx=-.28;ry=.45;zoom=1;draw();};
-document.getElementById("fit").onclick=()=>{zoom=1;draw();};
+document.getElementById("reset").onclick=()=>{rx=-.28;ry=.45;draw();};
+document.getElementById("fit").onclick=()=>{rx=-.28;ry=.45;zoom=1;draw();
+document.getElementById("viewerStatus").textContent="View fitted and centred.";};
 window.addEventListener("resize",resize);updateProtein();resize();
 """
 
@@ -485,7 +486,8 @@ ranked index.</p></section>
 <label>Protein<select id="proteinSelect"></select></label>
 <label>Pocket display<select id="pocketSelect"></select></label>
 <div class="button-row"><button id="reset" type="button">Reset rotation</button>
-<button id="fit" type="button">Fit structure</button></div>
+<button id="fit" type="button">Fit and centre</button></div>
+<p id="viewerStatus" class="note" aria-live="polite"></p>
 <p id="proteinMeta"></p><p id="pocketMeta" class="note"></p>
 <p><strong>Model:</strong> <span id="modelStatus"></span></p>
 <p class="note">Drag to rotate; use the mouse wheel to zoom; click a residue for its label.

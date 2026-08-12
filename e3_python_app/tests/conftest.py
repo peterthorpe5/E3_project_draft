@@ -151,6 +151,45 @@ def resource_db(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def recommendation_threshold_db(resource_db: Path) -> Path:
+    """Add a complete two-group final-gate relation for headless UI tests."""
+    with duckdb.connect(str(resource_db)) as connection:
+        connection.execute(
+            "CREATE TABLE final_evolutionary_candidate_prioritisation("
+            "final_evolutionary_rank INTEGER, primary_group_type VARCHAR, "
+            "primary_group_id VARCHAR, lead_cluster_id VARCHAR, "
+            "target_species_fraction DOUBLE, mandatory_species_fraction DOUBLE, "
+            "domain_assessed_species_count INTEGER, domain_species_fraction DOUBLE, "
+            "expression_assessed_species_count INTEGER, "
+            "expression_species_fraction DOUBLE, structural_species_fraction DOUBLE, "
+            "minimum_druggability_score DOUBLE, "
+            "all_assessed_members_pass_druggability BOOLEAN, "
+            "all_assessed_members_pass_mapping BOOLEAN, conservation_status VARCHAR, "
+            "three_dimensional_alignment_status VARCHAR, "
+            "prestructure_score DOUBLE, final_score DOUBLE, "
+            "candidate_accessions VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO final_evolutionary_candidate_prioritisation VALUES "
+            "(1, 'HIERARCHICAL_ORTHOGROUP', 'N0.HOG0001', 'cluster_1', "
+            "1, 1, 12, 1, 10, 1, 1, 0.7, true, true, "
+            "'CONSERVED_REGION_SUPPORTED', 'CONSERVED_3D_POCKET_SUPPORTED', "
+            "0.9, 0.9, 'P1;P2'), "
+            "(2, 'HIERARCHICAL_ORTHOGROUP', 'N0.HOG0002', 'cluster_2', "
+            "1, 1, 12, 1, 10, 1, 1, 0.325, false, true, "
+            "'CONSERVED_REGION_SUPPORTED', 'CONSERVED_3D_POCKET_SUPPORTED', "
+            "0.85, 0.8, 'P3;P4')"
+        )
+        connection.execute(
+            "INSERT INTO selected_pockets VALUES "
+            "('cluster_1', 'P2', 1, 0.7), "
+            "('cluster_2', 'P3', 1, 0.8), "
+            "('cluster_2', 'P4', 1, 0.325)"
+        )
+    return resource_db
+
+
+@pytest.fixture
 def master_parquet(resource_db: Path, tmp_path: Path) -> Path:
     """Export the representative candidate master relation to Parquet."""
     path = tmp_path / "e3_candidate_master_results.parquet"

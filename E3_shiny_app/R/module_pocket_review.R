@@ -162,7 +162,16 @@ pocket_review_scroll_script <- function(focus = c("structure", "alignment")) {
   }
   paste0(
     "const doc=this.contentDocument;",
-    "if(doc){const headings=Array.from(doc.querySelectorAll('h2'));",
+    "if(doc){const fit=doc.getElementById('fit');",
+    "const reset=doc.getElementById('reset');",
+    "if(fit&&reset){fit.textContent='Fit and centre';",
+    "fit.onclick=()=>{reset.click();let status=",
+    "doc.getElementById('viewerStatus');if(!status){status=",
+    "doc.createElement('p');status.id='viewerStatus';",
+    "status.className='note';status.setAttribute('aria-live','polite');",
+    "fit.parentElement.insertAdjacentElement('afterend',status);}",
+    "status.textContent='View fitted and centred.';};}",
+    "const headings=Array.from(doc.querySelectorAll('h2'));",
     "const target=headings.find((node)=>node.textContent.trim()==='",
     heading,
     "');if(target){target.scrollIntoView();}}"

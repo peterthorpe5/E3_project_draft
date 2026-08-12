@@ -6,12 +6,159 @@ testthat::test_that("current thresholds match the completed grant-aligned run", 
   testthat::expect_equal(defaults$expression_species_fraction, 0.80)
   testthat::expect_equal(defaults$structural_species_fraction, 0.75)
   testthat::expect_equal(defaults$minimum_druggability_score, 0.50)
+  testthat::expect_equal(RECORDED_MINIMUM_DRUGGABILITY_SCORE, 0.50)
   testthat::expect_true(defaults$require_strict_3d)
   testthat::expect_equal(defaults$mode, "structural")
   testthat::expect_identical(defaults$additional_thresholds, character())
   testthat::expect_equal(
     defaults$minimum_mean_pocket_plddt_fraction,
     0.70
+  )
+})
+
+testthat::test_that("focused final-gate settings change only druggability", {
+  recorded <- final_druggability_settings(
+    minimum_druggability_score = RECORDED_MINIMUM_DRUGGABILITY_SCORE
+  )
+  relaxed <- final_druggability_settings(minimum_druggability_score = 0.325)
+  differing <- names(recorded)[vapply(names(recorded), function(field) {
+    !identical(recorded[[field]], relaxed[[field]])
+  }, logical(1))]
+  testthat::expect_identical(differing, "minimum_druggability_score")
+  testthat::expect_identical(recorded$mode, "structural")
+  testthat::expect_identical(recorded$result_scope, "passing")
+})
+
+testthat::test_that("focused final-gate source validation is defensive", {
+  complete <- c(
+    "target_species_fraction",
+    "mandatory_species_fraction",
+    "domain_species_fraction",
+    "expression_species_fraction",
+    "structural_species_fraction",
+    "minimum_druggability_score",
+    "all_assessed_members_pass_mapping",
+    "conservation_status",
+    "three_dimensional_alignment_status",
+    "domain_assessed_species_count",
+    "expression_evidence_row_count"
+  )
+  testthat::expect_length(
+    final_druggability_source_missing_columns(complete),
+    0L
+  )
+  missing <- final_druggability_source_missing_columns("primary_group_id")
+  testthat::expect_true("minimum_druggability_score" %in% missing)
+  testthat::expect_true(
+    "domain_assessed_species_count or domain_evidence_row_count" %in% missing
+  )
+})
+
+testthat::test_that("member druggability query retains selected rank-one pockets", {
+  testthat::expect_identical(
+    select_member_druggability_relation(c(
+      "ranked_member_pockets",
+      "selected_pockets"
+    )),
+    "selected_pockets"
+  )
+  query <- build_member_druggability_query(
+    relation = "selected_pockets",
+    available = c(
+      "cluster_id",
+      "candidate_accession",
+      "species_column",
+      "pocket_number",
+      "druggability_score"
+    ),
+    cluster_ids = c("cluster_1", "cluster_2", "cluster_1"),
+    max_rows = 25L
+  )
+  testthat::expect_match(query, 'FROM "selected_pockets"', fixed = TRUE)
+  testthat::expect_match(query, "cluster_1", fixed = TRUE)
+  testthat::expect_match(query, "LIMIT 25", fixed = TRUE)
+  ranked <- build_member_druggability_query(
+    relation = "ranked_member_pockets",
+    available = c(
+      "cluster_id",
+      "member_accession",
+      "druggability_score",
+      "selection_rank"
+    ),
+    cluster_ids = "cluster_1"
+  )
+  testthat::expect_match(
+    ranked,
+    "TRY_CAST(selection_rank AS INTEGER) = 1",
+    fixed = TRUE
+  )
+  testthat::expect_error(
+    build_member_druggability_query(
+      relation = "ranked_member_pockets",
+      available = c(
+        "cluster_id",
+        "member_accession",
+        "druggability_score"
+      ),
+      cluster_ids = "cluster_1"
+    ),
+    "safe rank-one"
+  )
+})
+
+testthat::test_that("focused final-gate comparison labels entrants and leavers", {
+  recorded <- tibble::tibble(
+    primary_group_type = c("HOG", "HOG"),
+    primary_group_id = c("G1", "G2"),
+    minimum_druggability_score = c(0.7, 0.6),
+    final_score = c(0.9, 0.8)
+  )
+  selected <- tibble::tibble(
+    primary_group_type = c("HOG", "HOG"),
+    primary_group_id = c("G1", "G3"),
+    minimum_druggability_score = c(0.7, 0.3),
+    final_score = c(0.9, 0.75)
+  )
+  comparison <- compare_final_druggability_passes(recorded, selected)
+  testthat::expect_equal(
+    comparison$selected$sensitivity_change,
+    c("RECORDED_PASS", "ENTERS_AT_SELECTED_THRESHOLD")
+  )
+  testthat::expect_setequal(
+    comparison$changes$sensitivity_change,
+    c("ENTERS_AT_SELECTED_THRESHOLD", "LEAVES_AT_SELECTED_THRESHOLD")
+  )
+  testthat::expect_setequal(
+    comparison$changes$primary_group_id,
+    c("G2", "G3")
+  )
+
+  empty_recorded <- recorded[0, ]
+  entering_only <- compare_final_druggability_passes(
+    empty_recorded,
+    selected[2, ]
+  )
+  testthat::expect_identical(
+    entering_only$selected$sensitivity_change,
+    "ENTERS_AT_SELECTED_THRESHOLD"
+  )
+  testthat::expect_identical(
+    entering_only$changes$primary_group_id,
+    "G3"
+  )
+
+  empty_result <- compare_final_druggability_passes(
+    empty_recorded,
+    selected[0, ]
+  )
+  testthat::expect_equal(nrow(empty_result$selected), 0L)
+  testthat::expect_equal(nrow(empty_result$changes), 0L)
+  testthat::expect_error(
+    compare_final_druggability_passes(
+      data.frame(score = 1),
+      data.frame(score = 1)
+    ),
+    "stable candidate identity"
   )
 })
 
@@ -251,6 +398,20 @@ testthat::test_that("threshold explorer reclassifies a druggability near-miss", 
   )
   testthat::expect_equal(
     relaxed$primary_group_id,
+    c("N0.HOG0001", "N0.HOG0002")
+  )
+
+  boundary <- collect_threshold_results(
+    resource_source = source,
+    relation = "final_evolutionary_candidate_prioritisation",
+    available = available,
+    settings = final_druggability_settings(
+      minimum_druggability_score = 0.325
+    ),
+    max_rows = 10
+  )
+  testthat::expect_equal(
+    boundary$primary_group_id,
     c("N0.HOG0001", "N0.HOG0002")
   )
 })

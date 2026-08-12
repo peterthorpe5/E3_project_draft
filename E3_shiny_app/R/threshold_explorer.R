@@ -4,6 +4,8 @@
 #' completed integrated resource. They do not rerun sequence, pocket or
 #' structural calculations.
 
+RECORDED_MINIMUM_DRUGGABILITY_SCORE <- 0.50
+
 #' Return optional post-hoc score-threshold specifications.
 #'
 #' These gates use aggregate values already stored in the completed resource.
@@ -108,7 +110,7 @@ current_threshold_defaults <- function() {
     domain_species_fraction = 0.80,
     expression_species_fraction = 0.80,
     structural_species_fraction = 0.75,
-    minimum_druggability_score = 0.50,
+    minimum_druggability_score = RECORDED_MINIMUM_DRUGGABILITY_SCORE,
     require_domain_evidence = TRUE,
     require_expression_evidence = TRUE,
     require_conserved_region = TRUE,
@@ -200,6 +202,155 @@ normalise_threshold_settings <- function(settings = list()) {
   values
 }
 
+#' Return settings that vary only the final druggability threshold.
+#'
+#' @param minimum_druggability_score Inclusive minimum score required for every
+#'   assessed member.
+#' @param result_scope Candidate statuses to return.
+#' @return Validated structural threshold settings.
+final_druggability_settings <- function(
+  minimum_druggability_score,
+  result_scope = "passing"
+) {
+  normalise_threshold_settings(list(
+    minimum_druggability_score = minimum_druggability_score,
+    mode = "structural",
+    result_scope = result_scope
+  ))
+}
+
+#' Report missing fields needed by the focused final-gate sensitivity analysis.
+#'
+#' @param available Available relation columns.
+#' @return Character vector of missing fields or evidence-field alternatives.
+final_druggability_source_missing_columns <- function(available) {
+  required <- c(
+    "target_species_fraction",
+    "mandatory_species_fraction",
+    "domain_species_fraction",
+    "expression_species_fraction",
+    "structural_species_fraction",
+    "minimum_druggability_score",
+    "all_assessed_members_pass_mapping",
+    "conservation_status",
+    "three_dimensional_alignment_status"
+  )
+  evidence_families <- list(
+    c("domain_assessed_species_count", "domain_evidence_row_count"),
+    c("expression_assessed_species_count", "expression_evidence_row_count")
+  )
+  missing <- required[!required %in% available]
+  for (family in evidence_families) {
+    if (!any(family %in% available)) {
+      missing <- c(missing, paste(family, collapse = " or "))
+    }
+  }
+  missing
+}
+
+#' Choose stable identity columns shared by two final-gate pass lists.
+#'
+#' @param recorded Recorded pass-list column names.
+#' @param selected Sensitivity pass-list column names.
+#' @return Character vector of identity columns.
+final_druggability_identity_columns <- function(recorded, selected) {
+  shared <- intersect(recorded, selected)
+  groups <- list(
+    "evolutionary_group_key",
+    c("primary_group_type", "primary_group_id"),
+    "primary_group_id",
+    "lead_cluster_id",
+    "cluster_id"
+  )
+  for (group in groups) {
+    if (all(group %in% shared)) {
+      return(group)
+    }
+  }
+  stop(
+    "Final-gate sensitivity results lack a stable candidate identity.",
+    call. = FALSE
+  )
+}
+
+#' Build null-safe candidate identity keys.
+#'
+#' @param data Candidate data frame.
+#' @param columns Stable identity columns.
+#' @return Character vector with one key per row.
+final_druggability_identity_keys <- function(data, columns) {
+  if (nrow(data) == 0L) {
+    return(character())
+  }
+  values <- data[, columns, drop = FALSE]
+  values[] <- lapply(values, function(value) {
+    result <- as.character(value)
+    result[is.na(result)] <- ""
+    result
+  })
+  vapply(
+    seq_len(nrow(values)),
+    function(index) paste(values[index, , drop = TRUE], collapse = "\u001f"),
+    character(1)
+  )
+}
+
+#' Compare recorded and selected final-gate pass lists.
+#'
+#' @param recorded Groups passing every gate at the recorded 0.50 threshold.
+#' @param selected Groups passing the same gates at the selected threshold.
+#' @return List containing an annotated selected list and concise changed rows.
+compare_final_druggability_passes <- function(recorded, selected) {
+  if (!is.data.frame(recorded) || !is.data.frame(selected)) {
+    stop("Final-gate pass lists must be data frames.", call. = FALSE)
+  }
+  identity_columns <- final_druggability_identity_columns(
+    recorded = names(recorded),
+    selected = names(selected)
+  )
+  recorded_keys <- final_druggability_identity_keys(recorded, identity_columns)
+  selected_keys <- final_druggability_identity_keys(selected, identity_columns)
+
+  annotated <- selected
+  annotated$sensitivity_change <- ifelse(
+    selected_keys %in% recorded_keys,
+    "RECORDED_PASS",
+    "ENTERS_AT_SELECTED_THRESHOLD"
+  )
+  annotated <- annotated[, c(
+    "sensitivity_change",
+    setdiff(names(annotated), "sensitivity_change")
+  ), drop = FALSE]
+
+  entering <- annotated[
+    annotated$sensitivity_change == "ENTERS_AT_SELECTED_THRESHOLD",
+    ,
+    drop = FALSE
+  ]
+  leaving <- recorded[!recorded_keys %in% selected_keys, , drop = FALSE]
+  leaving$sensitivity_change <- "LEAVES_AT_SELECTED_THRESHOLD"
+  leaving <- leaving[, c(
+    "sensitivity_change",
+    setdiff(names(leaving), "sensitivity_change")
+  ), drop = FALSE]
+  changes <- dplyr::bind_rows(entering, leaving)
+  concise <- unique(c(
+    "sensitivity_change",
+    "final_evolutionary_rank",
+    "final_rank",
+    identity_columns,
+    "lead_cluster_id",
+    "candidate_accessions",
+    "minimum_druggability_score",
+    "final_score"
+  ))
+  changes <- changes[, concise[concise %in% names(changes)], drop = FALSE]
+  list(
+    selected = tibble::as_tibble(annotated),
+    changes = tibble::as_tibble(changes)
+  )
+}
+
 #' Select the best relation for interactive threshold evaluation.
 #'
 #' @param relation_names Available relation names.
@@ -216,6 +367,164 @@ select_threshold_relation <- function(relation_names) {
     return("")
   }
   selected[[1L]]
+}
+
+#' Select the preferred member-level retained-pocket relation.
+#'
+#' @param relation_names Available relation names.
+#' @return Relation name or an empty string.
+select_member_druggability_relation <- function(relation_names) {
+  preferred <- c("selected_pockets", "ranked_member_pockets")
+  selected <- preferred[preferred %in% relation_names]
+  if (length(selected) == 0L) {
+    return("")
+  }
+  selected[[1L]]
+}
+
+#' Build a bounded query for selected-pocket scores in lead clusters.
+#'
+#' @param relation Member-level pocket relation.
+#' @param available Available columns in the relation.
+#' @param cluster_ids Exact lead cluster identifiers.
+#' @param max_rows Hard row limit.
+#' @return DuckDB SQL query.
+build_member_druggability_query <- function(
+  relation,
+  available,
+  cluster_ids,
+  max_rows = 10000L
+) {
+  max_rows <- suppressWarnings(as.integer(max_rows))
+  if (length(max_rows) != 1L || is.na(max_rows) || max_rows < 1L ||
+      max_rows > 100000L) {
+    stop(
+      "Maximum member druggability rows must be between 1 and 100000.",
+      call. = FALSE
+    )
+  }
+  identifiers <- unique(trimws(as.character(cluster_ids)))
+  identifiers <- identifiers[!is.na(identifiers) & nzchar(identifiers)]
+  if (length(identifiers) == 0L) {
+    stop("At least one lead cluster is required for the box plot.", call. = FALSE)
+  }
+  if (length(identifiers) > 2000L) {
+    stop("Member druggability query accepts at most 2000 clusters.", call. = FALSE)
+  }
+  required <- c("cluster_id", "druggability_score")
+  missing <- setdiff(required, available)
+  if (length(missing) > 0L) {
+    stop(
+      paste0(
+        relation,
+        " is missing member druggability fields: ",
+        paste(missing, collapse = ", "),
+        "."
+      ),
+      call. = FALSE
+    )
+  }
+  accessions <- c(
+    "member_accession",
+    "candidate_accession",
+    "parsed_accession",
+    "accession"
+  )
+  accession <- accessions[accessions %in% available]
+  if (length(accession) == 0L) {
+    stop(
+      paste0(relation, " has no recognised member accession field."),
+      call. = FALSE
+    )
+  }
+  accession <- accession[[1L]]
+  selection_filter <- "TRUE"
+  if (identical(relation, "ranked_member_pockets")) {
+    if ("selection_rank" %in% available) {
+      selection_filter <- "TRY_CAST(selection_rank AS INTEGER) = 1"
+    } else if ("pocket_rank" %in% available) {
+      selection_filter <- "TRY_CAST(pocket_rank AS INTEGER) = 1"
+    } else if ("selected_for_scoring" %in% available) {
+      selection_filter <- paste(
+        "COALESCE(TRY_CAST(selected_for_scoring AS BOOLEAN), FALSE)"
+      )
+    } else {
+      stop(
+        "ranked_member_pockets lacks a safe rank-one selection field.",
+        call. = FALSE
+      )
+    }
+  }
+  species_sql <- if ("species_column" %in% available) {
+    paste0(
+      "COALESCE(NULLIF(trim(CAST(species_column AS VARCHAR)), ''), 'Unknown')"
+    )
+  } else {
+    "'Unknown'"
+  }
+  pocket_sql <- if ("pocket_number" %in% available) {
+    "TRY_CAST(pocket_number AS INTEGER)"
+  } else {
+    "NULL::INTEGER"
+  }
+  cluster_sql <- paste0(
+    "'",
+    vapply(identifiers, escape_sql_literal, character(1L)),
+    "'",
+    collapse = ", "
+  )
+  paste0(
+    "SELECT CAST(cluster_id AS VARCHAR) AS cluster_id, CAST(",
+    quote_duckdb_identifier(accession),
+    " AS VARCHAR) AS member_accession, ",
+    species_sql,
+    " AS species, ",
+    pocket_sql,
+    " AS pocket_number, TRY_CAST(druggability_score AS DOUBLE) AS ",
+    "druggability_score FROM ",
+    quote_duckdb_identifier(relation),
+    " WHERE CAST(cluster_id AS VARCHAR) IN (",
+    cluster_sql,
+    ") AND TRY_CAST(druggability_score AS DOUBLE) BETWEEN 0.0 AND 1.0 ",
+    "AND (",
+    selection_filter,
+    ") ORDER BY cluster_id, member_accession LIMIT ",
+    max_rows
+  )
+}
+
+#' Collect selected-pocket member druggability scores.
+#'
+#' @param resource_source Flexible E3 result source.
+#' @param cluster_ids Exact lead cluster identifiers.
+#' @param max_rows Hard row limit.
+#' @return List containing the relation and standardised score rows.
+collect_member_druggability_scores <- function(
+  resource_source,
+  cluster_ids,
+  max_rows = 10000L
+) {
+  relations <- collect_resource_view_names(duckdb_path = resource_source)
+  relation <- select_member_druggability_relation(relations)
+  if (!nzchar(relation)) {
+    stop(
+      "No member-level selected-pocket druggability relation is available.",
+      call. = FALSE
+    )
+  }
+  available <- as.character(
+    collect_resource_columns(resource_source, relation)$column_name
+  )
+  data <- collect_resource_query(
+    duckdb_path = resource_source,
+    query = build_member_druggability_query(
+      relation = relation,
+      available = available,
+      cluster_ids = cluster_ids,
+      max_rows = max_rows
+    )
+  )
+  list(relation = relation, data = tibble::as_tibble(data))
 }
 
 #' Return SQL for a numeric gate.

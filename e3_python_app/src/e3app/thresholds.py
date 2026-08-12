@@ -18,11 +18,43 @@ from e3app.errors import AppError
 ThresholdMode = Literal["prestructure", "structural"]
 ResultScope = Literal["passing", "pass_near", "all"]
 
+RECORDED_MINIMUM_DRUGGABILITY_SCORE = 0.50
+
+FINAL_DRUGGABILITY_REQUIRED_COLUMNS = (
+    "target_species_fraction",
+    "mandatory_species_fraction",
+    "domain_species_fraction",
+    "expression_species_fraction",
+    "structural_species_fraction",
+    "minimum_druggability_score",
+    "all_assessed_members_pass_mapping",
+    "conservation_status",
+    "three_dimensional_alignment_status",
+)
+
+FINAL_DRUGGABILITY_EVIDENCE_COLUMN_FAMILIES = (
+    ("domain_assessed_species_count", "domain_evidence_row_count"),
+    ("expression_assessed_species_count", "expression_evidence_row_count"),
+)
+
+FINAL_DRUGGABILITY_IDENTITY_COLUMN_GROUPS = (
+    ("evolutionary_group_key",),
+    ("primary_group_type", "primary_group_id"),
+    ("primary_group_id",),
+    ("lead_cluster_id",),
+    ("cluster_id",),
+)
+
 THRESHOLD_RELATION_PREFERENCE = (
     "final_evolutionary_candidate_prioritisation",
     "candidate_master_results",
     "final_candidate_prioritisation",
     "prestructure_ranking",
+)
+
+MEMBER_DRUGGABILITY_RELATION_PREFERENCE = (
+    "selected_pockets",
+    "ranked_member_pockets",
 )
 
 
@@ -35,7 +67,7 @@ class ThresholdSettings:
     domain_species_fraction: float = 0.80
     expression_species_fraction: float = 0.80
     structural_species_fraction: float = 0.75
-    minimum_druggability_score: float = 0.50
+    minimum_druggability_score: float = RECORDED_MINIMUM_DRUGGABILITY_SCORE
     require_domain_evidence: bool = True
     require_expression_evidence: bool = True
     require_conserved_region: bool = True
@@ -120,6 +152,163 @@ def threshold_settings_from_mapping(
     return validate_threshold_settings(settings)
 
 
+def final_druggability_settings(
+    *,
+    minimum_druggability_score: float,
+    result_scope: ResultScope = "passing",
+) -> ThresholdSettings:
+    """Return settings that vary only the final druggability threshold.
+
+    Every other gate remains at the recorded production setting. The returned
+    settings always use structural mode because the all-members druggability
+    requirement is a structural-stage gate.
+
+    Args:
+        minimum_druggability_score: Inclusive minimum score required for every
+            assessed member.
+        result_scope: Candidate statuses to return from the evaluation query.
+
+    Returns:
+        Validated structural threshold settings.
+    """
+    return threshold_settings_from_mapping(
+        {
+            "minimum_druggability_score": minimum_druggability_score,
+            "mode": "structural",
+            "result_scope": result_scope,
+        }
+    )
+
+
+def final_druggability_source_missing_columns(
+    available: Sequence[str],
+) -> list[str]:
+    """Return missing fields needed for a valid final-gate sensitivity run.
+
+    Args:
+        available: Columns in the selected evolutionary-group relation.
+
+    Returns:
+        Missing fields or evidence-column alternatives. An empty list means
+        that the relation can support the focused sensitivity analysis.
+    """
+    columns = set(available)
+    missing = [
+        column
+        for column in FINAL_DRUGGABILITY_REQUIRED_COLUMNS
+        if column not in columns
+    ]
+    for family in FINAL_DRUGGABILITY_EVIDENCE_COLUMN_FAMILIES:
+        if not any(column in columns for column in family):
+            missing.append(" or ".join(family))
+    return missing
+
+
+def _final_druggability_identity_columns(
+    *,
+    recorded_columns: Sequence[str],
+    selected_columns: Sequence[str],
+) -> tuple[str, ...]:
+    """Choose stable identity columns shared by two pass lists."""
+    shared = set(recorded_columns).intersection(selected_columns)
+    for group in FINAL_DRUGGABILITY_IDENTITY_COLUMN_GROUPS:
+        if set(group).issubset(shared):
+            return group
+    raise AppError(
+        "Final-gate sensitivity results do not contain a stable candidate identity"
+    )
+
+
+def _final_druggability_identity_keys(
+    *,
+    frame: pd.DataFrame,
+    columns: Sequence[str],
+) -> pd.Series:
+    """Build null-safe deterministic identity keys for candidate rows."""
+    if frame.empty:
+        return pd.Series(index=frame.index, dtype="string")
+    values = frame.loc[:, list(columns)].astype("string").fillna("")
+    return values.agg("\x1f".join, axis=1).astype("string")
+
+
+def compare_final_druggability_passes(
+    *,
+    recorded: pd.DataFrame,
+    selected: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Annotate a sensitivity pass list and identify entrants and leavers.
+
+    Args:
+        recorded: Groups passing every recorded gate at the authoritative 0.50
+            minimum-member druggability threshold.
+        selected: Groups passing the same gates at the selected threshold.
+
+    Returns:
+        A tuple containing the annotated selected pass list and a concise table
+        of groups whose pass status differs from the recorded result.
+
+    Raises:
+        AppError: If either argument is not a data frame or no stable shared
+            candidate identifier is available.
+    """
+    if not isinstance(recorded, pd.DataFrame) or not isinstance(
+        selected, pd.DataFrame
+    ):
+        raise AppError("Final-gate pass lists must be pandas data frames")
+    identity_columns = _final_druggability_identity_columns(
+        recorded_columns=recorded.columns,
+        selected_columns=selected.columns,
+    )
+    recorded_keys = _final_druggability_identity_keys(
+        frame=recorded,
+        columns=identity_columns,
+    )
+    selected_keys = _final_druggability_identity_keys(
+        frame=selected,
+        columns=identity_columns,
+    )
+    recorded_key_set = set(recorded_keys.tolist())
+    selected_key_set = set(selected_keys.tolist())
+
+    annotated = selected.copy()
+    annotated.insert(
+        min(2, len(annotated.columns)),
+        "sensitivity_change",
+        [
+            "RECORDED_PASS"
+            if key in recorded_key_set
+            else "ENTERS_AT_SELECTED_THRESHOLD"
+            for key in selected_keys
+        ],
+    )
+
+    entering = annotated.loc[
+        annotated["sensitivity_change"] == "ENTERS_AT_SELECTED_THRESHOLD"
+    ].copy()
+    leaving = recorded.loc[~recorded_keys.isin(selected_key_set)].copy()
+    leaving.insert(
+        min(2, len(leaving.columns)),
+        "sensitivity_change",
+        "LEAVES_AT_SELECTED_THRESHOLD",
+    )
+    changes = pd.concat([entering, leaving], ignore_index=True, sort=False)
+    concise_columns = [
+        column
+        for column in (
+            "sensitivity_change",
+            "final_evolutionary_rank",
+            "final_rank",
+            *identity_columns,
+            "lead_cluster_id",
+            "candidate_accessions",
+            "minimum_druggability_score",
+            "final_score",
+        )
+        if column in changes.columns
+    ]
+    return annotated, changes.loc[:, list(dict.fromkeys(concise_columns))]
+
+
 def select_threshold_relation(relations: Sequence[str]) -> str | None:
     """Choose the best available relation for evolutionary-group decisions.
 
@@ -133,6 +322,143 @@ def select_threshold_relation(relations: Sequence[str]) -> str | None:
         (name for name in THRESHOLD_RELATION_PREFERENCE if name in relations),
         None,
     )
+
+
+def select_member_druggability_relation(relations: Sequence[str]) -> str | None:
+    """Choose the best member-level selected-pocket relation.
+
+    Args:
+        relations: Available DuckDB relation names.
+
+    Returns:
+        Preferred relation, or ``None`` when member-level pocket scores are not
+        available.
+    """
+    return next(
+        (
+            name
+            for name in MEMBER_DRUGGABILITY_RELATION_PREFERENCE
+            if name in relations
+        ),
+        None,
+    )
+
+
+def collect_member_druggability_scores(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    cluster_ids: Sequence[str],
+    max_rows: int = 10_000,
+) -> tuple[str, pd.DataFrame]:
+    """Collect selected-pocket druggability values for lead clusters.
+
+    The preferred ``selected_pockets`` relation already contains one retained
+    pocket per assessed member. A ranked-pocket fallback is accepted only when
+    it contains an explicit selection-rank or selected-for-scoring field, so
+    alternative pockets cannot be silently mixed into the strict distribution.
+
+    Args:
+        connection: Open read-only resource connection.
+        cluster_ids: Exact lead DeepClust identifiers to include.
+        max_rows: Hard result-row limit.
+
+    Returns:
+        Selected relation name and standardised member-level score rows.
+
+    Raises:
+        AppError: If inputs are invalid or no safe member-level score relation
+            is available.
+    """
+    if not 1 <= max_rows <= 100_000:
+        raise AppError("maximum member druggability rows must be between 1 and 100000")
+    identifiers = list(
+        dict.fromkeys(
+            str(value).strip() for value in cluster_ids if str(value).strip()
+        )
+    )
+    if not identifiers:
+        return "", pd.DataFrame(
+            columns=(
+                "cluster_id",
+                "member_accession",
+                "species",
+                "pocket_number",
+                "druggability_score",
+            )
+        )
+    if len(identifiers) > 2_000:
+        raise AppError("member druggability query accepts at most 2000 clusters")
+    relation = select_member_druggability_relation(list_relations(connection))
+    if relation is None:
+        raise AppError("No member-level selected-pocket druggability relation is available")
+    available = set(relation_columns(connection, relation))
+    required = {"cluster_id", "druggability_score"}
+    missing = sorted(required.difference(available))
+    if missing:
+        raise AppError(
+            f"{relation} is missing member druggability fields: "
+            + ", ".join(missing)
+        )
+    accession_column = next(
+        (
+            column
+            for column in (
+                "member_accession",
+                "candidate_accession",
+                "parsed_accession",
+                "accession",
+            )
+            if column in available
+        ),
+        None,
+    )
+    if accession_column is None:
+        raise AppError(f"{relation} has no recognised member accession field")
+
+    selection_filter = "TRUE"
+    if relation == "ranked_member_pockets":
+        if "selection_rank" in available:
+            selection_filter = "TRY_CAST(selection_rank AS INTEGER) = 1"
+        elif "pocket_rank" in available:
+            selection_filter = "TRY_CAST(pocket_rank AS INTEGER) = 1"
+        elif "selected_for_scoring" in available:
+            selection_filter = (
+                "COALESCE(TRY_CAST(selected_for_scoring AS BOOLEAN), FALSE)"
+            )
+        else:
+            raise AppError(
+                "ranked_member_pockets lacks a safe rank-one selection field"
+            )
+
+    species_sql = (
+        "COALESCE(NULLIF(trim(CAST(species_column AS VARCHAR)), ''), 'Unknown')"
+        if "species_column" in available
+        else "'Unknown'"
+    )
+    pocket_sql = (
+        "TRY_CAST(pocket_number AS INTEGER)"
+        if "pocket_number" in available
+        else "NULL::INTEGER"
+    )
+    placeholders = ", ".join("?" for _ in identifiers)
+    query = (
+        "SELECT CAST(cluster_id AS VARCHAR) AS cluster_id, "
+        f"CAST({quote_identifier(accession_column)} AS VARCHAR) "
+        "AS member_accession, "
+        f"{species_sql} AS species, {pocket_sql} AS pocket_number, "
+        "TRY_CAST(druggability_score AS DOUBLE) AS druggability_score "
+        f"FROM {quote_identifier(relation)} WHERE "
+        f"CAST(cluster_id AS VARCHAR) IN ({placeholders}) "
+        "AND TRY_CAST(druggability_score AS DOUBLE) BETWEEN 0.0 AND 1.0 "
+        f"AND ({selection_filter}) "
+        "ORDER BY cluster_id, member_accession "
+        f"LIMIT {int(max_rows)}"
+    )
+    try:
+        frame = connection.execute(query, identifiers).fetchdf()
+    except duckdb.Error as exc:
+        raise AppError(f"Could not collect member druggability scores: {exc}") from exc
+    return relation, frame
 
 
 def group_source_sql(relation: str, available: Sequence[str]) -> str:

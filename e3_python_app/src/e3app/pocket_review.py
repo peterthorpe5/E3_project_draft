@@ -317,6 +317,46 @@ def read_review_html(
         raise AppError(f"Could not read pocket-review page {page}: {exc}") from exc
 
 
+def repair_pocket_review_viewer_controls(document: str) -> str:
+    """Upgrade the legacy structure fit control in a trusted report page.
+
+    Older portable reports only reset the zoom when ``Fit structure`` was
+    pressed. At the initial auto-fit zoom this looked inert. This compatibility
+    repair gives already-generated bundles the same fit-and-centre behaviour as
+    newly generated reports and adds an accessible confirmation message.
+
+    Args:
+        document: Trusted self-contained pocket-review HTML.
+
+    Returns:
+        Idempotently upgraded HTML.
+    """
+    if not isinstance(document, str):
+        raise AppError("Pocket-review HTML must be text")
+    upgraded = document.replace(
+        '<button id="fit" type="button">Fit structure</button>',
+        '<button id="fit" type="button">Fit and centre</button>',
+    )
+    old_handler = (
+        'document.getElementById("fit").onclick=()=>{zoom=1;draw();};'
+    )
+    new_handler = (
+        'document.getElementById("fit").onclick=()=>{'
+        'rx=-.28;ry=.45;zoom=1;draw();const status='
+        'document.getElementById("viewerStatus");if(status){'
+        'status.textContent="View fitted and centred.";}};'
+    )
+    upgraded = upgraded.replace(old_handler, new_handler)
+    if 'id="fit"' in upgraded and 'id="viewerStatus"' not in upgraded:
+        upgraded = upgraded.replace(
+            '<p id="proteinMeta">',
+            '<p id="viewerStatus" class="note" aria-live="polite"></p>'
+            '<p id="proteinMeta">',
+            1,
+        )
+    return upgraded
+
+
 def read_group_html(
     bundle: PocketReviewBundle,
     group_page: str,
@@ -334,7 +374,9 @@ def read_group_html(
     """
     if focus not in ("structure", "alignment"):
         raise AppError("Pocket-review focus must be structure or alignment")
-    document = read_review_html(bundle, group_page)
+    document = repair_pocket_review_viewer_controls(
+        read_review_html(bundle, group_page)
+    )
     heading = (
         "Interactive 3D pocket location"
         if focus == "structure"

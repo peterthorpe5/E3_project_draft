@@ -19,6 +19,7 @@ from e3app.pocket_review import (
     load_pocket_review,
     pocket_review_available,
     prepare_pocket_review,
+    repair_pocket_review_viewer_controls,
     read_group_html,
     read_review_html,
     required_review_paths,
@@ -146,6 +147,23 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     assert "Pocket-annotated MAFFT sequence alignment" in alignment_html
     assert "scrollIntoView" in alignment_html
     assert read_review_html(bundle, "evidence_matrix.html") == "<html>matrix</html>"
+
+
+def test_legacy_fit_control_is_repaired_idempotently() -> None:
+    """Already-generated report pages gain a meaningful fit-and-centre action."""
+    legacy = (
+        '<button id="fit" type="button">Fit structure</button>'
+        '<p id="proteinMeta"></p><script>'
+        'document.getElementById("fit").onclick=()=>{zoom=1;draw();};'
+        '</script>'
+    )
+    upgraded = repair_pocket_review_viewer_controls(legacy)
+    assert "Fit structure" not in upgraded
+    assert "Fit and centre" in upgraded
+    assert "rx=-.28;ry=.45;zoom=1;draw();" in upgraded
+    assert 'id="viewerStatus" class="note" aria-live="polite"' in upgraded
+    assert "View fitted and centred." in upgraded
+    assert repair_pocket_review_viewer_controls(upgraded) == upgraded
 
 
 def test_review_discovery_requires_one_unambiguous_bundle(tmp_path: Path) -> None:

@@ -10,6 +10,7 @@ from e3app.errors import AppError
 from e3app.visualisations import (
     build_candidate_landscape_figure,
     build_expression_heatmap_figure,
+    build_final_gate_druggability_boxplot,
     build_species_tissue_profile_figure,
     build_structural_alignment_figure,
     build_volcano_figure,
@@ -22,6 +23,7 @@ from e3app.visualisations import (
     candidate_rank_column,
     prepare_candidate_landscape,
     prepare_expression_heatmap_cells,
+    prepare_final_gate_druggability_distribution,
     prepare_species_tissue_profile,
     prepare_species_tissue_summary,
     prepare_structural_alignment_frame,
@@ -304,4 +306,117 @@ def test_structural_alignment_evidence_map() -> None:
     with pytest.raises(AppError, match="paired TM-score"):
         prepare_structural_alignment_frame(
             frame=pd.DataFrame({"minimum_tm_score": [0.8]})
+        )
+
+
+def test_final_gate_druggability_boxplot_preparation_and_threshold_line() -> None:
+    """Member distributions retain final rank and show the selected gate."""
+    eligible = pd.DataFrame(
+        {
+            "final_evolutionary_rank": [2, 1, 3],
+            "primary_group_id": ["N0.HOG2", "N0.HOG1", "N0.HOG3"],
+            "lead_cluster_id": ["cluster_2", "cluster_1", "cluster_3"],
+        }
+    )
+    scores = pd.DataFrame(
+        {
+            "cluster_id": ["cluster_1", "cluster_1", "cluster_2", "ignored"],
+            "member_accession": ["P1", "P2", "P3", "P4"],
+            "species": ["A", "B", "A", "C"],
+            "pocket_number": [1, 1, 2, 1],
+            "druggability_score": [0.7, 0.5, 0.325, 0.9],
+        }
+    )
+    prepared, truncated = prepare_final_gate_druggability_distribution(
+        scores=scores,
+        eligible_groups=eligible,
+        max_groups=2,
+    )
+    assert truncated
+    assert prepared["cluster_id"].tolist() == [
+        "cluster_1",
+        "cluster_1",
+        "cluster_2",
+    ]
+    assert prepared["group_label"].drop_duplicates().tolist() == [
+        "N0.HOG1 · cluster_1",
+        "N0.HOG2 · cluster_2",
+    ]
+    figure = build_final_gate_druggability_boxplot(
+        frame=prepared,
+        threshold=0.5,
+    )
+    assert isinstance(figure, go.Figure)
+    assert figure.data[0].type == "box"
+    assert len(figure.layout.shapes) == 1
+    assert figure.layout.shapes[0].x0 == 0.5
+    with pytest.raises(AppError, match="number from 0 to 1"):
+        build_final_gate_druggability_boxplot(frame=prepared, threshold=1.1)
+
+
+def test_final_gate_druggability_plot_validation_and_fallback_labels() -> None:
+    """Sparse compatibility rows receive safe labels and invalid inputs fail."""
+    sparse_scores = pd.DataFrame(
+        {
+            "cluster_id": ["cluster_1", "cluster_other"],
+            "member_accession": [None, "P2"],
+            "druggability_score": [0.4, 0.9],
+        }
+    )
+    sparse_groups = pd.DataFrame({"cluster_id": ["cluster_1"]})
+    prepared, truncated = prepare_final_gate_druggability_distribution(
+        scores=sparse_scores,
+        eligible_groups=sparse_groups,
+    )
+    assert not truncated
+    assert prepared["group_label"].tolist() == ["cluster_1"]
+    assert prepared["member_accession"].tolist() == ["Unknown member"]
+    assert prepared["species"].tolist() == ["Unknown"]
+    figure = build_final_gate_druggability_boxplot(
+        frame=prepared,
+        threshold=0.4,
+    )
+    assert figure.data[0].type == "box"
+    assert "pocket_number" not in figure.data[0].hovertemplate
+
+    empty, _ = prepare_final_gate_druggability_distribution(
+        scores=sparse_scores,
+        eligible_groups=pd.DataFrame({"cluster_id": ["absent"]}),
+    )
+    assert empty.empty
+    with pytest.raises(AppError, match="pandas data frames"):
+        prepare_final_gate_druggability_distribution(  # type: ignore[arg-type]
+            scores=[],
+            eligible_groups=sparse_groups,
+        )
+    with pytest.raises(AppError, match="between 1 and 100"):
+        prepare_final_gate_druggability_distribution(
+            scores=sparse_scores,
+            eligible_groups=sparse_groups,
+            max_groups=0,
+        )
+    with pytest.raises(AppError, match="rows are missing"):
+        prepare_final_gate_druggability_distribution(
+            scores=pd.DataFrame({"cluster_id": ["cluster_1"]}),
+            eligible_groups=sparse_groups,
+        )
+    with pytest.raises(AppError, match="lead cluster"):
+        prepare_final_gate_druggability_distribution(
+            scores=sparse_scores,
+            eligible_groups=pd.DataFrame({"primary_group_id": ["G1"]}),
+        )
+    with pytest.raises(AppError, match="number from 0 to 1"):
+        build_final_gate_druggability_boxplot(
+            frame=prepared,
+            threshold=True,  # type: ignore[arg-type]
+        )
+    with pytest.raises(AppError, match="required plot fields"):
+        build_final_gate_druggability_boxplot(
+            frame=pd.DataFrame({"group_label": ["G1"]}),
+            threshold=0.5,
+        )
+    with pytest.raises(AppError, match="No member-level"):
+        build_final_gate_druggability_boxplot(
+            frame=prepared.iloc[0:0],
+            threshold=0.5,
         )

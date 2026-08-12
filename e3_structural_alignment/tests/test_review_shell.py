@@ -19,7 +19,7 @@ def test_direct_wrapper_reports_version() -> None:
         text=True,
     )
     assert result.returncode == 0
-    assert result.stdout.strip() == "e3-pocket-review 0.3.1"
+    assert result.stdout.strip() == "e3-pocket-review 0.3.2"
 
 
 def test_submitter_help_and_five_day_limit(tmp_path: Path) -> None:

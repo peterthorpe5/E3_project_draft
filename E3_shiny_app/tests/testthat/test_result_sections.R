@@ -275,6 +275,41 @@ testthat::test_that("recommendation UI documents formulas and weight sensitivity
     "How to interpret the resulting rank",
     fixed = TRUE
   )
+  testthat::expect_match(
+    ui,
+    "Sensitivity analysis: final all-members druggability gate",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-final_druggability_threshold",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-final_druggability_boxplot",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-final_druggability_plot_notice",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "greater than or equal to",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recorded production threshold is 0.50",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-final_druggability_download_excel",
+    fixed = TRUE
+  )
 })
 
 testthat::test_that("grant overview UI states both milestones and limitations", {

@@ -234,4 +234,13 @@ testthat::test_that("pocket-review UI and section focus are stable", {
     "Pocket-annotated MAFFT sequence alignment",
     fixed = TRUE
   )
+  viewer_script <- pocket_review_scroll_script(focus = "structure")
+  testthat::expect_match(viewer_script, "Fit and centre", fixed = TRUE)
+  testthat::expect_match(viewer_script, "reset.click()", fixed = TRUE)
+  testthat::expect_match(viewer_script, "aria-live", fixed = TRUE)
+  testthat::expect_match(
+    viewer_script,
+    "View fitted and centred.",
+    fixed = TRUE
+  )
 })

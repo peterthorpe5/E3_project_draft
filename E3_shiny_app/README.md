@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.10.2 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.10.3 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -27,8 +27,11 @@ The main sections follow the evidence path required by the grant:
 6. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
-   exclusion reasons, followed by the full methods-style account of score
-   construction, unavailable denominators, effective weights and tie-breaks.
+   exclusion reasons. A focused slider varies only the final inclusive
+   all-members druggability threshold while preserving the recorded 0.50 result,
+   with member-level box plots for lead clusters reaching that last gate,
+   followed by the full methods-style account of score construction, unavailable
+   denominators, effective weights and tie-breaks.
 7. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
@@ -257,6 +260,10 @@ not an atomistic surface or docking result. It can switch between group members
 and pocket ranks. The sequence view retains members without structure or pocket
 evidence as explicit unassessed records.
 
+The viewer's **Fit and centre** control restores its default orientation and
+auto-fit zoom, then displays a confirmation. The app also upgrades the former
+zoom-only **Fit structure** action when an older portable report is loaded.
+
 ## Ranking formulas and weighting sensitivity
 
 The Computational recommendations section now places a pointer above its main
@@ -265,6 +272,19 @@ the discovery, orthology, domain, expression, pre-structure, ligandability,
 pocket-conservation, structural and final-score equations, including the
 production default weights, neutral handling of unavailable assessed
 denominators, deterministic tie-breaks and evolutionary-group consolidation.
+
+A focused final-gate card on the same page varies only the minimum-member
+druggability requirement. It starts at the recorded inclusive threshold of
+`minimum_druggability_score >= 0.50`, keeps every other recorded gate fixed and
+shows the altered passing list, recorded-versus-selected counts, and groups
+entering or leaving the strict intersection. The authoritative table above it
+is never rewritten. Sensitivity lists can be downloaded as paired TSV and Excel
+files with the selected threshold retained in every row.
+
+Horizontal box plots on the same card show the retained selected-pocket score
+distribution for assessed members in every lead cluster that passes all other
+fixed final gates. Member points are overlaid on a shared zero-to-one axis and
+the dashed reference line follows the selected slider threshold.
 
 An expandable weighting-sensitivity explorer exposes the recorded defaults as
 sliders. It normalises the selected weights within each score layer, optionally
@@ -277,7 +297,7 @@ and never alter the official ranks, mandatory gates, DuckDB or pipeline output.
 
 ```bash
 conda install -c conda-forge \
-  r-base r-shiny r-bslib r-dplyr r-dt r-ggplot2 r-plotly \
+  r-base r-shiny r-bslib r-dplyr r-dt r-ggplot2 r-htmltools r-plotly \
   r-openxlsx r-rlang r-shinycssloaders r-stringr r-tibble r-testthat \
   r-duckdb r-duckplyr
 
@@ -287,10 +307,12 @@ Rscript inst/scripts/run_tests.R
 
 The test suite covers source selection, run-directory discovery, lazy Parquet
 registration, section classification, group-level grant-overview counts,
-threshold validation and SQL, formatted Excel export contracts, druggability
-near-miss reclassification, linked
+threshold validation and SQL, focused final-gate boundary behaviour and
+entrant/leaver comparison, member-level druggability box plots, formatted Excel
+export contracts, druggability near-miss reclassification, linked
 candidate/expression visual queries, module UI contracts, portable pocket-review
-validation, selected-group sequence/model identifiers and the retained
+validation, repaired fit-and-centre controls, selected-group sequence/model
+identifiers and the retained
 Expression Atlas functionality.
 
 The complete cluster-build, external-drive transfer and local launch procedure

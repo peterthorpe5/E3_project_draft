@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.7.3 is the tested Streamlit companion to `E3_shiny_app` 0.10.2. Both
+Version 0.7.4 is the tested Streamlit companion to `E3_shiny_app` 0.10.3. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -61,8 +61,11 @@ The reporter provides:
 - a dedicated Computational recommendations view containing the ordered top-50 review
   shortlist, strict grant-aligned predictions, named gate-sensitivity
   scenarios, evolutionary-group scorecard, contributors, representative audit
-  and exclusion reasons, followed by a full methods-style explanation of every
-  recorded score, missing-data rule, effective weight and deterministic tie-break;
+  and exclusion reasons. A focused final-gate slider varies only the inclusive
+  all-members druggability threshold while preserving the recorded 0.50 result,
+  with member-level box plots for every lead cluster reaching that last gate,
+  followed by a full methods-style explanation of every recorded score,
+  missing-data rule, effective weight and deterministic tie-break;
 - a grant overview separating Milestone 1 conservation evidence from Milestone
   2 conserved structural/chemical starting space;
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
@@ -118,6 +121,19 @@ expandable slider panel normalises alternative weights within each layer and
 can download an explicitly non-authoritative what-if ranking as TSV or Excel.
 It never changes the recorded rank, mandatory gates, database or pipeline.
 
+The same page includes a focused final-gate sensitivity card. Its slider starts
+at the recorded inclusive rule, `minimum_druggability_score >= 0.50`, and changes
+only that one requirement while every other recorded gate remains fixed. The
+app shows the selected passing list, recorded-versus-selected counts, and groups
+entering or leaving the strict intersection. The source authority and recorded
+recommendation table are unchanged, and the sensitivity list can be downloaded
+as paired TSV and Excel files.
+
+Directly above that list, horizontal box plots show the retained selected-pocket
+scores for assessed members in each lead cluster that passes every other final
+gate. Individual member points remain visible, the shared axis is fixed from
+zero to one, and the dashed threshold line moves with the slider.
+
 The integrated DuckDB remains the complete relational authority. The single
 master Parquet is a portable wide compatibility summary. The definitive
 one-row-per-evolutionary-group table is
@@ -140,7 +156,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.7.3 quality gate includes branch-aware coverage at or above 95%
+The v0.7.4 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.
@@ -183,6 +199,10 @@ PORTABLE_ROOT="/Volumes/One Touch/2026_E3_protac/portable_visualisation_release_
 The portable HTML pages embed the C-alpha traces, pocket mappings, alignment,
 CSS and JavaScript. The app does not need cluster access or a remote structure
 service after the release has been copied.
+
+The structure control is labelled **Fit and centre**. It restores the default
+orientation and auto-fit zoom and displays a confirmation, including for older
+portable pages upgraded in memory by this app.
 
 ## Interpretation boundary
 
