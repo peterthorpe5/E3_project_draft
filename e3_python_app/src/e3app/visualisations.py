@@ -108,6 +108,29 @@ EXPRESSION_CONTEXT_LABELS: Mapping[str, str] = {
     "sample_or_condition": "Atlas sample / condition group",
 }
 
+STRUCTURAL_ALIGNMENT_COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "tm_score": ("mean_minimum_tm_score", "minimum_tm_score"),
+    "pocket_overlap": (
+        "mean_pocket_overlap_fraction",
+        "pocket_overlap_fraction",
+    ),
+    "centroid_distance": (
+        "median_centroid_distance_angstrom",
+        "centroid_distance_angstrom",
+    ),
+    "status": (
+        "alignment_status",
+        "three_dimensional_alignment_status",
+        "position_alignment_status",
+    ),
+    "identifier": (
+        "primary_group_id",
+        "cluster_id",
+        "mobile_accession",
+        "reference_accession",
+    ),
+}
+
 
 def candidate_identifier_column(*, available: Sequence[str]) -> str | None:
     """Choose the best stable candidate identifier from available columns.
@@ -830,4 +853,168 @@ def build_volcano_figure(
     figure.add_vline(x=-effect_threshold, line_dash="dash")
     figure.add_hline(y=-math.log10(significance_threshold), line_dash="dash")
     figure.update_layout(margin={"l": 20, "r": 20, "t": 20, "b": 20})
+    return figure
+
+
+def structural_alignment_plot_columns(*, available: Sequence[str]) -> list[str]:
+    """Return the source columns required for the 3D alignment evidence map.
+
+    Args:
+        available: Columns in one structural-alignment relation.
+
+    Returns:
+        Ordered available columns. An empty list means that the relation lacks
+        either the TM-score or pocket-overlap axis.
+    """
+    selected: list[str] = []
+    for role, aliases in STRUCTURAL_ALIGNMENT_COLUMN_ALIASES.items():
+        match = next((column for column in aliases if column in available), None)
+        if role in {"tm_score", "pocket_overlap"} and match is None:
+            return []
+        if match is not None and match not in selected:
+            selected.append(match)
+    for column in (
+        "cluster_id",
+        "primary_group_type",
+        "primary_group_id",
+        "reference_accession",
+        "mobile_accession",
+        "alignment_tool",
+        "position_alignment_status",
+        "alignment_status",
+        "mean_structural_residue_match_fraction",
+        "mean_structural_chemical_group_conservation",
+    ):
+        if column in available and column not in selected:
+            selected.append(column)
+    return selected
+
+
+def prepare_structural_alignment_frame(*, frame: pd.DataFrame) -> pd.DataFrame:
+    """Standardise summary or pairwise 3D-alignment evidence for plotting.
+
+    Args:
+        frame: Bounded structural-alignment source rows.
+
+    Returns:
+        Copy containing standardised private plot columns.
+
+    Raises:
+        AppError: If the two required metrics are absent or contain no usable
+            paired values.
+    """
+    available = list(frame.columns)
+    selected = structural_alignment_plot_columns(available=available)
+    if not selected:
+        raise AppError(
+            "The selected 3D alignment relation lacks paired TM-score and "
+            "pocket-overlap values"
+        )
+
+    def selected_alias(role: str) -> str | None:
+        """Return the first available column for one standard plot role."""
+        return next(
+            (
+                column
+                for column in STRUCTURAL_ALIGNMENT_COLUMN_ALIASES[role]
+                if column in available
+            ),
+            None,
+        )
+
+    prepared = frame.copy()
+    tm_column = selected_alias("tm_score")
+    overlap_column = selected_alias("pocket_overlap")
+    if tm_column is None or overlap_column is None:
+        raise AppError("The 3D alignment axes could not be resolved")
+    prepared["_tm_score"] = pd.to_numeric(
+        prepared[tm_column], errors="coerce"
+    )
+    prepared["_pocket_overlap"] = pd.to_numeric(
+        prepared[overlap_column], errors="coerce"
+    )
+    centroid_column = selected_alias("centroid_distance")
+    prepared["_centroid_distance"] = (
+        pd.to_numeric(prepared[centroid_column], errors="coerce")
+        if centroid_column is not None
+        else pd.NA
+    )
+    status_column = selected_alias("status")
+    prepared["_alignment_status"] = (
+        prepared[status_column].fillna("UNCLASSIFIED").astype(str)
+        if status_column is not None
+        else "UNCLASSIFIED"
+    )
+    identifier_column = selected_alias("identifier")
+    prepared["_alignment_identifier"] = (
+        prepared[identifier_column].fillna("Unidentified row").astype(str)
+        if identifier_column is not None
+        else pd.Series(
+            [f"Alignment row {index + 1}" for index in range(len(prepared))],
+            index=prepared.index,
+        )
+    )
+    prepared = prepared[
+        prepared["_tm_score"].notna()
+        & prepared["_pocket_overlap"].notna()
+    ].copy()
+    if prepared.empty:
+        raise AppError("No paired 3D alignment values are available to plot")
+    return prepared.reset_index(drop=True)
+
+
+def build_structural_alignment_figure(*, frame: pd.DataFrame) -> go.Figure:
+    """Build an interactive TM-score/pocket-overlap alignment evidence map.
+
+    Args:
+        frame: Bounded summary or pairwise alignment rows.
+
+    Returns:
+        Plotly scatter plot with recorded same-position threshold lines.
+    """
+    prepared = prepare_structural_alignment_frame(frame=frame)
+    hover_data: dict[str, object] = {
+        "_tm_score": ":.3f",
+        "_pocket_overlap": ":.3f",
+        "_centroid_distance": ":.3f",
+        "_alignment_status": False,
+        "_alignment_identifier": False,
+    }
+    for column in (
+        "cluster_id",
+        "primary_group_id",
+        "reference_accession",
+        "mobile_accession",
+        "alignment_tool",
+        "position_alignment_status",
+    ):
+        if column in prepared.columns:
+            hover_data[column] = True
+    figure = px.scatter(
+        prepared,
+        x="_tm_score",
+        y="_pocket_overlap",
+        color="_alignment_status",
+        hover_name="_alignment_identifier",
+        hover_data=hover_data,
+        labels={
+            "_tm_score": "Minimum TM-score",
+            "_pocket_overlap": "3D pocket-overlap fraction",
+            "_centroid_distance": "Pocket-centroid distance (Å)",
+            "_alignment_status": "Alignment status",
+        },
+        render_mode="webgl",
+    )
+    figure.add_vline(x=0.5, line_dash="dash", annotation_text="TM = 0.50")
+    figure.add_hline(
+        y=0.5,
+        line_dash="dash",
+        annotation_text="Overlap = 0.50",
+    )
+    figure.update_xaxes(range=[0, 1])
+    figure.update_yaxes(range=[0, 1])
+    figure.update_layout(
+        legend_title_text="Alignment status",
+        margin={"l": 20, "r": 20, "t": 35, "b": 20},
+    )
     return figure

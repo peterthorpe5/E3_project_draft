@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.10.1 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.10.2 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -35,13 +35,16 @@ The main sections follow the evidence path required by the grant:
 9. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
    workflow v0.13.0 resources also retain tissue/organism part, developmental
-   stage, condition, treatment, experiment and sample context.
+   stage, condition, treatment, experiment and sample context. Direct controls
+   open the matching heatmap and volcano-eligibility views.
 10. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
 11. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
 12. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
-   pocket position and stronger local pocket-structure conservation.
+   pocket position and stronger local pocket-structure conservation, with an
+   interactive TM-score/pocket-overlap evidence map and recorded threshold
+   references.
 13. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
 14. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
@@ -70,6 +73,11 @@ to three decimal places, or three significant figures for P/E/FDR/Q values,
 without changing the underlying data or downloads. Identifier and narrative
 columns receive deliberate wider widths instead of being squeezed into the
 visible page.
+
+The Glossary opens with the complete glossary in one vertically scrollable
+browser table. Its section selector remains available for shorter focused
+views; the download buttons are optional exports rather than the only way to
+read the full dictionary.
 
 ## Threshold explorer
 

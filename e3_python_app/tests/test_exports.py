@@ -138,6 +138,37 @@ def test_dataframe_display_formats_are_readable_without_rounding_data() -> None:
         exports.dataframe_display_formats(frame=duplicate)
 
 
+def test_dataframe_display_widths_force_scrollable_readable_columns() -> None:
+    """Every app column receives a bounded width suited to its semantics."""
+    frame = pd.DataFrame(
+        {
+            "alignment_tool_count": [2],
+            "best_mean_minimum_tm_score": [0.9156],
+            "cluster_id": ["onekp_dataset@@scaffold-ERWT-2002086"],
+            "interpretation": [
+                "The same candidate member pocket must pass every aligner."
+            ],
+            "primary_group_type": ["HIERARCHICAL_ORTHOGROUP"],
+        }
+    )
+    assert exports.dataframe_display_widths(frame=frame) == {
+        "alignment_tool_count": 130,
+        "best_mean_minimum_tm_score": 130,
+        "cluster_id": 240,
+        "interpretation": 360,
+        "primary_group_type": 170,
+    }
+
+    with pytest.raises(TypeError, match="DataFrame"):
+        exports.dataframe_display_widths(frame=[])  # type: ignore[arg-type]
+    unnamed = pd.DataFrame([[1]], columns=[""])
+    with pytest.raises(ValueError, match="non-empty"):
+        exports.dataframe_display_widths(frame=unnamed)
+    duplicate = pd.DataFrame([[1, 2]], columns=["score", "score"])
+    with pytest.raises(ValueError, match="duplicate"):
+        exports.dataframe_display_widths(frame=duplicate)
+
+
 def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None:
     """The XLSX is a filterable styled table with safe, typed values."""
     frame = pd.DataFrame(
@@ -269,14 +300,14 @@ def test_render_table_downloads_preserves_tsv_and_adds_excel(
 
 
 def test_every_streamlit_tsv_table_uses_paired_downloads() -> None:
-    """All eleven tabular locations use the paired TSV/Excel export helper."""
+    """All twelve tabular locations use the paired TSV/Excel export helper."""
     source = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "e3app"
         / "streamlit_app.py"
     ).read_text(encoding="utf-8")
-    assert source.count("render_table_downloads(") == 11
-    assert source.count("tsv_label=") == 11
-    assert source.count("excel_label=") == 11
+    assert source.count("render_table_downloads(") == 12
+    assert source.count("tsv_label=") == 12
+    assert source.count("excel_label=") == 12
     assert "to_csv(sep=\"\\t\"" not in source

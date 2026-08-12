@@ -26,6 +26,7 @@ testthat::test_that("glossary defines requested language and exact thresholds", 
     fixed = TRUE
   )
   testthat::expect_gte(nrow(glossary), 360L)
+  testthat::expect_true(all(nzchar(glossary$Section)))
   for (term in c(
     "Tantan masking",
     "P2Rank",

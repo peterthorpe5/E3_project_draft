@@ -255,6 +255,29 @@ result_section_ui <- function(id, section) {
         )
       )
     },
+    if (identical(section, "expression")) {
+      shiny::div(
+        class = "expression-visual-links",
+        shiny::h4("Expression visualisations"),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Open the linked heatmap or volcano-eligibility view without",
+            "searching through the main navigation. The volcano view remains",
+            "unavailable unless a real differential-expression relation contains",
+            "both an effect size and a P/FDR/Q value."
+          )
+        ),
+        shiny::actionButton(
+          ns("open_expression_heatmap"),
+          "Open expression heatmap"
+        ),
+        shiny::actionButton(
+          ns("open_expression_volcano"),
+          "Open volcano eligibility"
+        )
+      )
+    },
     bslib::layout_columns(
       shiny::selectInput(
         ns("relation"),
@@ -342,6 +365,24 @@ result_section_ui <- function(id, section) {
       tsv_label = "Download displayed rows as TSV",
       excel_label = "Download displayed rows as Excel"
     ),
+    if (identical(section, "structural_alignment")) {
+      shiny::tagList(
+        shiny::h4("Interactive 3D alignment evidence map"),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Hover, zoom and pan across minimum TM-score and 3D pocket overlap.",
+            "Dashed lines show the recorded 0.50 thresholds. Same-position",
+            "support also requires a pocket-centroid distance of at most 8 Å.",
+            "Rotatable coordinate models remain in 3D structures & pockets."
+          )
+        ),
+        shiny::uiOutput(ns("alignment_plot_notice")),
+        shinycssloaders::withSpinner(
+          plotly::plotlyOutput(ns("alignment_plot"), height = "680px")
+        )
+      )
+    },
     shinycssloaders::withSpinner(DT::DTOutput(ns("result_table"))),
     if (identical(section, "final_recommendations")) {
       ranking_methodology_ui(ns)
@@ -620,6 +661,86 @@ result_section_server <- function(
         )
       }
     )
+    if (identical(section, "expression")) {
+      open_expression_visual <- function(selected) {
+        root_session <- session$rootScope()
+        bslib::nav_select(
+          id = "main_navigation",
+          selected = "Visual explorer",
+          session = root_session
+        )
+        bslib::nav_select(
+          id = "candidate_visualisations-visual_tabs",
+          selected = selected,
+          session = root_session
+        )
+      }
+      shiny::observeEvent(input$open_expression_heatmap, {
+        open_expression_visual(selected = "Expression heatmap")
+      })
+      shiny::observeEvent(input$open_expression_volcano, {
+        open_expression_visual(selected = "Volcano eligibility")
+      })
+    }
+    if (identical(section, "structural_alignment")) {
+      alignment_plot_data <- shiny::reactive({
+        columns <- structural_alignment_plot_columns(available_columns())
+        if (
+          length(columns) == 0L ||
+            is.null(input$relation) ||
+            input$relation %in% c(
+              "Loading...",
+              "Result source not configured",
+              "No recognised result table"
+            )
+        ) {
+          return(tibble::tibble())
+        }
+        row_limit <- min(
+          max(1L, as.integer(input$max_rows %||% 500L)),
+          as.integer(max_rows)
+        )
+        tryCatch(
+          collect_selected_result(
+            resource_source = resource_source,
+            relation = input$relation,
+            selected_columns = columns,
+            max_rows = row_limit
+          ),
+          error = function(error) {
+            shiny::showNotification(
+              paste("Could not load alignment plot rows:", conditionMessage(error)),
+              type = "error",
+              duration = NULL
+            )
+            tibble::tibble()
+          }
+        )
+      })
+      output$alignment_plot_notice <- shiny::renderUI({
+        if (nrow(alignment_plot_data()) == 0L) {
+          return(shiny::div(
+            class = "alert alert-info",
+            paste(
+              "The selected relation has no paired TM-score and pocket-overlap",
+              "values. Choose structural_alignment_summary or a compatible",
+              "pairwise alignment relation."
+            )
+          ))
+        }
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            format(nrow(alignment_plot_data()), big.mark = ","),
+            "alignment rows are plotted."
+          )
+        )
+      })
+      output$alignment_plot <- plotly::renderPlotly({
+        shiny::req(nrow(alignment_plot_data()) > 0L)
+        build_structural_alignment_plot(data = alignment_plot_data())
+      })
+    }
     if (identical(section, "final_recommendations")) {
       defaults <- recorded_ranking_weights()
       shiny::observeEvent(input$ranking_reset_weights, {

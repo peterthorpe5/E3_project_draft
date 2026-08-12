@@ -7,6 +7,7 @@
 candidate_visualisations_ui <- function(id) {
   ns <- shiny::NS(id)
   bslib::navset_card_tab(
+    id = ns("visual_tabs"),
     bslib::nav_panel(
       "Candidate landscape",
       shiny::h2("Interactive candidate landscape"),

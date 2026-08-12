@@ -34,6 +34,16 @@ _SCIENTIFIC_COLUMN = re.compile(
     r"(^|_)(e_?value|fdr|p_?value|q_?value)(_|$)",
     flags=re.IGNORECASE,
 )
+_NARRATIVE_COLUMN = re.compile(
+    r"interpretation|definition|description|caution|reason|evidence|"
+    r"note|message|warning|limitation",
+    flags=re.IGNORECASE,
+)
+_WIDE_TEXT_COLUMN = re.compile(
+    r"accession|cluster.*id|group.*id|species|alignment.*tool|"
+    r"candidate.*list|present|missing|unavailable",
+    flags=re.IGNORECASE,
+)
 _LONG_TEXT_THRESHOLD = 80
 
 
@@ -218,6 +228,49 @@ def dataframe_display_formats(*, frame: pd.DataFrame) -> dict[str, str]:
         elif kind == "scientific":
             formats[column_name] = "%.2e"
     return formats
+
+
+def dataframe_display_widths(*, frame: pd.DataFrame) -> dict[str, int]:
+    """Return explicit Streamlit column widths for readable wide tables.
+
+    Explicit widths prevent Streamlit from compressing a many-column result
+    into the visible card width. The resulting grid uses its native horizontal
+    scrollbar and stationary header while retaining every source column.
+
+    Args:
+        frame: Data frame shown in an application table.
+
+    Returns:
+        Mapping from every column name to a width in pixels.
+
+    Raises:
+        TypeError: If ``frame`` is not a pandas data frame.
+        ValueError: If column names are empty or duplicated after conversion to
+            strings.
+    """
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("Display sizing requires a pandas DataFrame.")
+    column_names = [str(column) for column in frame.columns]
+    if any(not column for column in column_names):
+        raise ValueError("Display columns must have non-empty names.")
+    if len(set(column_names)) != len(column_names):
+        raise ValueError("Display sizing does not support duplicate columns.")
+
+    widths: dict[str, int] = {}
+    for column_index, column_name in enumerate(column_names):
+        kind = excel_format_kind(
+            column_name=column_name,
+            series=frame.iloc[:, column_index],
+        )
+        if kind in {"integer", "decimal", "scientific", "logical"}:
+            widths[column_name] = 130
+        elif _NARRATIVE_COLUMN.search(column_name):
+            widths[column_name] = 360
+        elif _WIDE_TEXT_COLUMN.search(column_name):
+            widths[column_name] = 240
+        else:
+            widths[column_name] = 170
+    return widths
 
 
 def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:

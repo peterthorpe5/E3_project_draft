@@ -420,21 +420,22 @@ summarise_expression_selection <- function(filtered_table) {
 #' @param max_rows Maximum number of rows to collect.
 #' @return Collected tibble.
 collect_expression_display <- function(filtered_table, max_rows = 1000L) {
+  display_columns <- c(
+    "species_column",
+    "experiment_accession",
+    "gene_id",
+    "gene_name",
+    "sample_or_condition",
+    "organism_part",
+    "developmental_stage",
+    "cultivar",
+    "genotype",
+    "condition",
+    "expression_value",
+    "expression_unit"
+  )
   filtered_table |>
-    dplyr::select(
-      .data$species_column,
-      .data$experiment_accession,
-      .data$gene_id,
-      .data$gene_name,
-      .data$sample_or_condition,
-      .data$organism_part,
-      .data$developmental_stage,
-      .data$cultivar,
-      .data$genotype,
-      .data$condition,
-      .data$expression_value,
-      .data$expression_unit
-    ) |>
+    dplyr::select(dplyr::all_of(display_columns)) |>
     head(max_rows) |>
     dplyr::collect()
 }

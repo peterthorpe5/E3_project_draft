@@ -13,6 +13,22 @@ testthat::test_that("tabular modules expose Excel beside TSV downloads", {
   glossary <- paste(as.character(glossary_ui("glossary")), collapse = "\n")
   testthat::expect_match(glossary, "glossary-download_tsv", fixed = TRUE)
   testthat::expect_match(glossary, "glossary-download_excel", fixed = TRUE)
+  testthat::expect_match(glossary, "All sections", fixed = TRUE)
+  testthat::expect_match(glossary, "glossary-row_count", fixed = TRUE)
+
+  expression <- paste(
+    as.character(result_section_ui("expression", "expression")),
+    collapse = "\n"
+  )
+  testthat::expect_match(expression, "expression-open_expression_heatmap")
+  testthat::expect_match(expression, "expression-open_expression_volcano")
+
+  alignment <- paste(
+    as.character(result_section_ui("alignment", "structural_alignment")),
+    collapse = "\n"
+  )
+  testthat::expect_match(alignment, "alignment-alignment_plot")
+  testthat::expect_match(alignment, "Interactive 3D alignment evidence map")
 
   visual <- paste(
     as.character(candidate_visualisations_ui("visual")),

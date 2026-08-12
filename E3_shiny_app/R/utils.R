@@ -94,7 +94,7 @@ readable_datatable <- function(
   rownames = FALSE,
   filter = "top",
   options = list(),
-  extensions = NULL,
+  extensions = character(),
   ...
 ) {
   if (!is.data.frame(data)) {

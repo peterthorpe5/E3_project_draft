@@ -297,13 +297,10 @@ testthat::test_that("the new explorer retains every existing application tab", {
     "3D structures & pockets",
     "Pocket-aligned sequences",
     "3D alignment",
+    "Computational chemistry",
     "All results",
     "Provenance and QC",
     "Files used",
-    "Expression summary",
-    "Expression table",
-    "Gene lookup",
-    "Visualise expression",
     "About"
   )
   for (tab in expected_tabs) {

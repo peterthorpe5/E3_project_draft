@@ -11,6 +11,7 @@ from e3app.visualisations import (
     build_candidate_landscape_figure,
     build_expression_heatmap_figure,
     build_species_tissue_profile_figure,
+    build_structural_alignment_figure,
     build_volcano_figure,
     candidate_colour_columns,
     candidate_display_labels,
@@ -23,8 +24,10 @@ from e3app.visualisations import (
     prepare_expression_heatmap_cells,
     prepare_species_tissue_profile,
     prepare_species_tissue_summary,
+    prepare_structural_alignment_frame,
     prepare_volcano_frame,
     selected_candidate_from_event,
+    structural_alignment_plot_columns,
 )
 
 
@@ -271,4 +274,34 @@ def test_volcano_preparation_and_figure() -> None:
             rows=pd.DataFrame({"label": ["GENE"]}),
             effect_threshold=1.0,
             significance_threshold=0.05,
+        )
+
+
+def test_structural_alignment_evidence_map() -> None:
+    """3D alignment plots accept summary fields and retain exact identifiers."""
+    frame = pd.DataFrame(
+        {
+            "cluster_id": ["cluster_1", "cluster_2"],
+            "primary_group_id": ["N0.HOG1", "N0.HOG2"],
+            "alignment_status": ["SUPPORTED", "NOT_SUPPORTED"],
+            "mean_minimum_tm_score": [0.9, 0.4],
+            "mean_pocket_overlap_fraction": [0.8, 0.3],
+            "median_centroid_distance_angstrom": [1.2, 12.0],
+        }
+    )
+    columns = structural_alignment_plot_columns(available=list(frame.columns))
+    assert "mean_minimum_tm_score" in columns
+    assert "mean_pocket_overlap_fraction" in columns
+    prepared = prepare_structural_alignment_frame(frame=frame)
+    assert prepared["_alignment_identifier"].tolist() == [
+        "N0.HOG1",
+        "N0.HOG2",
+    ]
+    figure = build_structural_alignment_figure(frame=frame)
+    assert isinstance(figure, go.Figure)
+    assert len(figure.layout.shapes) == 2
+    assert structural_alignment_plot_columns(available=["minimum_tm_score"]) == []
+    with pytest.raises(AppError, match="paired TM-score"):
+        prepare_structural_alignment_frame(
+            frame=pd.DataFrame({"minimum_tm_score": [0.8]})
         )

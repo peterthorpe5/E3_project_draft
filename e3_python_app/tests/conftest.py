@@ -113,12 +113,14 @@ def resource_db(tmp_path: Path) -> Path:
             "CREATE TABLE structural_alignment_summary("
             "cluster_id VARCHAR, primary_group_id VARCHAR, "
             "position_alignment_status VARCHAR, alignment_status VARCHAR, "
-            "mean_minimum_tm_score DOUBLE)"
+            "mean_minimum_tm_score DOUBLE, "
+            "mean_pocket_overlap_fraction DOUBLE, "
+            "median_centroid_distance_angstrom DOUBLE)"
         )
         connection.execute(
             "INSERT INTO structural_alignment_summary VALUES "
             "('cluster_1', 'N0.HOG0001', 'SAME_3D_POCKET_POSITION_SUPPORTED', "
-            "'CONSERVED_3D_POCKET_SUPPORTED', 0.9)"
+            "'CONSERVED_3D_POCKET_SUPPORTED', 0.9, 0.8, 1.2)"
         )
         connection.execute(
             "CREATE TABLE top_computational_review_shortlist AS "

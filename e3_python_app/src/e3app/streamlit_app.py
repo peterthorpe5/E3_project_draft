@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import asdict
 from typing import Sequence
 
@@ -37,7 +36,11 @@ from e3app.data import (
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
-from e3app.exports import dataframe_display_formats, render_table_downloads
+from e3app.exports import (
+    dataframe_display_formats,
+    dataframe_display_widths,
+    render_table_downloads,
+)
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
 from e3app.pocket_review import (
     PocketReviewBundle,
@@ -68,6 +71,7 @@ from e3app.visualisations import (
     build_candidate_landscape_figure,
     build_expression_heatmap_figure,
     build_species_tissue_profile_figure,
+    build_structural_alignment_figure,
     build_volcano_figure,
     candidate_colour_columns,
     candidate_display_labels,
@@ -79,37 +83,45 @@ from e3app.visualisations import (
     prepare_candidate_landscape,
     prepare_species_tissue_summary,
     selected_candidate_from_event,
+    structural_alignment_plot_columns,
 )
 
 LOGGER = logging.getLogger(__name__)
-_NARRATIVE_COLUMN = re.compile(
-    r"interpretation|definition|description|caution|reason|evidence|"
-    r"note|message|warning|limitation",
-    flags=re.IGNORECASE,
-)
-_WIDE_TEXT_COLUMN = re.compile(
-    r"accession|cluster.*id|group.*id|species|alignment.*tool|"
-    r"candidate.*list|present|missing|unavailable",
-    flags=re.IGNORECASE,
-)
 _WRAPPED_TAB_CSS = """
 <style>
-div[data-baseweb="tab-list"] {
+div[data-testid="stTabs"] {
+    overflow: visible !important;
+}
+div[data-testid="stTabs"] div[role="tablist"],
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
+    align-items: flex-start !important;
+    display: flex !important;
     flex-wrap: wrap !important;
     height: auto !important;
+    max-height: none !important;
     overflow-x: visible !important;
+    overflow-y: visible !important;
     row-gap: 0.25rem;
+    white-space: normal !important;
+    width: 100% !important;
 }
-button[data-baseweb="tab"] {
+div[data-testid="stTabs"] button[role="tab"],
+div[data-testid="stTabs"] button[data-baseweb="tab"],
+div[data-testid="stTabs"] button[data-testid="stTab"] {
     border-bottom: 2px solid transparent;
     flex: 0 0 auto !important;
     min-height: 2.5rem;
     white-space: nowrap;
 }
-button[data-baseweb="tab"][aria-selected="true"] {
+div[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
+div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
+div[data-testid="stTabs"] button[data-testid="stTab"][aria-selected="true"] {
     border-bottom-color: #ff4b4b;
 }
-div[data-baseweb="tab-highlight"] {
+div[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
+div[data-testid="stTabs"] button[aria-label*="scroll" i],
+div[data-testid="stTabs"] [data-testid="stTabsScrollLeft"],
+div[data-testid="stTabs"] [data-testid="stTabsScrollRight"] {
     display: none;
 }
 </style>
@@ -129,21 +141,18 @@ def _display_dataframe(
     """
     table = frame if isinstance(frame, pd.DataFrame) else pd.DataFrame(frame)
     number_formats = dataframe_display_formats(frame=table)
+    column_widths = dataframe_display_widths(frame=table)
     column_config: dict[str, object] = {}
     for column in table.columns:
         column_name = str(column)
         if column_name in number_formats:
             column_config[column_name] = st.column_config.NumberColumn(
                 format=number_formats[column_name],
-                width="small",
+                width=column_widths[column_name],
             )
-        elif _NARRATIVE_COLUMN.search(column_name):
-            column_config[column_name] = st.column_config.TextColumn(
-                width="large"
-            )
-        elif _WIDE_TEXT_COLUMN.search(column_name):
-            column_config[column_name] = st.column_config.TextColumn(
-                width="medium"
+        else:
+            column_config[column_name] = st.column_config.Column(
+                width=column_widths[column_name]
             )
     arguments: dict[str, object] = {
         "data": table,
@@ -211,6 +220,86 @@ def _render_section(
         tsv_label="Download displayed rows as TSV",
         excel_label="Download displayed rows as Excel",
         key=f"{section}_download",
+    )
+
+
+def _render_structural_alignment_section(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render an interactive 3D-alignment evidence map and complete tables."""
+    specification = SECTION_SPECS["structural_alignment"]
+    st.subheader(str(specification["title"]))
+    st.caption(str(specification["description"]))
+    st.info(
+        "The interactive map combines minimum TM-score and 3D pocket overlap. "
+        "Dashed lines show the recorded 0.50 thresholds; same-position support "
+        "also requires a pocket-centroid distance of at most 8 Å. Hover, zoom "
+        "and pan to inspect groups. Rotatable coordinate models remain in "
+        "3D structures & pockets."
+    )
+    relations = relations_for_section(connection, "structural_alignment")
+    compatible: list[tuple[str, list[str]]] = []
+    for relation in relations:
+        columns = structural_alignment_plot_columns(
+            available=relation_columns(connection, relation)
+        )
+        if columns:
+            compatible.append((relation, columns))
+    if compatible:
+        relation_names = [relation for relation, _ in compatible]
+        preferred = (
+            "structural_alignment_summary"
+            if "structural_alignment_summary" in relation_names
+            else relation_names[0]
+        )
+        plot_relation = st.selectbox(
+            "Alignment relation to visualise",
+            relation_names,
+            index=relation_names.index(preferred),
+            key="structural_alignment_plot_relation",
+        )
+        plot_columns = dict(compatible)[plot_relation]
+        requested = st.number_input(
+            "Maximum alignment points",
+            min_value=1,
+            max_value=config.max_rows,
+            value=min(config.max_rows, 1972),
+            key="structural_alignment_plot_rows",
+        )
+        plot_rows = preview_selected_columns(
+            connection,
+            plot_relation,
+            plot_columns,
+            int(requested),
+        )
+        figure = build_structural_alignment_figure(frame=plot_rows)
+        st.plotly_chart(
+            figure,
+            use_container_width=True,
+            key="structural_alignment_evidence_map",
+        )
+        with st.expander("Alignment rows behind the visualisation"):
+            _display_dataframe(frame=plot_rows, height=520)
+            render_table_downloads(
+                frame=plot_rows,
+                file_stem=f"structural_alignment_visualisation_{plot_relation}",
+                tsv_label="Download plotted alignment rows as TSV",
+                excel_label="Download plotted alignment rows as Excel",
+                key="structural_alignment_plot_download",
+            )
+    else:
+        st.info(
+            "No structural-alignment relation contains both a TM-score and a "
+            "3D pocket-overlap fraction, so the evidence map is unavailable."
+        )
+    st.markdown("#### Complete 3D alignment evidence tables")
+    _render_section(
+        connection=connection,
+        config=config,
+        section="structural_alignment",
+        show_heading=False,
     )
 
 
@@ -547,6 +636,10 @@ def _render_expression_section(
     )
     with st.expander("Mapping summary and audit relations"):
         _render_section(connection=connection, config=config, section="expression")
+    _render_expression_section_visualisations(
+        connection=connection,
+        expression_relation=relation,
+    )
 
 
 def _render_overview(*, connection: object, config: AppConfig) -> None:
@@ -650,20 +743,27 @@ def _render_glossary() -> None:
         "This expanded glossary combines project-wide technical terminology, the complete "
         "218-field final-candidate data dictionary and the recorded top-200 computational "
         "rules. Threshold-explorer changes create sensitivity lists and do not rewrite the "
-        "recorded primary result."
+        "recorded primary result. Every glossary row is available in the browser below; "
+        "downloading is optional."
     )
+    sections = glossary_sections()
     selected_section = st.selectbox(
         "Glossary section",
-        options=glossary_sections(),
+        options=("All sections", *sections),
         key="glossary_section",
     )
-    rows = glossary_rows(selected_section)
-    _display_dataframe(frame=rows)
     all_rows = [
         {"Section": section, **row}
-        for section in glossary_sections()
+        for section in sections
         for row in glossary_rows(section)
     ]
+    rows = (
+        all_rows
+        if selected_section == "All sections"
+        else [row for row in all_rows if row["Section"] == selected_section]
+    )
+    st.caption(f"{len(rows):,} glossary rows are available in this browser table.")
+    _display_dataframe(frame=rows, height=760)
     export = pd.DataFrame(all_rows)
     render_table_downloads(
         frame=export,
@@ -1236,9 +1336,10 @@ def _render_expression_heatmap(
     *,
     connection: object,
     frame: pd.DataFrame,
-    selected_key: str,
+    selected_key: str | None,
     rank_column: str | None,
     expression_relation: str,
+    key_prefix: str = "visual",
 ) -> None:
     """Render a linked cross-species candidate expression heatmap."""
     st.subheader("Cross-species expression heatmap")
@@ -1261,19 +1362,20 @@ def _render_expression_heatmap(
     )
     selected_row = _linked_candidate_row(frame, selected_key)
     linked_value = str(selected_row.get(link_column, "")).strip()
-    current = list(st.session_state.get("visual_heatmap_candidates", []))
+    candidate_key = f"{key_prefix}_heatmap_candidates"
+    current = list(st.session_state.get(candidate_key, []))
     if linked_value and linked_value not in current:
         current = [linked_value, *current]
     if not current:
         current = options[: min(10, len(options))]
-    st.session_state["visual_heatmap_candidates"] = [
+    st.session_state[candidate_key] = [
         value for value in current if value in options
     ][:25]
     selected_candidates = st.multiselect(
         "Candidate groups (maximum 25)",
         options,
         format_func=lambda value: labels[value],
-        key="visual_heatmap_candidates",
+        key=candidate_key,
     )
     if not selected_candidates:
         st.info("Select at least one candidate group.")
@@ -1303,25 +1405,25 @@ def _render_expression_heatmap(
             "Heatmap context",
             contexts,
             format_func=lambda column: EXPRESSION_CONTEXT_LABELS[column],
-            key="visual_heatmap_context",
+            key=f"{key_prefix}_heatmap_context",
         )
     with control_two:
         expression_unit = st.selectbox(
             "Expression unit",
             units,
-            key="visual_heatmap_unit",
+            key=f"{key_prefix}_heatmap_unit",
         )
     with control_three:
         species = st.selectbox(
             "Species",
             ["All", *species_values],
-            key="visual_heatmap_species",
+            key=f"{key_prefix}_heatmap_species",
         )
     with control_four:
         log_transform = st.checkbox(
             "Use log2(1 + expression)",
             value=True,
-            key="visual_heatmap_log",
+            key=f"{key_prefix}_heatmap_log",
         )
     cells = collect_expression_heatmap(
         connection=connection,
@@ -1342,17 +1444,75 @@ def _render_expression_heatmap(
     st.plotly_chart(
         figure,
         use_container_width=True,
-        key="visual_expression_heatmap_plot",
+        key=f"{key_prefix}_expression_heatmap_plot",
     )
     st.markdown("#### Aggregated heatmap cells")
     _display_dataframe(frame=cells, height=460)
     render_table_downloads(
         frame=cells,
-        file_stem="candidate_expression_heatmap_cells",
+        file_stem=f"{key_prefix}_candidate_expression_heatmap_cells",
         tsv_label="Download expression heatmap cells as TSV",
         excel_label="Download expression heatmap cells as Excel",
-        key="visual_heatmap_download",
+        key=f"{key_prefix}_heatmap_download",
     )
+
+
+def _render_expression_section_visualisations(
+    *,
+    connection: object,
+    expression_relation: str,
+) -> None:
+    """Place the heatmap and volcano views beside expression evidence tables."""
+    st.markdown("### Expression visualisations")
+    st.caption(
+        "These are the same scientific views exposed in Visual explorer, placed "
+        "here so expression evidence and its visual summaries can be reviewed "
+        "without changing the main section."
+    )
+    visual_tabs = st.tabs(("Expression heatmap", "Volcano eligibility"))
+    with visual_tabs[0]:
+        expression_columns = relation_columns(connection, expression_relation)
+        link_column = next(
+            (
+                column
+                for column in ("primary_group_id", "cluster_id")
+                if column in expression_columns
+            ),
+            None,
+        )
+        if link_column is None:
+            st.info(
+                "The expression relation has no stable candidate-group identifier "
+                "for a heatmap."
+            )
+        else:
+            identifiers = distinct_text_values(
+                connection=connection,
+                relation=expression_relation,
+                column=link_column,
+            )
+            if not identifiers:
+                st.info("No mapped candidate groups are available for a heatmap.")
+            else:
+                frame = pd.DataFrame(
+                    {
+                        link_column: identifiers,
+                        "_candidate_key": identifiers,
+                    }
+                )
+                _render_expression_heatmap(
+                    connection=connection,
+                    frame=frame,
+                    selected_key=None,
+                    rank_column=None,
+                    expression_relation=expression_relation,
+                    key_prefix="expression_section",
+                )
+    with visual_tabs[1]:
+        _render_volcano_view(
+            connection=connection,
+            key_prefix="expression_section",
+        )
 
 
 def _render_species_tissue_profiles(
@@ -1512,7 +1672,11 @@ def _render_species_tissue_profiles(
     )
 
 
-def _render_volcano_view(*, connection: object) -> None:
+def _render_volcano_view(
+    *,
+    connection: object,
+    key_prefix: str = "visual",
+) -> None:
     """Render a volcano plot only when a real differential relation exists."""
     st.subheader("Differential-expression volcano plot")
     capabilities = differential_expression_relations(connection=connection)
@@ -1536,7 +1700,7 @@ def _render_volcano_view(*, connection: object) -> None:
         "Differential-expression relation",
         list(labels),
         format_func=lambda value: labels[value],
-        key="visual_volcano_relation",
+        key=f"{key_prefix}_volcano_relation",
     )
     capability = next(
         item for item in capabilities if item["relation"] == relation
@@ -1549,7 +1713,7 @@ def _render_volcano_view(*, connection: object) -> None:
             max_value=20.0,
             value=1.0,
             step=0.1,
-            key="visual_volcano_effect",
+            key=f"{key_prefix}_volcano_effect",
         )
     with threshold_two:
         significance_threshold = st.number_input(
@@ -1558,7 +1722,7 @@ def _render_volcano_view(*, connection: object) -> None:
             max_value=1.0,
             value=0.05,
             format="%.6f",
-            key="visual_volcano_significance",
+            key=f"{key_prefix}_volcano_significance",
         )
     rows = collect_differential_expression(
         connection=connection,
@@ -1570,14 +1734,18 @@ def _render_volcano_view(*, connection: object) -> None:
         significance_threshold=float(significance_threshold),
         significance_label=capability["significance_column"],
     )
-    st.plotly_chart(figure, use_container_width=True, key="visual_volcano_plot")
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key=f"{key_prefix}_volcano_plot",
+    )
     _display_dataframe(frame=rows, height=520)
     render_table_downloads(
         frame=rows,
         file_stem=f"{relation}_volcano_rows",
         tsv_label="Download plotted differential-expression rows as TSV",
         excel_label="Download plotted differential-expression rows as Excel",
-        key="visual_volcano_download",
+        key=f"{key_prefix}_volcano_download",
     )
 
 
@@ -1766,10 +1934,9 @@ def render_app() -> None:
             with tabs[12]:
                 _render_pocket_review(bundle=pocket_review, focus="alignment")
             with tabs[13]:
-                _render_section(
+                _render_structural_alignment_section(
                     connection=connection,
                     config=config,
-                    section="structural_alignment",
                 )
             with tabs[14]:
                 _render_section(

@@ -124,7 +124,7 @@ excel_long_text_rows <- function(column, threshold = 80L) {
     },
     FUN.VALUE = character(1)
   )
-  which(!is.na(values) & nchar(values) > as.integer(threshold)) + 1L
+  unname(which(!is.na(values) & nchar(values) > as.integer(threshold)) + 1L)
 }
 
 #' Prepare a flat data frame for safe Excel serialisation.

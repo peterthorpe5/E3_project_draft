@@ -302,7 +302,7 @@ recompute_exploratory_ranking <- function(
     rep(FALSE, nrow(result))
   }
   order_index <- order(
-    if (isTRUE(preserve_gate_tier)) !gate_tier else FALSE,
+    if (isTRUE(preserve_gate_tier)) !gate_tier else rep(FALSE, nrow(result)),
     -result$exploratory_final_score,
     -completeness,
     as.character(result[[identity]]),

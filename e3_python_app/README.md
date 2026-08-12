@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.7.1 is the tested Streamlit companion to `E3_shiny_app` 0.10.1. Both
+Version 0.7.3 is the tested Streamlit companion to `E3_shiny_app` 0.10.2. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -61,7 +61,8 @@ The reporter provides:
 - a grant overview separating Milestone 1 conservation evidence from Milestone
   2 conserved structural/chemical starting space;
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
-  conservation and 3D alignment sections;
+  conservation and 3D alignment sections. Expression embeds the same heatmap
+  and scientifically gated volcano views as the Visual explorer;
 - species, tissue/organism-part and identifier filters for the normalised
   candidate-by-expression-context relation, when supplied by workflow v0.13.0
   or later;
@@ -76,8 +77,10 @@ The reporter provides:
   relation contains both a recognised differential-expression effect size and
   a P/FDR/Q-value field; the current absolute Expression Atlas release is not
   misrepresented as a differential analysis;
-- selected-group 3D structure/pocket and pocket-annotated MAFFT alignment tabs
-  backed by the self-contained top-200 review bundle;
+- an interactive 3D-alignment evidence map with hover, zoom and threshold
+  references, plus selected-group rotatable structure/pocket and
+  pocket-annotated MAFFT alignment tabs backed by the self-contained top-200
+  review bundle;
 - searchable HOG/orthogroup, DeepClust cluster, rank and accession choices,
   alongside downloadable OrthoFinder member sequence/model identifiers;
 - a separate column multiselect and row limit for every section;
@@ -93,8 +96,9 @@ The reporter provides:
   Numeric source values remain exact;
   only their display is shortened.
 
-Wide in-app result tables use a horizontal scrollbar and a bounded vertical
-viewport with a stationary header. Numeric display is shortened to three
+Wide in-app result tables give every column an explicit readable minimum width,
+then use a horizontal scrollbar and a bounded vertical viewport with a
+stationary header. Numeric display is shortened to three
 decimal places (or three significant figures for P/E/FDR/Q values) without
 changing the exported data. The main navigation labels wrap across as many rows
 as the window requires, so sections are visible without tab-scroll arrows.
@@ -131,7 +135,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.7.1 quality gate includes branch-aware coverage at or above 95%
+The v0.7.3 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.

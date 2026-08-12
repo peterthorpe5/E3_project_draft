@@ -26,6 +26,7 @@ source("R/glossary.R")
 source("R/ranking_explorer.R")
 source("R/threshold_explorer.R")
 source("R/candidate_visualisations.R")
+source("R/structural_alignment_visualisations.R")
 source("R/pocket_review.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
@@ -48,6 +49,7 @@ pocket_review_config <- register_pocket_review_resource(pocket_review_config)
 
 ui <- bslib::page_navbar(
   title = "ARIA Plant E3 Evidence Reporter",
+  id = "main_navigation",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   header = shiny::includeCSS("www/app.css"),
     bslib::nav_panel(
