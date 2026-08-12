@@ -14,6 +14,7 @@ library(shinycssloaders)
 library(stringr)
 
 source("R/utils.R")
+source("R/excel_export.R")
 source("R/data_source_report.R")
 source("R/result_sections.R")
 source("R/resource_source.R")

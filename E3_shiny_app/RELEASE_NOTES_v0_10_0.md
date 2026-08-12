@@ -7,3 +7,6 @@
 - Adds a dedicated computational-chemistry section over the same integrated
   DuckDB relations used by the Python app.
 - Retains read-only, bounded queries and TSV downloads.
+- Adds a neighbouring formatted Excel download wherever the app exposes a TSV
+  table download. Excel tables have frozen headers, filter controls, banded
+  rows, readable bounded widths, wrapped long text and semantic numeric formats.

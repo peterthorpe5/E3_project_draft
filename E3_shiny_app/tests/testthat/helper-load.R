@@ -28,6 +28,7 @@ repo_dir <- find_repo_dir()
 
 source(file.path(repo_dir, "inst", "scripts", "script_utils.R"))
 source(file.path(repo_dir, "R", "utils.R"))
+source(file.path(repo_dir, "R", "excel_export.R"))
 source(file.path(repo_dir, "R", "data_source_report.R"))
 source(file.path(repo_dir, "R", "result_sections.R"))
 source(file.path(repo_dir, "R", "resource_source.R"))

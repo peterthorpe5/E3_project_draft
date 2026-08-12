@@ -48,6 +48,13 @@ body {
   margin-right: 1rem;
 }
 
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+}
+
 .interpretation-card {
   border-left: 5px solid #a66a00;
   background: #fff8e8;

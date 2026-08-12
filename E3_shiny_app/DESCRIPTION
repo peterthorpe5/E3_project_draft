@@ -29,6 +29,7 @@ Imports:
     DT,
     duckplyr,
     ggplot2,
+    openxlsx,
     shiny,
     plotly,
     rlang,

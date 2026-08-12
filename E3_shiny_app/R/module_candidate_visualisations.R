@@ -52,9 +52,12 @@ candidate_visualisations_ui <- function(id) {
         ),
         col_widths = c(8, 4)
       ),
-      shiny::downloadButton(
-        ns("download_candidate_evidence"),
-        "Download selected candidate evidence as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_candidate_evidence",
+        excel_id = "download_candidate_evidence_excel",
+        tsv_label = "Download selected candidate evidence as TSV",
+        excel_label = "Download selected candidate evidence as Excel"
       ),
       shinycssloaders::withSpinner(DT::DTOutput(ns("candidate_evidence_table")))
     ),
@@ -88,9 +91,12 @@ candidate_visualisations_ui <- function(id) {
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("expression_heatmap"), height = "750px")
       ),
-      shiny::downloadButton(
-        ns("download_heatmap_cells"),
-        "Download expression heatmap cells as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_heatmap_cells",
+        excel_id = "download_heatmap_cells_excel",
+        tsv_label = "Download expression heatmap cells as TSV",
+        excel_label = "Download expression heatmap cells as Excel"
       ),
       shiny::h4("Aggregated heatmap cells"),
       DT::DTOutput(ns("heatmap_table"))
@@ -136,9 +142,12 @@ candidate_visualisations_ui <- function(id) {
       DT::DTOutput(ns("profile_evidence_states")),
       shiny::h4("Aggregated species/tissue profile"),
       DT::DTOutput(ns("profile_summary_table")),
-      shiny::downloadButton(
-        ns("download_profile_rows"),
-        "Download exact species/tissue expression rows as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_profile_rows",
+        excel_id = "download_profile_rows_excel",
+        tsv_label = "Download exact species/tissue expression rows as TSV",
+        excel_label = "Download exact species/tissue expression rows as Excel"
       ),
       shiny::h4("Exact Expression Atlas rows behind the profile"),
       shiny::uiOutput(ns("profile_limit_notice")),
@@ -175,9 +184,12 @@ candidate_visualisations_ui <- function(id) {
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("volcano_plot"), height = "700px")
       ),
-      shiny::downloadButton(
-        ns("download_volcano_rows"),
-        "Download plotted differential-expression rows as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_volcano_rows",
+        excel_id = "download_volcano_rows_excel",
+        tsv_label = "Download plotted differential-expression rows as TSV",
+        excel_label = "Download plotted differential-expression rows as Excel"
       ),
       DT::DTOutput(ns("volcano_table"))
     )
@@ -581,6 +593,20 @@ candidate_visualisations_server <- function(
         )
       }
     )
+    output$download_candidate_evidence_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          gsub("[^A-Za-z0-9_.-]", "_", input$selected_candidate),
+          "_", input$evidence_relation, ".xlsx"
+        )
+      },
+      content = function(file) {
+        write_formatted_excel(
+          data = candidate_evidence(),
+          path = file
+        )
+      }
+    )
 
     heatmap_data <- shiny::reactive({
       shiny::req(
@@ -628,6 +654,15 @@ candidate_visualisations_server <- function(
           row.names = FALSE,
           quote = TRUE,
           na = ""
+        )
+      }
+    )
+    output$download_heatmap_cells_excel <- shiny::downloadHandler(
+      filename = function() "candidate_expression_heatmap_cells.xlsx",
+      content = function(file) {
+        write_formatted_excel(
+          data = heatmap_data(),
+          path = file
         )
       }
     )
@@ -760,6 +795,20 @@ candidate_visualisations_server <- function(
         )
       }
     )
+    output$download_profile_rows_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          gsub("[^A-Za-z0-9_.-]", "_", input$profile_candidate),
+          "_species_tissue_expression.xlsx"
+        )
+      },
+      content = function(file) {
+        write_formatted_excel(
+          data = profile_rows(),
+          path = file
+        )
+      }
+    )
 
     output$volcano_availability <- shiny::renderUI({
       capabilities <- differential_capabilities()
@@ -832,6 +881,17 @@ candidate_visualisations_server <- function(
           row.names = FALSE,
           quote = TRUE,
           na = ""
+        )
+      }
+    )
+    output$download_volcano_rows_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(input$volcano_relation, "_volcano_rows.xlsx")
+      },
+      content = function(file) {
+        write_formatted_excel(
+          data = volcano_rows(),
+          path = file
         )
       }
     )

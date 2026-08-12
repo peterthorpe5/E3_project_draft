@@ -231,13 +231,19 @@ threshold_explorer_ui <- function(id) {
     ),
     shiny::div(
       class = "threshold-table-actions",
-      shiny::downloadButton(
-        outputId = ns("download_tsv"),
-        label = "Download custom candidate list as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_tsv",
+        excel_id = "download_excel",
+        tsv_label = "Download custom candidate list as TSV",
+        excel_label = "Download custom candidate list as Excel"
       ),
       shiny::span(
         class = "small text-muted",
-        "The TSV repeats the active numeric thresholds in every result row."
+        paste(
+          "Both downloads repeat the active numeric thresholds in every",
+          "result row."
+        )
       )
     ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("candidate_table")))
@@ -523,6 +529,20 @@ threshold_explorer_server <- function(
           quote = TRUE,
           row.names = FALSE,
           na = ""
+        )
+      }
+    )
+    output$download_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          "aria_e3_", active_settings()$mode,
+          "_custom_thresholds_", format(Sys.Date(), "%Y%m%d"), ".xlsx"
+        )
+      },
+      content = function(path) {
+        write_formatted_excel(
+          data = displayed(),
+          path = path
         )
       }
     )

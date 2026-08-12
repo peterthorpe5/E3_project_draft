@@ -179,6 +179,8 @@ testthat::test_that("threshold explorer UI exposes sliders, typed values and TSV
   testthat::expect_match(ui, "explorer-target_species_fraction")
   testthat::expect_match(ui, "explorer-minimum_druggability_score_slider")
   testthat::expect_match(ui, "explorer-download_tsv")
+  testthat::expect_match(ui, "explorer-download_excel")
+  testthat::expect_match(ui, "Download custom candidate list as Excel")
   testthat::expect_match(ui, "NOT_STRUCTURALLY_ASSESSED")
 })
 

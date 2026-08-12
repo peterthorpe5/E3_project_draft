@@ -11,6 +11,7 @@ required_packages <- c(
   "DT",
   "duckplyr",
   "ggplot2",
+  "openxlsx",
   "plotly",
   "rlang",
   "shiny",

@@ -54,8 +54,11 @@ The main sections follow the evidence path required by the grant:
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
 removes all columns. The table remains row-bounded regardless of the selection.
-Displayed rows can be downloaded as TSV; analytical comma-separated outputs are
-not produced.
+Displayed rows can be downloaded as either TSV or a formatted Excel workbook;
+analytical comma-separated outputs are not produced. Each Excel download uses
+the exact same bounded rows and selected columns as its neighbouring TSV. It
+opens as a filterable, banded table with a frozen header, readable bounded
+column widths, wrapped long text and data-appropriate numeric formats.
 
 ## Threshold explorer
 
@@ -88,9 +91,10 @@ structural failure or pass.
 
 `PASS` means that every selected gate is met. `NEAR_MISS` means that one
 conceptual gate is not met. The exported TSV includes the selected numeric
-thresholds in every row, so an exploratory list remains interpretable after it
-leaves the app. Slider-generated results are sensitivity analyses and do not
-replace the locked primary analysis.
+thresholds in every row; the companion Excel download contains the same data,
+so an exploratory list remains interpretable after it leaves the app.
+Slider-generated results are sensitivity analyses and do not replace the
+locked primary analysis.
 
 ## Three interchangeable result-source modes
 
@@ -225,7 +229,7 @@ evidence as explicit unassessed records.
 ```bash
 conda install -c conda-forge \
   r-base r-shiny r-bslib r-dplyr r-dt r-ggplot2 r-plotly \
-  r-rlang r-shinycssloaders r-stringr r-tibble r-testthat \
+  r-openxlsx r-rlang r-shinycssloaders r-stringr r-tibble r-testthat \
   r-duckdb r-duckplyr
 
 Rscript inst/scripts/check_dependencies.R
@@ -234,7 +238,8 @@ Rscript inst/scripts/run_tests.R
 
 The test suite covers source selection, run-directory discovery, lazy Parquet
 registration, section classification, group-level grant-overview counts,
-threshold validation and SQL, druggability near-miss reclassification, linked
+threshold validation and SQL, formatted Excel export contracts, druggability
+near-miss reclassification, linked
 candidate/expression visual queries, module UI contracts, portable pocket-review
 validation, selected-group sequence/model identifiers and the retained
 Expression Atlas functionality.

@@ -35,6 +35,7 @@ from e3app.data import (
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
+from e3app.exports import render_table_downloads
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
 from e3app.pocket_review import (
     PocketReviewBundle,
@@ -121,11 +122,11 @@ def _render_section(
         int(requested),
     )
     st.dataframe(result, use_container_width=True, hide_index=True)
-    st.download_button(
-        "Download displayed rows as TSV",
-        data=result.to_csv(sep="\t", index=False),
-        file_name=f"{section}_{relation}.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=result,
+        file_stem=f"{section}_{relation}",
+        tsv_label="Download displayed rows as TSV",
+        excel_label="Download displayed rows as Excel",
         key=f"{section}_download",
     )
 
@@ -228,11 +229,11 @@ def _render_expression_section(
         maximum_rows=int(maximum_rows),
     )
     st.dataframe(result, use_container_width=True, hide_index=True, height=650)
-    st.download_button(
-        "Download filtered candidate-by-tissue rows as TSV",
-        data=result.to_csv(sep="\t", index=False),
-        file_name="candidate_expression_by_tissue.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=result,
+        file_stem="candidate_expression_by_tissue",
+        tsv_label="Download filtered candidate-by-tissue rows as TSV",
+        excel_label="Download filtered candidate-by-tissue rows as Excel",
         key="expression_context_download",
     )
     with st.expander("Mapping summary and audit relations"):
@@ -353,11 +354,11 @@ def _render_glossary() -> None:
         for row in glossary_rows(section)
     ]
     export = pd.DataFrame(all_rows)
-    st.download_button(
-        "Download complete glossary as TSV",
-        data=export.to_csv(sep="\t", index=False),
-        file_name="aria_e3_scientific_glossary.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=export,
+        file_stem="aria_e3_scientific_glossary",
+        tsv_label="Download complete glossary as TSV",
+        excel_label="Download complete glossary as Excel",
         key="glossary_download",
     )
 
@@ -539,11 +540,11 @@ def _render_threshold_explorer(
             "lead row retained per evolutionary group."
         )
     st.dataframe(result, use_container_width=True, hide_index=True, height=700)
-    st.download_button(
-        "Download custom candidate list as TSV",
-        data=result.to_csv(sep="\t", index=False),
-        file_name=f"aria_e3_{settings.mode}_custom_thresholds.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=result,
+        file_stem=f"aria_e3_{settings.mode}_custom_thresholds",
+        tsv_label="Download custom candidate list as TSV",
+        excel_label="Download custom candidate list as Excel",
         key="threshold_download",
     )
 
@@ -593,23 +594,20 @@ def _render_pocket_review(
         character if character.isalnum() or character in "_.-" else "_"
         for character in str(row["primary_group_id"])
     )
-    download_one, download_two = st.columns(2)
-    with download_one:
-        st.download_button(
-            "Download selected member table as TSV",
-            data=members.to_csv(sep="\t", index=False),
-            file_name=f"{safe_group}_{focus}_members.tsv",
-            mime="text/tab-separated-values",
-            key=f"pocket_review_{focus}_members_download",
-        )
-    with download_two:
-        st.download_button(
-            "Download the self-contained group review HTML",
-            data=document,
-            file_name=f"{safe_group}_pocket_review.html",
-            mime="text/html",
-            key=f"pocket_review_{focus}_html_download",
-        )
+    render_table_downloads(
+        frame=members,
+        file_stem=f"{safe_group}_{focus}_members",
+        tsv_label="Download selected member table as TSV",
+        excel_label="Download selected member table as Excel",
+        key=f"pocket_review_{focus}_members_download",
+    )
+    st.download_button(
+        label="Download the self-contained group review HTML",
+        data=document,
+        file_name=f"{safe_group}_pocket_review.html",
+        mime="text/html",
+        key=f"pocket_review_{focus}_html_download",
+    )
     st.caption(
         "The embedded report includes the linear pocket-position tracks, retained "
         "pocket evidence and exact alignment/FASTA/structure coordinate audit."
@@ -887,11 +885,11 @@ def _render_candidate_landscape(
         maximum_rows=int(evidence_limit),
     )
     st.dataframe(evidence, use_container_width=True, hide_index=True, height=520)
-    st.download_button(
-        "Download selected candidate evidence as TSV",
-        data=evidence.to_csv(sep="\t", index=False),
-        file_name=f"{selected_key}_{evidence_relation}.tsv".replace(":", "_"),
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=evidence,
+        file_stem=f"{selected_key}_{evidence_relation}",
+        tsv_label="Download selected candidate evidence as TSV",
+        excel_label="Download selected candidate evidence as Excel",
         key="visual_evidence_download",
     )
     return selected_key
@@ -1035,11 +1033,11 @@ def _render_expression_heatmap(
     )
     st.markdown("#### Aggregated heatmap cells")
     st.dataframe(cells, use_container_width=True, hide_index=True, height=460)
-    st.download_button(
-        "Download expression heatmap cells as TSV",
-        data=cells.to_csv(sep="\t", index=False),
-        file_name="candidate_expression_heatmap_cells.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=cells,
+        file_stem="candidate_expression_heatmap_cells",
+        tsv_label="Download expression heatmap cells as TSV",
+        excel_label="Download expression heatmap cells as Excel",
         key="visual_heatmap_download",
     )
 
@@ -1192,11 +1190,11 @@ def _render_species_tissue_profiles(
             "aggregated before that limit."
         )
     st.dataframe(rows, use_container_width=True, hide_index=True, height=620)
-    st.download_button(
-        "Download exact species/tissue expression rows as TSV",
-        data=rows.to_csv(sep="\t", index=False),
-        file_name=f"{candidate_id}_species_tissue_expression.tsv".replace(":", "_"),
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=rows,
+        file_stem=f"{candidate_id}_species_tissue_expression",
+        tsv_label="Download exact species/tissue expression rows as TSV",
+        excel_label="Download exact species/tissue expression rows as Excel",
         key="visual_profile_download",
     )
 
@@ -1261,11 +1259,11 @@ def _render_volcano_view(*, connection: object) -> None:
     )
     st.plotly_chart(figure, use_container_width=True, key="visual_volcano_plot")
     st.dataframe(rows, use_container_width=True, hide_index=True, height=520)
-    st.download_button(
-        "Download plotted differential-expression rows as TSV",
-        data=rows.to_csv(sep="\t", index=False),
-        file_name=f"{relation}_volcano_rows.tsv",
-        mime="text/tab-separated-values",
+    render_table_downloads(
+        frame=rows,
+        file_stem=f"{relation}_volcano_rows",
+        tsv_label="Download plotted differential-expression rows as TSV",
+        excel_label="Download plotted differential-expression rows as Excel",
         key="visual_volcano_download",
     )
 

@@ -107,7 +107,13 @@ result_section_ui <- function(id, section) {
         inline = TRUE
       )
     ),
-    shiny::downloadButton(ns("download_tsv"), "Download displayed rows as TSV"),
+    tabular_download_buttons(
+      ns = ns,
+      tsv_id = "download_tsv",
+      excel_id = "download_excel",
+      tsv_label = "Download displayed rows as TSV",
+      excel_label = "Download displayed rows as Excel"
+    ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("result_table")))
   )
 }
@@ -369,6 +375,17 @@ result_section_server <- function(
           quote = TRUE,
           row.names = FALSE,
           na = ""
+        )
+      }
+    )
+    output$download_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(section, "_", input$relation %||% "results", ".xlsx")
+      },
+      content = function(path) {
+        write_formatted_excel(
+          data = displayed(),
+          path = path
         )
       }
     )

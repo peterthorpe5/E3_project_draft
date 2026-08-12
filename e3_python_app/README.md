@@ -68,7 +68,7 @@ The reporter provides:
 - a separate Threshold explorer with the completed analysis defaults, paired
   sliders and typed values, pre-structure and structurally informed modes,
   explicit `PASS`, `NEAR_MISS`, `FAIL` and `NOT_STRUCTURALLY_ASSESSED` labels,
-  expanded candidate evidence and TSV export;
+  expanded candidate evidence plus TSV and formatted Excel export;
 - a linked Visual explorer containing a selectable multi-axis candidate
   landscape, a cross-species expression heatmap, exact species-by-tissue
   profiles and the bounded evidence tables behind every selected candidate;
@@ -85,7 +85,10 @@ The reporter provides:
   candidate/member fields;
 - a schema-agnostic all-results browser;
 - provenance and QC views; and
-- TSV downloads of the displayed result.
+- paired TSV and formatted Excel downloads of every downloadable result table.
+  Excel contains the same bounded rows and selected columns, with filter arrows,
+  frozen headers, banded rows, wrapped long text, bounded readable widths and
+  data-appropriate numeric formats.
 
 The integrated DuckDB remains the complete relational authority. The single
 master Parquet is a portable wide compatibility summary. The definitive
@@ -109,9 +112,10 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.7.0 quality gate comprises 48 passing tests at 95% branch-aware coverage
+The v0.7.0 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
-visualisation, threshold, portable-review and headless Streamlit behaviour.
+visualisation, threshold, portable-review, Excel export and headless Streamlit
+behaviour.
 
 Legacy resources without `candidate_expression_context_summary` remain
 readable. The Expression tab then shows the older candidate summary plus a

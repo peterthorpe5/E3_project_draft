@@ -187,6 +187,9 @@ testthat::test_that("result-section UI exposes checkbox column controls", {
   testthat::expect_match(ui, "Columns to display")
   testthat::expect_match(ui, "candidate-selected_columns")
   testthat::expect_match(ui, "Grant defaults")
+  testthat::expect_match(ui, "candidate-download_tsv")
+  testthat::expect_match(ui, "candidate-download_excel")
+  testthat::expect_match(ui, "Download displayed rows as Excel")
   testthat::expect_error(
     result_section_ui("bad", "missing"),
     "Unknown"

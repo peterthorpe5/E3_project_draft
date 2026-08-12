@@ -9,6 +9,35 @@ testthat::test_that("application omits the retired raw-expression interface", {
   testthat::expect_false(grepl('"Visualise expression"', app_text, fixed = TRUE))
 })
 
+testthat::test_that("tabular modules expose Excel beside TSV downloads", {
+  glossary <- paste(as.character(glossary_ui("glossary")), collapse = "\n")
+  testthat::expect_match(glossary, "glossary-download_tsv", fixed = TRUE)
+  testthat::expect_match(glossary, "glossary-download_excel", fixed = TRUE)
+
+  visual <- paste(
+    as.character(candidate_visualisations_ui("visual")),
+    collapse = "\n"
+  )
+  for (identifier in c(
+    "visual-download_candidate_evidence_excel",
+    "visual-download_heatmap_cells_excel",
+    "visual-download_profile_rows_excel",
+    "visual-download_volcano_rows_excel"
+  )) {
+    testthat::expect_match(visual, identifier, fixed = TRUE)
+  }
+
+  pocket <- paste(
+    as.character(pocket_review_ui("pocket", focus = "structure")),
+    collapse = "\n"
+  )
+  testthat::expect_match(
+    pocket,
+    "pocket-download_members_excel",
+    fixed = TRUE
+  )
+})
+
 testthat::test_that("summary UI contains value boxes and metadata output", {
   ui_text <- paste(as.character(expression_summary_ui("summary")), collapse = "\n")
 

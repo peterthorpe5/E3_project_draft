@@ -66,9 +66,12 @@ pocket_review_ui <- function(id, focus = c("structure", "alignment")) {
           )
         }
       ),
-      shiny::downloadButton(
-        ns("download_members"),
-        "Download selected group as TSV"
+      tabular_download_buttons(
+        ns = ns,
+        tsv_id = "download_members",
+        excel_id = "download_members_excel",
+        tsv_label = "Download selected group as TSV",
+        excel_label = "Download selected group as Excel"
       ),
       DT::DTOutput(ns("member_table"))
     )
@@ -329,6 +332,27 @@ pocket_review_server <- function(
           quote = FALSE,
           row.names = FALSE,
           na = ""
+        )
+      }
+    )
+    output$download_members_excel <- shiny::downloadHandler(
+      filename = function() {
+        row <- selected_row()
+        group_id <- if (nrow(row) == 1L) {
+          gsub("[^A-Za-z0-9_.-]", "_", row$primary_group_id[[1L]])
+        } else {
+          "selected_group"
+        }
+        paste0(group_id, "_", focus, "_members.xlsx")
+      },
+      content = function(path) {
+        table <- selected_members()
+        if (nrow(table) == 0L) {
+          stop("No selected group members are available.", call. = FALSE)
+        }
+        write_formatted_excel(
+          data = table,
+          path = path
         )
       }
     )
