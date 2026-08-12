@@ -25,6 +25,32 @@ testthat::test_that("glossary defines requested language and exact thresholds", 
     "not a list of biological replicates",
     fixed = TRUE
   )
+  testthat::expect_gte(nrow(glossary), 360L)
+  for (term in c(
+    "Tantan masking",
+    "P2Rank",
+    "fpocket-rescore",
+    "rescore_2024",
+    "PAE",
+    "FMOPhore",
+    "FrAncestor",
+    "final_evolutionary_rank",
+    "boss_review_status"
+  )) {
+    testthat::expect_true(term %in% glossary$Term)
+  }
+  field <- dplyr::filter(
+    glossary,
+    .data$Term == "final_evolutionary_rank"
+  )
+  testthat::expect_identical(
+    field$`Type / unit`[[1L]],
+    "Integer; blank if ineligible"
+  )
+  testthat::expect_identical(
+    field$Source[[1L]],
+    "Final candidate field dictionary v1.0"
+  )
 })
 
 testthat::test_that("threshold help explains assessed-species denominators", {
@@ -45,4 +71,12 @@ testthat::test_that("glossary tab and inline definitions are present", {
     collapse = "\n"
   )
   testthat::expect_match(ui_text, "usable domain annotation", fixed = TRUE)
+})
+
+testthat::test_that("glossary resources are validated defensively", {
+  testthat::expect_error(glossary_resource_path("../bad.tsv"), "safe")
+  testthat::expect_error(
+    load_project_glossary("project_term_glossary.tsv", ""),
+    "source label"
+  )
 })

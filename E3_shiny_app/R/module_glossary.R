@@ -12,9 +12,10 @@ glossary_ui <- function(id) {
     shiny::p(
       class = "grant-question",
       paste(
-        "These definitions describe the completed top-200 analysis.",
-        "Threshold-explorer changes create sensitivity lists and do not",
-        "rewrite the recorded primary result."
+        "This expanded glossary combines project-wide technical terminology,",
+        "the complete 218-field final-candidate data dictionary and the recorded",
+        "top-200 computational rules. Threshold-explorer changes create",
+        "sensitivity lists and do not rewrite the recorded primary result."
       )
     ),
     shiny::selectInput(
@@ -48,7 +49,7 @@ glossary_server <- function(id) {
         dplyr::select(-.data$Section)
     })
     output$table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         displayed(),
         rownames = FALSE,
         options = list(pageLength = 25, scrollX = TRUE)

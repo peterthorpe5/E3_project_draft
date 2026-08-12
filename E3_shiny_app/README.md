@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.10.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.10.1 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -10,9 +10,9 @@ The main sections follow the evidence path required by the grant:
 
 1. **Grant overview** – authoritative evolutionary-group counts rather than
    earlier DeepClust evidence-row counts.
-2. **Glossary** – plain-language definitions for seeds, evolutionary groups,
-   gates, strict predictions, assessed denominators, thresholds and result
-   labels.
+2. **Glossary** – project-wide technical terms plus the complete 218-field
+   final-candidate data dictionary, plain-language definitions, units,
+   interpretation cautions, gates, thresholds and result labels.
 3. **Threshold explorer** – separate pre-structure and structurally informed
    sensitivity-analysis lists, using sliders and exact typed values while the
    primary grant-aligned result remains unchanged.
@@ -58,7 +58,18 @@ Displayed rows can be downloaded as either TSV or a formatted Excel workbook;
 analytical comma-separated outputs are not produced. Each Excel download uses
 the exact same bounded rows and selected columns as its neighbouring TSV. It
 opens as a filterable, banded table with a frozen header, readable bounded
-column widths, wrapped long text and data-appropriate numeric formats.
+column widths, visible gridlines and explicit borders, centred body values,
+10-point wrapped narrative text, capped long-text row heights and
+data-appropriate numeric formats. Numeric
+source values remain exact; only their display is shortened. The **All results**
+browser includes the same paired downloads.
+
+Wide in-app tables now use a horizontal scrollbar and a bounded vertical body,
+so the header remains stationary while rows scroll. Numeric display is limited
+to three decimal places, or three significant figures for P/E/FDR/Q values,
+without changing the underlying data or downloads. Identifier and narrative
+columns receive deliberate wider widths instead of being squeezed into the
+visible page.
 
 ## Threshold explorer
 
@@ -72,6 +83,16 @@ The threshold explorer always starts from the current primary-analysis values:
 | Minimum expression-supported assessed-species fraction | 0.80 |
 | Minimum structurally supported species fraction | 0.75 |
 | Minimum member druggability score | 0.50 |
+
+The default view applies the pre-structure and structural threshold sets
+together and displays them as two open sections, matching the Python reporter.
+Users can switch to a pre-structure-only sensitivity view without losing the
+structural values. A multiple-selection control can optionally add post-hoc
+gates for recorded aggregate scores such as evidence completeness, mean pocket
+pLDDT support, predictor agreement, pocket-region overlap, cross-aligner
+TM-score, 3D pocket overlap and structural chemical-group conservation. Those
+additional gates are off by default and never rerun the underlying scientific
+calculations.
 
 “Minimum domain-supported assessed-species fraction” uses only species for
 which a usable domain annotation was available as its denominator. At the 0.80
@@ -223,6 +244,22 @@ The embedded 3D view is a rotatable C-alpha trace with mapped pocket residues,
 not an atomistic surface or docking result. It can switch between group members
 and pocket ranks. The sequence view retains members without structure or pocket
 evidence as explicit unassessed records.
+
+## Ranking formulas and weighting sensitivity
+
+The Computational recommendations section now places a pointer above its main
+table and a detailed ranking-methodology section below it. That section records
+the discovery, orthology, domain, expression, pre-structure, ligandability,
+pocket-conservation, structural and final-score equations, including the
+production default weights, neutral handling of unavailable assessed
+denominators, deterministic tie-breaks and evolutionary-group consolidation.
+
+An expandable weighting-sensitivity explorer exposes the recorded defaults as
+sliders. It normalises the selected weights within each score layer, optionally
+retains the recorded hard-gate tier and can apply a separately labelled 3D
+refinement weight. Its table and paired TSV/Excel downloads are explicitly
+non-authoritative: they recompute a bounded what-if ranking from stored values
+and never alter the official ranks, mandatory gates, DuckDB or pipeline output.
 
 ## Dependencies and tests
 

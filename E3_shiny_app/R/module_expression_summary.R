@@ -131,7 +131,7 @@ expression_summary_server <- function(id, duckdb_path, filters) {
     })
 
     output$metadata_coverage <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         coverage_table(),
         rownames = FALSE,
         options = list(dom = "t", paging = FALSE)

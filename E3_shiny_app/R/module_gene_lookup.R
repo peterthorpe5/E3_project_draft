@@ -50,7 +50,7 @@ gene_lookup_server <- function(id, duckdb_path, max_rows = 1000L) {
     }, ignoreNULL = FALSE)
 
     output$gene_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         lookup_table(),
         rownames = FALSE,
         filter = "top",

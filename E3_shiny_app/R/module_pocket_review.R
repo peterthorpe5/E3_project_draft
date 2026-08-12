@@ -298,7 +298,7 @@ pocket_review_server <- function(
         nrow(table) > 0L,
         "No member records available."
       ))
-      DT::datatable(
+      readable_datatable(
         table,
         rownames = FALSE,
         filter = "top",

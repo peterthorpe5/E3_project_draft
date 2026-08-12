@@ -7,6 +7,12 @@ testthat::test_that("current thresholds match the completed grant-aligned run", 
   testthat::expect_equal(defaults$structural_species_fraction, 0.75)
   testthat::expect_equal(defaults$minimum_druggability_score, 0.50)
   testthat::expect_true(defaults$require_strict_3d)
+  testthat::expect_equal(defaults$mode, "structural")
+  testthat::expect_identical(defaults$additional_thresholds, character())
+  testthat::expect_equal(
+    defaults$minimum_mean_pocket_plddt_fraction,
+    0.70
+  )
 })
 
 testthat::test_that("threshold settings are validated defensively", {
@@ -28,6 +34,41 @@ testthat::test_that("threshold settings are validated defensively", {
   testthat::expect_error(
     normalise_threshold_settings(settings = "bad"),
     "named list"
+  )
+  testthat::expect_error(
+    normalise_threshold_settings(settings = list(
+      additional_thresholds = "not_a_recorded_score"
+    )),
+    "unsupported score field"
+  )
+})
+
+testthat::test_that("optional score thresholds are explicit and mode-aware", {
+  specifications <- additional_threshold_specs()
+  testthat::expect_gte(length(specifications), 6L)
+  testthat::expect_true(all(vapply(
+    specifications,
+    function(value) value$section %in% c("prestructure", "structural"),
+    logical(1)
+  )))
+  combined <- normalise_threshold_settings(settings = list(
+    mode = "structural",
+    additional_thresholds = c(
+      "evidence_completeness_fraction",
+      "mean_pocket_plddt_fraction"
+    )
+  ))
+  testthat::expect_length(active_additional_thresholds(combined), 2L)
+  prestructure <- normalise_threshold_settings(settings = list(
+    mode = "prestructure",
+    additional_thresholds = c(
+      "evidence_completeness_fraction",
+      "mean_pocket_plddt_fraction"
+    )
+  ))
+  testthat::expect_identical(
+    active_additional_thresholds(prestructure),
+    "evidence_completeness_fraction"
   )
 })
 
@@ -78,6 +119,50 @@ testthat::test_that("threshold SQL is bounded and records its settings", {
       max_rows = 10001
     ),
     "between 1 and 10000"
+  )
+})
+
+testthat::test_that("selected optional score gates enter SQL and exports", {
+  available <- c(
+    "primary_group_id",
+    "target_species_fraction",
+    "mandatory_species_fraction",
+    "domain_assessed_species_count",
+    "domain_species_fraction",
+    "expression_assessed_species_count",
+    "expression_species_fraction",
+    "three_dimensional_alignment_status",
+    "structural_species_fraction",
+    "minimum_druggability_score",
+    "conservation_status",
+    "all_assessed_members_pass_druggability",
+    "all_assessed_members_pass_mapping",
+    "mean_pocket_plddt_fraction"
+  )
+  query <- build_threshold_result_query(
+    relation = "final_evolutionary_candidate_prioritisation",
+    available = available,
+    settings = list(
+      mode = "structural",
+      additional_thresholds = "mean_pocket_plddt_fraction",
+      minimum_mean_pocket_plddt_fraction = 0.85
+    ),
+    max_rows = 25
+  )
+  testthat::expect_match(
+    query,
+    "custom_additional_mean_pocket_plddt_fraction_pass",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    query,
+    "0.85 AS threshold_minimum_mean_pocket_plddt_fraction",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    query,
+    "mean_pocket_plddt_fraction' AS threshold_additional_fields",
+    fixed = TRUE
   )
 })
 
@@ -178,6 +263,14 @@ testthat::test_that("threshold explorer UI exposes sliders, typed values and TSV
   testthat::expect_match(ui, "explorer-target_species_fraction_slider")
   testthat::expect_match(ui, "explorer-target_species_fraction")
   testthat::expect_match(ui, "explorer-minimum_druggability_score_slider")
+  testthat::expect_match(ui, "explorer-additional_thresholds")
+  testthat::expect_match(
+    ui,
+    "Pre-structure + structural thresholds",
+    fixed = TRUE
+  )
+  testthat::expect_match(ui, "explorer-additional_prestructure_thresholds")
+  testthat::expect_match(ui, "explorer-additional_structural_thresholds")
   testthat::expect_match(ui, "explorer-download_tsv")
   testthat::expect_match(ui, "explorer-download_excel")
   testthat::expect_match(ui, "Download custom candidate list as Excel")

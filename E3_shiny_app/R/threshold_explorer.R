@@ -4,11 +4,105 @@
 #' completed integrated resource. They do not rerun sequence, pocket or
 #' structural calculations.
 
+#' Return optional post-hoc score-threshold specifications.
+#'
+#' These gates use aggregate values already stored in the completed resource.
+#' They are disabled by default and do not rerun pocket, alignment or structure
+#' calculations.
+#'
+#' @return Named list of optional threshold specifications.
+additional_threshold_specs <- function() {
+  list(
+    evidence_completeness_fraction = list(
+      setting = "minimum_evidence_completeness_fraction",
+      label = "Minimum evidence-completeness fraction",
+      default = 0.80,
+      section = "prestructure",
+      help = paste(
+        "Optional post-hoc gate on the recorded completeness summary.",
+        "It does not create missing evidence."
+      )
+    ),
+    mean_pocket_plddt_fraction = list(
+      setting = "minimum_mean_pocket_plddt_fraction",
+      label = "Minimum mean pocket pLDDT fraction",
+      default = 0.70,
+      section = "structural",
+      help = paste(
+        "Optional group-level gate on the recorded mean fraction of selected",
+        "pocket residues meeting the production pLDDT criterion."
+      )
+    ),
+    predictor_agreement_fraction = list(
+      setting = "minimum_predictor_agreement_fraction",
+      label = "Minimum pocket-predictor agreement fraction",
+      default = 0.50,
+      section = "structural",
+      help = paste(
+        "Optional group-level gate on agreement between the linked pocket",
+        "prediction signals; it is not experimental binding evidence."
+      )
+    ),
+    mean_pairwise_region_overlap = list(
+      setting = "minimum_mean_pairwise_region_overlap",
+      label = "Minimum mean pocket-region overlap",
+      default = 0.25,
+      section = "structural",
+      help = paste(
+        "Optional gate on the recorded sequence-alignment overlap summary.",
+        "It does not recalculate the conserved component."
+      )
+    ),
+    mean_minimum_tm_score = list(
+      setting = "minimum_mean_minimum_tm_score",
+      label = "Minimum mean cross-aligner TM-score",
+      default = 0.50,
+      section = "structural",
+      help = paste(
+        "Optional post-hoc gate on the recorded group mean of the lower",
+        "US-align/TM-align score."
+      )
+    ),
+    mean_pocket_overlap_fraction = list(
+      setting = "minimum_mean_pocket_overlap_fraction",
+      label = "Minimum mean 3D pocket-overlap fraction",
+      default = 0.50,
+      section = "structural",
+      help = paste(
+        "Optional post-hoc gate on the recorded symmetric 3D pocket-overlap",
+        "summary; it does not rerun structural superposition."
+      )
+    ),
+    mean_structural_chemical_group_conservation = list(
+      setting = "minimum_mean_structural_chemical_group_conservation",
+      label = "Minimum mean structural chemical-group conservation",
+      default = 0.60,
+      section = "structural",
+      help = paste(
+        "Optional post-hoc gate on the recorded biochemical-class agreement",
+        "among structurally matched pocket residues."
+      )
+    )
+  )
+}
+
+#' Return user-facing choices for optional score thresholds.
+#'
+#' @return Named character vector suitable for a Shiny multiple selector.
+additional_threshold_choices <- function() {
+  specifications <- additional_threshold_specs()
+  stats::setNames(
+    names(specifications),
+    vapply(specifications, function(value) value$label, character(1))
+  )
+}
+
 #' Return the current grant-aligned thresholds.
 #'
 #' @return Named list of numeric thresholds and categorical requirements.
 current_threshold_defaults <- function() {
-  list(
+  optional <- additional_threshold_specs()
+  defaults <- list(
     target_species_fraction = 0.90,
     mandatory_species_fraction = 1.00,
     domain_species_fraction = 0.80,
@@ -21,9 +115,14 @@ current_threshold_defaults <- function() {
     require_all_member_mapping = TRUE,
     require_strict_3d = TRUE,
     include_not_assessed = FALSE,
-    mode = "prestructure",
+    additional_thresholds = character(),
+    mode = "structural",
     result_scope = "passing"
   )
+  for (specification in optional) {
+    defaults[[specification$setting]] <- specification$default
+  }
+  defaults
 }
 
 #' Validate and complete threshold settings.
@@ -41,7 +140,12 @@ normalise_threshold_settings <- function(settings = list()) {
     "domain_species_fraction",
     "expression_species_fraction",
     "structural_species_fraction",
-    "minimum_druggability_score"
+    "minimum_druggability_score",
+    vapply(
+      additional_threshold_specs(),
+      function(value) value$setting,
+      character(1)
+    )
   )
   for (field in numeric_fields) {
     value <- suppressWarnings(as.numeric(values[[field]]))
@@ -84,6 +188,15 @@ normalise_threshold_settings <- function(settings = list()) {
       call. = FALSE
     )
   }
+  selected_additional <- unique(as.character(values$additional_thresholds))
+  allowed_additional <- names(additional_threshold_specs())
+  if (any(!selected_additional %in% allowed_additional)) {
+    stop(
+      "Additional thresholds contain an unsupported score field.",
+      call. = FALSE
+    )
+  }
+  values$additional_thresholds <- selected_additional
   values
 }
 
@@ -181,6 +294,31 @@ threshold_status_gate <- function(column, status, required, available) {
   )
 }
 
+#' Return the selected optional thresholds active in one prioritisation mode.
+#'
+#' @param settings Normalised threshold settings.
+#' @return Character vector of source-column names.
+active_additional_thresholds <- function(settings) {
+  selected <- settings$additional_thresholds
+  if (identical(settings$mode, "structural")) {
+    return(selected)
+  }
+  specifications <- additional_threshold_specs()
+  selected[vapply(
+    specifications[selected],
+    function(value) identical(value$section, "prestructure"),
+    logical(1)
+  )]
+}
+
+#' Return a stable pass-column name for one optional threshold.
+#'
+#' @param column Source score column.
+#' @return SQL-safe result-column name.
+additional_threshold_gate_name <- function(column) {
+  paste0("custom_additional_", column, "_pass")
+}
+
 #' Return one row per evolutionary group for threshold evaluation.
 #'
 #' @param relation Relation name.
@@ -239,6 +377,25 @@ build_threshold_evaluation_cte <- function(
   alias = "e3_resource"
 ) {
   values <- normalise_threshold_settings(settings = settings)
+  optional_specifications <- additional_threshold_specs()
+  active_optional <- active_additional_thresholds(settings = values)
+  optional_gate_names <- vapply(
+    active_optional,
+    additional_threshold_gate_name,
+    character(1)
+  )
+  optional_gate_expressions <- vapply(
+    active_optional,
+    function(column) {
+      specification <- optional_specifications[[column]]
+      threshold_numeric_gate(
+        column = column,
+        threshold = values[[specification$setting]],
+        available = available
+      )
+    },
+    character(1)
+  )
   source <- threshold_source_relation(
     relation = relation,
     available = available,
@@ -325,7 +482,12 @@ build_threshold_evaluation_cte <- function(
     domain_evidence_gate,
     domain_gate,
     expression_evidence_gate,
-    expression_gate
+    expression_gate,
+    optional_gate_names[vapply(
+      optional_specifications[active_optional],
+      function(value) identical(value$section, "prestructure"),
+      logical(1)
+    )]
   )
   structural_gates <- c(
     "custom_prestructure_pass",
@@ -334,27 +496,52 @@ build_threshold_evaluation_cte <- function(
     "custom_druggability_pass",
     member_mapping_gate,
     structural_coverage_gate,
-    strict_3d_gate
+    strict_3d_gate,
+    optional_gate_names[vapply(
+      optional_specifications[active_optional],
+      function(value) identical(value$section, "structural"),
+      logical(1)
+    )]
   )
-  prestructure_failure_count <- paste0(
-    "(", paste0("CAST(NOT custom_", c(
+  prestructure_failure_names <- c(
+    paste0("custom_", c(
       "target_species_pass",
       "mandatory_species_pass",
       "domain_evidence_pass",
       "domain_species_pass",
       "expression_evidence_pass",
       "expression_species_pass"
-    ), " AS INTEGER)", collapse = " + "), ")"
+    )),
+    optional_gate_names[vapply(
+      optional_specifications[active_optional],
+      function(value) identical(value$section, "prestructure"),
+      logical(1)
+    )]
   )
-  structural_failure_count <- paste0(
-    "(", paste0("CAST(NOT custom_", c(
+  prestructure_failure_count <- paste0(
+    "(",
+    paste0("CAST(NOT ", prestructure_failure_names, " AS INTEGER)", collapse = " + "),
+    ")"
+  )
+  structural_failure_names <- c(
+    paste0("custom_", c(
       "prestructure_pass",
       "conserved_region_pass",
       "druggability_pass",
       "all_member_mapping_pass",
       "structural_species_pass",
       "strict_3d_pass"
-    ), " AS INTEGER)", collapse = " + "), ")"
+    )),
+    optional_gate_names[vapply(
+      optional_specifications[active_optional],
+      function(value) identical(value$section, "structural"),
+      logical(1)
+    )]
+  )
+  structural_failure_count <- paste0(
+    "(",
+    paste0("CAST(NOT ", structural_failure_names, " AS INTEGER)", collapse = " + "),
+    ")"
   )
   status_sql <- if (values$mode == "prestructure") {
     paste0(
@@ -368,6 +555,19 @@ build_threshold_evaluation_cte <- function(
       "'NOT_STRUCTURALLY_ASSESSED' WHEN custom_structural_pass THEN 'PASS' ",
       "WHEN ", structural_failure_count,
       " = 1 THEN 'NEAR_MISS' ELSE 'FAIL' END"
+    )
+  }
+  optional_select_sql <- if (length(active_optional) == 0L) {
+    ""
+  } else {
+    paste0(
+      ", ",
+      paste0(
+        optional_gate_expressions,
+        " AS ",
+        optional_gate_names,
+        collapse = ", "
+      )
     )
   }
   paste0(
@@ -386,7 +586,8 @@ build_threshold_evaluation_cte <- function(
     druggability_gate, " AS custom_druggability_pass, ",
     member_mapping_gate, " AS custom_all_member_mapping_pass, ",
     structural_coverage_gate, " AS custom_structural_species_pass, ",
-    strict_3d_gate, " AS custom_strict_3d_pass FROM source_rows), ",
+    strict_3d_gate, " AS custom_strict_3d_pass", optional_select_sql,
+    " FROM source_rows), ",
     "decisions AS (SELECT *, (", paste(prestructure_gates, collapse = " AND "),
     ") AS custom_prestructure_pass FROM evaluated), structural_decisions AS (",
     "SELECT *, (", paste(structural_gates, collapse = " AND "),
@@ -509,6 +710,8 @@ build_threshold_result_query <- function(
   alias = "e3_resource"
 ) {
   values <- normalise_threshold_settings(settings = settings)
+  optional_specifications <- additional_threshold_specs()
+  active_optional <- active_additional_thresholds(settings = values)
   limit <- suppressWarnings(as.integer(max_rows))
   if (length(limit) != 1L || is.na(limit) || limit < 1L || limit > 10000L) {
     stop("Maximum rows must be between 1 and 10000.", call. = FALSE)
@@ -530,7 +733,8 @@ build_threshold_result_query <- function(
     "custom_domain_evidence_pass",
     "custom_domain_species_pass",
     "custom_expression_evidence_pass",
-    "custom_expression_species_pass"
+    "custom_expression_species_pass",
+    vapply(active_optional, additional_threshold_gate_name, character(1))
   )
   if (values$mode == "structural") {
     gate_columns <- c(
@@ -577,6 +781,31 @@ build_threshold_result_query <- function(
       " AS DOUBLE), 0.0) DESC")
   }
   mode_literal <- escape_sql_literal(values$mode)
+  optional_metadata <- if (length(active_optional) == 0L) {
+    "'' AS threshold_additional_fields"
+  } else {
+    field_metadata <- paste0(
+      vapply(
+        active_optional,
+        function(column) {
+          setting <- optional_specifications[[column]]$setting
+          paste0(
+            values[[setting]],
+            " AS threshold_",
+            setting
+          )
+        },
+        character(1)
+      ),
+      collapse = ", "
+    )
+    paste0(
+      "'",
+      escape_sql_literal(paste(active_optional, collapse = ";")),
+      "' AS threshold_additional_fields, ",
+      field_metadata
+    )
+  }
   threshold_metadata <- paste0(
     "'", mode_literal, "' AS threshold_mode, ",
     values$target_species_fraction,
@@ -590,7 +819,8 @@ build_threshold_result_query <- function(
     values$structural_species_fraction,
     " AS threshold_structural_species_fraction, ",
     values$minimum_druggability_score,
-    " AS threshold_minimum_druggability_score"
+    " AS threshold_minimum_druggability_score, ",
+    optional_metadata
   )
   cte <- build_threshold_evaluation_cte(
     relation = relation,

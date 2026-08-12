@@ -27,13 +27,14 @@ _IDENTIFIER_COLUMN = re.compile(
     flags=re.IGNORECASE,
 )
 _INTEGER_COLUMN = re.compile(
-    r"(^|_)(count|index|length|number|position|rank)(_|$)",
+    r"(^|_)(count|index|number|rank)(_|$)|(^|_)(length|position)$",
     flags=re.IGNORECASE,
 )
 _SCIENTIFIC_COLUMN = re.compile(
     r"(^|_)(e_?value|fdr|p_?value|q_?value)(_|$)",
     flags=re.IGNORECASE,
 )
+_LONG_TEXT_THRESHOLD = 80
 
 
 def safe_file_stem(*, value: str) -> str:
@@ -109,8 +110,18 @@ def excel_format_kind(*, column_name: str, series: pd.Series) -> str:
         return "logical"
     if pd.api.types.is_datetime64_any_dtype(series.dtype):
         return "datetime"
-    if pd.api.types.is_integer_dtype(series.dtype) or _INTEGER_COLUMN.search(
-        column_name
+    is_numeric = pd.api.types.is_numeric_dtype(series.dtype)
+    numeric_values = series.dropna()
+    integer_like = is_numeric and (
+        numeric_values.empty
+        or all(
+            float(value).is_integer() for value in numeric_values.head(1000)
+        )
+    )
+    if pd.api.types.is_integer_dtype(series.dtype) or (
+        is_numeric
+        and integer_like
+        and _INTEGER_COLUMN.search(column_name)
     ):
         return "integer"
     if pd.api.types.is_numeric_dtype(series.dtype):
@@ -146,6 +157,69 @@ def excel_column_width(*, column_name: str, series: pd.Series) -> float:
     return float(min(50, max(12, max(lengths, default=len(column_name)) + 2)))
 
 
+def excel_text_is_long(
+    *,
+    value: Any,
+    threshold: int = _LONG_TEXT_THRESHOLD,
+) -> bool:
+    """Return whether a cell needs the long-text Excel style.
+
+    Args:
+        value: Normalised cell value.
+        threshold: Character count above which text is treated as long.
+
+    Returns:
+        ``True`` only for text longer than the configured threshold.
+
+    Raises:
+        ValueError: If ``threshold`` is not a positive integer.
+    """
+    if (
+        not isinstance(threshold, Integral)
+        or isinstance(threshold, bool)
+        or threshold < 1
+    ):
+        raise ValueError("The long-text threshold must be a positive integer.")
+    return isinstance(value, str) and len(value) > int(threshold)
+
+
+def dataframe_display_formats(*, frame: pd.DataFrame) -> dict[str, str]:
+    """Return readable Streamlit number formats without changing values.
+
+    Args:
+        frame: Data frame shown in an application table.
+
+    Returns:
+        Mapping from numeric column name to Streamlit printf-style format.
+
+    Raises:
+        TypeError: If ``frame`` is not a pandas data frame.
+        ValueError: If column names are empty or duplicated after conversion to
+            strings.
+    """
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("Display formatting requires a pandas DataFrame.")
+    column_names = [str(column) for column in frame.columns]
+    if any(not column for column in column_names):
+        raise ValueError("Display columns must have non-empty names.")
+    if len(set(column_names)) != len(column_names):
+        raise ValueError("Display formatting does not support duplicate columns.")
+
+    formats: dict[str, str] = {}
+    for column_index, column_name in enumerate(column_names):
+        kind = excel_format_kind(
+            column_name=column_name,
+            series=frame.iloc[:, column_index],
+        )
+        if kind == "integer":
+            formats[column_name] = "%d"
+        elif kind == "decimal":
+            formats[column_name] = "%.3f"
+        elif kind == "scientific":
+            formats[column_name] = "%.2e"
+    return formats
+
+
 def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:
     """Create a filterable, formatted Excel workbook from displayed rows.
 
@@ -178,7 +252,7 @@ def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:
         }
     )
     worksheet = workbook.add_worksheet("Selection")
-    worksheet.hide_gridlines(option=2)
+    worksheet.hide_gridlines(option=0)
     worksheet.freeze_panes(row=1, col=0)
     worksheet.set_zoom(zoom=90)
     worksheet.set_row(row=0, height=24)
@@ -188,34 +262,52 @@ def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:
             "bold": True,
             "font_color": "#FFFFFF",
             "bg_color": "#1F4E78",
-            "border": 0,
+            "border": 1,
+            "border_color": "#A6A6A6",
             "align": "left",
             "valign": "vcenter",
         }
     )
+    centred_cell = {
+        "align": "centre",
+        "valign": "vcenter",
+        "border": 1,
+        "border_color": "#D9E2F3",
+    }
     formats = {
-        "text": workbook.add_format({"text_wrap": True, "valign": "top"}),
+        "text": workbook.add_format(
+            {**centred_cell, "text_wrap": True}
+        ),
+        "long_text": workbook.add_format(
+            {
+                "align": "left",
+                "valign": "vcenter",
+                "border": 1,
+                "border_color": "#D9E2F3",
+                "text_wrap": True,
+                "font_size": 10,
+            }
+        ),
         "integer": workbook.add_format(
-            {"num_format": "#,##0", "valign": "top"}
+            {**centred_cell, "num_format": "#,##0"}
         ),
         "decimal": workbook.add_format(
-            {"num_format": "0.000", "valign": "top"}
+            {**centred_cell, "num_format": "0.000"}
         ),
         "scientific": workbook.add_format(
-            {"num_format": "0.00E+00", "valign": "top"}
+            {**centred_cell, "num_format": "0.00E+00"}
         ),
         "date": workbook.add_format(
-            {"num_format": "yyyy-mm-dd", "valign": "top"}
+            {**centred_cell, "num_format": "yyyy-mm-dd"}
         ),
         "datetime": workbook.add_format(
-            {"num_format": "yyyy-mm-dd hh:mm", "valign": "top"}
+            {**centred_cell, "num_format": "yyyy-mm-dd hh:mm"}
         ),
-        "logical": workbook.add_format(
-            {"align": "centre", "valign": "top"}
-        ),
+        "logical": workbook.add_format(centred_cell),
     }
 
     table_columns = []
+    long_text_rows: set[int] = set()
     for column_index, column_name in enumerate(column_names):
         series = frame.iloc[:, column_index]
         kind = excel_format_kind(column_name=column_name, series=series)
@@ -238,41 +330,51 @@ def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:
         identifier_column = bool(_IDENTIFIER_COLUMN.search(column_name))
         for row_index, raw_value in enumerate(series, start=1):
             value = normalise_excel_scalar(value=raw_value)
+            value_format = (
+                formats["long_text"]
+                if excel_text_is_long(value=value)
+                else cell_format
+            )
+            if value_format is formats["long_text"]:
+                long_text_rows.add(row_index)
             if value is None:
                 worksheet.write_blank(
                     row=row_index,
                     col=column_index,
                     blank=None,
-                    cell_format=cell_format,
+                    cell_format=value_format,
                 )
             elif isinstance(value, str) or identifier_column:
                 worksheet.write_string(
                     row=row_index,
                     col=column_index,
                     string=str(value),
-                    cell_format=cell_format,
+                    cell_format=value_format,
                 )
             elif isinstance(value, bool):
                 worksheet.write_boolean(
                     row=row_index,
                     col=column_index,
                     boolean=value,
-                    cell_format=cell_format,
+                    cell_format=value_format,
                 )
             elif isinstance(value, (date, datetime)):
                 worksheet.write_datetime(
                     row=row_index,
                     col=column_index,
                     date=value,
-                    cell_format=cell_format,
+                    cell_format=value_format,
                 )
             else:
                 worksheet.write_number(
                     row=row_index,
                     col=column_index,
                     number=float(value),
-                    cell_format=cell_format,
+                    cell_format=value_format,
                 )
+
+    for row_index in sorted(long_text_rows):
+        worksheet.set_row(row=row_index, height=60)
 
     if not frame.empty:
         worksheet.add_table(

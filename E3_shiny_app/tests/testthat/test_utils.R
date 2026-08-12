@@ -34,3 +34,31 @@ testthat::test_that("DuckDB aliases are sanitised", {
   testthat::expect_equal(sanitise_duckdb_alias("123-app"), "db_123_app")
   testthat::expect_equal(sanitise_duckdb_alias("ok_name"), "ok_name")
 })
+
+testthat::test_that("readable tables scroll with stable widths and precision", {
+  testthat::skip_if_not_installed("DT")
+  data <- data.frame(
+    final_rank = 1:2,
+    final_score = c(0.1751018181818182, 0.8992472727272727),
+    adjusted_p_value = c(1.2e-12, 0.05),
+    same_pocket_position_support_fraction = c(0.5, 0.75),
+    mobile_accession = c("Q8LGH4", "I1GMH9"),
+    interpretation = c("A long explanation", "Another explanation"),
+    stringsAsFactors = FALSE
+  )
+  widget <- readable_datatable(data)
+  testthat::expect_true(widget$x$options$scrollX)
+  testthat::expect_identical(widget$x$options$scrollY, "62vh")
+  testthat::expect_true(widget$x$options$scrollCollapse)
+  definitions <- paste(
+    vapply(
+      widget$x$options$columnDefs,
+      function(value) value$className %||% "",
+      character(1)
+    ),
+    collapse = " "
+  )
+  testthat::expect_match(definitions, "e3-cell-wide", fixed = TRUE)
+  testthat::expect_match(definitions, "e3-cell-narrative", fixed = TRUE)
+  testthat::expect_error(readable_datatable(list(a = 1)), "data frame")
+})

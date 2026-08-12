@@ -58,7 +58,7 @@ data_sources_server <- function(id, resource_derived_dir) {
     output$fasta_count <- shiny::renderText(format_summary_count(nrow(fasta_catalog())))
 
     output$source_manifest <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         utils::head(source_manifest(), 5000L),
         rownames = FALSE,
         filter = "top",
@@ -67,19 +67,23 @@ data_sources_server <- function(id, resource_derived_dir) {
     })
 
     output$tabular_catalog <- DT::renderDT({
-      DT::datatable(tabular_catalog(), rownames = FALSE, filter = "top", options = list(scrollX = TRUE))
+      readable_datatable(tabular_catalog(), rownames = FALSE, filter = "top")
     })
 
     output$fasta_catalog <- DT::renderDT({
-      DT::datatable(fasta_catalog(), rownames = FALSE, filter = "top", options = list(scrollX = TRUE))
+      readable_datatable(fasta_catalog(), rownames = FALSE, filter = "top")
     })
 
     output$text_catalog <- DT::renderDT({
-      DT::datatable(text_catalog(), rownames = FALSE, filter = "top", options = list(scrollX = TRUE))
+      readable_datatable(text_catalog(), rownames = FALSE, filter = "top")
     })
 
     output$inherited_parquet_catalog <- DT::renderDT({
-      DT::datatable(inherited_parquet_catalog(), rownames = FALSE, filter = "top", options = list(scrollX = TRUE))
+      readable_datatable(
+        inherited_parquet_catalog(),
+        rownames = FALSE,
+        filter = "top"
+      )
     })
   })
 }

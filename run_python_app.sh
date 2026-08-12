@@ -15,7 +15,7 @@ LOCAL_REPO="/Users/PThorpe001/github_repos/E3_project_draft"
 cd "${LOCAL_REPO}/e3_python_app"
 
 
-./run_e3_python_app.sh \
+${LOCAL_REPO}/e3_python_app/run_e3_python_app.sh \
   --resource-duckdb "${RESOURCE_DB}" \
   --pocket-review-dir "${POCKET_REVIEW}" \
   --max-rows 1000 \

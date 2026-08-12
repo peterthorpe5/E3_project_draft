@@ -205,6 +205,48 @@ testthat::test_that("result-section UI exposes checkbox column controls", {
   testthat::expect_match(expression_ui, "At least 0.5 TPM", fixed = TRUE)
 })
 
+testthat::test_that("recommendation UI documents formulas and weight sensitivity", {
+  ui <- paste(
+    as.character(result_section_ui("recommendation", "final_recommendations")),
+    collapse = "\n"
+  )
+  testthat::expect_match(
+    ui,
+    "See the complete ranking formulas",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "How the recorded computational ranking was calculated",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "F = 0.60P + 0.40S",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-ranking_weight_prestructure_discovery",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-ranking_weight_three_dimensional",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-ranking_download_excel",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "non-authoritative",
+    fixed = TRUE
+  )
+})
+
 testthat::test_that("grant overview UI states both milestones and limitations", {
   ui <- paste(as.character(grant_overview_ui("grant")), collapse = "\n")
   testthat::expect_match(ui, "Milestone 1")

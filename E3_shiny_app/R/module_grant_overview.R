@@ -121,13 +121,13 @@ grant_overview_server <- function(id, resource_source) {
     })
     output$resource_overview <- DT::renderDT({
       if (!resource_source_available(resource_source)) {
-        return(DT::datatable(
+        return(readable_datatable(
           tibble::tibble(message = "No E3 result source is configured."),
           rownames = FALSE
         ))
       }
       catalog <- collect_resource_view_catalog(resource_source)
-      DT::datatable(
+      readable_datatable(
         catalog,
         rownames = FALSE,
         filter = "top",

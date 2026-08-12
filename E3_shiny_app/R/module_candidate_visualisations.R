@@ -544,7 +544,7 @@ candidate_visualisations_server <- function(
         "missing_evidence"
       )
       preferred <- unique(preferred[preferred %in% names(row)])
-      DT::datatable(
+      readable_datatable(
         row[, preferred, drop = FALSE],
         rownames = FALSE,
         options = list(scrollX = TRUE, pageLength = 1L)
@@ -567,7 +567,7 @@ candidate_visualisations_server <- function(
     })
 
     output$candidate_evidence_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         candidate_evidence(),
         rownames = FALSE,
         filter = "top",
@@ -636,7 +636,7 @@ candidate_visualisations_server <- function(
     })
 
     output$heatmap_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         heatmap_data(),
         rownames = FALSE,
         filter = "top",
@@ -730,14 +730,14 @@ candidate_visualisations_server <- function(
       )
       preferred <- preferred[preferred %in% names(row)]
       if (length(preferred) == 0L) {
-        return(DT::datatable(
+        return(readable_datatable(
           tibble::tibble(
             evidence_state = "No group-level expression-state columns available"
           ),
           rownames = FALSE
         ))
       }
-      DT::datatable(
+      readable_datatable(
         row[, preferred, drop = FALSE],
         rownames = FALSE,
         options = list(scrollX = TRUE, pageLength = 1L)
@@ -745,7 +745,7 @@ candidate_visualisations_server <- function(
     })
 
     output$profile_summary_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         profile_summary(),
         rownames = FALSE,
         filter = "top",
@@ -754,7 +754,7 @@ candidate_visualisations_server <- function(
     })
 
     output$profile_rows_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         profile_rows(),
         rownames = FALSE,
         filter = "top",
@@ -861,7 +861,7 @@ candidate_visualisations_server <- function(
     })
 
     output$volcano_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         volcano_rows(),
         rownames = FALSE,
         filter = "top",

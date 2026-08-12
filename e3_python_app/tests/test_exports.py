@@ -54,6 +54,13 @@ def test_normalise_excel_scalar_preserves_types_and_blocks_formulas() -> None:
     [
         ("candidate_accession", pd.Series([123]), "text"),
         ("member_count", pd.Series([2], dtype="int64"), "integer"),
+        ("member_count", pd.Series([2.0, None]), "integer"),
+        (
+            "same_pocket_position_support_fraction",
+            pd.Series([0.0, 0.5, 1.0]),
+            "decimal",
+        ),
+        ("alignment_length_fraction", pd.Series([0.25, 0.75]), "decimal"),
         ("final_score", pd.Series([0.8123]), "decimal"),
         ("adjusted_p_value", pd.Series([1.0e-8]), "scientific"),
         ("supported", pd.Series([True], dtype="bool"), "logical"),
@@ -95,6 +102,42 @@ def test_excel_column_width_is_readable_and_bounded() -> None:
         exports.excel_column_width(column_name="", series=pd.Series([1]))
 
 
+def test_excel_text_is_long_is_targeted_and_validated() -> None:
+    """Only genuinely long text should use the smaller left-aligned style."""
+    assert exports.excel_text_is_long(value="x" * 81)
+    assert not exports.excel_text_is_long(value="x" * 80)
+    assert not exports.excel_text_is_long(value=123)
+    with pytest.raises(ValueError, match="positive integer"):
+        exports.excel_text_is_long(value="text", threshold=0)
+    with pytest.raises(ValueError, match="positive integer"):
+        exports.excel_text_is_long(value="text", threshold=True)
+
+
+def test_dataframe_display_formats_are_readable_without_rounding_data() -> None:
+    """App tables show concise numbers and retain exact underlying values."""
+    frame = pd.DataFrame(
+        {
+            "final_rank": [1, 2],
+            "final_score": [0.1751018181818182, 0.8992472727272727],
+            "adjusted_p_value": [1.2e-12, 0.05],
+            "status": ["PASS", "FAIL"],
+        }
+    )
+    original = frame.copy(deep=True)
+    assert exports.dataframe_display_formats(frame=frame) == {
+        "final_rank": "%d",
+        "final_score": "%.3f",
+        "adjusted_p_value": "%.2e",
+    }
+    pd.testing.assert_frame_equal(frame, original)
+
+    with pytest.raises(TypeError, match="DataFrame"):
+        exports.dataframe_display_formats(frame=[])  # type: ignore[arg-type]
+    duplicate = pd.DataFrame([[1, 2]], columns=["score", "score"])
+    with pytest.raises(ValueError, match="duplicate"):
+        exports.dataframe_display_formats(frame=duplicate)
+
+
 def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None:
     """The XLSX is a filterable styled table with safe, typed values."""
     frame = pd.DataFrame(
@@ -107,6 +150,7 @@ def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None
             "review_date": pd.to_datetime(
                 ["2026-08-11", "2026-08-12", "2026-08-13"]
             ),
+            "notes": ["x" * 120, "short", None],
         }
     )
     payload = exports.dataframe_to_excel_bytes(frame=frame)
@@ -120,13 +164,20 @@ def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None
 
     assert 'state="frozen"' in sheet_xml
     assert 'ySplit="1"' in sheet_xml
+    assert 'showGridLines="0"' not in sheet_xml
     assert "<cols>" in sheet_xml
+    assert 'ht="60"' in sheet_xml
+    assert 'customHeight="1"' in sheet_xml
     assert "<f>" not in sheet_xml
-    assert '<autoFilter ref="A1:F4"' in table_xml
+    assert '<autoFilter ref="A1:G4"' in table_xml
     assert 'name="TableStyleMedium2"' in table_xml
     assert "0.000" in styles_xml
     assert "0.00E+00" in styles_xml
     assert "yyyy-mm-dd hh:mm" in styles_xml
+    assert 'horizontal="center"' in styles_xml
+    assert 'vertical="center"' in styles_xml
+    assert '<sz val="10"' in styles_xml
+    assert '<borders count="' in styles_xml
     assert "=2+2" in strings_xml
 
 
@@ -218,14 +269,14 @@ def test_render_table_downloads_preserves_tsv_and_adds_excel(
 
 
 def test_every_streamlit_tsv_table_uses_paired_downloads() -> None:
-    """All nine existing tabular TSV locations use the paired export helper."""
+    """All eleven tabular locations use the paired TSV/Excel export helper."""
     source = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "e3app"
         / "streamlit_app.py"
     ).read_text(encoding="utf-8")
-    assert source.count("render_table_downloads(") == 9
-    assert source.count("tsv_label=") == 9
-    assert source.count("excel_label=") == 9
+    assert source.count("render_table_downloads(") == 11
+    assert source.count("tsv_label=") == 11
+    assert source.count("excel_label=") == 11
     assert "to_csv(sep=\"\\t\"" not in source

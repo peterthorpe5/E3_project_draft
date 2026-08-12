@@ -81,7 +81,7 @@ resource_overview_server <- function(id, resource_duckdb_path) {
     })
 
     output$view_catalog <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         catalog(),
         rownames = FALSE,
         filter = "top",
@@ -90,7 +90,7 @@ resource_overview_server <- function(id, resource_duckdb_path) {
     })
 
     output$status_summary <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         summarise_resource_catalog_status(catalog()),
         rownames = FALSE,
         options = list(dom = "t", paging = FALSE)

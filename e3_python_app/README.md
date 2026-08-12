@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.7.0 is the tested Streamlit companion to `E3_shiny_app` 0.10.0. Both
+Version 0.7.1 is the tested Streamlit companion to `E3_shiny_app` 0.10.1. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -51,9 +51,9 @@ run directory. It never guesses between multiple bundles.
 
 The reporter provides:
 
-- a searchable Glossary defining seeds, evolutionary groups, gates, strict
-  predictions, assessed denominators, every primary threshold and all result
-  labels;
+- a searchable, substantially expanded Glossary combining project-wide
+  technical terms with the complete 218-field final-candidate data dictionary,
+  recorded gates, thresholds, result labels and interpretation cautions;
 - a dedicated Computational recommendations view containing the ordered top-50 review
   shortlist, strict grant-aligned predictions, named gate-sensitivity
   scenarios, evolutionary-group scorecard, contributors, representative audit
@@ -83,12 +83,31 @@ The reporter provides:
 - a separate column multiselect and row limit for every section;
 - exact accession search across recognised scalar and semicolon-delimited
   candidate/member fields;
-- a schema-agnostic all-results browser;
+- a schema-agnostic all-results browser with paired TSV and Excel downloads;
 - provenance and QC views; and
 - paired TSV and formatted Excel downloads of every downloadable result table.
-  Excel contains the same bounded rows and selected columns, with filter arrows,
-  frozen headers, banded rows, wrapped long text, bounded readable widths and
-  data-appropriate numeric formats.
+  Excel contains the same bounded rows and selected columns, with visible cell
+  gridlines, explicit borders, filter arrows, frozen headers, banded rows,
+  centred body values, 10-point wrapped narrative text, bounded readable widths
+  and capped long-text row heights, plus data-appropriate display formats.
+  Numeric source values remain exact;
+  only their display is shortened.
+
+Wide in-app result tables use a horizontal scrollbar and a bounded vertical
+viewport with a stationary header. Numeric display is shortened to three
+decimal places (or three significant figures for P/E/FDR/Q values) without
+changing the exported data. The main navigation labels wrap across as many rows
+as the window requires, so sections are visible without tab-scroll arrows.
+
+The Computational recommendations view points readers from the top of the page
+to a detailed methodology below the authoritative table. The explanation
+records every discovery, orthology, domain, expression, pre-structure,
+ligandability, pocket-conservation, structural and final-score equation,
+including production defaults, neutral unavailable-denominator handling,
+hard-gate separation, tie-breaks and evolutionary-group consolidation. An
+expandable slider panel normalises alternative weights within each layer and
+can download an explicitly non-authoritative what-if ranking as TSV or Excel.
+It never changes the recorded rank, mandatory gates, database or pipeline.
 
 The integrated DuckDB remains the complete relational authority. The single
 master Parquet is a portable wide compatibility summary. The definitive
@@ -112,7 +131,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.7.0 quality gate includes branch-aware coverage at or above 95%
+The v0.7.1 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.

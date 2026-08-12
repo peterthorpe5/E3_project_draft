@@ -37,6 +37,13 @@ resource_browser_ui <- function(id) {
     shiny::h4("Column schema"),
     DT::DTOutput(ns("columns")),
     shiny::h4("Table preview"),
+    tabular_download_buttons(
+      ns = ns,
+      tsv_id = "download_tsv",
+      excel_id = "download_excel",
+      tsv_label = "Download displayed rows as TSV",
+      excel_label = "Download displayed rows as Excel"
+    ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("preview_table")))
   )
 }
@@ -85,7 +92,10 @@ resource_browser_server <- function(id, resource_duckdb_path) {
     output$columns <- DT::renderDT({
       shiny::req(input$view_name)
       if (input$view_name %in% c("Loading...", "No views found", "Resource DB not configured")) {
-        return(DT::datatable(tibble::tibble(message = "No resource view selected."), rownames = FALSE))
+        return(readable_datatable(
+          tibble::tibble(message = "No resource view selected."),
+          rownames = FALSE
+        ))
       }
 
       columns <- tryCatch(
@@ -108,7 +118,7 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         selected = head(names, 12L)
       )
 
-      DT::datatable(
+      readable_datatable(
         columns,
         rownames = FALSE,
         options = list(pageLength = 25, scrollX = TRUE)
@@ -179,12 +189,43 @@ resource_browser_server <- function(id, resource_duckdb_path) {
     )
 
     output$preview_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         preview_data(),
         rownames = FALSE,
         filter = "top",
         options = list(pageLength = 25, scrollX = TRUE, deferRender = TRUE)
       )
     })
+    output$download_tsv <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          "all_results_",
+          safe_export_stem(input$view_name %||% "results"),
+          ".tsv"
+        )
+      },
+      content = function(path) {
+        utils::write.table(
+          preview_data(),
+          file = path,
+          sep = "\t",
+          quote = TRUE,
+          row.names = FALSE,
+          na = ""
+        )
+      }
+    )
+    output$download_excel <- shiny::downloadHandler(
+      filename = function() {
+        paste0(
+          "all_results_",
+          safe_export_stem(input$view_name %||% "results"),
+          ".xlsx"
+        )
+      },
+      content = function(path) {
+        write_formatted_excel(data = preview_data(), path = path)
+      }
+    )
   })
 }

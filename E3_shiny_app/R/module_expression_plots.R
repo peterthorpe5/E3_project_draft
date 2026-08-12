@@ -127,7 +127,7 @@ expression_plot_server <- function(
     output$plot_data_table <- DT::renderDT({
       current_data <- plot_data()
 
-      DT::datatable(
+      readable_datatable(
         current_data,
         rownames = FALSE,
         filter = "top",

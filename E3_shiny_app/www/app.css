@@ -12,7 +12,58 @@ body {
 }
 
 .dataTables_wrapper {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  width: 100%;
+}
+
+.dataTables_wrapper .dataTables_scroll {
+  border: 1px solid #d5dee5;
+  width: 100%;
+}
+
+.dataTables_wrapper .dataTables_scrollHead {
+  background: #eef4f7;
+  border-bottom: 1px solid #b9c8d1;
+}
+
+.dataTables_wrapper table.dataTable thead th {
+  background: #eef4f7;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  min-width: 7rem;
+  vertical-align: middle;
+  white-space: nowrap !important;
+}
+
+.dataTables_wrapper table.dataTable tbody td.e3-cell {
+  line-height: 1.3;
+  padding: 0.45rem 0.55rem;
+  vertical-align: middle;
+}
+
+.dataTables_wrapper table.dataTable tbody td.e3-cell-compact {
+  min-width: 7rem;
+  white-space: nowrap;
+}
+
+.dataTables_wrapper table.dataTable tbody td.e3-cell-wide {
+  max-width: 26rem;
+  min-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataTables_wrapper table.dataTable tbody td.e3-cell-narrative {
+  font-size: 0.75rem;
+  max-width: 32rem;
+  min-width: 24rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.dataTables_wrapper .dataTables_scrollBody {
+  border-bottom: 1px solid #b9c8d1 !important;
 }
 .grant-question {
   border-left: 4px solid #2c7a7b;

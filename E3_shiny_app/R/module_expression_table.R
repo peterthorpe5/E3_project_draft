@@ -45,7 +45,7 @@ expression_table_server <- function(id, duckdb_path, filters, max_rows = 1000L) 
         }
       )
 
-      DT::datatable(
+      readable_datatable(
         display_table,
         rownames = FALSE,
         filter = "top",

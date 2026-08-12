@@ -6,8 +6,9 @@
 #' @param id Stable threshold identifier.
 #' @param label User-facing label.
 #' @param value Default value.
+#' @param help_text Optional explanatory text for dynamically selected gates.
 #' @return Shiny UI.
-threshold_pair_ui <- function(ns, id, label, value) {
+threshold_pair_ui <- function(ns, id, label, value, help_text = NULL) {
   shiny::tagList(
     bslib::layout_columns(
       shiny::sliderInput(
@@ -30,7 +31,7 @@ threshold_pair_ui <- function(ns, id, label, value) {
     ),
     shiny::p(
       class = "small text-muted threshold-definition",
-      threshold_help_text(id)
+      if (is.null(help_text)) threshold_help_text(id) else help_text
     )
   )
 }
@@ -42,7 +43,6 @@ threshold_pair_ui <- function(ns, id, label, value) {
 threshold_explorer_ui <- function(id) {
   ns <- shiny::NS(id)
   defaults <- current_threshold_defaults()
-  structural_condition <- "input.mode === 'structural'"
   shiny::tagList(
     shiny::h2("Explore alternative candidate thresholds"),
     shiny::p(
@@ -56,12 +56,27 @@ threshold_explorer_ui <- function(id) {
         bslib::card_header("Analysis and output"),
         shiny::radioButtons(
           inputId = ns("mode"),
-          label = "Prioritisation view",
+          label = "Threshold sets to apply",
           choices = c(
-            "Pre-structure prioritisation" = "prestructure",
-            "Structurally informed prioritisation" = "structural"
+            "Pre-structure thresholds only" = "prestructure",
+            "Pre-structure + structural thresholds" = "structural"
           ),
           selected = defaults$mode
+        ),
+        shiny::selectizeInput(
+          inputId = ns("additional_thresholds"),
+          label = "Additional optional score thresholds",
+          choices = additional_threshold_choices(),
+          selected = defaults$additional_thresholds,
+          multiple = TRUE,
+          options = list(placeholder = "None — use the recorded default gates")
+        ),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Optional score gates are post-hoc sensitivity checks on values",
+            "already stored in the completed resource."
+          )
         ),
         shiny::selectInput(
           inputId = ns("result_scope"),
@@ -108,7 +123,7 @@ threshold_explorer_ui <- function(id) {
       col_widths = c(5, 7)
     ),
     bslib::accordion(
-      open = c("Pre-structure thresholds"),
+      open = c("Pre-structure thresholds", "Structural thresholds"),
       bslib::accordion_panel(
         "Pre-structure thresholds",
         threshold_pair_ui(
@@ -146,67 +161,67 @@ threshold_explorer_ui <- function(id) {
             label = "Require assessable expression evidence",
             value = defaults$require_expression_evidence
           )
-        )
+        ),
+        shiny::uiOutput(ns("additional_prestructure_thresholds"))
       ),
       bslib::accordion_panel(
         "Structural thresholds",
-        shiny::conditionalPanel(
-          condition = structural_condition,
-          ns = ns,
-          threshold_pair_ui(
-            ns = ns,
-            id = "structural_species_fraction",
-            label = "Minimum structurally supported species fraction",
-            value = defaults$structural_species_fraction
-          ),
-          threshold_pair_ui(
-            ns = ns,
-            id = "minimum_druggability_score",
-            label = "Minimum member druggability score",
-            value = defaults$minimum_druggability_score
-          ),
-          bslib::layout_columns(
-            shiny::checkboxInput(
-              inputId = ns("require_conserved_region"),
-              label = "Require conserved pocket-bearing sequence region",
-              value = defaults$require_conserved_region
-            ),
-            shiny::checkboxInput(
-              inputId = ns("require_all_member_mapping"),
-              label = "Require every assessed member to pass pocket mapping",
-              value = defaults$require_all_member_mapping
-            ),
-            shiny::checkboxInput(
-              inputId = ns("require_strict_3d"),
-              label = "Require strictly conserved corresponding 3D pocket",
-              value = defaults$require_strict_3d
-            ),
-            col_widths = c(6, 6, 6)
-          ),
-          shiny::checkboxInput(
-            inputId = ns("include_not_assessed"),
-            label = paste(
-              "Also display groups not structurally assessed",
-              "(never label them as structural passes)"
-            ),
-            value = defaults$include_not_assessed
-          ),
-          shiny::p(
-            class = "small text-muted",
-            paste(
-              "Pocket mapping, pocket-region classification and strict 3D",
-              "statuses use the recorded production calculations.",
-              "Changing their underlying coordinate, overlap or TM-score",
-              "rules would require rerunning the scientific pipeline."
-            )
-          )
-        ),
         shiny::conditionalPanel(
           condition = "input.mode !== 'structural'",
           ns = ns,
           shiny::p(
             class = "text-muted",
-            "Switch to the structurally informed view to use these controls."
+            paste(
+              "These values are retained but are applied only when",
+              "Pre-structure + structural thresholds is selected above."
+            )
+          )
+        ),
+        threshold_pair_ui(
+          ns = ns,
+          id = "structural_species_fraction",
+          label = "Minimum structurally supported species fraction",
+          value = defaults$structural_species_fraction
+        ),
+        threshold_pair_ui(
+          ns = ns,
+          id = "minimum_druggability_score",
+          label = "Minimum member druggability score",
+          value = defaults$minimum_druggability_score
+        ),
+        bslib::layout_columns(
+          shiny::checkboxInput(
+            inputId = ns("require_conserved_region"),
+            label = "Require conserved pocket-bearing sequence region",
+            value = defaults$require_conserved_region
+          ),
+          shiny::checkboxInput(
+            inputId = ns("require_all_member_mapping"),
+            label = "Require every assessed member to pass pocket mapping",
+            value = defaults$require_all_member_mapping
+          ),
+          shiny::checkboxInput(
+            inputId = ns("require_strict_3d"),
+            label = "Require strictly conserved corresponding 3D pocket",
+            value = defaults$require_strict_3d
+          ),
+          col_widths = c(6, 6, 6)
+        ),
+        shiny::checkboxInput(
+          inputId = ns("include_not_assessed"),
+          label = paste(
+            "Also display groups not structurally assessed",
+            "(never label them as structural passes)"
+          ),
+          value = defaults$include_not_assessed
+        ),
+        shiny::uiOutput(ns("additional_structural_thresholds")),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Pocket mapping, pocket-region classification and strict 3D",
+            "statuses use the recorded production calculations. Optional",
+            "score gates use stored summaries and do not rerun those steps."
           )
         )
       )
@@ -297,13 +312,19 @@ threshold_explorer_server <- function(
 ) {
   shiny::moduleServer(id, function(input, output, session) {
     defaults <- current_threshold_defaults()
+    optional_specifications <- additional_threshold_specs()
     numeric_fields <- c(
       "target_species_fraction",
       "mandatory_species_fraction",
       "domain_species_fraction",
       "expression_species_fraction",
       "structural_species_fraction",
-      "minimum_druggability_score"
+      "minimum_druggability_score",
+      vapply(
+        optional_specifications,
+        function(value) value$setting,
+        character(1)
+      )
     )
     logical_fields <- c(
       "require_domain_evidence",
@@ -349,6 +370,16 @@ threshold_explorer_server <- function(
         inputId = "result_scope",
         selected = defaults$result_scope
       )
+      shiny::updateRadioButtons(
+        session = session,
+        inputId = "mode",
+        selected = defaults$mode
+      )
+      shiny::updateSelectizeInput(
+        session = session,
+        inputId = "additional_thresholds",
+        selected = defaults$additional_thresholds
+      )
     })
 
     context <- shiny::reactive({
@@ -379,10 +410,58 @@ threshold_explorer_server <- function(
       )
     })
 
+    shiny::observe({
+      current_context <- context()
+      choices <- additional_threshold_choices()
+      available_choices <- choices[choices %in% current_context$columns]
+      selected <- intersect(
+        input$additional_thresholds %||% character(),
+        unname(available_choices)
+      )
+      shiny::updateSelectizeInput(
+        session = session,
+        inputId = "additional_thresholds",
+        choices = available_choices,
+        selected = selected,
+        server = TRUE
+      )
+    })
+
+    render_optional_thresholds <- function(section) {
+      shiny::renderUI({
+        selected <- input$additional_thresholds %||% character()
+        selected <- selected[vapply(
+          optional_specifications[selected],
+          function(value) identical(value$section, section),
+          logical(1)
+        )]
+        if (length(selected) == 0L) {
+          return(NULL)
+        }
+        shiny::tagList(lapply(selected, function(column) {
+          specification <- optional_specifications[[column]]
+          threshold_pair_ui(
+            ns = session$ns,
+            id = specification$setting,
+            label = specification$label,
+            value = defaults[[specification$setting]],
+            help_text = specification$help
+          )
+        }))
+      })
+    }
+    output$additional_prestructure_thresholds <- render_optional_thresholds(
+      section = "prestructure"
+    )
+    output$additional_structural_thresholds <- render_optional_thresholds(
+      section = "structural"
+    )
+
     active_settings <- shiny::reactive({
       values <- list(
         mode = input$mode %||% defaults$mode,
-        result_scope = input$result_scope %||% defaults$result_scope
+        result_scope = input$result_scope %||% defaults$result_scope,
+        additional_thresholds = input$additional_thresholds %||% character()
       )
       for (field in numeric_fields) {
         values[[field]] <- input[[field]] %||% defaults[[field]]
@@ -500,7 +579,7 @@ threshold_explorer_server <- function(
     })
 
     output$candidate_table <- DT::renderDT({
-      DT::datatable(
+      readable_datatable(
         displayed(),
         rownames = FALSE,
         filter = "top",

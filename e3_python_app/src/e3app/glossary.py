@@ -9,7 +9,9 @@ labelled sensitivity analysis over recorded values.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from importlib.resources import files
 from typing import Mapping
 
 
@@ -22,12 +24,18 @@ class GlossaryEntry:
         term: User-facing term or control name.
         definition: Plain-language definition.
         recorded_rule: Exact rule used by the completed analysis, when relevant.
+        type_or_unit: Field or term data type and unit, when relevant.
+        interpretation_or_caution: Important interpretation boundary.
+        source: Project document or application rule supplying the definition.
     """
 
     section: str
     term: str
     definition: str
     recorded_rule: str = ""
+    type_or_unit: str = ""
+    interpretation_or_caution: str = ""
+    source: str = "Application computational rules"
 
 
 SLIDER_HELP: Mapping[str, str] = {
@@ -60,7 +68,7 @@ SLIDER_HELP: Mapping[str, str] = {
 }
 
 
-GLOSSARY_ENTRIES = (
+_CORE_GLOSSARY_ENTRIES = (
     GlossaryEntry(
         "Groups and identifiers",
         "Seed",
@@ -266,6 +274,78 @@ GLOSSARY_ENTRIES = (
 )
 
 
+def _load_resource_entries(
+    *,
+    file_name: str,
+    source: str,
+) -> tuple[GlossaryEntry, ...]:
+    """Load validated glossary rows bundled with the application.
+
+    Args:
+        file_name: Resource TSV basename under ``e3app/resources``.
+        source: User-facing source label applied to every imported row.
+
+    Returns:
+        Ordered immutable glossary entries.
+
+    Raises:
+        ValueError: If the file schema or a required cell is invalid.
+    """
+    if not isinstance(file_name, str) or not file_name.strip():
+        raise ValueError("A non-empty glossary resource filename is required.")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError("A non-empty glossary source label is required.")
+    required = (
+        "field",
+        "category",
+        "type_or_unit",
+        "definition",
+        "interpretation_or_caution",
+    )
+    resource = files("e3app").joinpath("resources", file_name)
+    with resource.open(mode="r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if tuple(reader.fieldnames or ()) != required:
+            raise ValueError(
+                f"Glossary resource {file_name} has an invalid column schema."
+            )
+        entries = []
+        for row_number, row in enumerate(reader, start=2):
+            if any(not str(row[column]).strip() for column in required):
+                raise ValueError(
+                    f"Glossary resource {file_name} has an empty required "
+                    f"value on row {row_number}."
+                )
+            entries.append(
+                GlossaryEntry(
+                    section=str(row["category"]).strip(),
+                    term=str(row["field"]).strip(),
+                    definition=str(row["definition"]).strip(),
+                    type_or_unit=str(row["type_or_unit"]).strip(),
+                    interpretation_or_caution=str(
+                        row["interpretation_or_caution"]
+                    ).strip(),
+                    source=source.strip(),
+                )
+            )
+    if not entries:
+        raise ValueError(f"Glossary resource {file_name} contains no terms.")
+    return tuple(entries)
+
+
+GLOSSARY_ENTRIES = (
+    *_CORE_GLOSSARY_ENTRIES,
+    *_load_resource_entries(
+        file_name="project_term_glossary.tsv",
+        source="Milestone 1 and Milestone 2 technical guides",
+    ),
+    *_load_resource_entries(
+        file_name="final_candidate_field_dictionary.tsv",
+        source="Final candidate field dictionary v1.0",
+    ),
+)
+
+
 def glossary_sections() -> tuple[str, ...]:
     """Return glossary sections in display order.
 
@@ -292,8 +372,11 @@ def glossary_rows(section: str) -> list[dict[str, str]]:
     return [
         {
             "Term": entry.term,
+            "Type / unit": entry.type_or_unit,
             "Plain-language definition": entry.definition,
             "Recorded top-200 rule": entry.recorded_rule,
+            "Interpretation / caution": entry.interpretation_or_caution,
+            "Source": entry.source,
         }
         for entry in GLOSSARY_ENTRIES
         if entry.section == section

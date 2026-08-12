@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict
 from typing import Sequence
 
@@ -28,6 +29,7 @@ from e3app.data import (
     list_relations,
     open_resource,
     preview_selected_columns,
+    relation_count,
     relation_columns,
     relations_for_section,
     resource_overview,
@@ -35,7 +37,7 @@ from e3app.data import (
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
-from e3app.exports import render_table_downloads
+from e3app.exports import dataframe_display_formats, render_table_downloads
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
 from e3app.pocket_review import (
     PocketReviewBundle,
@@ -45,6 +47,13 @@ from e3app.pocket_review import (
     read_review_html,
     selected_group_members,
     selected_group_row,
+)
+from e3app.ranking import (
+    DEFAULT_RANKING_WEIGHTS,
+    RANKING_METHODOLOGY_MARKDOWN,
+    RANKING_WEIGHT_LABELS,
+    recompute_exploratory_ranking,
+    select_ranking_relation,
 )
 from e3app.thresholds import (
     LOGICAL_THRESHOLD_FIELDS,
@@ -73,6 +82,78 @@ from e3app.visualisations import (
 )
 
 LOGGER = logging.getLogger(__name__)
+_NARRATIVE_COLUMN = re.compile(
+    r"interpretation|definition|description|caution|reason|evidence|"
+    r"note|message|warning|limitation",
+    flags=re.IGNORECASE,
+)
+_WIDE_TEXT_COLUMN = re.compile(
+    r"accession|cluster.*id|group.*id|species|alignment.*tool|"
+    r"candidate.*list|present|missing|unavailable",
+    flags=re.IGNORECASE,
+)
+_WRAPPED_TAB_CSS = """
+<style>
+div[data-baseweb="tab-list"] {
+    flex-wrap: wrap !important;
+    height: auto !important;
+    overflow-x: visible !important;
+    row-gap: 0.25rem;
+}
+button[data-baseweb="tab"] {
+    border-bottom: 2px solid transparent;
+    flex: 0 0 auto !important;
+    min-height: 2.5rem;
+    white-space: nowrap;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    border-bottom-color: #ff4b4b;
+}
+div[data-baseweb="tab-highlight"] {
+    display: none;
+}
+</style>
+"""
+
+
+def _display_dataframe(
+    *,
+    frame: pd.DataFrame | Sequence[dict[str, object]],
+    height: int | None = None,
+) -> None:
+    """Display a table with concise numeric formatting and exact source values.
+
+    Args:
+        frame: Data frame or serialisable row dictionaries to display.
+        height: Optional Streamlit table height in pixels.
+    """
+    table = frame if isinstance(frame, pd.DataFrame) else pd.DataFrame(frame)
+    number_formats = dataframe_display_formats(frame=table)
+    column_config: dict[str, object] = {}
+    for column in table.columns:
+        column_name = str(column)
+        if column_name in number_formats:
+            column_config[column_name] = st.column_config.NumberColumn(
+                format=number_formats[column_name],
+                width="small",
+            )
+        elif _NARRATIVE_COLUMN.search(column_name):
+            column_config[column_name] = st.column_config.TextColumn(
+                width="large"
+            )
+        elif _WIDE_TEXT_COLUMN.search(column_name):
+            column_config[column_name] = st.column_config.TextColumn(
+                width="medium"
+            )
+    arguments: dict[str, object] = {
+        "data": table,
+        "use_container_width": True,
+        "hide_index": True,
+        "column_config": column_config,
+    }
+    arguments["height"] = 620 if height is None else height
+    arguments["row_height"] = 36
+    st.dataframe(**arguments)
 
 
 def _render_section(
@@ -80,11 +161,13 @@ def _render_section(
     connection: object,
     config: AppConfig,
     section: str,
+    show_heading: bool = True,
 ) -> None:
     """Render one scientific section with independent table controls."""
     specification = SECTION_SPECS[section]
-    st.subheader(str(specification["title"]))
-    st.caption(str(specification["description"]))
+    if show_heading:
+        st.subheader(str(specification["title"]))
+        st.caption(str(specification["description"]))
     relations = relations_for_section(connection, section)
     if not relations:
         st.info(
@@ -121,7 +204,7 @@ def _render_section(
         selected,
         int(requested),
     )
-    st.dataframe(result, use_container_width=True, hide_index=True)
+    _display_dataframe(frame=result)
     render_table_downloads(
         frame=result,
         file_stem=f"{section}_{relation}",
@@ -129,6 +212,232 @@ def _render_section(
         excel_label="Download displayed rows as Excel",
         key=f"{section}_download",
     )
+
+
+def _ranking_source_columns(*, available: Sequence[str]) -> list[str]:
+    """Return the bounded source columns needed by the weighting explorer."""
+    preferred = (
+        "final_evolutionary_rank",
+        "final_rank",
+        "computational_rank",
+        "evolutionary_group_key",
+        "primary_group_type",
+        "primary_group_id",
+        "lead_cluster_id",
+        "cluster_id",
+        "boss_review_status",
+        "grant_aligned_prediction_status",
+        "grant_aligned_base_pass",
+        "grant_aligned_final_pass",
+        "lead_discovery_score",
+        "discovery_score",
+        "lead_orthology_score",
+        "orthology_score",
+        "lead_domain_score",
+        "domain_score",
+        "lead_expression_score",
+        "expression_score",
+        "minimum_druggability_score",
+        "mean_pocket_plddt_fraction",
+        "all_assessed_members_pass_mapping",
+        "predictor_agreement_fraction",
+        "pocket_conservation_score",
+        "three_dimensional_pocket_score",
+        "three_dimensional_alignment_status",
+        "evidence_completeness_fraction",
+        "prestructure_score",
+        "ligandability_score",
+        "structural_score",
+        "final_score",
+    )
+    return [column for column in preferred if column in available]
+
+
+def _ranking_source_is_complete(*, columns: Sequence[str]) -> bool:
+    """Return whether a relation contains all formula component families."""
+    available = set(columns)
+    alternatives = (
+        ("lead_discovery_score", "discovery_score"),
+        ("lead_orthology_score", "orthology_score"),
+        ("lead_domain_score", "domain_score"),
+        ("lead_expression_score", "expression_score"),
+    )
+    required = {
+        "minimum_druggability_score",
+        "mean_pocket_plddt_fraction",
+        "all_assessed_members_pass_mapping",
+        "predictor_agreement_fraction",
+        "pocket_conservation_score",
+        "three_dimensional_pocket_score",
+    }
+    return required.issubset(available) and all(
+        any(candidate in available for candidate in family)
+        for family in alternatives
+    )
+
+
+def _ranking_weight_sliders(*, group: str) -> dict[str, float]:
+    """Render one group of raw sliders that will be normalised to sum to one."""
+    defaults = DEFAULT_RANKING_WEIGHTS[group]
+    labels = RANKING_WEIGHT_LABELS[group]
+    columns = st.columns(2)
+    values: dict[str, float] = {}
+    for index, (component, default) in enumerate(defaults.items()):
+        with columns[index % 2]:
+            values[component] = st.slider(
+                labels[component],
+                min_value=0.0,
+                max_value=1.0,
+                value=default,
+                step=0.05,
+                key=f"ranking_weight_{group}_{component}",
+            )
+    total = sum(values.values())
+    if total > 0:
+        effective = ", ".join(
+            f"{labels[name]} {value / total:.1%}"
+            for name, value in values.items()
+        )
+        st.caption(f"Effective normalised weights: {effective}.")
+    return values
+
+
+def _reset_ranking_weights() -> None:
+    """Restore every sensitivity control to the recorded production profile."""
+    for group, weights in DEFAULT_RANKING_WEIGHTS.items():
+        for component, value in weights.items():
+            st.session_state[f"ranking_weight_{group}_{component}"] = value
+    st.session_state["ranking_weight_three_dimensional"] = 0.0
+    st.session_state["ranking_preserve_gate_tier"] = True
+
+
+def _render_ranking_sensitivity(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Render a read-only, formula-driven weighting sensitivity explorer."""
+    relation = select_ranking_relation(relation_names=list_relations(connection))
+    if relation is None:
+        st.info("No recognised ranking relation is available for weight sensitivity.")
+        return
+    available = relation_columns(connection, relation)
+    if not _ranking_source_is_complete(columns=available):
+        st.info(
+            "This compatibility relation does not retain every component needed "
+            "to recalculate the documented formulas. The explanation above still "
+            "describes the recorded production ranking."
+        )
+        return
+    selected = _ranking_source_columns(available=available)
+    source_count = relation_count(connection, relation)
+    row_limit = min(config.max_rows, 5000)
+    frame = preview_selected_columns(
+        connection,
+        relation,
+        selected,
+        row_limit,
+    )
+    st.caption(
+        f"Sensitivity source: `{relation}`; {len(frame):,} of "
+        f"{source_count:,} rows loaded under the configured row cap."
+    )
+    if len(frame) < source_count:
+        st.warning(
+            "The exploratory rank covers only the bounded rows loaded above. "
+            "Raise the application's maximum-row setting to compare the full relation."
+        )
+    if st.button(
+        "Reset recorded ranking weights",
+        key="ranking_reset_weights",
+    ):
+        _reset_ranking_weights()
+        st.rerun()
+    st.markdown("#### Pre-structure weights")
+    prestructure = _ranking_weight_sliders(group="prestructure")
+    st.markdown("#### Ligandability subcomponent weights")
+    ligandability = _ranking_weight_sliders(group="ligandability")
+    st.markdown("#### Structural-score weights")
+    structural = _ranking_weight_sliders(group="structural")
+    st.markdown("#### Final-score weights")
+    final = _ranking_weight_sliders(group="final")
+    three_dimensional = st.slider(
+        "Optional 3D-refinement weight (recorded production default: 0.00)",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.0,
+        step=0.05,
+        key="ranking_weight_three_dimensional",
+        help=(
+            "Applied only to structurally assessed groups. The recorded profile "
+            "used 3D agreement as a gate and did not reweight the score."
+        ),
+    )
+    preserve_gate_tier = st.checkbox(
+        "Keep the recorded hard-gate pass tier ahead of score",
+        value=True,
+        key="ranking_preserve_gate_tier",
+        help=(
+            "Recommended. Turning this off makes the sensitivity order score-only; "
+            "it does not change any recorded gate field."
+        ),
+    )
+    try:
+        ranked = recompute_exploratory_ranking(
+            frame=frame,
+            prestructure_weights=prestructure,
+            ligandability_weights=ligandability,
+            structural_weights=structural,
+            final_weights=final,
+            three_dimensional_weight=three_dimensional,
+            preserve_gate_tier=preserve_gate_tier,
+        )
+    except (TypeError, ValueError) as exc:
+        st.warning(str(exc))
+        return
+    rows_to_show = st.number_input(
+        "Exploratory ranked rows to display",
+        min_value=1,
+        max_value=max(1, min(len(ranked), 500)),
+        value=max(1, min(len(ranked), 100)),
+        key="ranking_rows_to_show",
+    )
+    _display_dataframe(frame=ranked.head(int(rows_to_show)), height=620)
+    render_table_downloads(
+        frame=ranked,
+        file_stem="exploratory_computational_reweighting",
+        tsv_label="Download exploratory ranking as TSV",
+        excel_label="Download exploratory ranking as Excel",
+        key="ranking_sensitivity_download",
+    )
+
+
+def _render_computational_recommendations(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Render recommendations, detailed formulas and weight sensitivity."""
+    specification = SECTION_SPECS["final_recommendations"]
+    st.subheader(str(specification["title"]))
+    st.caption(str(specification["description"]))
+    st.info(
+        "A full explanation of every ranking formula, recorded weight, ordering "
+        "rule and tie-break appears below the result table, followed by a "
+        "non-authoritative weighting-sensitivity explorer."
+    )
+    _render_section(
+        connection=connection,
+        config=config,
+        section="final_recommendations",
+        show_heading=False,
+    )
+    st.markdown(RANKING_METHODOLOGY_MARKDOWN)
+    with st.expander(
+        "Alternative weighting sensitivity explorer",
+        expanded=False,
+    ):
+        st.warning(
+            "This explorer changes only an in-memory sensitivity ranking. It does "
+            "not rewrite the authoritative rank, gate decisions or source resource."
+        )
+        _render_ranking_sensitivity(connection=connection, config=config)
 
 
 def _render_expression_section(
@@ -228,7 +537,7 @@ def _render_expression_section(
         search_text=search_text,
         maximum_rows=int(maximum_rows),
     )
-    st.dataframe(result, use_container_width=True, hide_index=True, height=650)
+    _display_dataframe(frame=result, height=650)
     render_table_downloads(
         frame=result,
         file_stem="candidate_expression_by_tissue",
@@ -289,7 +598,7 @@ def _render_overview(*, connection: object, config: AppConfig) -> None:
     if overview.empty:
         st.info("No result relations are available.")
     else:
-        st.dataframe(overview, use_container_width=True, hide_index=True)
+        _display_dataframe(frame=overview)
     st.caption(
         f"Source mode: {config.source_mode}; read-only source: {config.source_path}"
     )
@@ -338,8 +647,10 @@ def _render_glossary() -> None:
     """Render plain-language terms and the exact recorded scientific rules."""
     st.subheader("Glossary and computational rules")
     st.info(
-        "These definitions describe the completed top-200 analysis. Threshold-explorer "
-        "changes create sensitivity lists and do not rewrite the recorded primary result."
+        "This expanded glossary combines project-wide technical terminology, the complete "
+        "218-field final-candidate data dictionary and the recorded top-200 computational "
+        "rules. Threshold-explorer changes create sensitivity lists and do not rewrite the "
+        "recorded primary result."
     )
     selected_section = st.selectbox(
         "Glossary section",
@@ -347,7 +658,7 @@ def _render_glossary() -> None:
         key="glossary_section",
     )
     rows = glossary_rows(selected_section)
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    _display_dataframe(frame=rows)
     all_rows = [
         {"Section": section, **row}
         for section in glossary_sections()
@@ -539,7 +850,7 @@ def _render_threshold_explorer(
             f"Using `{relation}` as a compatibility source, with one deterministic "
             "lead row retained per evolutionary group."
         )
-    st.dataframe(result, use_container_width=True, hide_index=True, height=700)
+    _display_dataframe(frame=result, height=700)
     render_table_downloads(
         frame=result,
         file_stem=f"aria_e3_{settings.mode}_custom_thresholds",
@@ -589,7 +900,7 @@ def _render_pocket_review(
         else "OrthoFinder-group member sequence identifiers"
     )
     st.markdown(f"#### {member_title}")
-    st.dataframe(members, use_container_width=True, hide_index=True)
+    _display_dataframe(frame=members)
     safe_group = "".join(
         character if character.isalnum() or character in "_.-" else "_"
         for character in str(row["primary_group_id"])
@@ -643,7 +954,7 @@ def _render_search(*, connection: object, max_rows: int) -> None:
     if matches.empty:
         st.warning("No exact accession match was found in recognised columns.")
     else:
-        st.dataframe(matches, use_container_width=True, hide_index=True)
+        _display_dataframe(frame=matches)
 
 
 def _render_all_results(
@@ -677,15 +988,19 @@ def _render_all_results(
         key="all_results_rows",
     )
     if selected:
-        st.dataframe(
-            preview_selected_columns(
-                connection,
-                relation,
-                selected,
-                int(requested),
-            ),
-            use_container_width=True,
-            hide_index=True,
+        result = preview_selected_columns(
+            connection,
+            relation,
+            selected,
+            int(requested),
+        )
+        _display_dataframe(frame=result)
+        render_table_downloads(
+            frame=result,
+            file_stem=f"all_results_{relation}",
+            tsv_label="Download displayed rows as TSV",
+            excel_label="Download displayed rows as Excel",
+            key="all_results_download",
         )
     else:
         st.warning("Select at least one column.")
@@ -847,10 +1162,8 @@ def _render_candidate_landscape(
         if column is not None and column in frame.columns
     ]
     st.markdown("#### Selected candidate summary")
-    st.dataframe(
-        pd.DataFrame([row[display_columns].to_dict()]),
-        use_container_width=True,
-        hide_index=True,
+    _display_dataframe(
+        frame=pd.DataFrame([row[display_columns].to_dict()]),
     )
     identifiers = candidate_identifiers_from_row(row=row)
     evidence_relations = candidate_evidence_relations(
@@ -884,7 +1197,7 @@ def _render_candidate_landscape(
         identifiers=identifiers,
         maximum_rows=int(evidence_limit),
     )
-    st.dataframe(evidence, use_container_width=True, hide_index=True, height=520)
+    _display_dataframe(frame=evidence, height=520)
     render_table_downloads(
         frame=evidence,
         file_stem=f"{selected_key}_{evidence_relation}",
@@ -1032,7 +1345,7 @@ def _render_expression_heatmap(
         key="visual_expression_heatmap_plot",
     )
     st.markdown("#### Aggregated heatmap cells")
-    st.dataframe(cells, use_container_width=True, hide_index=True, height=460)
+    _display_dataframe(frame=cells, height=460)
     render_table_downloads(
         frame=cells,
         file_stem="candidate_expression_heatmap_cells",
@@ -1175,13 +1488,13 @@ def _render_species_tissue_profiles(
     ]
     if evidence_state_columns:
         st.markdown("#### Group-level expression evidence states")
-        st.dataframe(
-            pd.DataFrame([selected_row[evidence_state_columns].to_dict()]),
-            use_container_width=True,
-            hide_index=True,
+        _display_dataframe(
+            frame=pd.DataFrame(
+                [selected_row[evidence_state_columns].to_dict()]
+            ),
         )
     st.markdown("#### Aggregated species/tissue profile")
-    st.dataframe(profile, use_container_width=True, hide_index=True)
+    _display_dataframe(frame=profile)
     st.markdown("#### Exact Expression Atlas rows behind the profile")
     if len(rows) >= int(maximum_rows):
         st.info(
@@ -1189,7 +1502,7 @@ def _render_species_tissue_profiles(
             "The plotted species/tissue summary is still complete because it was "
             "aggregated before that limit."
         )
-    st.dataframe(rows, use_container_width=True, hide_index=True, height=620)
+    _display_dataframe(frame=rows, height=620)
     render_table_downloads(
         frame=rows,
         file_stem=f"{candidate_id}_species_tissue_expression",
@@ -1258,7 +1571,7 @@ def _render_volcano_view(*, connection: object) -> None:
         significance_label=capability["significance_column"],
     )
     st.plotly_chart(figure, use_container_width=True, key="visual_volcano_plot")
-    st.dataframe(rows, use_container_width=True, hide_index=True, height=520)
+    _display_dataframe(frame=rows, height=520)
     render_table_downloads(
         frame=rows,
         file_stem=f"{relation}_volcano_rows",
@@ -1351,6 +1664,7 @@ def _render_visual_explorer(
 def render_app() -> None:
     """Render the complete point-and-click ARIA E3 resource explorer."""
     st.set_page_config(page_title="ARIA Plant E3 Resource", layout="wide")
+    st.markdown(_WRAPPED_TAB_CSS, unsafe_allow_html=True)
     st.title("ARIA plant E3 discovery and ligandability resource")
     st.caption(
         "Read-only Python companion to the R Shiny reporter. DuckDB performs "
@@ -1416,10 +1730,9 @@ def render_app() -> None:
             with tabs[1]:
                 _render_glossary()
             with tabs[2]:
-                _render_section(
+                _render_computational_recommendations(
                     connection=connection,
                     config=config,
-                    section="final_recommendations",
                 )
             with tabs[3]:
                 _render_threshold_explorer(connection=connection, config=config)

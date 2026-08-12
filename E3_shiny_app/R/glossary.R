@@ -61,13 +61,116 @@ threshold_help_text <- function(id) {
 #' @param term User-facing term.
 #' @param definition Plain-language definition.
 #' @param recorded_rule Exact completed-analysis rule, when relevant.
+#' @param type_or_unit Data type or unit, when relevant.
+#' @param interpretation_or_caution Important interpretation boundary.
+#' @param source Project document or application rule supplying the definition.
 #' @return One-row tibble.
-glossary_record <- function(section, term, definition, recorded_rule = "") {
+glossary_record <- function(
+  section,
+  term,
+  definition,
+  recorded_rule = "",
+  type_or_unit = "",
+  interpretation_or_caution = "",
+  source = "Application computational rules"
+) {
   tibble::tibble(
     Section = section,
     Term = term,
+    `Type / unit` = type_or_unit,
     `Plain-language definition` = definition,
-    `Recorded top-200 rule` = recorded_rule
+    `Recorded top-200 rule` = recorded_rule,
+    `Interpretation / caution` = interpretation_or_caution,
+    Source = source
+  )
+}
+
+#' Resolve one bundled glossary resource in development or installation.
+#'
+#' @param file_name Resource TSV basename.
+#' @return Existing absolute resource path.
+glossary_resource_path <- function(file_name) {
+  if (
+    length(file_name) != 1L ||
+      is.na(file_name) ||
+      !nzchar(file_name) ||
+      basename(file_name) != file_name
+  ) {
+    stop("A safe glossary resource filename is required.", call. = FALSE)
+  }
+  installed <- system.file(
+    "extdata",
+    file_name,
+    package = "E3ExpressionShiny"
+  )
+  candidates <- unique(c(
+    installed,
+    file.path(getwd(), "inst", "extdata", file_name),
+    if (exists("repo_dir", inherits = TRUE)) {
+      file.path(get("repo_dir", inherits = TRUE), "inst", "extdata", file_name)
+    } else {
+      character()
+    }
+  ))
+  existing <- candidates[nzchar(candidates) & file.exists(candidates)]
+  if (length(existing) == 0L) {
+    stop(
+      paste0("Glossary resource was not found: ", file_name),
+      call. = FALSE
+    )
+  }
+  normalizePath(existing[[1L]], mustWork = TRUE)
+}
+
+#' Load and validate one bundled project glossary.
+#'
+#' @param file_name Resource TSV basename.
+#' @param source User-facing source label.
+#' @return Tibble using the application glossary schema.
+load_project_glossary <- function(file_name, source) {
+  if (
+    length(source) != 1L ||
+      is.na(source) ||
+      !nzchar(source)
+  ) {
+    stop("A non-empty glossary source label is required.", call. = FALSE)
+  }
+  resource <- utils::read.delim(
+    file = glossary_resource_path(file_name = file_name),
+    sep = "\t",
+    header = TRUE,
+    quote = "",
+    comment.char = "",
+    check.names = FALSE,
+    stringsAsFactors = FALSE
+  )
+  required <- c(
+    "field",
+    "category",
+    "type_or_unit",
+    "definition",
+    "interpretation_or_caution"
+  )
+  if (!identical(names(resource), required)) {
+    stop(
+      paste0("Glossary resource has an invalid schema: ", file_name),
+      call. = FALSE
+    )
+  }
+  if (nrow(resource) == 0L || any(is.na(resource)) || any(!nzchar(as.matrix(resource)))) {
+    stop(
+      paste0("Glossary resource has empty required values: ", file_name),
+      call. = FALSE
+    )
+  }
+  tibble::tibble(
+    Section = resource$category,
+    Term = resource$field,
+    `Type / unit` = resource$type_or_unit,
+    `Plain-language definition` = resource$definition,
+    `Recorded top-200 rule` = "",
+    `Interpretation / caution` = resource$interpretation_or_caution,
+    Source = source
   )
 }
 
@@ -76,7 +179,7 @@ glossary_record <- function(section, term, definition, recorded_rule = "") {
 #' @return Tibble with section, term, definition and recorded rule.
 scientific_glossary <- function() {
   add <- glossary_record
-  dplyr::bind_rows(
+  core <- dplyr::bind_rows(
     add(
       "Groups and identifiers", "Seed",
       paste(
@@ -293,6 +396,17 @@ scientific_glossary <- function() {
         "Outside the 200-group structural cohort or lacking a required",
         "structural result; not classified as a structural failure."
       )
+    )
+  )
+  dplyr::bind_rows(
+    core,
+    load_project_glossary(
+      file_name = "project_term_glossary.tsv",
+      source = "Milestone 1 and Milestone 2 technical guides"
+    ),
+    load_project_glossary(
+      file_name = "final_candidate_field_dictionary.tsv",
+      source = "Final candidate field dictionary v1.0"
     )
   )
 }
