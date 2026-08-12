@@ -17,6 +17,13 @@ recorded ranks and primary-analysis gates unchanged.
   vectors and current dplyr column selection.
 - The obsolete raw-expression-tab expectation in the application tests now
   matches the current result-source interface.
+- A dedicated Workflow schematic tab follows every stage from controlled inputs
+  to app-ready recommendations, including parallel discovery/OrthoFinder,
+  domain/expression and structural/optional-chemistry branches.
+- The Computational recommendations page now provides a full methods-style
+  explanation of score construction, unavailable denominators, effective final
+  weights, hard-gate precedence, deterministic consolidation and experimental
+  limitations.
 
 The alignment plot is descriptive. Same-position support still requires the
 recorded centroid-distance rule, and none of these interface changes rewrites a

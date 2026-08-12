@@ -29,10 +29,27 @@ ranking_weight_group_ui <- function(ns, group) {
 #' @param ns Shiny namespace function.
 #' @return Shiny UI.
 ranking_methodology_ui <- function(ns) {
-  formula_item <- function(title, formula, explanation) {
-    shiny::tags$li(
-      shiny::p(shiny::strong(title), " ", shiny::tags$code(formula)),
-      shiny::p(explanation)
+  methodology_paragraph <- function(...) {
+    shiny::p(paste(...))
+  }
+  methodology_bullets <- function(items) {
+    shiny::tags$ul(lapply(items, shiny::tags$li))
+  }
+  methodology_section <- function(number, title, formula, ...) {
+    shiny::div(
+      class = "ranking-methodology-section",
+      shiny::h4(paste0(number, ". ", title)),
+      shiny::div(
+        class = "ranking-formula bg-light border rounded p-2 mb-3",
+        shiny::tags$code(formula)
+      ),
+      ...
+    )
+  }
+  effective_weight_row <- function(component, contribution) {
+    shiny::tags$tr(
+      shiny::tags$td(component),
+      shiny::tags$td(contribution)
     )
   }
   shiny::tagList(
@@ -48,96 +65,413 @@ ranking_methodology_ui <- function(ns) {
         "score cannot repair a failed mandatory gate."
       )
     ),
-    shiny::tags$ol(
-      formula_item(
-        "Discovery score.",
-        "D = (f_reviewed + f_ubiquitin_GO + (1 - f_exclusion)) / 3",
-        paste(
-          "For the lead DeepClust cluster, the three equally weighted terms",
-          "are the reviewed-seed fraction, the ubiquitin-related GO-positive",
-          "seed fraction and the complement of the exclusion-flag fraction."
-        )
+    methodology_paragraph(
+      "The authoritative candidate list is a deterministic prioritisation of",
+      "the computational evidence collected by the workflow. It is not a",
+      "predicted probability that a protein is an E3 ubiquitin ligase, a",
+      "probability that a protein contains a genuinely ligandable pocket, or",
+      "a prediction that a PROTAC directed against that protein will work",
+      "experimentally."
+    ),
+    methodology_paragraph(
+      "Its purpose is narrower and more transparent: to place candidates with",
+      "the strongest combined discovery, evolutionary, domain, expression,",
+      "pocket and structural evidence near the top, while retaining the",
+      "individual evidence components from which that ordering was derived."
+    ),
+    shiny::h4("Evidence types kept separate"),
+    methodology_bullets(c(
+      paste(
+        "Hard grant-aligned gates record whether a candidate satisfies a",
+        "mandatory requirement."
       ),
-      formula_item(
-        "Orthology score.",
-        "O = f_target x (0.8 + 0.2 x f_mandatory)",
-        paste(
-          "Broad representation across the configured target plant species",
-          "supplies most of the score. Representation of the six mandatory crop",
-          "species supplies the remaining adjustment."
-        )
+      paste(
+        "Continuous evidence scores distinguish stronger and weaker evidence",
+        "among otherwise comparable candidates."
       ),
-      formula_item(
-        "Domain and expression scores.",
-        "A = n_domain_supported / n_domain_assessed; E = n_expression_supported / n_expression_assessed",
-        paste(
-          "A uses only species with usable domain annotation; E uses only",
-          "species with a unique usable Expression Atlas mapping. When an",
-          "assessed denominator was unavailable, the recorded scoring value was",
-          "the neutral value 0.5, while availability and gate status remained",
-          "explicit in separate fields rather than being presented as measured zero."
-        )
-      ),
-      formula_item(
-        "Pre-structure score.",
-        "P = 0.10D + 0.35O + 0.20A + 0.35E",
-        paste(
-          "This combines discovery support, cross-species orthology, domain",
-          "support and expression support before structural evidence is added."
-        )
-      ),
-      formula_item(
-        "Ligandability score.",
-        "L = (d_min + p_pLDDT + m_map + p_agree) / 4",
-        paste(
-          "d_min is the minimum selected-pocket druggability across assessed",
-          "members; p_pLDDT is mean pocket-confidence support; m_map is 1 only",
-          "when every assessed member passes pocket mapping; and p_agree is the",
-          "fraction supported by both pocket-prediction signals."
-        )
-      ),
-      formula_item(
-        "Pocket-conservation score.",
-        "C = 0.30f_component + 0.25o_region + 0.20c_chemical + 0.15d_min + 0.10p_pLDDT",
-        paste(
-          "The terms are conserved-component coverage, mean aligned pocket-region",
-          "overlap, biochemical-class conservation, minimum druggability and mean",
-          "pocket pLDDT support. This summarises pocket-bearing sequence-region",
-          "evidence; it is not experimental binding evidence or proof of an",
-          "equivalent three-dimensional cavity."
-        )
-      ),
-      formula_item(
-        "Structural score and optional 3D refinement.",
-        "S_base = 0.55L + 0.45C; S = (1 - w_3D)S_base + w_3D T",
-        paste(
-          "For assessed comparisons, T = 0.40TM_min + 0.40o_3D +",
-          "0.20(1 - min(d_centroid / d_max, 1)). The production profile recorded",
-          "w_3D = 0. Therefore 3D agreement acted as an explicit eligibility and",
-          "support gate and was not silently reweighted into the continuous score."
-        )
-      ),
-      formula_item(
-        "Final score.",
-        "F = 0.60P + 0.40S",
-        paste(
-          "The final continuous score retained a 60 percent contribution from",
-          "the pre-structure evidence layer and a 40 percent contribution from",
-          "the structural evidence layer."
-        )
-      ),
-      formula_item(
-        "Ordering, tie-breaks and evolutionary-group consolidation.",
-        "gate tier (descending), F (descending), completeness (descending), stable identifier",
-        paste(
-          "Cluster rows were ordered first by the recorded base-gate pass tier,",
-          "then final score, evidence completeness and stable cluster identifier.",
-          "DeepClust rows belonging to the same primary OrthoFinder group were",
-          "consolidated under a deterministic lead cluster. Final evolutionary",
-          "rank followed the lead cluster's recorded final rank, with pre-structure",
-          "group rank and stable group key as deterministic tie-breaks."
-        )
+      paste(
+        "Evidence-availability and completeness fields show whether each",
+        "component could actually be assessed."
       )
+    )),
+    methodology_paragraph(
+      "A large continuous score cannot compensate for failure of a mandatory",
+      "gate. For example, unusually strong expression or orthology evidence",
+      "cannot repair failure of an all-members druggability rule. Unavailable",
+      "evidence is not silently treated as evidence of failure or success:",
+      "missingness, assessment status and gate outcome remain explicit in the",
+      "authoritative results."
+    ),
+    methodology_paragraph(
+      "Unless otherwise stated, component scores range from zero to one.",
+      "Values nearer one indicate stronger support and values nearer zero",
+      "indicate weaker support. A neutral value of 0.5 may be used when a",
+      "component has no assessable denominator, but this does not mean that",
+      "the underlying biological criterion passed. The equations are",
+      "reproducible evidence summaries, not calibrated biological probabilities."
+    ),
+    methodology_section(
+      1,
+      "Discovery score",
+        "D = (f_reviewed + f_ubiquitin_GO + (1 - f_exclusion)) / 3",
+      methodology_paragraph(
+        "For the lead DeepClust cluster, f_reviewed is the fraction of relevant",
+        "seed proteins derived from reviewed records; f_ubiquitin_GO is the",
+        "fraction with ubiquitin-related Gene Ontology evidence; and",
+        "f_exclusion is the fraction carrying an exclusion flag."
+      ),
+      methodology_paragraph(
+        "The term 1 - f_exclusion converts the exclusion fraction into positive",
+        "support. A cluster with no exclusion-flagged seeds receives one for",
+        "this component, whereas a cluster in which every relevant seed is",
+        "exclusion-flagged receives zero. The three terms contribute equally."
+      ),
+      methodology_paragraph(
+        "The score therefore rewards support from reviewed records, relevant",
+        "functional annotation and absence of evidence that the cluster belongs",
+        "to an excluded or unsuitable category. It does not establish that every",
+        "cluster member is an E3 ligase. Where several sequence clusters mapped",
+        "to one evolutionary group, the deterministically selected lead cluster",
+        "represented discovery evidence in the consolidated ranking."
+      )
+    ),
+    methodology_section(
+      2,
+      "Orthology score",
+        "O = f_target x (0.8 + 0.2 x f_mandatory)",
+      methodology_paragraph(
+        "f_target is the fraction of all target species represented in the",
+        "evolutionary group, and f_mandatory is the fraction of the six mandatory",
+        "crop species represented. Broad target-species representation supplies",
+        "most of the score; the mandatory-species term modifies it by a factor",
+        "between 0.8 and 1.0."
+      ),
+      methodology_bullets(c(
+        "All target species and all mandatory species represented gives O = 1.",
+        paste(
+          "All target species represented but no mandatory-species contribution",
+          "limits O to 0.8."
+        ),
+        paste(
+          "Only half of the target species represented limits O to 0.5, even",
+          "when all mandatory species are present."
+        )
+      )),
+      methodology_paragraph(
+        "This prioritises broadly conserved evolutionary groups while retaining",
+        "a smaller adjustment for grant-critical crop species. It does not imply",
+        "identical biochemical function or the same ligand-binding cavity in all",
+        "orthologues. Mandatory-species representation remains an explicit field",
+        "and gate, so a strong score cannot conceal failure of that requirement."
+      )
+    ),
+    methodology_section(
+      3,
+      "Domain and expression scores",
+        "A = n_domain_supported / n_domain_assessed; E = n_expression_supported / n_expression_assessed",
+      shiny::h5("Domain score"),
+      methodology_paragraph(
+        "The numerator for A counts domain-assessed species containing at least",
+        "one domain from the project's catalogue of E3-associated domains. The",
+        "denominator contains only species for which domain evidence was",
+        "assessable. A = 1 means that every assessed species supported a",
+        "catalogued domain; A = 0.5 means half did; and A = 0 means none did."
+      ),
+      methodology_paragraph(
+        "This is a cross-species consistency measure, not a single representative",
+        "protein check. Failure to detect a catalogued domain is not necessarily",
+        "proof of absent E3 function, especially for divergent, incomplete or",
+        "poorly annotated proteins. Assessed counts, availability and gate status",
+        "therefore remain separate."
+      ),
+      shiny::h5("Expression score"),
+      methodology_paragraph(
+        "E is restricted to species whose expression evidence could be mapped",
+        "uniquely to the candidate. This prevents ambiguous assignments from",
+        "being counted as if they belonged confidently to one protein or group.",
+        "A high value means that broad expression support was consistent across",
+        "species with uniquely mapped, assessable evidence. It does not mean that",
+        "every group member had expression data or that expression was equally",
+        "strong in every tissue, condition or developmental stage."
+      ),
+      shiny::h5("Unavailable assessed denominators"),
+      methodology_paragraph(
+        "When no valid assessed denominator was available for domain or expression",
+        "evidence, the integrated calculation used the neutral value 0.5. This",
+        "avoids awarding the maximum value for missing evidence while also avoiding",
+        "treating the absence of an assessable dataset as direct biological",
+        "evidence against a candidate."
+      ),
+      methodology_paragraph(
+        "The neutral value does not erase missingness. The workflow retains the",
+        "assessed count, eligible denominator, availability state, mapping status,",
+        "gate outcome and overall evidence completeness. A genuine intermediate",
+        "score can therefore be distinguished from a neutral unavailable value,",
+        "and completeness remains available as a deterministic tie-break."
+      )
+    ),
+    methodology_section(
+      4,
+      "Pre-structure score",
+        "P = 0.10D + 0.35O + 0.20A + 0.35E",
+      methodology_bullets(c(
+        "10% discovery evidence: confidence in the original cluster signal.",
+        "35% orthology evidence: breadth across the target-species panel.",
+        "20% domain evidence: consistency of E3-associated domain support.",
+        "35% expression evidence: breadth of uniquely mapped expression support."
+      )),
+      methodology_paragraph(
+        "Orthology and expression receive the largest weights because the",
+        "grant-aligned objective required candidates that were both broadly",
+        "represented and supported by expression. Domain evidence supplies a",
+        "smaller functional contribution. Discovery has the lowest weight because",
+        "it describes how the candidate entered the analysis and should not",
+        "dominate later evolutionary and biological evidence."
+      ),
+      methodology_paragraph(
+        "P records evidence available before ligandability, pocket conservation",
+        "and 3D analysis. It is a ranking component, not an independent pass/fail",
+        "decision; the corresponding hard gates remain separate."
+      )
+    ),
+    methodology_section(
+      5,
+      "Ligandability score",
+        "L = (d_min + p_pLDDT + m_map + p_agree) / 4",
+      methodology_paragraph(
+        "The four equally weighted terms are minimum selected-pocket druggability",
+        "across assessed members, mean normalised pocket-confidence support, an",
+        "all-members pocket-mapping indicator, and the fraction supported by both",
+        "recorded pocket-ranking signals."
+      ),
+      shiny::h5("Minimum druggability"),
+      methodology_paragraph(
+        "Using the minimum rather than the mean or maximum makes d_min",
+        "deliberately conservative. It prevents a favourable average from hiding",
+        "a weak member and asks whether druggability is maintained across the",
+        "group. This complements, but does not replace, the hard all-members",
+        "druggability rule; failure of that rule cannot be repaired by other terms."
+      ),
+      shiny::h5("Pocket confidence and all-members mapping"),
+      methodology_paragraph(
+        "p_pLDDT summarises confidence in the modelled regions contributing to",
+        "the pockets. It is local structural confidence, not experimental proof",
+        "of a cavity or ligand binding. m_map is one only when every assessed",
+        "member passes pocket mapping and zero otherwise. A single mapping failure",
+        "removes this component but does not set all of L to zero; any mandatory",
+        "mapping gate is applied separately."
+      ),
+      shiny::h5("Agreement between pocket-ranking signals"),
+      methodology_paragraph(
+        "p_agree is the fraction for which the selected FPocket pocket was also",
+        "supported by P2Rank rescoring. P2Rank 2.5.1 used fpocket-rescore with the",
+        "rescore_2024 model. It did not define an independent cavity set; it",
+        "rescored and reordered the FPocket pockets. Agreement therefore describes",
+        "the original FPocket assessment and a machine-learning-based re-ranking",
+        "of those same cavities, not two independent pocket-discovery experiments."
+      ),
+      methodology_paragraph(
+        "L summarises whether the selected cavity is consistently druggable,",
+        "structurally credible, successfully mapped and supported by both recorded",
+        "ranking signals. It remains computational evidence, not proof that a",
+        "suitable chemical ligand exists."
+      )
+    ),
+    methodology_section(
+      6,
+      "Pocket-conservation score",
+        "C = 0.30f_component + 0.25o_region + 0.20c_chemical + 0.15d_min + 0.10p_pLDDT",
+      shiny::h5("Conserved-component coverage (30%)"),
+      methodology_paragraph(
+        "f_component records how completely the relevant conserved pocket",
+        "component is represented across assessed members. It rewards a broadly",
+        "conserved, consistently traceable component rather than a signal found",
+        "in only a small subset."
+      ),
+      shiny::h5("Aligned pocket-region overlap (25%)"),
+      methodology_paragraph(
+        "o_region measures overlap of mapped pocket regions after sequence",
+        "alignment. It asks whether residues associated with the selected reference",
+        "pocket correspond to the same aligned sequence region in other members.",
+        "It is more focused than whole-protein similarity, but does not prove an",
+        "equivalent three-dimensional arrangement."
+      ),
+      shiny::h5("Biochemical-class conservation (20%)"),
+      methodology_paragraph(
+        "c_chemical asks whether the biochemical character of pocket-lining",
+        "residues is conserved, allowing conservative substitutions to retain",
+        "support. It is a simplified chemical similarity measure and does not",
+        "model every effect of side-chain geometry, protonation, solvent exposure",
+        "or conformational change."
+      ),
+      shiny::h5("Druggability and confidence (25% combined)"),
+      methodology_paragraph(
+        "Minimum druggability contributes 15% and mean pocket pLDDT contributes",
+        "10%. Including them prevents a conserved sequence region associated with",
+        "a weak or poorly predicted cavity from receiving an inappropriately high",
+        "score. C is not experimental binding evidence or proof that every member",
+        "contains an equivalent 3D cavity."
+      )
+    ),
+    methodology_section(
+      7,
+      "Structural score and treatment of three-dimensional evidence",
+        "S_base = 0.55L + 0.45C; S = (1 - w_3D)S_base + w_3D T",
+      methodology_paragraph(
+        "Ligandability contributes 55% to S_base and pocket conservation 45%.",
+        "The slight preference for L reflects the importance of a consistently",
+        "usable predicted cavity, while C records conservation of its associated",
+        "region."
+      ),
+      shiny::div(
+        class = "ranking-formula bg-light border rounded p-2 mb-3",
+        shiny::tags$code(
+          "T = 0.40TM_min + 0.40o_3D + 0.20(1 - min(d_centroid / d_max, 1))"
+        )
+      ),
+      methodology_paragraph(
+        "TM_min is conservative minimum structural-alignment support; o_3D is",
+        "measured 3D pocket overlap; d_centroid is the distance between pocket",
+        "centroids; and d_max is the configured distance at which the centroid",
+        "contribution reaches zero. The bounded centroid term is one for coincident",
+        "centroids, falls as distance increases and is zero at or beyond d_max."
+      ),
+      shiny::div(
+        class = "alert alert-info",
+        shiny::strong("Recorded production setting: "),
+        "w_3D = 0, and therefore S = S_base."
+      ),
+      methodology_paragraph(
+        "The 3D evidence was calculated and retained, but it was not silently",
+        "inserted into the continuous structural score after the production",
+        "weighting was defined. It remained explicit through assessment status,",
+        "same-position support, strict pocket-structure conservation, aligner",
+        "agreement, alternative-pocket sensitivity evidence and eligibility or",
+        "support gates. It could therefore affect interpretation, eligibility and",
+        "gate tier while making no direct numerical contribution to S."
+      ),
+      methodology_paragraph(
+        "Alternative-pocket rescue remained distinct from the strict rank-one",
+        "result. A lower-ranked pocket that aligned well was retained as sensitivity",
+        "evidence, but it did not rewrite the selected rank-one pocket or",
+        "retrospectively turn that pocket into a strict pass."
+      )
+    ),
+    methodology_section(
+      8,
+      "Final integrated score",
+        "F = 0.60P + 0.40S",
+      methodology_paragraph(
+        "Pre-structure evidence contributes 60%, and ligandability plus pocket",
+        "conservation contributes 40%. Because w_3D = 0 in the recorded profile,",
+        "the formula expands to:"
+      ),
+      shiny::div(
+        class = "ranking-formula bg-light border rounded p-2 mb-3",
+        shiny::tags$code(
+          "F = 0.06D + 0.21O + 0.12A + 0.21E + 0.22L + 0.18C"
+        )
+      ),
+      shiny::tags$table(
+        class = "table table-sm table-striped",
+        shiny::tags$thead(
+          shiny::tags$tr(
+            shiny::tags$th("High-level evidence component"),
+            shiny::tags$th("Effective contribution to F")
+          )
+        ),
+        shiny::tags$tbody(
+          effective_weight_row("Discovery", "6%"),
+          effective_weight_row("Orthology", "21%"),
+          effective_weight_row("Domain support", "12%"),
+          effective_weight_row("Expression", "21%"),
+          effective_weight_row("Ligandability", "22%"),
+          effective_weight_row("Pocket conservation", "18%"),
+          effective_weight_row(
+            "Direct 3D score contribution",
+            "0% in the recorded production profile"
+          )
+        )
+      ),
+      methodology_paragraph(
+        "No single continuous component accounts for most of the score. The",
+        "ranking favours evidence across several classes rather than one exceptional",
+        "property. F remains a ranking score, not a probability: F = 0.80 does not",
+        "mean an 80% probability of E3 function or successful PROTAC development.",
+        "F also cannot override the hard gates; it orders candidates within their",
+        "recorded eligibility tier."
+      )
+    ),
+    methodology_section(
+      9,
+      "Ordering, tie-breaks and evolutionary-group consolidation",
+        "gate tier (descending), F (descending), completeness (descending), stable identifier",
+      shiny::tags$ol(
+        shiny::tags$li(
+          shiny::strong("Recorded base-gate pass tier. "),
+          paste(
+            "Candidates satisfying grant-aligned requirements are considered",
+            "before those in a lower tier. A lower-tier candidate cannot move",
+            "above a higher-tier candidate merely because F is larger."
+          )
+        ),
+        shiny::tags$li(
+          shiny::strong("Final score. "),
+          "Within the same gate tier, candidates are ordered by descending F."
+        ),
+        shiny::tags$li(
+          shiny::strong("Evidence completeness. "),
+          paste(
+            "If tier and score are tied, the more completely assessed candidate",
+            "is placed first. This prevents extensive neutral missing-data",
+            "substitutions from being treated like complete observations."
+          )
+        ),
+        shiny::tags$li(
+          shiny::strong("Stable cluster identifier. "),
+          paste(
+            "If all preceding values are tied, this supplies a reproducible final",
+            "cluster-level tie-break with no biological preference."
+          )
+        )
+      ),
+      methodology_paragraph(
+        "Multiple DeepClust clusters can belong to the same primary OrthoFinder",
+        "group. Listing them independently would give some evolutionary groups",
+        "several opportunities to occupy high ranks. These rows were consolidated,",
+        "and the best deterministically ranked DeepClust row became the lead",
+        "cluster representing that evolutionary group."
+      ),
+      methodology_paragraph(
+        "Consolidated groups were ranked by the recorded final rank of the lead",
+        "cluster, followed where necessary by pre-structure group rank and the",
+        "stable evolutionary-group key. The stable key provides reproducibility",
+        "rather than biological weighting."
+      )
+    ),
+    shiny::h4("How to interpret the resulting rank"),
+    methodology_paragraph(
+      "A highly ranked evolutionary group occupies the strongest applicable gate",
+      "tier, has strong integrated discovery, orthology, domain, expression,",
+      "ligandability and pocket-conservation evidence, has comparatively complete",
+      "supporting data, and remains highly placed after related DeepClust clusters",
+      "are consolidated."
+    ),
+    methodology_paragraph(
+      "A high rank does not establish that every member is an experimentally",
+      "confirmed E3 ligase; that every species contains an identical pocket; that",
+      "the predicted cavity will bind a sufficiently potent and selective ligand;",
+      "that the same ligand will bind every member; that ternary-complex formation",
+      "will be favourable; that target degradation will occur; or that a resulting",
+      "PROTAC will be effective in plants. Those questions require further",
+      "structural, chemical and experimental work."
+    ),
+    methodology_paragraph(
+      "The ranking is therefore a transparent and reproducible way to decide which",
+      "evolutionary groups warrant the next stage of investigation. Its strength",
+      "is not that it turns heterogeneous evidence into biological certainty. Its",
+      "strength is that every component, gate, missing-data decision, weight and",
+      "tie-break is explicit and can be reproduced, inspected and challenged."
     ),
     shiny::p(
       class = "small text-muted",

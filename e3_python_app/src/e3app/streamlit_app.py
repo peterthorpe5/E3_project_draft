@@ -85,6 +85,7 @@ from e3app.visualisations import (
     selected_candidate_from_event,
     structural_alignment_plot_columns,
 )
+from e3app.workflow import workflow_schematic_html
 
 LOGGER = logging.getLogger(__name__)
 _WRAPPED_TAB_CSS = """
@@ -695,6 +696,22 @@ def _render_overview(*, connection: object, config: AppConfig) -> None:
     st.caption(
         f"Source mode: {config.source_mode}; read-only source: {config.source_path}"
     )
+
+
+def _render_workflow_schematic() -> None:
+    """Render the complete method and evidence-dependency process map."""
+    st.subheader("End-to-end method and evidence workflow")
+    st.caption(
+        "Follow the arrows from controlled inputs to the app-ready computational "
+        "recommendations. Parallel boxes show evidence streams that were generated "
+        "independently before reconciliation."
+    )
+    st.info(
+        "The arrows represent computational dependencies and evidence integration, "
+        "not proof of biological causality. Stage 09c is an optional chemistry "
+        "hand-off and did not contribute to the recorded Milestone 1 ranking."
+    )
+    st.markdown(workflow_schematic_html(), unsafe_allow_html=True)
 
 
 def _sync_threshold_control(field: str, source: str) -> None:
@@ -1874,6 +1891,7 @@ def render_app() -> None:
             tabs = st.tabs(
                 [
                     "Overview",
+                    "Workflow schematic",
                     "Glossary",
                     "Computational recommendations",
                     "Threshold explorer",
@@ -1896,18 +1914,20 @@ def render_app() -> None:
             with tabs[0]:
                 _render_overview(connection=connection, config=config)
             with tabs[1]:
-                _render_glossary()
+                _render_workflow_schematic()
             with tabs[2]:
+                _render_glossary()
+            with tabs[3]:
                 _render_computational_recommendations(
                     connection=connection,
                     config=config,
                 )
-            with tabs[3]:
-                _render_threshold_explorer(connection=connection, config=config)
             with tabs[4]:
+                _render_threshold_explorer(connection=connection, config=config)
+            with tabs[5]:
                 _render_visual_explorer(connection=connection, config=config)
             for tab, section in zip(
-                tabs[5:11],
+                tabs[6:12],
                 (
                     "candidates",
                     "orthology",
@@ -1929,30 +1949,30 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[11]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[12]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
+                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[13]:
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[14]:
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
-            with tabs[14]:
+            with tabs[15]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[15]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[16]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[17]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[17]:
+            with tabs[18]:
                 _render_section(
                     connection=connection,
                     config=config,

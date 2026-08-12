@@ -27,6 +27,7 @@ source("R/ranking_explorer.R")
 source("R/threshold_explorer.R")
 source("R/candidate_visualisations.R")
 source("R/structural_alignment_visualisations.R")
+source("R/workflow_schematic.R")
 source("R/pocket_review.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
@@ -55,6 +56,10 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Grant overview",
       grant_overview_ui("grant_overview")
+    ),
+    bslib::nav_panel(
+      "Workflow schematic",
+      workflow_schematic_ui()
     ),
     bslib::nav_panel(
       "Glossary",

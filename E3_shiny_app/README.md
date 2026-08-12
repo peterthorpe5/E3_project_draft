@@ -10,47 +10,51 @@ The main sections follow the evidence path required by the grant:
 
 1. **Grant overview** – authoritative evolutionary-group counts rather than
    earlier DeepClust evidence-row counts.
-2. **Glossary** – project-wide technical terms plus the complete 218-field
+2. **Workflow schematic** – the complete evidence path from controlled inputs
+   through DeepClust and OrthoFinder, domains and expression, pocket and 3D
+   evidence, integrated scoring, group consolidation and app-ready reporting.
+3. **Glossary** – project-wide technical terms plus the complete 218-field
    final-candidate data dictionary, plain-language definitions, units,
    interpretation cautions, gates, thresholds and result labels.
-3. **Threshold explorer** – separate pre-structure and structurally informed
+4. **Threshold explorer** – separate pre-structure and structurally informed
    sensitivity-analysis lists, using sliders and exact typed values while the
    primary grant-aligned result remains unchanged.
-4. **Visual explorer** – a selectable multi-axis candidate landscape linked to
+5. **Visual explorer** – a selectable multi-axis candidate landscape linked to
    the exact evidence tables, a cross-species expression heatmap and every
    available species-by-tissue Expression Atlas profile for the selected group.
    The volcano view remains inactive unless a real differential-expression
    relation supplies both effect sizes and P/FDR/Q values.
-5. **Final recommendations** – the ordered top-50 review shortlist, strict
+6. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
-   exclusion reasons.
-6. **Candidates** – combined discovery, conservation, domain, expression and
+   exclusion reasons, followed by the full methods-style account of score
+   construction, unavailable denominators, effective weights and tie-breaks.
+7. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-7. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
+8. **Orthology** – explicit OrthoFinder orthogroup and hierarchical-group IDs,
    species membership, member accessions and candidate-relevant sequences.
-8. **Domains** – catalogued E3-associated domain support and explicit annotation
+9. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-9. **Expression evidence** – identifier mapping and broad Expression Atlas
+10. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
    workflow v0.13.0 resources also retain tissue/organism part, developmental
    stage, condition, treatment, experiment and sample context. Direct controls
    open the matching heatmap and volcano-eligibility views.
-10. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+11. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-11. **Pocket conservation** – conserved pocket-bearing alignment regions and
+12. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-12. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+13. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation, with an
    interactive TM-score/pocket-overlap evidence map and recorded threshold
    references.
-13. **3D structures & pockets** – selected-group, rotatable member structures
+14. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
-14. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+15. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights and the original OrthoFinder-group member sequence identifiers.
-15. **Provenance and QC** – release metadata, relation catalogue and source paths.
-16. **Computational chemistry** – chemistry hand-off decisions, review tiers,
+16. **Provenance and QC** – release metadata, relation catalogue and source paths.
+17. **Computational chemistry** – chemistry hand-off decisions, review tiers,
     sensitivity analysis, residue-derived pharmacophore features and optional
     fragment-ranking evidence.
 

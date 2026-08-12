@@ -18,7 +18,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 24
+    assert len(app.tabs) == 25
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -29,6 +29,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     tab_labels = [tab.label for tab in app.tabs]
     assert "Candidate landscape" in tab_labels
     assert "Glossary" in tab_labels
+    assert "Workflow schematic" in tab_labels
     assert "Computational recommendations" in tab_labels
     assert "Threshold explorer" in tab_labels
     assert "Visual explorer" in tab_labels
@@ -39,6 +40,10 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "3D structures & pockets" in tab_labels
     assert "Pocket-aligned sequences" in tab_labels
     assert "3D alignment" in tab_labels
+    assert any(
+        "Stages 00–01" in markdown.value
+        for markdown in app.markdown
+    )
     assert len(app.multiselect) >= 8
     assert any("Columns to display" in item.label for item in app.multiselect)
     metric_labels = [metric.label for metric in app.metric]
@@ -71,8 +76,9 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 22
+    assert len(app.tabs) == 23
     assert "Glossary" in [tab.label for tab in app.tabs]
+    assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
 
 

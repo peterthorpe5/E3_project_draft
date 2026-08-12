@@ -56,49 +56,431 @@ RANKING_WEIGHT_LABELS: dict[str, dict[str, str]] = {
 RANKING_METHODOLOGY_MARKDOWN = r"""
 ### How the recorded computational ranking was calculated
 
-The authoritative list is a **deterministic evidence-prioritisation**, not a
-probability that a protein is an E3 ligase or that a PROTAC will work. Hard
-grant-aligned gates are retained separately from the continuous scores: a large
-score cannot repair a failed mandatory gate.
+The authoritative candidate list is a **deterministic prioritisation of the
+computational evidence collected by the workflow**. It is not a predicted
+probability that a protein is an E3 ubiquitin ligase, a probability that a
+protein contains a genuinely ligandable pocket, or a prediction that a PROTAC
+directed against that protein will work experimentally.
 
-1. **Discovery score.** For the lead DeepClust cluster,
-   $D=(f_{reviewed}+f_{ubiquitin\ GO}+(1-f_{exclusion}))/3$. The three terms are
-   the reviewed-seed fraction, ubiquitin-related GO-positive seed fraction and
-   the complement of the exclusion-flag fraction.
-2. **Orthology score.** $O=f_{target}(0.8+0.2f_{mandatory})$. Broad target-species
-   representation supplies most of the score, while representation of all six
-   mandatory crop species provides the remaining adjustment.
-3. **Domain and expression scores.** $A$ is the fraction of domain-assessed
-   species with a catalogued E3-associated domain, and $E$ is the fraction of
-   uniquely mapped expression-assessed species with broad expression support.
-   An unavailable assessed denominator was assigned the neutral scoring value
-   0.5, while availability and gate status remained explicit elsewhere.
-4. **Pre-structure score.** $P=0.10D+0.35O+0.20A+0.35E$.
-5. **Ligandability score.** $L=(d_{min}+p_{pLDDT}+m_{map}+p_{agree})/4$, where
-   $d_{min}$ is the minimum selected-pocket druggability across assessed
-   members, $p_{pLDDT}$ is mean pocket-confidence support, $m_{map}$ is 1 only
-   when every assessed member passes mapping, and $p_{agree}$ is the fraction
-   supported by both pocket-prediction signals.
-6. **Pocket-conservation score.** The stored score was
-   $C=0.30f_{component}+0.25o_{region}+0.20c_{chemical}+0.15d_{min}+0.10p_{pLDDT}$.
-   These are conserved-component coverage, mean aligned pocket-region overlap,
-   biochemical-class conservation, minimum druggability and mean pocket pLDDT
-   support. It summarises sequence-region evidence; it is not experimental
-   binding or proof of an equivalent 3D cavity.
-7. **Structural score.** The production base score was
-   $S_{base}=0.55L+0.45C$. A separately configured 3D refinement would be
-   $S=(1-w_{3D})S_{base}+w_{3D}T$ for assessed groups, where
-   $T=0.40TM_{min}+0.40o_{3D}+0.20(1-\min(d_{centroid}/d_{max},1))$.
-   In the recorded production profile, $w_{3D}=0$: 3D agreement was an explicit
-   eligibility/support gate and was **not silently reweighted** into the score.
-8. **Final score.** $F=0.60P+0.40S$.
-9. **Ordering and tie-breaks.** Cluster rows were ordered first by the recorded
-   base-gate pass tier, then descending $F$, descending evidence completeness
-   and finally stable cluster identifier. DeepClust rows belonging to the same
-   primary OrthoFinder group were consolidated; the best deterministic lead
-   cluster represented that evolutionary group. Final evolutionary rank then
-   followed the lead cluster's recorded final rank, with pre-structure group
-   rank and stable group key as deterministic tie-breaks.
+The purpose of the ranking is narrower and more transparent: to place
+candidates with the strongest combined discovery, evolutionary, domain,
+expression, pocket and structural evidence near the top of the list, while
+retaining the individual evidence components from which that ordering was
+derived.
+
+Three kinds of information are deliberately kept separate:
+
+1. **Hard grant-aligned gates**, which record whether a candidate satisfies a
+   mandatory requirement.
+2. **Continuous evidence scores**, which distinguish stronger and weaker
+   evidence among otherwise comparable candidates.
+3. **Evidence-availability and completeness fields**, which show whether each
+   component could actually be assessed.
+
+This separation is important. A large continuous score cannot compensate for
+failure of a mandatory gate. For example, unusually strong expression or
+orthology evidence cannot repair failure of an all-members druggability rule.
+Likewise, unavailable evidence is not silently treated as evidence of failure
+or success: missingness, assessment status and gate outcome remain explicit in
+the authoritative results.
+
+Unless otherwise stated, component scores range from zero to one. Values nearer
+one represent stronger support and values nearer zero represent weaker support.
+A value of 0.5 may be used as a neutral numerical contribution when a component
+has no assessable denominator, but this **does not mean that the underlying
+biological criterion passed**. The equations are reproducible evidence
+summaries, not calibrated biological probabilities.
+
+#### 1. Discovery score
+
+For the lead DeepClust cluster, the discovery score was:
+
+$$
+D=\frac{f_{reviewed}+f_{ubiquitin\ GO}+(1-f_{exclusion})}{3}
+$$
+
+where:
+
+- $f_{reviewed}$ is the fraction of relevant seed proteins derived from
+  reviewed protein records;
+- $f_{ubiquitin\ GO}$ is the fraction of relevant seeds with ubiquitin-related
+  Gene Ontology evidence; and
+- $f_{exclusion}$ is the fraction of relevant seeds carrying an exclusion flag.
+
+The term $1-f_{exclusion}$ converts the exclusion fraction into a positive
+support term. A cluster with no exclusion-flagged seeds receives one for this
+component; a cluster in which every relevant seed is exclusion-flagged receives
+zero. The three terms contribute equally.
+
+The discovery score therefore rewards support from reviewed records,
+ubiquitin-related functional annotation and absence of evidence that the
+cluster belongs to an excluded or unsuitable category. It does not independently
+establish that every cluster member is an E3 ligase. It summarises how strongly
+the original discovery evidence resembles that expected for the target protein
+class. Where several sequence clusters were associated with the same broader
+evolutionary group, the deterministically selected lead cluster represented the
+discovery evidence in the consolidated ranking.
+
+#### 2. Orthology score
+
+The orthology score was:
+
+$$
+O=f_{target}(0.8+0.2f_{mandatory})
+$$
+
+where $f_{target}$ is the fraction of all target species represented in the
+evolutionary group and $f_{mandatory}$ is the fraction of the six mandatory crop
+species represented.
+
+The principal contribution comes from $f_{target}$. Broad representation across
+the complete target panel supplies most of the score, while the mandatory-species
+term modifies that broad representation by a factor between 0.8 and 1.0. Thus:
+
+- if all target species and all mandatory species are represented, $O=1$;
+- if all target species are represented but the mandatory-species contribution
+  is absent, the maximum is $O=0.8$; and
+- if only half of the target species are represented, $O$ cannot exceed 0.5,
+  even when all mandatory species are present.
+
+This prioritises broadly conserved evolutionary groups while retaining a
+smaller explicit adjustment for the grant-critical crop species. It does not
+state that all orthologues have identical biochemical functions or the same
+ligand-binding cavity. Mandatory-species representation also remains an
+explicit evidence field and gate, so a strong continuous orthology score cannot
+conceal failure of a separately required condition.
+
+#### 3. Domain and expression scores
+
+**Domain score**
+
+$$
+A=\frac{\text{domain-assessed species with an E3-associated domain}}
+        {\text{species for which domain evidence was assessable}}
+$$
+
+The numerator counts domain-assessed species in which at least one domain from
+the project's catalogue of E3-associated domains was detected. The denominator
+contains only species for which the required domain assessment was available.
+Consequently, $A=1$ means that every assessed species supported a catalogued
+E3-associated domain, $A=0.5$ means that half did so, and $A=0$ means that none
+did.
+
+This is a cross-species consistency measure rather than a check of a single
+representative protein. It depends on the defined project catalogue and the
+available annotation. Failure to detect a catalogued domain is not necessarily
+proof that the protein lacks E3 function, particularly for divergent,
+incomplete or poorly annotated proteins. Assessed counts, availability and gate
+status are therefore retained separately.
+
+**Expression score**
+
+$$
+E=\frac{\text{uniquely mapped, expression-assessed species with broad support}}
+        {\text{uniquely mapped species for which expression was assessable}}
+$$
+
+The calculation is restricted to species whose expression evidence could be
+mapped uniquely to the relevant candidate. This prevents ambiguous expression
+assignments from being counted as if they belonged confidently to one protein
+or evolutionary group.
+
+A high value means that broad expression support was observed consistently
+across species with uniquely mapped, assessable evidence. It does not mean that
+every species in the evolutionary group had expression data, or that expression
+was equally strong in every tissue, condition or developmental stage.
+Availability, unique-mapping status and the expression gate remain separate, so
+the results distinguish unavailable data, ambiguous mapping and assessed
+evidence that did not meet the expression criterion.
+
+**Treatment of an unavailable denominator**
+
+When no valid assessed denominator was available for the domain or expression
+component, the integrated calculation used the neutral value 0.5. This avoids
+giving missing evidence the maximum value of one while also avoiding treating
+the absence of an assessable dataset as direct biological evidence against the
+candidate.
+
+The neutral value does not erase missingness. The workflow retains the assessed
+count, eligible denominator, evidence-availability state, mapping status, gate
+outcome and overall evidence-completeness value. A candidate with a genuine
+intermediate score can therefore still be distinguished from one assigned 0.5
+because the component was unavailable. Evidence completeness is also available
+as a later deterministic tie-break.
+
+#### 4. Pre-structure score
+
+The four pre-structure components were integrated as:
+
+$$
+P=0.10D+0.35O+0.20A+0.35E
+$$
+
+The weights sum to one and reflect the intended prioritisation:
+
+- **10% discovery evidence:** confidence in the original sequence-cluster
+  discovery signal;
+- **35% orthology evidence:** breadth of evolutionary representation across the
+  target species;
+- **20% domain evidence:** consistency of catalogued E3-associated domain
+  support; and
+- **35% expression evidence:** breadth of uniquely mapped expression support.
+
+Orthology and expression receive the largest weights because the grant-aligned
+objective required candidates that were broadly represented and supported by
+expression evidence. Domain evidence provides an important but smaller
+functional contribution. Discovery evidence is retained at a lower weight
+because it describes how the candidate entered the analysis and should not
+dominate later evolutionary and biological evidence.
+
+$P$ records the strength of evidence available before ligandability,
+pocket-conservation and three-dimensional analyses are incorporated. It is a
+ranking component, not an independent pass/fail decision. The corresponding
+hard gates remain separate.
+
+#### 5. Ligandability score
+
+The ligandability score combined four equally weighted properties of the
+selected pocket:
+
+$$
+L=\frac{d_{min}+p_{pLDDT}+m_{map}+p_{agree}}{4}
+$$
+
+where:
+
+- $d_{min}$ is the minimum selected-pocket druggability across assessed members;
+- $p_{pLDDT}$ is the mean normalised pocket-confidence support;
+- $m_{map}$ is an all-members pocket-mapping indicator; and
+- $p_{agree}$ is the fraction of assessed members supported by both recorded
+  pocket-ranking signals.
+
+**Minimum druggability.** The minimum, rather than the mean or maximum, makes
+$d_{min}$ deliberately conservative. It prevents a high average from concealing
+one poorly supported member and asks whether druggability is maintained across
+the assessed group. This continuous term complements but does not replace the
+hard all-members druggability rule. Failure of that mandatory rule cannot be
+repaired by the other ligandability components.
+
+**Pocket confidence.** $p_{pLDDT}$ summarises confidence in the predicted
+structural regions contributing to the pockets. Higher support means that the
+pocket residues are located in more confidently modelled regions. This is
+confidence in the predicted local structure, not experimental confirmation of a
+cavity, ligand binding or conformational stability.
+
+**All-members mapping.** The mapping term is deliberately binary:
+
+$$
+m_{map}=\begin{cases}
+1, & \text{if every assessed member passes pocket mapping}\\
+0, & \text{otherwise.}
+\end{cases}
+$$
+
+It records whether the selected pockets and their lining residues could be
+reconciled to the corresponding full protein models for every assessed member.
+A single mapping failure removes this component, although it does not set the
+entire ligandability score to zero. Any mandatory mapping gate is applied
+separately.
+
+**Agreement between pocket-ranking signals.** $p_{agree}$ is the fraction of
+assessed members for which the selected FPocket pocket was also supported by the
+P2Rank rescoring result. P2Rank 2.5.1 was used in `fpocket-rescore` mode with the
+`rescore_2024` model. It did not define a second independent cavity set; it
+rescored and reordered the FPocket pockets. Agreement therefore means support
+from both the original FPocket assessment and the P2Rank-derived ranking of
+those same cavities, not agreement between two independent pocket-discovery
+experiments.
+
+$L$ summarises whether the selected cavity is consistently druggable,
+structurally credible, successfully mapped and supported by the two recorded
+ranking signals. It remains computational ligandability evidence rather than
+proof that a suitable chemical ligand exists.
+
+#### 6. Pocket-conservation score
+
+The stored pocket-conservation score was:
+
+$$
+C=0.30f_{component}+0.25o_{region}+0.20c_{chemical}
+  +0.15d_{min}+0.10p_{pLDDT}
+$$
+
+where:
+
+- $f_{component}$ is conserved-component coverage;
+- $o_{region}$ is mean aligned pocket-region overlap;
+- $c_{chemical}$ is biochemical-class conservation;
+- $d_{min}$ is minimum selected-pocket druggability; and
+- $p_{pLDDT}$ is mean normalised pocket-confidence support.
+
+**Conserved-component coverage (30%).** This records how completely the relevant
+conserved pocket component is represented across assessed members. It rewards a
+broadly conserved and consistently traceable component rather than a signal
+present in only a small subset.
+
+**Aligned pocket-region overlap (25%).** This measures overlap of the mapped
+pocket regions after sequence alignment. It asks whether residues associated
+with the selected reference pocket correspond to the same aligned sequence
+region in other members. It is more focused than whole-protein similarity, but
+sequence-region overlap does not prove that the residues occupy an equivalent
+three-dimensional arrangement.
+
+**Biochemical-class conservation (20%).** This asks whether the biochemical
+character of pocket-lining residues is conserved. Conservative substitutions
+can retain support when chemically similar residues replace one another. This
+is a simplified representation of chemical similarity and does not model every
+effect of side-chain geometry, protonation, solvent exposure or conformation.
+
+**Druggability and confidence (25% combined).** Minimum druggability contributes
+15% and mean pocket pLDDT contributes 10%. Including them prevents a highly
+conserved sequence region associated with a consistently weak or poorly
+predicted cavity from receiving an inappropriately strong score.
+
+$C$ therefore summarises sequence-region conservation, biochemical similarity,
+druggability and local structural confidence. It is not experimental binding
+evidence and does not prove that every member contains an equivalent 3D cavity.
+
+#### 7. Structural score and treatment of three-dimensional evidence
+
+The production structural base score was:
+
+$$
+S_{base}=0.55L+0.45C
+$$
+
+Ligandability supplies 55% and pocket-conservation evidence 45%. The slight
+preference for $L$ reflects the importance of a consistently usable predicted
+cavity, while $C$ records conservation of the associated region.
+
+The workflow also supported a separately configured 3D refinement:
+
+$$
+S=(1-w_{3D})S_{base}+w_{3D}T
+$$
+
+for assessed groups, where:
+
+$$
+T=0.40TM_{min}+0.40o_{3D}
+  +0.20\left(1-\min\left(\frac{d_{centroid}}{d_{max}},1\right)\right)
+$$
+
+$TM_{min}$ is the conservative minimum structural-alignment support,
+$o_{3D}$ is the measured 3D pocket-overlap support, $d_{centroid}$ is the
+distance between the compared pocket centroids and $d_{max}$ is the configured
+distance at which the centroid contribution becomes zero. The centroid term is
+bounded between zero and one: coincident centroids contribute one, the
+contribution falls as the distance increases, and it reaches zero at or beyond
+$d_{max}$.
+
+In the recorded production profile:
+
+$$
+w_{3D}=0
+$$
+
+and therefore $S=S_{base}$. This is an important provenance point. The 3D
+evidence was calculated and retained, but it was **not silently inserted into
+the continuous structural score** after the production weighting was defined.
+It remained visible through explicit fields recording assessment status,
+same-position support, strict pocket-structure conservation, aligner agreement,
+alternative-pocket sensitivity evidence and the applicable eligibility or
+support gate.
+
+Three-dimensional evidence could therefore affect interpretation, eligibility
+and gate tier even though it contributed no numerical weight to $S$ in the
+recorded profile. Alternative-pocket rescue also remained distinct from the
+strict rank-one result: a lower-ranked pocket that aligned well was retained as
+sensitivity evidence, but it did not rewrite the selected rank-one pocket or
+retrospectively turn that pocket into a strict pass.
+
+#### 8. Final integrated score
+
+The final continuous score was:
+
+$$
+F=0.60P+0.40S
+$$
+
+Pre-structure evidence therefore contributes 60%, and ligandability plus
+pocket-conservation evidence contributes 40%. Because the recorded profile has
+$w_{3D}=0$, the formula can be expanded to:
+
+$$
+F=0.06D+0.21O+0.12A+0.21E+0.22L+0.18C
+$$
+
+| High-level evidence component | Effective contribution to $F$ |
+|---|---:|
+| Discovery | 6% |
+| Orthology | 21% |
+| Domain support | 12% |
+| Expression | 21% |
+| Ligandability | 22% |
+| Pocket conservation | 18% |
+| Direct 3D score contribution | 0% in the recorded production profile |
+
+No single continuous component accounts for most of the score. The ranking
+favours candidates supported across several evidence classes rather than those
+with only one exceptional property. Nevertheless, $F$ is still a ranking score,
+not a probability. For example, $F=0.80$ does not imply an 80% probability of E3
+function or successful PROTAC development. Most importantly, $F$ does not
+override hard gates; it orders candidates within the appropriate recorded
+eligibility tier.
+
+#### 9. Ordering, tie-breaks and evolutionary-group consolidation
+
+The final table was not ordered by $F$ alone. It used a deterministic hierarchy:
+
+1. **Recorded base-gate pass tier.** Candidates satisfying the required
+   grant-aligned conditions are considered before candidates in a lower tier. A
+   lower-tier candidate cannot move above a higher-tier candidate merely because
+   its continuous score is larger.
+2. **Final score.** Within the same gate tier, candidates are ordered by
+   descending $F$.
+3. **Evidence completeness.** If the gate tier and final score are tied, the
+   candidate with greater recorded evidence completeness is placed first. This
+   prevents extensive neutral missing-data substitutions from being treated as
+   indistinguishable from a similarly scored but more completely assessed
+   candidate.
+4. **Stable cluster identifier.** If all preceding values are tied, the stable
+   identifier supplies a reproducible final cluster-level tie-break. It carries
+   no biological preference.
+
+Multiple DeepClust sequence clusters can belong to the same primary OrthoFinder
+group. Listing them independently would give some evolutionary groups several
+opportunities to occupy the highest ranks. These rows were therefore
+consolidated, and the best deterministically ranked DeepClust row became the
+lead cluster representing that evolutionary group.
+
+The consolidated groups were then ranked by the recorded final rank of the lead
+cluster, followed where necessary by pre-structure group rank and the stable
+evolutionary-group key. The stable key again provides reproducibility rather
+than biological weighting.
+
+#### How to interpret the resulting rank
+
+A highly ranked evolutionary group is one that occupies the strongest
+applicable gate tier, has strong integrated discovery, orthology, domain,
+expression, ligandability and pocket-conservation evidence, has comparatively
+complete supporting data, and remains highly placed after related DeepClust
+clusters are consolidated.
+
+A high rank does **not** establish that every member is an experimentally
+confirmed E3 ligase; that every species contains an identical pocket; that the
+predicted cavity will bind a sufficiently potent and selective ligand; that the
+same ligand will bind every member; that ternary-complex formation will be
+favourable; that target degradation will occur; or that a resulting PROTAC will
+be effective in plants. Those questions require further structural, chemical
+and experimental work.
+
+The ranking should therefore be used as a transparent and reproducible way to
+decide which evolutionary groups warrant the next stage of investigation. Its
+strength is not that it turns heterogeneous computational evidence into a claim
+of biological certainty. Its strength is that every component, gate,
+missing-data decision, weight and tie-break is explicit and can be reproduced,
+inspected and challenged.
 
 The sliders below recompute scores only from values already present in the
 completed resource. They create a sensitivity ranking and never modify the

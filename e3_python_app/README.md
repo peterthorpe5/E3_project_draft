@@ -51,13 +51,18 @@ run directory. It never guesses between multiple bundles.
 
 The reporter provides:
 
+- a responsive Workflow schematic tracing the complete method from validated
+  inputs through sequence discovery, OrthoFinder reconciliation, biological
+  evidence, structure and pocket analysis, 3D comparison, integrated ranking
+  and app-ready recommendations;
 - a searchable, substantially expanded Glossary combining project-wide
   technical terms with the complete 218-field final-candidate data dictionary,
   recorded gates, thresholds, result labels and interpretation cautions;
 - a dedicated Computational recommendations view containing the ordered top-50 review
   shortlist, strict grant-aligned predictions, named gate-sensitivity
   scenarios, evolutionary-group scorecard, contributors, representative audit
-  and exclusion reasons;
+  and exclusion reasons, followed by a full methods-style explanation of every
+  recorded score, missing-data rule, effective weight and deterministic tie-break;
 - a grant overview separating Milestone 1 conservation evidence from Milestone
   2 conserved structural/chemical starting space;
 - focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket

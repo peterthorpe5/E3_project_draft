@@ -7,6 +7,7 @@ import pytest
 
 from e3app.ranking import (
     DEFAULT_RANKING_WEIGHTS,
+    RANKING_METHODOLOGY_MARKDOWN,
     normalise_ranking_weights,
     recompute_exploratory_ranking,
     select_ranking_relation,
@@ -55,6 +56,23 @@ def test_ranking_relation_selection_is_authoritative() -> None:
         )
     ) == "final_evolutionary_candidate_prioritisation"
     assert select_ranking_relation(relation_names=("unrelated",)) is None
+
+
+def test_verbose_methodology_preserves_interpretation_boundaries() -> None:
+    """The recommendations page explains scores, gates and effective weights."""
+    methodology = " ".join(RANKING_METHODOLOGY_MARKDOWN.split())
+    required_text = (
+        "Evidence-availability and completeness fields",
+        "does not mean that the underlying biological criterion passed",
+        "P2Rank 2.5.1 was used in `fpocket-rescore` mode",
+        "F=0.06D+0.21O+0.12A+0.21E+0.22L+0.18C",
+        "0% in the recorded production profile",
+        "Alternative-pocket rescue also remained distinct",
+        "How to interpret the resulting rank",
+        "reproduced, inspected and challenged",
+    )
+    for text in required_text:
+        assert text in methodology
 
 
 def test_weight_normalisation_is_explicit_and_defensive() -> None:

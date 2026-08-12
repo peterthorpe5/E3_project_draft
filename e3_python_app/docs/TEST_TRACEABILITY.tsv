@@ -9,3 +9,4 @@ e3app.data	distinct_text_values; filter_expression_context	test_data.py
 e3app.cli	build_parser; streamlit_command; main	test_cli.py
 e3app.streamlit_app	render_app	test_streamlit_app.py
 e3app.visualisations	structural_alignment_plot_columns; prepare_structural_alignment_frame; build_structural_alignment_figure	test_visualisations.py
+e3app.workflow	WORKFLOW_STAGES; _stage_card; workflow_schematic_html	test_workflow.py

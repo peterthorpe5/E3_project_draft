@@ -9,6 +9,13 @@ ranks and primary-analysis gates unchanged.
 - Wide results therefore use Streamlit's native horizontal scrollbar instead
   of compressing headings and identifiers into near-character-width columns.
 - The bounded vertical viewport retains Streamlit's stationary header.
+- A dedicated Workflow schematic tab now explains the complete evidence path
+  from controlled inputs and DeepClust/OrthoFinder branches through domain,
+  expression, pocket and 3D evidence to deterministic group consolidation and
+  app-ready recommendations.
+- The Computational recommendations page now contains the expanded methods-style
+  explanation of every score, numerator, denominator, missing-evidence rule,
+  effective final weight, gate-first ordering rule and interpretation boundary.
 
 The same underlying data, selected columns, row limits and TSV/Excel downloads
 are retained.

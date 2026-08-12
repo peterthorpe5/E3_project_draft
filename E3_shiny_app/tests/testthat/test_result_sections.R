@@ -245,6 +245,36 @@ testthat::test_that("recommendation UI documents formulas and weight sensitivity
     "non-authoritative",
     fixed = TRUE
   )
+  testthat::expect_match(
+    ui,
+    "does not mean that the underlying biological criterion passed",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "P2Rank 2.5.1 used fpocket-rescore",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "F = 0.06D + 0.21O + 0.12A + 0.21E + 0.22L + 0.18C",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "0% in the recorded production profile",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "Alternative-pocket rescue remained distinct",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "How to interpret the resulting rank",
+    fixed = TRUE
+  )
 })
 
 testthat::test_that("grant overview UI states both milestones and limitations", {
