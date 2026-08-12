@@ -153,6 +153,14 @@ testthat::test_that("focused final-gate comparison labels entrants and leavers",
   )
   testthat::expect_equal(nrow(empty_result$selected), 0L)
   testthat::expect_equal(nrow(empty_result$changes), 0L)
+  testthat::expect_type(
+    empty_result$selected$sensitivity_change,
+    "character"
+  )
+  testthat::expect_type(
+    empty_result$changes$sensitivity_change,
+    "character"
+  )
   testthat::expect_error(
     compare_final_druggability_passes(
       data.frame(score = 1),

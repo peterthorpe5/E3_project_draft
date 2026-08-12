@@ -312,11 +312,11 @@ compare_final_druggability_passes <- function(recorded, selected) {
   selected_keys <- final_druggability_identity_keys(selected, identity_columns)
 
   annotated <- selected
-  annotated$sensitivity_change <- ifelse(
+  annotated$sensitivity_change <- as.character(ifelse(
     selected_keys %in% recorded_keys,
     "RECORDED_PASS",
     "ENTERS_AT_SELECTED_THRESHOLD"
-  )
+  ))
   annotated <- annotated[, c(
     "sensitivity_change",
     setdiff(names(annotated), "sensitivity_change")
@@ -328,7 +328,10 @@ compare_final_druggability_passes <- function(recorded, selected) {
     drop = FALSE
   ]
   leaving <- recorded[!recorded_keys %in% selected_keys, , drop = FALSE]
-  leaving$sensitivity_change <- "LEAVES_AT_SELECTED_THRESHOLD"
+  leaving$sensitivity_change <- rep(
+    "LEAVES_AT_SELECTED_THRESHOLD",
+    nrow(leaving)
+  )
   leaving <- leaving[, c(
     "sensitivity_change",
     setdiff(names(leaving), "sensitivity_change")

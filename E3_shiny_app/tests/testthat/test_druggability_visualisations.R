@@ -36,7 +36,8 @@ testthat::test_that("final-gate box plot includes the selected threshold line", 
     druggability_score = c(0.7, 0.5)
   )
   plot <- build_final_gate_druggability_plot(data = prepared, threshold = 0.5)
-  testthat::expect_s3_class(plot, "plotly_built")
+  testthat::expect_s3_class(plot, "plotly")
+  testthat::expect_s3_class(plot, "htmlwidget")
   testthat::expect_equal(plot$x$layout$shapes[[1L]]$x0, 0.5)
   testthat::expect_error(
     build_final_gate_druggability_plot(data = prepared, threshold = 1.1),

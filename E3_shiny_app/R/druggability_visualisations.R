@@ -130,7 +130,7 @@ prepare_final_gate_druggability_data <- function(
 #'
 #' @param data Prepared member-level score rows.
 #' @param threshold Inclusive selected final-gate threshold.
-#' @return Built Plotly htmlwidget with a threshold reference line.
+#' @return Plotly htmlwidget with a materialised threshold reference line.
 build_final_gate_druggability_plot <- function(data, threshold) {
   threshold <- suppressWarnings(as.numeric(threshold))
   if (length(threshold) != 1L || is.na(threshold) || threshold < 0 ||
