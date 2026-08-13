@@ -625,10 +625,35 @@ final_druggability_sensitivity_ui <- function(ns) {
       )
     ),
     shiny::uiOutput(ns("final_druggability_notice")),
-    shiny::h5("Member druggability distributions at the last gate"),
+    shiny::h5("Member druggability distributions by group"),
+    shiny::selectizeInput(
+      ns("final_druggability_group"),
+      "Evolutionary group to display",
+      choices = character(),
+      selected = NULL,
+      options = list(
+        placeholder = paste(
+          "Search by rank, evolutionary-group identifier or lead cluster"
+        ),
+        maxOptions = 2500
+      )
+    ),
+    shiny::p(
+      class = "small text-muted",
+      paste(
+        "Individual choices include every structurally assessed group with",
+        "member-level selected-pocket scores. The comparison option displays",
+        "groups reaching the final druggability gate."
+      )
+    ),
+    shiny::uiOutput(ns("final_druggability_group_summary")),
     shiny::uiOutput(ns("final_druggability_plot_notice")),
     shinycssloaders::withSpinner(
       plotly::plotlyOutput(ns("final_druggability_boxplot"), height = "650px")
+    ),
+    shiny::downloadButton(
+      ns("download_final_druggability_boxplot_pdf"),
+      "Download druggability box plot as PDF"
     ),
     shiny::h5("Sensitivity candidate list"),
     tabular_download_buttons(
@@ -809,6 +834,10 @@ result_section_ui <- function(id, section) {
         shiny::uiOutput(ns("alignment_plot_notice")),
         shinycssloaders::withSpinner(
           plotly::plotlyOutput(ns("alignment_plot"), height = "680px")
+        ),
+        shiny::downloadButton(
+          ns("download_alignment_plot_pdf"),
+          "Download alignment graph as PDF"
         )
       )
     },
@@ -1168,10 +1197,19 @@ result_section_server <- function(
           )
         )
       })
-      output$alignment_plot <- plotly::renderPlotly({
+      alignment_plot <- shiny::reactive({
         shiny::req(nrow(alignment_plot_data()) > 0L)
         build_structural_alignment_plot(data = alignment_plot_data())
       })
+      output$alignment_plot <- plotly::renderPlotly({
+        alignment_plot()
+      })
+      output$download_alignment_plot_pdf <- shiny::downloadHandler(
+        filename = function() "structural_alignment_evidence_map.pdf",
+        content = function(path) {
+          write_plotly_pdf(plot = alignment_plot(), path = path)
+        }
+      )
     }
     if (identical(section, "final_recommendations")) {
       defaults <- recorded_ranking_weights()
@@ -1332,6 +1370,16 @@ result_section_server <- function(
         }
         row_limit <- min(max(1L, as.integer(max_rows)), 10000L)
         tryCatch({
+          assessed <- collect_threshold_results(
+            resource_source = resource_source,
+            relation = context$relation,
+            available = context$columns,
+            settings = final_druggability_settings(
+              minimum_druggability_score = 0,
+              result_scope = "all"
+            ),
+            max_rows = row_limit
+          )
           eligible <- collect_threshold_results(
             resource_source = resource_source,
             relation = context$relation,
@@ -1352,7 +1400,26 @@ result_section_server <- function(
             )
           }
           cluster_column <- cluster_column[[1L]]
-          score_groups <- eligible
+          assessed_cluster_column <- cluster_columns[
+            cluster_columns %in% names(assessed)
+          ]
+          if (length(assessed_cluster_column) == 0L) {
+            stop(
+              "Structurally assessed groups lack a lead cluster identifier.",
+              call. = FALSE
+            )
+          }
+          assessed_cluster_column <- assessed_cluster_column[[1L]]
+          eligible_cluster_ids <- trimws(as.character(
+            eligible[[cluster_column]]
+          ))
+          eligible_cluster_ids <- eligible_cluster_ids[
+            !is.na(eligible_cluster_ids) & nzchar(eligible_cluster_ids)
+          ]
+          score_groups <- assessed
+          score_groups$reaches_final_gate <- trimws(as.character(
+            score_groups[[assessed_cluster_column]]
+          )) %in% eligible_cluster_ids
           rank_columns <- c("final_evolutionary_rank", "final_rank")
           rank_column <- rank_columns[rank_columns %in% names(score_groups)]
           if (length(rank_column) > 0L) {
@@ -1362,7 +1429,7 @@ result_section_server <- function(
             score_groups <- score_groups[
               order(
                 plot_rank,
-                score_groups[[cluster_column]],
+                score_groups[[assessed_cluster_column]],
                 na.last = TRUE
               ),
               ,
@@ -1370,20 +1437,19 @@ result_section_server <- function(
             ]
           }
           score_groups <- score_groups[
-            !duplicated(score_groups[[cluster_column]]),
+            !duplicated(score_groups[[assessed_cluster_column]]),
             ,
             drop = FALSE
           ]
-          score_groups <- utils::head(score_groups, 30L)
           member_scores <- collect_member_druggability_scores(
             resource_source = resource_source,
-            cluster_ids = score_groups[[cluster_column]],
-            max_rows = 10000L
+            cluster_ids = score_groups[[assessed_cluster_column]],
+            max_rows = 100000L
           )
           prepared <- prepare_final_gate_druggability_data(
             scores = member_scores$data,
-            eligible_groups = eligible,
-            max_groups = 30L
+            eligible_groups = score_groups,
+            max_groups = 2000L
           )
           list(
             error = "",
@@ -1391,6 +1457,80 @@ result_section_server <- function(
             data = prepared$data,
             truncated = prepared$truncated,
             threshold = result$threshold
+          )
+        }, error = function(error) {
+          empty$error <- conditionMessage(error)
+          empty
+        })
+      })
+
+      shiny::observe({
+        result <- final_druggability_plot_data()
+        if (nzchar(result$error) || nrow(result$data) == 0L) {
+          shiny::updateSelectizeInput(
+            session = session,
+            inputId = "final_druggability_group",
+            choices = character(),
+            selected = character(),
+            server = TRUE
+          )
+          return()
+        }
+        choices <- final_gate_druggability_group_choices(data = result$data)
+        default <- default_final_gate_druggability_group(data = result$data)
+        selected <- input$final_druggability_group %||% default
+        if (!selected %in% unname(choices)) {
+          selected <- default
+        }
+        shiny::updateSelectizeInput(
+          session = session,
+          inputId = "final_druggability_group",
+          choices = choices,
+          selected = selected,
+          server = TRUE
+        )
+      })
+
+      final_druggability_selected_plot <- shiny::reactive({
+        result <- final_druggability_plot_data()
+        empty <- list(
+          error = result$error,
+          relation = result$relation,
+          data = tibble::tibble(),
+          overview_truncated = FALSE,
+          prepared_truncated = result$truncated,
+          threshold = result$threshold,
+          selection = "",
+          summary = list()
+        )
+        if (nzchar(result$error) || nrow(result$data) == 0L) {
+          return(empty)
+        }
+        choices <- final_gate_druggability_group_choices(data = result$data)
+        selection <- input$final_druggability_group %||%
+          default_final_gate_druggability_group(data = result$data)
+        if (!selection %in% unname(choices)) {
+          selection <- default_final_gate_druggability_group(data = result$data)
+        }
+        tryCatch({
+          filtered <- filter_final_gate_druggability_data(
+            data = result$data,
+            selection = selection,
+            max_all_groups = 30L
+          )
+          summary <- summarise_final_gate_druggability_selection(
+            data = filtered$data,
+            threshold = result$threshold
+          )
+          list(
+            error = "",
+            relation = result$relation,
+            data = filtered$data,
+            overview_truncated = filtered$truncated,
+            prepared_truncated = result$truncated,
+            threshold = result$threshold,
+            selection = selection,
+            summary = summary
           )
         }, error = function(error) {
           empty$error <- conditionMessage(error)
@@ -1450,7 +1590,7 @@ result_section_server <- function(
         )
       })
       output$final_druggability_plot_notice <- shiny::renderUI({
-        result <- final_druggability_plot_data()
+        result <- final_druggability_selected_plot()
         if (nzchar(result$error)) {
           return(shiny::div(
             class = "alert alert-info",
@@ -1459,21 +1599,77 @@ result_section_server <- function(
         }
         notes <- paste0(
           "Each point is one assessed member's retained selected-pocket score. ",
-          "Boxes summarise lead clusters that pass every other fixed final ",
-          "gate; the dashed line is the selected threshold. Score source: ",
+          "Individual choices show any scored structurally assessed group; ",
+          "the comparison option shows groups passing every other fixed final ",
+          "gate. The dashed line is the selected threshold. Score source: ",
           result$relation,
           "."
         )
-        if (isTRUE(result$truncated)) {
+        if (isTRUE(result$overview_truncated)) {
           notes <- paste(
             notes,
-            "The plot is limited to the first 30 eligible groups by final rank."
+            paste(
+              "The all-groups comparison is limited to the first 30 groups",
+              "reaching the last gate by final rank; every scored",
+              "structurally assessed group remains individually selectable."
+            )
+          )
+        }
+        if (isTRUE(result$prepared_truncated)) {
+          notes <- paste(
+            notes,
+            paste(
+              "The selector reached its defensive limit of 2,000",
+              "structurally assessed groups."
+            )
           )
         }
         shiny::p(class = "small text-muted", notes)
       })
-      output$final_druggability_boxplot <- plotly::renderPlotly({
-        result <- final_druggability_plot_data()
+      output$final_druggability_group_summary <- shiny::renderUI({
+        result <- final_druggability_selected_plot()
+        if (nzchar(result$error) || length(result$summary) == 0L) {
+          return(NULL)
+        }
+        summary <- result$summary
+        heading <- if (identical(result$selection, ALL_FINAL_GATE_GROUPS)) {
+          shiny::strong("Comparison view: all groups reaching the last gate")
+        } else {
+          shiny::tagList(
+            shiny::strong("Selected evolutionary group: "),
+            summary$primary_group_id,
+            shiny::span(" | "),
+            shiny::strong("Lead cluster: "),
+            summary$cluster_id
+          )
+        }
+        shiny::tagList(
+          shiny::p(heading),
+          bslib::layout_columns(
+            bslib::value_box(
+              "Groups displayed",
+              format(summary$group_count, big.mark = ",")
+            ),
+            bslib::value_box(
+              "Assessed members",
+              format(summary$member_count, big.mark = ",")
+            ),
+            bslib::value_box(
+              "Minimum member score",
+              formatC(summary$minimum_score, format = "f", digits = 3L)
+            ),
+            bslib::value_box(
+              paste0(
+                "Status at ",
+                formatC(result$threshold, format = "f", digits = 2L)
+              ),
+              summary$status
+            )
+          )
+        )
+      })
+      final_druggability_boxplot <- shiny::reactive({
+        result <- final_druggability_selected_plot()
         if (nzchar(result$error) || nrow(result$data) == 0L) {
           return(NULL)
         }
@@ -1482,6 +1678,28 @@ result_section_server <- function(
           threshold = result$threshold
         )
       })
+      output$final_druggability_boxplot <- plotly::renderPlotly({
+        final_druggability_boxplot()
+      })
+      output$download_final_druggability_boxplot_pdf <-
+        shiny::downloadHandler(
+          filename = function() {
+            threshold <- final_druggability_selected_plot()$threshold
+            value <- gsub(
+              "\\.",
+              "p",
+              formatC(threshold, format = "f", digits = 2L)
+            )
+            paste0("final_gate_member_druggability_", value, ".pdf")
+          },
+          content = function(path) {
+            plot <- final_druggability_boxplot()
+            if (is.null(plot)) {
+              stop("No druggability distribution is available.", call. = FALSE)
+            }
+            write_plotly_pdf(plot = plot, path = path)
+          }
+        )
       output$final_druggability_result_table <- DT::renderDT({
         result <- final_druggability_results()
         data <- result$selected

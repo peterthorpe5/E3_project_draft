@@ -300,14 +300,169 @@ def test_render_table_downloads_preserves_tsv_and_adds_excel(
 
 
 def test_every_streamlit_tsv_table_uses_paired_downloads() -> None:
-    """All fourteen tabular locations use the paired TSV/Excel export helper."""
+    """Every tabular location pairs its TSV and formatted Excel controls."""
     source = (
         Path(__file__).resolve().parents[1]
         / "src"
         / "e3app"
         / "streamlit_app.py"
     ).read_text(encoding="utf-8")
-    assert source.count("render_table_downloads(") == 14
-    assert source.count("tsv_label=") == 14
-    assert source.count("excel_label=") == 14
+    helper_count = source.count("render_table_downloads(")
+    assert helper_count >= 18
+    assert source.count("tsv_label=") == helper_count
+    assert source.count("excel_label=") == helper_count
     assert "to_csv(sep=\"\\t\"" not in source
+
+
+def test_dataframe_to_fasta_bytes_supports_raw_and_aligned_sequences() -> None:
+    """FASTA output retains alignment gaps and wraps deterministically."""
+    frame = pd.DataFrame(
+        {
+            "fasta_identifier": ["seq one", "seq_two"],
+            "species": ["Species one", "Species two"],
+            "sequence": ["ACD-EF", "GGGGGG"],
+        }
+    )
+    payload = exports.dataframe_to_fasta_bytes(
+        frame=frame,
+        identifier_column="fasta_identifier",
+        sequence_column="sequence",
+        description_columns=("species",),
+        line_width=4,
+    )
+    assert payload.decode("utf-8") == (
+        ">seq_one species=Species_one\nACD-\nEF\n"
+        ">seq_two species=Species_two\nGGGG\nGG\n"
+    )
+    with pytest.raises(ValueError, match="duplicated"):
+        exports.dataframe_to_fasta_bytes(
+            frame=pd.DataFrame({"id": ["x", "x"], "seq": ["AA", "BB"]}),
+            identifier_column="id",
+            sequence_column="seq",
+        )
+    with pytest.raises(ValueError, match="unsupported"):
+        exports.dataframe_to_fasta_bytes(
+            frame=pd.DataFrame({"id": ["x"], "seq": ["AA1"]}),
+            identifier_column="id",
+            sequence_column="seq",
+        )
+
+
+def test_plotly_pdf_export_validates_renderer_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plot exports use the PDF format and reject renderer corruption."""
+    import plotly.io as plotly_io
+
+    calls: list[dict[str, object]] = []
+
+    def fake_to_image(figure: object, **kwargs: object) -> bytes:
+        calls.append({"figure": figure, **kwargs})
+        return b"%PDF-1.4 test"
+
+    monkeypatch.setattr(plotly_io, "to_image", fake_to_image)
+    payload = exports.plotly_figure_to_pdf_bytes(figure={"data": []})
+    assert payload.startswith(b"%PDF")
+    assert calls[0]["format"] == "pdf"
+    assert calls[0]["engine"] == "kaleido"
+
+    monkeypatch.setattr(plotly_io, "to_image", lambda *args, **kwargs: b"bad")
+    with pytest.raises(RuntimeError, match="invalid PDF"):
+        exports.plotly_figure_to_pdf_bytes(figure={"data": []})
+    with pytest.raises(ValueError, match="dimensions"):
+        exports.plotly_figure_to_pdf_bytes(figure={}, width=10)
+
+
+class _FakePdfStreamlit:
+    """Capture the two-step on-demand Plotly PDF interaction."""
+
+    def __init__(self, *, pressed: bool) -> None:
+        """Initialise state and a deterministic prepare-button response."""
+        self.session_state: dict[str, object] = {}
+        self.pressed = pressed
+        self.downloads: list[dict[str, object]] = []
+        self.captions: list[str] = []
+
+    def button(self, label: str, *, key: str) -> bool:
+        """Return the configured prepare action."""
+        assert label.startswith("Prepare ")
+        assert key.endswith("_prepare")
+        return self.pressed
+
+    def download_button(self, **kwargs: object) -> None:
+        """Record the final PDF download control."""
+        self.downloads.append(kwargs)
+
+    def caption(self, value: str) -> None:
+        """Record a renderer message."""
+        self.captions.append(value)
+
+
+def test_render_plotly_pdf_download_prepares_only_on_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kaleido rendering is deferred until the user requests one PDF."""
+    fake = _FakePdfStreamlit(pressed=False)
+    monkeypatch.setattr(exports, "st", fake)
+    calls: list[object] = []
+
+    def fake_render(*, figure: object, width: int = 1400, height: int = 900) -> bytes:
+        calls.append(figure)
+        return b"%PDF prepared"
+
+    monkeypatch.setattr(exports, "plotly_figure_to_pdf_bytes", fake_render)
+    exports.render_plotly_pdf_download(
+        figure={"data": []},
+        file_stem="my plot",
+        label="Download graph as PDF",
+        key="plot_pdf",
+    )
+    assert calls == []
+    assert fake.downloads == []
+
+    fake.pressed = True
+    exports.render_plotly_pdf_download(
+        figure={"data": []},
+        file_stem="my plot",
+        label="Download graph as PDF",
+        key="plot_pdf",
+    )
+    assert calls == [{"data": []}]
+    assert fake.downloads[0]["file_name"] == "my_plot.pdf"
+    assert fake.downloads[0]["mime"] == exports.PDF_MIME_TYPE
+
+
+def test_render_plotly_pdf_download_reports_missing_renderer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing renderer produces guidance without a broken download."""
+    fake = _FakePdfStreamlit(pressed=True)
+    monkeypatch.setattr(exports, "st", fake)
+
+    def fail_render(**kwargs: object) -> bytes:
+        raise RuntimeError("Kaleido is unavailable")
+
+    monkeypatch.setattr(exports, "plotly_figure_to_pdf_bytes", fail_render)
+    exports.render_plotly_pdf_download(
+        figure={},
+        file_stem="plot",
+        label="Download graph as PDF",
+        key="plot_pdf",
+    )
+    assert fake.captions == ["Kaleido is unavailable"]
+    assert fake.downloads == []
+    with pytest.raises(ValueError, match="non-empty key"):
+        exports.render_plotly_pdf_download(
+            figure={},
+            file_stem="plot",
+            label="PDF",
+            key="",
+        )
+    monkeypatch.setattr(exports, "st", None)
+    with pytest.raises(RuntimeError, match="Streamlit"):
+        exports.render_plotly_pdf_download(
+            figure={},
+            file_stem="plot",
+            label="PDF",
+            key="plot",
+        )

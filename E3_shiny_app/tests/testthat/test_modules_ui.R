@@ -30,6 +30,7 @@ testthat::test_that("tabular modules expose Excel beside TSV downloads", {
     collapse = "\n"
   )
   testthat::expect_match(alignment, "alignment-alignment_plot")
+  testthat::expect_match(alignment, "alignment-download_alignment_plot_pdf")
   testthat::expect_match(alignment, "Interactive 3D alignment evidence map")
 
   visual <- paste(
@@ -40,7 +41,11 @@ testthat::test_that("tabular modules expose Excel beside TSV downloads", {
     "visual-download_candidate_evidence_excel",
     "visual-download_heatmap_cells_excel",
     "visual-download_profile_rows_excel",
-    "visual-download_volcano_rows_excel"
+    "visual-download_volcano_rows_excel",
+    "visual-download_candidate_landscape_pdf",
+    "visual-download_expression_heatmap_pdf",
+    "visual-download_species_tissue_profile_pdf",
+    "visual-download_volcano_plot_pdf"
   )) {
     testthat::expect_match(visual, identifier, fixed = TRUE)
   }
@@ -52,6 +57,25 @@ testthat::test_that("tabular modules expose Excel beside TSV downloads", {
   testthat::expect_match(
     pocket,
     "pocket-download_members_excel",
+    fixed = TRUE
+  )
+  alignment_review <- paste(
+    as.character(pocket_review_ui("alignment_review", focus = "alignment")),
+    collapse = "\n"
+  )
+  testthat::expect_match(
+    alignment_review,
+    "alignment_review-download_alignment_fasta",
+    fixed = TRUE
+  )
+
+  recommendations <- paste(
+    as.character(result_section_ui("recommendations", "final_recommendations")),
+    collapse = "\n"
+  )
+  testthat::expect_match(
+    recommendations,
+    "recommendations-download_final_druggability_boxplot_pdf",
     fixed = TRUE
   )
 })

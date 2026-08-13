@@ -482,6 +482,7 @@ testthat::test_that("the new explorer retains every existing application tab", {
     "Visual explorer",
     "Candidates",
     "Orthology",
+    "Seed & HOG explorer",
     "Domains",
     "Expression evidence",
     "Ligandability",

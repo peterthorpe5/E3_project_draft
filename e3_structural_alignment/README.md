@@ -220,6 +220,8 @@ Each group page contains:
 - separately coloured strict rank-one and rank-two to rank-five pocket residues;
 - the published MAFFT sequence alignment with exact Stage 09 pocket coordinates highlighted;
 - an interactive linear alignment-position track for rapid pocket-location comparison;
+- browser-side PDF downloads for the current rotated 3D canvas and the complete
+  multi-page MAFFT alignment, without a CDN or remote rendering service;
 - the complete authoritative ranking row;
 - strict structural and top-k sensitivity summaries; and
 - an explicit warning that predicted pocket location does not establish ligand binding, E3

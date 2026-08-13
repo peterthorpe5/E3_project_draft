@@ -1,24 +1,24 @@
-ARIA plant E3 Shiny reporter v0.10.5 validation hand-off
+ARIA plant E3 Shiny reporter v0.10.6 validation hand-off
 =======================================================
 
 Build-environment checks completed on 2026-08-12:
 
-- Delimiters and quoted regions are balanced in all five changed R source and
+- Delimiters and quoted regions are balanced in all four changed R source and
   regression-test files.
-- The paired-settings regression test verifies that the pre-structure and
-  structural settings differ only by evaluation mode.
-- The UI regression test checks both table identifiers and all four paired
-  download controls.
-- The Plotly regression test now checks explicit `plotly_click` registration.
-- The companion Python v0.7.5 suite passes all 93 tests with 95% branch-aware
-  coverage, including its headless paired-table application test.
+- New R unit tests cover group-choice ordering, highest-ranked last-gate
+  defaults, individual filtering, bounded comparison views, selected-group
+  summaries and unavailable selections.
+- The R UI regression contract checks the searchable selector, group-summary
+  output and user-facing search guidance.
+- The companion Python v0.7.6 suite passes all 94 tests with 95% branch-aware
+  coverage, including headless switching to a different evolutionary group.
 
 Environment limitation:
 
 - This build environment does not contain R/Rscript or the native Shiny package
   stack, so the complete R testthat suite could not be executed here.
 - The preceding v0.10.4 hotfix suite passed on the target Mac. Re-run the full
-  suite after applying v0.10.5:
+  suite after applying v0.10.6:
 
     Rscript E3_shiny_app/inst/scripts/check_dependencies.R
     Rscript E3_shiny_app/inst/scripts/run_tests.R

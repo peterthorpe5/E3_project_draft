@@ -1,3 +1,3 @@
 """Three-dimensional structural alignment for shortlisted ARIA E3 candidates."""
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"

@@ -18,7 +18,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 25
+    assert len(app.tabs) == 26
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -39,6 +39,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Computational chemistry" in tab_labels
     assert "3D structures & pockets" in tab_labels
     assert "Pocket-aligned sequences" in tab_labels
+    assert "Seed & HOG explorer" in tab_labels
     assert "3D alignment" in tab_labels
     assert any(
         "Stages 00–01" in markdown.value
@@ -112,6 +113,14 @@ def test_final_druggability_slider_recalculates_the_focused_pass_list(
     metrics = {metric.label: metric.value for metric in app.metric}
     assert metrics["Recorded passes at 0.50"] == "1"
     assert metrics["Sensitivity passes at 0.50"] == "1"
+    group_selectors = [
+        selector
+        for selector in app.selectbox
+        if selector.label == "Evolutionary group to display"
+    ]
+    assert len(group_selectors) == 1
+    assert group_selectors[0].value == "cluster_1"
+    assert "All groups reaching the last gate" in group_selectors[0].options
 
     focused.set_value(0.30).run()
     assert not app.exception
@@ -119,6 +128,20 @@ def test_final_druggability_slider_recalculates_the_focused_pass_list(
     assert metrics["Recorded passes at 0.50"] == "1"
     assert metrics["Sensitivity passes at 0.30"] == "2"
     assert metrics["Groups changing pass status"] == "1"
+    group_selector = next(
+        selector
+        for selector in app.selectbox
+        if selector.label == "Evolutionary group to display"
+    )
+    group_selector.set_value("cluster_2").run()
+    assert not app.exception
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Minimum member score"] == "0.325"
+    assert metrics["Status at 0.30"] == "PASS"
+    assert any(
+        "N0.HOG0002" in markdown.value and "cluster_2" in markdown.value
+        for markdown in app.markdown
+    )
     assert any(
         "Each point is one assessed member's retained selected-pocket score"
         in caption.value
@@ -133,7 +156,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 23
+    assert len(app.tabs) == 24
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]

@@ -65,7 +65,7 @@ def test_complete_report_build_and_checksum_resume(
     assert (output / "qc" / "pocket_review_validation.tsv").is_file()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["status"] == "complete"
-    assert payload["package_version"] == "0.3.2"
+    assert payload["package_version"] == "0.4.0"
     assert payload["validation"]["reported_group_count"] == 1
     assert payload["validation"]["exact_pocket_residue_annotation_count"] == 4
     assert payload["validation"]["sequence_export_group_count"] == 1

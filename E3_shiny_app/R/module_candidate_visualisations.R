@@ -29,6 +29,10 @@ candidate_visualisations_ui <- function(id) {
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("candidate_landscape"), height = "650px")
       ),
+      shiny::downloadButton(
+        ns("download_candidate_landscape_pdf"),
+        "Download candidate landscape as PDF"
+      ),
       shiny::selectizeInput(
         ns("selected_candidate"),
         "Selected candidate",
@@ -92,6 +96,10 @@ candidate_visualisations_ui <- function(id) {
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("expression_heatmap"), height = "750px")
       ),
+      shiny::downloadButton(
+        ns("download_expression_heatmap_pdf"),
+        "Download expression heatmap as PDF"
+      ),
       tabular_download_buttons(
         ns = ns,
         tsv_id = "download_heatmap_cells",
@@ -139,6 +147,10 @@ candidate_visualisations_ui <- function(id) {
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("species_tissue_profile"), height = "900px")
       ),
+      shiny::downloadButton(
+        ns("download_species_tissue_profile_pdf"),
+        "Download species/tissue graph as PDF"
+      ),
       shiny::h4("Group-level expression evidence states"),
       DT::DTOutput(ns("profile_evidence_states")),
       shiny::h4("Aggregated species/tissue profile"),
@@ -184,6 +196,10 @@ candidate_visualisations_ui <- function(id) {
       ),
       shinycssloaders::withSpinner(
         plotly::plotlyOutput(ns("volcano_plot"), height = "700px")
+      ),
+      shiny::downloadButton(
+        ns("download_volcano_plot_pdf"),
+        "Download volcano graph as PDF"
       ),
       tabular_download_buttons(
         ns = ns,
@@ -444,7 +460,7 @@ candidate_visualisations_server <- function(
       )
     })
 
-    output$candidate_landscape <- plotly::renderPlotly({
+    candidate_landscape_plot <- shiny::reactive({
       shiny::req(
         nrow(candidate_data()) > 0L,
         input$x_metric,
@@ -459,6 +475,15 @@ candidate_visualisations_server <- function(
         source = plot_source
       )
     })
+    output$candidate_landscape <- plotly::renderPlotly({
+      candidate_landscape_plot()
+    })
+    output$download_candidate_landscape_pdf <- shiny::downloadHandler(
+      filename = function() "candidate_landscape.pdf",
+      content = function(path) {
+        write_plotly_pdf(plot = candidate_landscape_plot(), path = path)
+      }
+    )
 
     shiny::observeEvent(
       plotly::event_data("plotly_click", source = plot_source),
@@ -628,13 +653,26 @@ candidate_visualisations_server <- function(
       )
     })
 
-    output$expression_heatmap <- plotly::renderPlotly({
-      plot <- build_candidate_expression_heatmap_plot(
+    expression_heatmap_plot <- shiny::reactive({
+      build_candidate_expression_heatmap_plot(
         expression_tbl = heatmap_data(),
         log_transform = isTRUE(input$heatmap_log)
       )
-      plotly::ggplotly(plot, tooltip = "text")
     })
+    output$expression_heatmap <- plotly::renderPlotly({
+      plotly::ggplotly(expression_heatmap_plot(), tooltip = "text")
+    })
+    output$download_expression_heatmap_pdf <- shiny::downloadHandler(
+      filename = function() "candidate_expression_heatmap.pdf",
+      content = function(path) {
+        write_ggplot_pdf(
+          plot = expression_heatmap_plot(),
+          path = path,
+          width = 13,
+          height = 9
+        )
+      }
+    )
 
     output$heatmap_table <- DT::renderDT({
       readable_datatable(
@@ -705,14 +743,34 @@ candidate_visualisations_server <- function(
       )
     })
 
-    output$species_tissue_profile <- plotly::renderPlotly({
-      plot <- build_candidate_species_tissue_plot(
+    species_tissue_profile_plot <- shiny::reactive({
+      build_candidate_species_tissue_plot(
         profile_tbl = profile_summary(),
         expression_unit = input$profile_unit,
         log_transform = isTRUE(input$profile_log)
       )
-      plotly::ggplotly(plot, tooltip = "text")
     })
+    output$species_tissue_profile <- plotly::renderPlotly({
+      plotly::ggplotly(species_tissue_profile_plot(), tooltip = "text")
+    })
+    output$download_species_tissue_profile_pdf <- shiny::downloadHandler(
+      filename = function() {
+        candidate <- gsub(
+          "[^A-Za-z0-9_.-]",
+          "_",
+          input$profile_candidate %||% "selected_candidate"
+        )
+        paste0(candidate, "_species_tissue_profile.pdf")
+      },
+      content = function(path) {
+        write_ggplot_pdf(
+          plot = species_tissue_profile_plot(),
+          path = path,
+          width = 13,
+          height = 10
+        )
+      }
+    )
 
     output$profile_evidence_states <- DT::renderDT({
       shiny::req(input$profile_candidate, expression_link())
@@ -850,16 +908,24 @@ candidate_visualisations_server <- function(
       )
     })
 
-    output$volcano_plot <- plotly::renderPlotly({
+    volcano_plot <- shiny::reactive({
       capability <- selected_volcano_capability()
-      plot <- build_candidate_volcano_plot(
+      build_candidate_volcano_plot(
         differential_tbl = volcano_rows(),
         effect_threshold = as.numeric(input$volcano_effect),
         significance_threshold = as.numeric(input$volcano_significance),
         significance_label = capability$significance_column[[1L]]
       )
-      plotly::ggplotly(plot, tooltip = "text")
     })
+    output$volcano_plot <- plotly::renderPlotly({
+      plotly::ggplotly(volcano_plot(), tooltip = "text")
+    })
+    output$download_volcano_plot_pdf <- shiny::downloadHandler(
+      filename = function() paste0(input$volcano_relation, "_volcano_plot.pdf"),
+      content = function(path) {
+        write_ggplot_pdf(plot = volcano_plot(), path = path)
+      }
+    )
 
     output$volcano_table <- DT::renderDT({
       readable_datatable(

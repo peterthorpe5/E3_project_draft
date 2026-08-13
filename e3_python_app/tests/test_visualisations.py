@@ -8,6 +8,7 @@ import pytest
 
 from e3app.errors import AppError
 from e3app.visualisations import (
+    ALL_FINAL_GATE_GROUPS,
     build_candidate_landscape_figure,
     build_expression_heatmap_figure,
     build_final_gate_druggability_boxplot,
@@ -21,6 +22,9 @@ from e3app.visualisations import (
     candidate_landscape_columns,
     candidate_metric_columns,
     candidate_rank_column,
+    default_final_gate_druggability_group,
+    filter_final_gate_druggability_distribution,
+    final_gate_druggability_group_choices,
     prepare_candidate_landscape,
     prepare_expression_heatmap_cells,
     prepare_final_gate_druggability_distribution,
@@ -30,6 +34,7 @@ from e3app.visualisations import (
     prepare_volcano_frame,
     selected_candidate_from_event,
     structural_alignment_plot_columns,
+    summarise_final_gate_druggability_selection,
 )
 
 
@@ -354,6 +359,130 @@ def test_final_gate_druggability_boxplot_preparation_and_threshold_line() -> Non
         build_final_gate_druggability_boxplot(frame=prepared, threshold=1.1)
 
 
+def test_final_gate_druggability_group_selection_and_summary() -> None:
+    """Search choices include assessed groups and filter the displayed box."""
+    assessed = pd.DataFrame(
+        {
+            "final_evolutionary_rank": [2, 1, 3],
+            "primary_group_id": ["N0.HOG1", "N0.HOG2", "N0.HOG3"],
+            "lead_cluster_id": ["cluster_1", "cluster_2", "cluster_3"],
+            "reaches_final_gate": [True, False, True],
+        }
+    )
+    scores = pd.DataFrame(
+        {
+            "cluster_id": ["cluster_1", "cluster_1", "cluster_2", "cluster_3"],
+            "member_accession": ["P1", "P2", "P3", "P4"],
+            "species": ["A", "B", "C", "D"],
+            "druggability_score": [0.7, 0.4, 0.8, 0.9],
+        }
+    )
+    prepared, truncated = prepare_final_gate_druggability_distribution(
+        scores=scores,
+        eligible_groups=assessed,
+    )
+    assert not truncated
+    choices = final_gate_druggability_group_choices(frame=prepared)
+    assert list(choices) == [
+        "cluster_2",
+        "cluster_1",
+        "cluster_3",
+        ALL_FINAL_GATE_GROUPS,
+    ]
+    assert "Rank 1" in choices["cluster_2"]
+    assert "structurally assessed" in choices["cluster_2"]
+    assert default_final_gate_druggability_group(frame=prepared) == "cluster_1"
+
+    selected, selected_truncated = filter_final_gate_druggability_distribution(
+        frame=prepared,
+        selection="cluster_2",
+    )
+    assert not selected_truncated
+    assert selected["cluster_id"].tolist() == ["cluster_2"]
+    summary = summarise_final_gate_druggability_selection(
+        frame=selected,
+        threshold=0.5,
+    )
+    assert summary["primary_group_id"] == "N0.HOG2"
+    assert summary["member_count"] == 1
+    assert summary["minimum_score"] == 0.8
+    assert summary["status"] == "FAILS ANOTHER FIXED GATE"
+
+    comparison, comparison_truncated = (
+        filter_final_gate_druggability_distribution(
+            frame=prepared,
+            selection=ALL_FINAL_GATE_GROUPS,
+            max_all_groups=1,
+        )
+    )
+    assert comparison_truncated
+    assert comparison["cluster_id"].tolist() == ["cluster_1", "cluster_1"]
+    with pytest.raises(AppError, match="unavailable"):
+        filter_final_gate_druggability_distribution(
+            frame=prepared,
+            selection="missing",
+        )
+    no_reaching = prepared.copy()
+    no_reaching["reaches_final_gate"] = False
+    unranked = no_reaching.drop(columns="_plot_rank")
+    unranked_choices = final_gate_druggability_group_choices(frame=unranked)
+    assert "Rank" not in unranked_choices["cluster_2"]
+    assert default_final_gate_druggability_group(frame=no_reaching) == "cluster_2"
+
+    all_reaching, all_truncated = filter_final_gate_druggability_distribution(
+        frame=prepared,
+        selection=ALL_FINAL_GATE_GROUPS,
+        max_all_groups=2,
+    )
+    assert not all_truncated
+    all_summary = summarise_final_gate_druggability_selection(
+        frame=all_reaching,
+        threshold=0.5,
+    )
+    assert all_summary["group_count"] == 2
+    assert all_summary["status"] == "MIXED AT THRESHOLD"
+    assert summarise_final_gate_druggability_selection(
+        frame=all_reaching,
+        threshold=0.3,
+    )["status"] == "ALL PASS"
+
+    with pytest.raises(AppError, match="selector rows"):
+        final_gate_druggability_group_choices(frame=pd.DataFrame({"bad": [1]}))
+    with pytest.raises(AppError, match="No scored"):
+        final_gate_druggability_group_choices(frame=prepared.iloc[0:0])
+    for invalid_limit in (True, 0):
+        with pytest.raises(AppError, match="overview groups"):
+            filter_final_gate_druggability_distribution(
+                frame=prepared,
+                selection="cluster_1",
+                max_all_groups=invalid_limit,  # type: ignore[arg-type]
+            )
+    with pytest.raises(AppError, match="summary threshold"):
+        summarise_final_gate_druggability_selection(
+            frame=selected,
+            threshold=True,  # type: ignore[arg-type]
+        )
+    with pytest.raises(AppError, match="summary threshold"):
+        summarise_final_gate_druggability_selection(frame=selected, threshold=1.1)
+    with pytest.raises(AppError, match="summary rows"):
+        summarise_final_gate_druggability_selection(
+            frame=pd.DataFrame({"bad": [1]}),
+            threshold=0.5,
+        )
+    with pytest.raises(AppError, match="available to summarise"):
+        summarise_final_gate_druggability_selection(
+            frame=selected.iloc[0:0],
+            threshold=0.5,
+        )
+    invalid_scores = selected.copy()
+    invalid_scores["druggability_score"] = "not-a-score"
+    with pytest.raises(AppError, match="No valid"):
+        summarise_final_gate_druggability_selection(
+            frame=invalid_scores,
+            threshold=0.5,
+        )
+
+
 def test_final_gate_druggability_plot_validation_and_fallback_labels() -> None:
     """Sparse compatibility rows receive safe labels and invalid inputs fail."""
     sparse_scores = pd.DataFrame(
@@ -389,7 +518,7 @@ def test_final_gate_druggability_plot_validation_and_fallback_labels() -> None:
             scores=[],
             eligible_groups=sparse_groups,
         )
-    with pytest.raises(AppError, match="between 1 and 100"):
+    with pytest.raises(AppError, match="between 1 and 2000"):
         prepare_final_gate_druggability_distribution(
             scores=sparse_scores,
             eligible_groups=sparse_groups,

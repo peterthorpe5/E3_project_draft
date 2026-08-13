@@ -24,6 +24,7 @@ from e3app.pocket_review import (
     read_review_html,
     required_review_paths,
     selected_group_members,
+    selected_group_alignment_fasta_bytes,
     selected_group_row,
 )
 
@@ -79,6 +80,8 @@ def make_pocket_review(parent: Path, name: str = "pocket_review") -> Path:
                 "has_ranked_pocket_evidence": True,
                 "sequence_length": 100,
                 "alignment_length": 110,
+                "amino_acid_sequence": "ACDE",
+                "aligned_sequence": "AC-DE",
             },
             {
                 "review_rank": 1,
@@ -92,6 +95,8 @@ def make_pocket_review(parent: Path, name: str = "pocket_review") -> Path:
                 "has_ranked_pocket_evidence": False,
                 "sequence_length": 95,
                 "alignment_length": 110,
+                "amino_acid_sequence": "FGHI",
+                "aligned_sequence": "FGH-I",
             },
         ]
     ).to_csv(
@@ -141,6 +146,12 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     assert models["model_status"].tolist() == ["MODEL_AVAILABLE"]
     assert sequences["candidate_accession"].tolist() == ["P1", "P2"]
     assert "fasta_identifier" in sequences.columns
+    alignment_fasta = selected_group_alignment_fasta_bytes(
+        bundle=bundle,
+        review_rank=1,
+    ).decode("utf-8")
+    assert ">rank_001__P1" in alignment_fasta
+    assert "AC-DE" in alignment_fasta
     structure_html = read_group_html(bundle, page, "structure")
     alignment_html = read_group_html(bundle, page, "alignment")
     assert "Interactive 3D pocket location" in structure_html

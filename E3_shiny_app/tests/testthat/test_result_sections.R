@@ -297,6 +297,21 @@ testthat::test_that("recommendation UI documents formulas and weight sensitivity
   )
   testthat::expect_match(
     ui,
+    "recommendation-final_druggability_group",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "recommendation-final_druggability_group_summary",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
+    "Search by rank, evolutionary-group identifier or lead cluster",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    ui,
     "greater than or equal to",
     fixed = TRUE
   )

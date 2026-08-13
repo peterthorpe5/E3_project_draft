@@ -8,7 +8,7 @@ import re
 from datetime import date, datetime
 from io import BytesIO
 from numbers import Integral, Real
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 import xlsxwriter
@@ -21,6 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by dependency checks
 EXCEL_MIME_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+PDF_MIME_TYPE = "application/pdf"
 _INVALID_FILE_STEM = re.compile(r"[^A-Za-z0-9_.-]+")
 _IDENTIFIER_COLUMN = re.compile(
     r"(^|_)(accession|checksum|digest|identifier|id)(_|$)",
@@ -487,4 +488,157 @@ def render_table_downloads(
             file_name=f"{stem}.xlsx",
             mime=EXCEL_MIME_TYPE,
             key=f"{key}_excel",
+        )
+
+
+def dataframe_to_fasta_bytes(
+    *,
+    frame: pd.DataFrame,
+    identifier_column: str,
+    sequence_column: str,
+    description_columns: Sequence[str] = (),
+    line_width: int = 80,
+) -> bytes:
+    """Serialise sequence rows as deterministic UTF-8 FASTA.
+
+    Args:
+        frame: Sequence-bearing member table.
+        identifier_column: Column used for the first FASTA header token.
+        sequence_column: Column containing protein or aligned sequences.
+        description_columns: Optional fields appended as ``name=value`` text.
+        line_width: Maximum sequence characters per output line.
+
+    Returns:
+        UTF-8 encoded FASTA bytes in display-table order.
+
+    Raises:
+        TypeError: If ``frame`` is not a pandas data frame.
+        ValueError: If columns, identifiers, sequences or width are invalid.
+    """
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("FASTA export requires a pandas DataFrame.")
+    if not isinstance(line_width, Integral) or isinstance(line_width, bool):
+        raise ValueError("FASTA line width must be a positive integer.")
+    if int(line_width) < 1:
+        raise ValueError("FASTA line width must be a positive integer.")
+    columns = [identifier_column, sequence_column, *description_columns]
+    if any(not isinstance(column, str) or not column for column in columns):
+        raise ValueError("FASTA export columns must have non-empty names.")
+    missing = sorted(set(columns).difference(frame.columns))
+    if missing:
+        raise ValueError("FASTA export is missing columns: " + ", ".join(missing))
+    records: list[str] = []
+    seen: set[str] = set()
+    for row_number, row in enumerate(frame.to_dict(orient="records"), start=1):
+        identifier = "" if pd.isna(row[identifier_column]) else str(
+            row[identifier_column]
+        ).strip()
+        identifier = re.sub(r"\s+", "_", identifier)
+        if not identifier:
+            raise ValueError(f"FASTA row {row_number} has no identifier.")
+        if identifier in seen:
+            raise ValueError(f"FASTA identifier is duplicated: {identifier}")
+        seen.add(identifier)
+        raw_sequence = "" if pd.isna(row[sequence_column]) else str(
+            row[sequence_column]
+        )
+        sequence = re.sub(r"\s+", "", raw_sequence).upper()
+        if not sequence:
+            raise ValueError(f"FASTA row {row_number} has no sequence.")
+        if re.search(r"[^A-Z*.?\-]", sequence):
+            raise ValueError(
+                f"FASTA row {row_number} contains unsupported sequence characters."
+            )
+        descriptions: list[str] = []
+        for column in description_columns:
+            value = row[column]
+            if pd.isna(value) or not str(value).strip():
+                continue
+            text_value = re.sub(r"\s+", "_", str(value).strip())
+            descriptions.append(f"{column}={text_value}")
+        header = f">{identifier}"
+        if descriptions:
+            header += " " + " ".join(descriptions)
+        records.append(header)
+        records.extend(
+            sequence[index : index + int(line_width)]
+            for index in range(0, len(sequence), int(line_width))
+        )
+    if not records:
+        raise ValueError("FASTA export requires at least one sequence row.")
+    return ("\n".join(records) + "\n").encode("utf-8")
+
+
+def plotly_figure_to_pdf_bytes(
+    *, figure: Any, width: int = 1400, height: int = 900
+) -> bytes:
+    """Render a Plotly figure as vector PDF through Kaleido.
+
+    Args:
+        figure: Plotly figure accepted by ``plotly.io.to_image``.
+        width: Export width in pixels.
+        height: Export height in pixels.
+
+    Returns:
+        PDF bytes beginning with the PDF signature.
+
+    Raises:
+        ValueError: If dimensions are outside defensive limits.
+        RuntimeError: If Plotly/Kaleido cannot render the figure.
+    """
+    if not 200 <= int(width) <= 5000 or not 200 <= int(height) <= 5000:
+        raise ValueError("PDF dimensions must be between 200 and 5000 pixels.")
+    try:
+        import plotly.io as plotly_io
+
+        payload = plotly_io.to_image(
+            figure,
+            format="pdf",
+            width=int(width),
+            height=int(height),
+            engine="kaleido",
+        )
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        raise RuntimeError(
+            "Plot PDF export requires the packaged Kaleido renderer. "
+            "Install the application dependencies and try again."
+        ) from exc
+    if not isinstance(payload, bytes) or not payload.startswith(b"%PDF"):
+        raise RuntimeError("Plotly returned an invalid PDF payload.")
+    return payload
+
+
+def render_plotly_pdf_download(
+    *, figure: Any, file_stem: str, label: str, key: str
+) -> None:
+    """Render one Streamlit PDF download for a Plotly figure."""
+    if st is None:
+        raise RuntimeError("Streamlit is required to render download controls.")
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("Plot PDF controls require a non-empty key.")
+    stem = safe_file_stem(value=file_stem)
+    payload_key = f"_{key}_payload"
+    signature_key = f"_{key}_signature"
+    current_signature = repr(figure.to_plotly_json() if hasattr(
+        figure, "to_plotly_json"
+    ) else figure)
+    if st.session_state.get(signature_key) != current_signature:
+        st.session_state.pop(payload_key, None)
+        st.session_state[signature_key] = current_signature
+    if st.button(f"Prepare {label.lower()}", key=f"{key}_prepare"):
+        try:
+            st.session_state[payload_key] = plotly_figure_to_pdf_bytes(
+                figure=figure
+            )
+        except RuntimeError as exc:
+            st.caption(str(exc))
+            return
+    payload = st.session_state.get(payload_key)
+    if payload is not None:
+        st.download_button(
+            label=label,
+            data=payload,
+            file_name=f"{stem}.pdf",
+            mime=PDF_MIME_TYPE,
+            key=key,
         )

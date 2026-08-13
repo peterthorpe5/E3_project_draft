@@ -351,6 +351,64 @@ window.addEventListener("resize",resize);updateProtein();resize();
 """
 
 
+_PDF_EXPORT_SCRIPT = r"""
+const pdfEncoder=new TextEncoder();
+function pdfBytes(value){return typeof value==="string"?pdfEncoder.encode(value):value;}
+function pdfJoin(parts){let size=parts.reduce((n,p)=>n+pdfBytes(p).length,0);
+const joined=new Uint8Array(size);let offset=0;for(const part of parts){const bytes=pdfBytes(part);
+joined.set(bytes,offset);offset+=bytes.length;}return joined;}
+function buildPdf(objects){const parts=[pdfBytes("%PDF-1.4\n")],offsets=[0];
+let length=parts[0].length;objects.forEach((body,index)=>{offsets.push(length);
+const object=pdfJoin([`${index+1} 0 obj\n`,body,"\nendobj\n"]);parts.push(object);
+length+=object.length;});const xref=length;let table=`xref\n0 ${objects.length+1}\n`+
+"0000000000 65535 f \n";for(let i=1;i<offsets.length;i++)
+table+=`${String(offsets[i]).padStart(10,"0")} 00000 n \n`;
+parts.push(pdfBytes(table+`trailer\n<< /Size ${objects.length+1} /Root 1 0 R >>\n`+
+`startxref\n${xref}\n%%EOF\n`));return new Blob(parts,{type:"application/pdf"});}
+function downloadBlob(blob,name){const link=document.createElement("a");
+link.href=URL.createObjectURL(blob);link.download=name;link.click();
+setTimeout(()=>URL.revokeObjectURL(link.href),1000);}
+function safePdfName(value){return String(value||"e3_group").replace(/[^A-Za-z0-9_.-]+/g,"_");}
+function jpegBytes(url){const binary=atob(url.split(",")[1]);const bytes=new Uint8Array(binary.length);
+for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;}
+function downloadCurrentViewPdf(){draw();const image=jpegBytes(canvas.toDataURL("image/jpeg",.95));
+const pageW=842,pageH=595,scale=Math.min(792/canvas.width,545/canvas.height);
+const width=canvas.width*scale,height=canvas.height*scale,x=(pageW-width)/2,y=(pageH-height)/2;
+const imageBody=pdfJoin([`<< /Type /XObject /Subtype /Image /Width ${canvas.width} `+
+`/Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 `+
+`/Filter /DCTDecode /Length ${image.length} >>\nstream\n`,image,"\nendstream"]);
+const command=`q ${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${x.toFixed(2)} `+
+`${y.toFixed(2)} cm /Im0 Do Q`;
+const objects=["<< /Type /Catalog /Pages 2 0 R >>","<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] `+
+"/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>",imageBody,
+`<< /Length ${pdfBytes(command).length} >>\nstream\n${command}\nendstream`];
+downloadBlob(buildPdf(objects),safePdfName(data.group_key.primary_group_id)+"_3d_view.pdf");}
+function pdfText(value){return String(value).replace(/[^\x20-\x7E]/g,"?")
+.replace(/([\\()])/g,"\\$1");}
+function downloadAlignmentPdf(){if(data.alignment.status!=="AVAILABLE")return;
+const records=data.alignment.records||[],blockSize=90,rowsPerPage=42,pages=[];
+for(let start=0;start<data.alignment.alignment_length;start+=blockSize){
+for(let first=0;first<records.length;first+=rowsPerPage){const lines=[
+`ARIA E3 MAFFT alignment: ${data.group_key.primary_group_id}`,
+`Columns ${start+1}-${Math.min(start+blockSize,data.alignment.alignment_length)}`,""];
+for(const record of records.slice(first,first+rowsPerPage)){const label=
+`${record.is_reference?"*":" "}${record.accession} ${record.species}`.slice(0,28).padEnd(28," ");
+lines.push(label+" "+record.sequence.slice(start,start+blockSize));}pages.push(lines);}}
+const objects=["<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"];
+const kids=[];pages.forEach((lines,index)=>{const pageObject=4+index*2,contentObject=pageObject+1;
+kids.push(`${pageObject} 0 R`);const commands="BT /F1 6 Tf 24 570 Td 8 TL "+
+lines.map(line=>`(${pdfText(line)}) Tj T*`).join(" ")+" ET";
+objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] `+
+`/Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObject} 0 R >>`);
+objects.push(`<< /Length ${pdfBytes(commands).length} >>\nstream\n${commands}\nendstream`);});
+objects[1]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pages.length} >>`;
+downloadBlob(buildPdf(objects),safePdfName(data.group_key.primary_group_id)+"_mafft_alignment.pdf");}
+document.getElementById("downloadViewPdf").onclick=downloadCurrentViewPdf;
+document.getElementById("downloadAlignmentPdf").onclick=downloadAlignmentPdf;
+"""
+
+
 def render_group_page(payload: Mapping[str, Any]) -> str:
     """Render one standalone evolutionary-group review page."""
     key = payload["group_key"]
@@ -487,6 +545,8 @@ ranked index.</p></section>
 <label>Pocket display<select id="pocketSelect"></select></label>
 <div class="button-row"><button id="reset" type="button">Reset rotation</button>
 <button id="fit" type="button">Fit and centre</button></div>
+<div class="button-row"><button id="downloadViewPdf" type="button">Download current view PDF</button>
+<button id="downloadAlignmentPdf" type="button">Download alignment PDF</button></div>
 <p id="viewerStatus" class="note" aria-live="polite"></p>
 <p id="proteinMeta"></p><p id="pocketMeta" class="note"></p>
 <p><strong>Model:</strong> <span id="modelStatus"></span></p>
@@ -537,7 +597,7 @@ and sequences (TSV)</a></li>
 </ul></section>
 </main>
 <script id="reviewData" type="application/json">{_json_payload(payload)}</script>
-<script>{_GROUP_SCRIPT}</script></body></html>"""
+<script>{_GROUP_SCRIPT}</script><script>{_PDF_EXPORT_SCRIPT}</script></body></html>"""
 
 
 _INDEX_STYLE = """

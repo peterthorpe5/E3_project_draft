@@ -1,4 +1,5 @@
 duckdb>=1.4,<2
+kaleido>=0.2.1,<1
 pandas>=2.2,<3
 plotly>=6,<7
 pyarrow>=18,<26

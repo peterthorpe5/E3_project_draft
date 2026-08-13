@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pandas as pd
 
 from e3app.errors import AppError
+from e3app.exports import dataframe_to_fasta_bytes
 
 if TYPE_CHECKING:
     from e3app.config import AppConfig
@@ -288,6 +289,42 @@ def selected_group_members(
     preferred = MODEL_COLUMNS if focus == "structure" else SEQUENCE_COLUMNS
     selected = source[source["review_rank"] == int(review_rank)].copy()
     return selected[[column for column in preferred if column in selected.columns]]
+
+
+def selected_group_alignment_fasta_bytes(
+    *, bundle: PocketReviewBundle, review_rank: int
+) -> bytes:
+    """Return the selected group's published MAFFT alignment as FASTA bytes.
+
+    Args:
+        bundle: Loaded portable pocket-review bundle.
+        review_rank: Selected review rank.
+
+    Returns:
+        Alignment FASTA preserving the bundle's exported identifiers and gaps.
+
+    Raises:
+        AppError: If the release predates aligned-sequence columns.
+    """
+    if "aligned_sequence" not in bundle.sequences.columns:
+        raise AppError(
+            "This pocket-review bundle does not contain aligned sequences. "
+            "Regenerate it with the current structural-report release."
+        )
+    selected = bundle.sequences[
+        bundle.sequences["review_rank"] == int(review_rank)
+    ].copy()
+    if selected.empty:
+        raise AppError("The selected group has no published alignment rows")
+    try:
+        return dataframe_to_fasta_bytes(
+            frame=selected,
+            identifier_column="fasta_identifier",
+            sequence_column="aligned_sequence",
+            description_columns=("species_column", "candidate_accession"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise AppError(f"Could not export selected alignment: {exc}") from exc
 
 
 def read_review_html(

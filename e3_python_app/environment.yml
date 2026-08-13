@@ -5,6 +5,7 @@ dependencies:
   - python>=3.11,<3.14
   - pip
   - duckdb>=1.4,<2
+  - python-kaleido>=0.2.1,<1
   - pandas>=2.2,<3
   - plotly>=6,<7
   - pyarrow>=18,<26

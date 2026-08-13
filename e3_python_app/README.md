@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.7.5 is the tested Streamlit companion to `E3_shiny_app` 0.10.5. Both
+Version 0.8.0 is the Streamlit companion to `E3_shiny_app` 0.11.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -68,9 +68,16 @@ The reporter provides:
   missing-data rule, effective weight and deterministic tie-break;
 - a grant overview separating Milestone 1 conservation evidence from Milestone
   2 conserved structural/chemical starting space;
-- focused Candidates, Orthology, Domains, Expression, Ligandability, Pocket
-  conservation and 3D alignment sections. Expression embeds the same heatmap
-  and scientifically gated volcano views as the Visual explorer;
+- focused Candidates, Domains, Expression, Ligandability, Pocket conservation
+  and 3D alignment sections. Expression embeds the same heatmap and
+  scientifically gated volcano views as the Visual explorer;
+- an expanded Orthology section reporting membership-sequence, species,
+  group, E3-seeded-group, all-species-group and largest-group metrics; exact
+  multi-species, breadth, seed-evidence and curated taxonomy-role filters; and
+  a full group-size distribution that explicitly retains one-species groups;
+- a separate Seed & HOG explorer supporting one or several inherited E3 seed
+  identifiers, Any/All matching, matching-group summaries, member-table species
+  filters, associated evidence, and filtered member protein FASTA export;
 - species, tissue/organism-part and identifier filters for the normalised
   candidate-by-expression-context relation, when supplied by workflow v0.13.0
   or later;
@@ -89,7 +96,9 @@ The reporter provides:
 - an interactive 3D-alignment evidence map with hover, zoom and threshold
   references, plus selected-group rotatable structure/pocket and
   pocket-annotated MAFFT alignment tabs backed by the self-contained top-200
-  review bundle;
+  review bundle. Current report pages download the rotated 3D canvas and the
+  complete alignment directly as PDFs; the alignment tab also downloads the
+  selected published MAFFT alignment as FASTA;
 - searchable HOG/orthogroup, DeepClust cluster, rank and accession choices,
   alongside downloadable OrthoFinder member sequence/model identifiers;
 - a separate column multiselect and row limit for every section;
@@ -97,6 +106,8 @@ The reporter provides:
   candidate/member fields;
 - a schema-agnostic all-results browser with paired TSV and Excel downloads;
 - provenance and QC views; and
+- on-demand vector-PDF downloads for every native application graph. These use
+  the packaged Kaleido renderer and are prepared only when requested; and
 - paired TSV and formatted Excel downloads of every downloadable result table.
   Excel contains the same bounded rows and selected columns, with visible cell
   gridlines, explicit borders, filter arrows, frozen headers, banded rows,
@@ -130,10 +141,15 @@ entering or leaving the strict intersection. The source authority and recorded
 recommendation table are unchanged, and the sensitivity list can be downloaded
 as paired TSV and Excel files.
 
-Directly above that list, horizontal box plots show the retained selected-pocket
-scores for assessed members in each lead cluster that passes every other final
-gate. Individual member points remain visible, the shared axis is fixed from
-zero to one, and the dashed threshold line moves with the slider.
+Directly above that list, horizontal box plots show retained selected-pocket
+scores for assessed members. A searchable selector lists every structurally
+assessed group with member-level scores and defaults to the highest-ranked group
+reaching the last gate. The selected-group summary reports its evolutionary-
+group ID, lead cluster, assessed-member count, minimum score and complete status
+at the slider threshold. An **All groups reaching the last gate** option retains
+the ranked comparison view, bounded to 30 groups for readable plotting.
+Individual member points remain visible, the shared axis is fixed from zero to
+one, and the dashed threshold line moves with the slider.
 
 The integrated DuckDB remains the complete relational authority. The single
 master Parquet is a portable wide compatibility summary. The definitive
@@ -157,7 +173,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.7.5 quality gate includes branch-aware coverage at or above 95%
+The v0.8.0 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.
@@ -200,6 +216,11 @@ PORTABLE_ROOT="/Volumes/One Touch/2026_E3_protac/portable_visualisation_release_
 The portable HTML pages embed the C-alpha traces, pocket mappings, alignment,
 CSS and JavaScript. The app does not need cluster access or a remote structure
 service after the release has been copied.
+
+Pocket-review bundles generated by structural-alignment v0.4.0 add direct
+**Download current view PDF** and **Download alignment PDF** controls. Native
+app plots use `kaleido>=0.2.1,<1`, which is installed with the declared Python
+dependencies.
 
 The structure control is labelled **Fit and centre**. It restores the default
 orientation and auto-fit zoom and displays a confirmation, including for older

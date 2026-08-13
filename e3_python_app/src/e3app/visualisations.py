@@ -133,6 +133,7 @@ STRUCTURAL_ALIGNMENT_COLUMN_ALIASES: Mapping[str, tuple[str, ...]] = {
 
 FINAL_GATE_CLUSTER_COLUMNS = ("lead_cluster_id", "cluster_id")
 FINAL_GATE_RANK_COLUMNS = ("final_evolutionary_rank", "final_rank")
+ALL_FINAL_GATE_GROUPS = "__all_final_gate_groups__"
 
 
 def candidate_identifier_column(*, available: Sequence[str]) -> str | None:
@@ -154,7 +155,7 @@ def prepare_final_gate_druggability_distribution(
     *,
     scores: pd.DataFrame,
     eligible_groups: pd.DataFrame,
-    max_groups: int = 30,
+    max_groups: int = 2_000,
 ) -> tuple[pd.DataFrame, bool]:
     """Join member scores to groups that reach the final druggability gate.
 
@@ -162,7 +163,7 @@ def prepare_final_gate_druggability_distribution(
         scores: Selected-pocket member scores keyed by ``cluster_id``.
         eligible_groups: Groups passing every fixed final gate when the
             druggability threshold is set to zero.
-        max_groups: Maximum number of ranked groups retained in the plot.
+        max_groups: Maximum number of ranked groups retained for selection.
 
     Returns:
         Prepared member-level rows and whether eligible groups were truncated.
@@ -174,8 +175,10 @@ def prepare_final_gate_druggability_distribution(
         eligible_groups, pd.DataFrame
     ):
         raise AppError("Final-gate druggability inputs must be pandas data frames")
-    if not 1 <= max_groups <= 100:
-        raise AppError("maximum plotted druggability groups must be between 1 and 100")
+    if not 1 <= max_groups <= 2_000:
+        raise AppError(
+            "maximum prepared druggability groups must be between 1 and 2000"
+        )
     required_scores = {"cluster_id", "member_accession", "druggability_score"}
     missing_scores = sorted(required_scores.difference(scores.columns))
     if missing_scores:
@@ -202,7 +205,12 @@ def prepare_final_gate_druggability_distribution(
     )
 
     metadata_columns = [cluster_column]
-    for column in (rank_column, "primary_group_id", "primary_group_type"):
+    for column in (
+        rank_column,
+        "primary_group_id",
+        "primary_group_type",
+        "reaches_final_gate",
+    ):
         if column is not None and column in eligible_groups.columns:
             metadata_columns.append(column)
     metadata = eligible_groups.loc[:, list(dict.fromkeys(metadata_columns))].copy()
@@ -226,6 +234,12 @@ def prepare_final_gate_druggability_distribution(
     truncated = len(metadata) > max_groups
     metadata = metadata.head(max_groups).copy()
     metadata = metadata.rename(columns={cluster_column: "_eligible_cluster_id"})
+    if "reaches_final_gate" not in metadata.columns:
+        metadata["reaches_final_gate"] = True
+    else:
+        metadata["reaches_final_gate"] = (
+            metadata["reaches_final_gate"].astype("boolean").fillna(False)
+        )
 
     prepared_scores = scores.copy()
     prepared_scores["cluster_id"] = (
@@ -268,6 +282,191 @@ def prepare_final_gate_druggability_distribution(
         prepared["species"] = "Unknown"
     prepared["species"] = prepared["species"].astype("string").fillna("Unknown")
     return prepared.reset_index(drop=True), truncated
+
+
+def final_gate_druggability_group_choices(
+    *,
+    frame: pd.DataFrame,
+) -> dict[str, str]:
+    """Return searchable labels for structurally assessed scored groups.
+
+    Args:
+        frame: Prepared member-level druggability rows.
+
+    Returns:
+        Ordered mapping from stable cluster keys to user-facing labels. The
+        final entry selects all groups reaching the last druggability gate.
+
+    Raises:
+        AppError: If required selector fields are unavailable.
+    """
+    required = {"_eligible_cluster_id", "group_label", "reaches_final_gate"}
+    if not isinstance(frame, pd.DataFrame) or not required.issubset(frame.columns):
+        raise AppError("Druggability selector rows lack required group fields")
+    if frame.empty:
+        raise AppError("No scored structurally assessed groups are available")
+    metadata_columns = [
+        "_eligible_cluster_id",
+        "group_label",
+        "reaches_final_gate",
+    ]
+    if "_plot_rank" in frame.columns:
+        metadata_columns.append("_plot_rank")
+    metadata = frame.loc[:, metadata_columns].drop_duplicates(
+        "_eligible_cluster_id",
+        keep="first",
+    )
+    choices: dict[str, str] = {}
+    for _, row in metadata.iterrows():
+        cluster_id = str(row["_eligible_cluster_id"])
+        rank_value = row.get("_plot_rank", math.nan)
+        rank_label = (
+            f"Rank {int(rank_value):,} — "
+            if pd.notna(rank_value) and math.isfinite(float(rank_value))
+            else ""
+        )
+        gate_label = (
+            "reaches final gate"
+            if bool(row["reaches_final_gate"])
+            else "structurally assessed"
+        )
+        choices[cluster_id] = f"{rank_label}{row['group_label']} — {gate_label}"
+    choices[ALL_FINAL_GATE_GROUPS] = "All groups reaching the last gate"
+    return choices
+
+
+def default_final_gate_druggability_group(*, frame: pd.DataFrame) -> str:
+    """Choose the highest-ranked scored group reaching the final gate.
+
+    Args:
+        frame: Prepared member-level druggability rows.
+
+    Returns:
+        Stable cluster key for the default individual-group plot.
+
+    Raises:
+        AppError: If no selectable group is available.
+    """
+    choices = final_gate_druggability_group_choices(frame=frame)
+    individual_keys = [key for key in choices if key != ALL_FINAL_GATE_GROUPS]
+    reaching = frame.loc[frame["reaches_final_gate"].fillna(False).astype(bool)]
+    if not reaching.empty:
+        return str(reaching.iloc[0]["_eligible_cluster_id"])
+    return individual_keys[0]
+
+
+def filter_final_gate_druggability_distribution(
+    *,
+    frame: pd.DataFrame,
+    selection: str,
+    max_all_groups: int = 30,
+) -> tuple[pd.DataFrame, bool]:
+    """Filter prepared scores to one selected group or a bounded overview.
+
+    Args:
+        frame: Prepared member-level druggability rows.
+        selection: Stable cluster key or ``ALL_FINAL_GATE_GROUPS``.
+        max_all_groups: Maximum ranked groups in the comparison overview.
+
+    Returns:
+        Filtered score rows and whether the overview was truncated.
+
+    Raises:
+        AppError: If the selection or overview bound is invalid.
+    """
+    choices = final_gate_druggability_group_choices(frame=frame)
+    if selection not in choices:
+        raise AppError("Selected druggability group is unavailable")
+    if isinstance(max_all_groups, bool) or not isinstance(max_all_groups, int):
+        raise AppError("maximum overview groups must be an integer from 1 to 100")
+    if not 1 <= max_all_groups <= 100:
+        raise AppError("maximum overview groups must be an integer from 1 to 100")
+    if selection != ALL_FINAL_GATE_GROUPS:
+        selected = frame.loc[
+            frame["_eligible_cluster_id"].astype(str).eq(selection)
+        ].copy()
+        return selected.reset_index(drop=True), False
+    reaching = frame.loc[
+        frame["reaches_final_gate"].fillna(False).astype(bool)
+    ].copy()
+    ordered_groups = reaching["_eligible_cluster_id"].drop_duplicates().tolist()
+    truncated = len(ordered_groups) > max_all_groups
+    retained = set(ordered_groups[:max_all_groups])
+    reaching = reaching.loc[reaching["_eligible_cluster_id"].isin(retained)]
+    return reaching.reset_index(drop=True), truncated
+
+
+def summarise_final_gate_druggability_selection(
+    *,
+    frame: pd.DataFrame,
+    threshold: float,
+) -> dict[str, object]:
+    """Summarise the currently displayed group distribution.
+
+    Args:
+        frame: Filtered member-level rows shown in the plot.
+        threshold: Inclusive selected druggability threshold.
+
+    Returns:
+        Group, cluster, member, score and final-status summary values.
+
+    Raises:
+        AppError: If rows or threshold values are invalid.
+    """
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+        raise AppError("Druggability summary threshold must be a number from 0 to 1")
+    if not 0.0 <= float(threshold) <= 1.0:
+        raise AppError("Druggability summary threshold must be a number from 0 to 1")
+    required = {
+        "_eligible_cluster_id",
+        "group_label",
+        "member_accession",
+        "druggability_score",
+        "reaches_final_gate",
+    }
+    if not isinstance(frame, pd.DataFrame) or not required.issubset(frame.columns):
+        raise AppError("Druggability summary rows lack required fields")
+    if frame.empty:
+        raise AppError("No member-level druggability scores are available to summarise")
+    scores = pd.to_numeric(frame["druggability_score"], errors="coerce").dropna()
+    if scores.empty:
+        raise AppError("No valid druggability scores are available to summarise")
+    cluster_count = frame["_eligible_cluster_id"].astype(str).nunique()
+    minimum_score = float(scores.min())
+    reaches_final_gate = bool(
+        frame["reaches_final_gate"].fillna(False).astype(bool).all()
+    )
+    druggability_pass = minimum_score >= float(threshold)
+    if cluster_count == 1:
+        primary_group_id = (
+            str(frame.iloc[0]["primary_group_id"])
+            if "primary_group_id" in frame.columns
+            and pd.notna(frame.iloc[0]["primary_group_id"])
+            and str(frame.iloc[0]["primary_group_id"]).strip()
+            else "Not available"
+        )
+        cluster_id = str(frame.iloc[0]["_eligible_cluster_id"])
+        status = (
+            "PASS"
+            if reaches_final_gate and druggability_pass
+            else "FAILS DRUGGABILITY"
+            if reaches_final_gate
+            else "FAILS ANOTHER FIXED GATE"
+        )
+    else:
+        primary_group_id = "Multiple groups"
+        cluster_id = f"{cluster_count:,} lead clusters"
+        status = "ALL PASS" if druggability_pass else "MIXED AT THRESHOLD"
+    return {
+        "primary_group_id": primary_group_id,
+        "cluster_id": cluster_id,
+        "group_count": cluster_count,
+        "member_count": int(len(frame)),
+        "minimum_score": minimum_score,
+        "reaches_final_gate": reaches_final_gate,
+        "druggability_pass": druggability_pass,
+        "status": status,
+    }
 
 
 def build_final_gate_druggability_boxplot(

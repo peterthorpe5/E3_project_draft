@@ -15,6 +15,8 @@ library(stringr)
 
 source("R/utils.R")
 source("R/excel_export.R")
+source("R/fasta_export.R")
+source("R/plot_pdf_export.R")
 source("R/data_source_report.R")
 source("R/result_sections.R")
 source("R/resource_source.R")
@@ -30,6 +32,7 @@ source("R/candidate_visualisations.R")
 source("R/structural_alignment_visualisations.R")
 source("R/workflow_schematic.R")
 source("R/pocket_review.R")
+source("R/orthology_explorer.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
@@ -39,6 +42,7 @@ source("R/module_result_section.R")
 source("R/module_threshold_explorer.R")
 source("R/module_candidate_visualisations.R")
 source("R/module_pocket_review.R")
+source("R/module_orthology_explorer.R")
 
 # Configuration can come from command-line arguments, environment variables, or
 # defaults. See README.md for the supported options.
@@ -84,7 +88,11 @@ ui <- bslib::page_navbar(
     ),
     bslib::nav_panel(
       "Orthology",
-      result_section_ui("orthology_results", "orthology")
+      orthology_explorer_ui("orthology_explorer")
+    ),
+    bslib::nav_panel(
+      "Seed & HOG explorer",
+      seed_group_explorer_ui("seed_group_explorer")
     ),
     bslib::nav_panel(
       "Domains",
@@ -169,6 +177,16 @@ server <- function(input, output, session) {
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )
+  orthology_explorer_server(
+    id = "orthology_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  seed_group_explorer_server(
+    id = "seed_group_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
   pocket_review_server(
     id = "structure_review",
     review_config = pocket_review_config,
@@ -189,12 +207,6 @@ server <- function(input, output, session) {
   result_section_server(
     "candidate_results",
     "candidates",
-    app_config$resource_source,
-    app_config$max_table_rows
-  )
-  result_section_server(
-    "orthology_results",
-    "orthology",
     app_config$resource_source,
     app_config$max_table_rows
   )

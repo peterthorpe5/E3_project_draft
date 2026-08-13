@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import Sequence
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -37,8 +38,10 @@ from e3app.data import (
 )
 from e3app.errors import AppError
 from e3app.exports import (
+    dataframe_to_fasta_bytes,
     dataframe_display_formats,
     dataframe_display_widths,
+    render_plotly_pdf_download,
     render_table_downloads,
 )
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
@@ -48,8 +51,20 @@ from e3app.pocket_review import (
     prepare_pocket_review,
     read_group_html,
     read_review_html,
+    selected_group_alignment_fasta_bytes,
     selected_group_members,
     selected_group_row,
+)
+from e3app.orthology import (
+    collect_orthology_group_summary,
+    collect_orthology_metrics,
+    collect_orthology_size_distribution,
+    collect_orthology_species,
+    collect_seed_group_members,
+    collect_seed_identifiers,
+    load_species_taxonomy,
+    select_orthology_relation,
+    summarise_seed_groups,
 )
 from e3app.ranking import (
     DEFAULT_RANKING_WEIGHTS,
@@ -72,6 +87,7 @@ from e3app.thresholds import (
     select_threshold_relation,
 )
 from e3app.visualisations import (
+    ALL_FINAL_GATE_GROUPS,
     CANDIDATE_METRIC_LABELS,
     EXPRESSION_CONTEXT_LABELS,
     build_candidate_landscape_figure,
@@ -87,11 +103,15 @@ from e3app.visualisations import (
     candidate_landscape_columns,
     candidate_metric_columns,
     candidate_rank_column,
+    default_final_gate_druggability_group,
+    filter_final_gate_druggability_distribution,
+    final_gate_druggability_group_choices,
     prepare_candidate_landscape,
     prepare_final_gate_druggability_distribution,
     prepare_species_tissue_summary,
     selected_candidate_from_event,
     structural_alignment_plot_columns,
+    summarise_final_gate_druggability_selection,
 )
 from e3app.workflow import workflow_schematic_html
 
@@ -232,6 +252,391 @@ def _render_section(
     )
 
 
+def _orthology_group_type_control(*, key: str) -> str:
+    """Render the shared OrthoFinder group-level selector."""
+    return st.radio(
+        "OrthoFinder grouping level",
+        options=("hierarchical_orthogroup", "orthogroup"),
+        format_func=lambda value: (
+            "Hierarchical orthogroups (HOGs)"
+            if value == "hierarchical_orthogroup"
+            else "Root orthogroups"
+        ),
+        horizontal=True,
+        key=key,
+        help=(
+            "HOGs are the reconciled evolutionary decision unit used by the final "
+            "prioritisation. Root orthogroups provide the broader OrthoFinder view."
+        ),
+    )
+
+
+def _render_orthology_explorer(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Render release-wide OrthoFinder metrics, filters, plots and group table."""
+    st.subheader("Expanded cross-species orthology")
+    st.caption(
+        "This page summarises OrthoFinder membership independently of DeepClust. "
+        "A HOG/orthogroup is an evolutionary group; a DeepClust cluster is a "
+        "sequence-neighbourhood input to candidate discovery."
+    )
+    group_type = _orthology_group_type_control(key="orthology_group_type")
+    relation = select_orthology_relation(
+        relation_names=list_relations(connection),
+        group_type=group_type,
+    )
+    if relation is None:
+        st.info(
+            "This release does not contain the selected OrthoFinder membership "
+            "relation. Unavailable membership is not interpreted as absence."
+        )
+        _render_section(connection=connection, config=config, section="orthology")
+        return
+    try:
+        metrics = collect_orthology_metrics(
+            connection=connection,
+            relation=relation,
+        )
+        species_values = collect_orthology_species(
+            connection=connection,
+            relation=relation,
+        )
+        distribution = collect_orthology_size_distribution(
+            connection=connection,
+            relation=relation,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    metric_columns = st.columns(6)
+    metric_columns[0].metric("Input sequence memberships", f"{metrics['input_sequences']:,}")
+    metric_columns[1].metric("Input species", f"{metrics['input_species']:,}")
+    metric_columns[2].metric("OrthoFinder groups", f"{metrics['group_count']:,}")
+    metric_columns[3].metric(
+        "Groups with E3 seed evidence", f"{metrics['seeded_group_count']:,}"
+    )
+    metric_columns[4].metric(
+        "Groups containing every species",
+        f"{metrics['all_species_group_count']:,}",
+    )
+    metric_columns[5].metric(
+        "Largest group",
+        f"{metrics['largest_group_size']:,}",
+        help=str(metrics["largest_group_id"]),
+    )
+    st.caption(
+        f"Source: `{relation}`. Membership rows are counted as input sequence "
+        "memberships; a sequence appearing in separate grouping levels is counted "
+        "only within the currently selected level."
+    )
+
+    figure = px.bar(
+        distribution,
+        x="member_count",
+        y="group_count",
+        color="species_breadth",
+        labels={
+            "member_count": "Members in OrthoFinder group",
+            "group_count": "Number of groups",
+            "species_breadth": "Species breadth",
+        },
+        title="OrthoFinder group-size distribution",
+        color_discrete_map={
+            "One species only": "#8c6bb1",
+            "Multiple species (not all)": "#3182bd",
+            "All input species": "#31a354",
+        },
+    )
+    figure.update_layout(barmode="stack", legend_title_text="Species breadth")
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key="orthology_size_distribution_plot",
+    )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem=f"{group_type}_size_distribution",
+        label="Download group-size graph as PDF",
+        key="orthology_size_distribution_pdf",
+    )
+    st.caption(
+        "The purple category explicitly retains groups whose members all come "
+        "from one species; it does not discard them as uninformative."
+    )
+
+    st.markdown("#### Filter OrthoFinder groups")
+    filter_one, filter_two = st.columns(2)
+    with filter_one:
+        required_species = st.multiselect(
+            "Must contain every selected species",
+            species_values,
+            key="orthology_required_species",
+        )
+        breadth = st.selectbox(
+            "Species breadth",
+            options=("all", "one_species", "multiple_species", "all_species"),
+            format_func=lambda value: {
+                "all": "All breadth classes",
+                "one_species": "One species only",
+                "multiple_species": "Multiple species, but not all",
+                "all_species": "Every input species",
+            }[value],
+            key="orthology_breadth",
+        )
+    taxonomy = load_species_taxonomy()
+    mapped_species = set(taxonomy["source_species_name"].dropna().astype(str))
+    represented_taxonomy = taxonomy[
+        taxonomy["source_species_name"].astype(str).isin(species_values)
+    ].copy()
+    with filter_two:
+        taxonomy_roles = st.multiselect(
+            "Must contain a member from any selected curated taxonomy role",
+            options=sorted(represented_taxonomy["role"].dropna().astype(str).unique()),
+            format_func=lambda value: value.replace("_", " ").title(),
+            key="orthology_taxonomy_roles",
+            help=(
+                "This uses only the release's curated species manifest. Species "
+                "without an authoritative mapping remain explicitly unclassified."
+            ),
+        )
+        taxon_labels = {
+            str(row.source_species_name): (
+                f"{row.canonical_species_name} (NCBI taxon {int(row.taxon_id)})"
+            )
+            for row in represented_taxonomy.itertuples(index=False)
+        }
+        selected_taxa = st.multiselect(
+            "Curated taxa (any selected taxon)",
+            options=list(taxon_labels),
+            format_func=taxon_labels.__getitem__,
+            key="orthology_taxa",
+        )
+        seeded_only = st.checkbox(
+            "Only groups linked to inherited E3 seed evidence",
+            value=False,
+            key="orthology_seeded_only",
+        )
+        maximum_rows = st.number_input(
+            "Maximum groups to display",
+            min_value=1,
+            max_value=min(100_000, max(config.max_rows, 1)),
+            value=min(1000, config.max_rows),
+            key="orthology_maximum_rows",
+        )
+    role_species = represented_taxonomy[
+        represented_taxonomy["role"].astype(str).isin(taxonomy_roles)
+    ]["source_species_name"].dropna().astype(str).tolist()
+    if taxonomy_roles and selected_taxa:
+        taxonomy_species = sorted(set(role_species).intersection(selected_taxa))
+    elif taxonomy_roles:
+        taxonomy_species = role_species
+    else:
+        taxonomy_species = selected_taxa
+    unmapped_count = len(set(species_values).difference(mapped_species))
+    st.caption(
+        f"Curated taxonomy mapping covers {len(set(species_values).intersection(mapped_species))} "
+        f"of {len(species_values)} exact source labels; {unmapped_count} remain "
+        "unclassified and are not silently assigned."
+    )
+    try:
+        groups = collect_orthology_group_summary(
+            connection=connection,
+            relation=relation,
+            required_species=required_species,
+            taxonomy_species=taxonomy_species,
+            breadth=breadth,
+            seeded_only=seeded_only,
+            maximum_rows=int(maximum_rows),
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if groups.empty:
+        st.info("No OrthoFinder group matches the selected filters.")
+    else:
+        _display_dataframe(frame=groups, height=620)
+        render_table_downloads(
+            frame=groups,
+            file_stem=f"filtered_{group_type}_summary",
+            tsv_label="Download filtered groups as TSV",
+            excel_label="Download filtered groups as Excel",
+            key="orthology_group_summary_download",
+        )
+    with st.expander("Browse the underlying orthology relations"):
+        _render_section(
+            connection=connection,
+            config=config,
+            section="orthology",
+            show_heading=False,
+        )
+
+
+def _seed_member_fasta(*, members: pd.DataFrame) -> bytes:
+    """Build unique FASTA identifiers for selected seed-group member rows."""
+    export = members.copy()
+    export["fasta_identifier"] = (
+        export["primary_group_id"].astype(str)
+        + "|"
+        + export["species"].astype(str)
+        + "|"
+        + export["internal_id"].astype(str)
+    )
+    return dataframe_to_fasta_bytes(
+        frame=export,
+        identifier_column="fasta_identifier",
+        sequence_column="protein_sequence",
+        description_columns=("raw_identifier", "parsed_accession"),
+    )
+
+
+def _render_seed_group_explorer(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Search inherited E3 seeds and return all members of matching groups."""
+    st.subheader("E3 seed and OrthoFinder-group explorer")
+    st.caption(
+        "Select one or more inherited E3 seed identifiers to find their HOGs or "
+        "root orthogroups, then inspect every sequence-bearing group member. A "
+        "seed records prior E3 evidence; an unseeded member is not labelled non-E3."
+    )
+    seeds = collect_seed_identifiers(connection=connection)
+    if not seeds:
+        st.info(
+            "This release has no sequence-bearing seeded-group relation, so seed "
+            "search and member FASTA export are unavailable."
+        )
+        return
+    group_type = _orthology_group_type_control(key="seed_explorer_group_type")
+    relation = select_orthology_relation(
+        relation_names=list_relations(connection),
+        group_type=group_type,
+    )
+    species_values = (
+        collect_orthology_species(connection=connection, relation=relation)
+        if relation is not None
+        else []
+    )
+    control_one, control_two = st.columns(2)
+    with control_one:
+        selected_seeds = st.multiselect(
+            "E3 seed identifiers",
+            seeds,
+            key="seed_explorer_selected_seeds",
+            placeholder="Search and select one or more seeds",
+        )
+    with control_two:
+        match_mode = st.radio(
+            "When several seeds are selected",
+            options=("any", "all"),
+            format_func=lambda value: (
+                "Return groups containing any selected seed"
+                if value == "any"
+                else "Return only groups containing all selected seeds"
+            ),
+            key="seed_explorer_match_mode",
+        )
+    if not selected_seeds:
+        st.info("Select at least one seed identifier to run the group search.")
+        return
+    try:
+        all_members = collect_seed_group_members(
+            connection=connection,
+            seed_identifiers=selected_seeds,
+            group_type=group_type,
+            match_mode=match_mode,
+            maximum_rows=min(100_000, max(config.max_rows, 10_000)),
+        )
+        group_summary = summarise_seed_groups(members=all_members)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if group_summary.empty:
+        st.info("No OrthoFinder group contains the selected seed combination.")
+        return
+    st.markdown("#### Matching OrthoFinder groups")
+    _display_dataframe(frame=group_summary, height=360)
+    render_table_downloads(
+        frame=group_summary,
+        file_stem="seed_search_matching_groups",
+        tsv_label="Download matching groups as TSV",
+        excel_label="Download matching groups as Excel",
+        key="seed_group_summary_download",
+    )
+    selected_groups = st.multiselect(
+        "Groups to inspect",
+        options=group_summary["primary_group_id"].astype(str).tolist(),
+        default=group_summary["primary_group_id"].astype(str).tolist(),
+        key="seed_explorer_selected_groups",
+    )
+    selected_species = st.multiselect(
+        "Filter the member table by species",
+        options=species_values,
+        key="seed_explorer_species",
+        help="No selection retains every species in the selected groups.",
+    )
+    members = all_members[
+        all_members["primary_group_id"].astype(str).isin(selected_groups)
+    ].copy()
+    if selected_species:
+        members = members[members["species"].astype(str).isin(selected_species)]
+    st.markdown("#### Species and members in the selected groups")
+    if members.empty:
+        st.info("No members match the selected group and species filters.")
+        return
+    _display_dataframe(frame=members, height=650)
+    render_table_downloads(
+        frame=members.drop(columns=["protein_sequence"]),
+        file_stem="seed_search_group_members",
+        tsv_label="Download filtered member table as TSV",
+        excel_label="Download filtered member table as Excel",
+        key="seed_group_members_download",
+    )
+    try:
+        fasta_payload = _seed_member_fasta(members=members)
+    except (TypeError, ValueError) as exc:
+        st.caption(f"Member FASTA is unavailable: {exc}")
+    else:
+        st.download_button(
+            "Download filtered member protein sequences as FASTA",
+            data=fasta_payload,
+            file_name="seed_search_group_members.fasta",
+            mime="text/x-fasta",
+            key="seed_group_members_fasta_download",
+        )
+    if len(selected_groups) == 1:
+        identifiers = {"primary_group_id": selected_groups[0]}
+        evidence_relations = candidate_evidence_relations(
+            connection=connection,
+            identifiers=identifiers,
+        )
+        with st.expander("Associated evidence for the selected group"):
+            if not evidence_relations:
+                st.info("No compatible associated-evidence relation is available.")
+            else:
+                evidence_relation = st.selectbox(
+                    "Evidence relation",
+                    evidence_relations,
+                    key="seed_explorer_evidence_relation",
+                )
+                evidence = collect_candidate_evidence(
+                    connection=connection,
+                    relation=evidence_relation,
+                    identifiers=identifiers,
+                    maximum_rows=min(config.max_rows, 10_000),
+                )
+                _display_dataframe(frame=evidence, height=460)
+                render_table_downloads(
+                    frame=evidence,
+                    file_stem=(
+                        f"{selected_groups[0]}_{evidence_relation}_evidence"
+                    ),
+                    tsv_label="Download associated evidence as TSV",
+                    excel_label="Download associated evidence as Excel",
+                    key="seed_group_evidence_download",
+                )
+
+
 def _render_structural_alignment_section(
     *,
     connection: object,
@@ -288,6 +693,12 @@ def _render_structural_alignment_section(
             figure,
             use_container_width=True,
             key="structural_alignment_evidence_map",
+        )
+        render_plotly_pdf_download(
+            figure=figure,
+            file_stem=f"structural_alignment_{plot_relation}",
+            label="Download alignment graph as PDF",
+            key="structural_alignment_plot_pdf",
         )
         with st.expander("Alignment rows behind the visualisation"):
             _display_dataframe(frame=plot_rows, height=520)
@@ -619,8 +1030,16 @@ def _render_final_druggability_sensitivity(
         f"passing every fixed recorded gate when minimum member druggability is "
         f"required to be ≥ {selected_threshold:.2f}."
     )
-    st.markdown("#### Member druggability distributions at the last gate")
+    st.markdown("#### Member druggability distributions by group")
     try:
+        _, assessed_rows, _ = evaluate_thresholds(
+            connection,
+            final_druggability_settings(
+                minimum_druggability_score=0.0,
+                result_scope="all",
+            ),
+            row_limit,
+        )
         _, eligible_rows, _ = evaluate_thresholds(
             connection,
             final_druggability_settings(minimum_druggability_score=0.0),
@@ -636,7 +1055,28 @@ def _render_final_druggability_sensitivity(
         )
         if cluster_column is None:
             raise AppError("Eligible groups lack a lead cluster identifier")
-        score_groups = eligible_rows.copy()
+        assessed_cluster_column = next(
+            (
+                column
+                for column in ("lead_cluster_id", "cluster_id")
+                if column in assessed_rows.columns
+            ),
+            None,
+        )
+        if assessed_cluster_column is None:
+            raise AppError(
+                "Structurally assessed groups lack a lead cluster identifier"
+            )
+        eligible_cluster_ids = set(
+            eligible_rows[cluster_column].dropna().astype(str).str.strip()
+        )
+        score_groups = assessed_rows.copy()
+        score_groups["reaches_final_gate"] = (
+            score_groups[assessed_cluster_column]
+            .astype("string")
+            .str.strip()
+            .isin(eligible_cluster_ids)
+        )
         rank_column = next(
             (
                 column
@@ -651,22 +1091,53 @@ def _render_final_druggability_sensitivity(
                 errors="coerce",
             )
             score_groups = score_groups.sort_values(
-                ["_boxplot_rank", cluster_column],
+                ["_boxplot_rank", assessed_cluster_column],
                 na_position="last",
                 kind="stable",
             )
-        score_groups = score_groups.drop_duplicates(cluster_column).head(30)
+        score_groups = score_groups.drop_duplicates(assessed_cluster_column)
         score_relation, member_scores = collect_member_druggability_scores(
             connection=connection,
             cluster_ids=(
-                score_groups[cluster_column].dropna().astype(str).tolist()
+                score_groups[assessed_cluster_column].dropna().astype(str).tolist()
             ),
-            max_rows=10_000,
+            max_rows=100_000,
         )
-        plot_rows, truncated = prepare_final_gate_druggability_distribution(
-            scores=member_scores,
-            eligible_groups=eligible_rows,
-            max_groups=30,
+        prepared_rows, prepared_truncated = (
+            prepare_final_gate_druggability_distribution(
+                scores=member_scores,
+                eligible_groups=score_groups,
+                max_groups=2_000,
+            )
+        )
+        group_choices = final_gate_druggability_group_choices(frame=prepared_rows)
+        default_group = default_final_gate_druggability_group(frame=prepared_rows)
+        group_values = list(group_choices)
+        selector_key = "recommendation_druggability_group"
+        if st.session_state.get(selector_key) not in group_choices:
+            st.session_state[selector_key] = default_group
+        selected_group = st.selectbox(
+            "Evolutionary group to display",
+            options=group_values,
+            index=group_values.index(default_group),
+            format_func=group_choices.__getitem__,
+            key=selector_key,
+            help=(
+                "Search by rank, evolutionary-group identifier or lead cluster. "
+                "Individual choices include every structurally assessed group with "
+                "member-level selected-pocket scores."
+            ),
+        )
+        plot_rows, overview_truncated = (
+            filter_final_gate_druggability_distribution(
+                frame=prepared_rows,
+                selection=str(selected_group),
+                max_all_groups=30,
+            )
+        )
+        selection_summary = summarise_final_gate_druggability_selection(
+            frame=plot_rows,
+            threshold=float(selected_threshold),
         )
         figure = build_final_gate_druggability_boxplot(
             frame=plot_rows,
@@ -675,19 +1146,65 @@ def _render_final_druggability_sensitivity(
     except AppError as exc:
         st.info(f"The member-level box plot is unavailable: {exc}")
     else:
+        if selected_group == ALL_FINAL_GATE_GROUPS:
+            st.markdown("**Comparison view: all groups reaching the last gate**")
+        else:
+            st.markdown(
+                "**Selected evolutionary group:** "
+                f"{selection_summary['primary_group_id']}  |  "
+                "**Lead cluster:** "
+                f"{selection_summary['cluster_id']}"
+            )
+        summary_columns = st.columns(4)
+        summary_columns[0].metric(
+            "Groups displayed",
+            f"{selection_summary['group_count']:,}",
+        )
+        summary_columns[1].metric(
+            "Assessed members",
+            f"{selection_summary['member_count']:,}",
+        )
+        summary_columns[2].metric(
+            "Minimum member score",
+            f"{selection_summary['minimum_score']:.3f}",
+        )
+        summary_columns[3].metric(
+            f"Status at {selected_threshold:.2f}",
+            str(selection_summary["status"]),
+        )
         st.plotly_chart(
             figure,
             width="stretch",
             config={"displaylogo": False},
             key="recommendation_druggability_boxplot",
         )
+        render_plotly_pdf_download(
+            figure=figure,
+            file_stem=(
+                "final_gate_member_druggability_"
+                f"threshold_{selected_threshold:.2f}".replace(".", "p")
+            ),
+            label="Download druggability box plot as PDF",
+            key="recommendation_druggability_boxplot_pdf",
+        )
         st.caption(
             "Each point is one assessed member's retained selected-pocket score. "
-            "Boxes summarise lead clusters that pass every other fixed final gate; "
-            f"the dashed line is the selected threshold. Score source: `{score_relation}`."
+            "Individual choices show any scored structurally assessed group; the "
+            "comparison option shows groups passing every other fixed final gate. "
+            "The dashed line is the selected threshold. "
+            f"Score source: `{score_relation}`."
         )
-        if truncated:
-            st.info("The plot is limited to the first 30 eligible groups by final rank.")
+        if overview_truncated:
+            st.info(
+                "The all-groups comparison is limited to the first 30 groups "
+                "reaching the last gate by final rank; every scored structurally "
+                "assessed group remains available individually in the selector."
+            )
+        if prepared_truncated:
+            st.info(
+                "The selector reached its defensive limit of 2,000 structurally "
+                "assessed groups."
+            )
     if selected_rows.empty:
         st.info("No evolutionary group passes the complete selected gate intersection.")
     else:
@@ -1271,6 +1788,22 @@ def _render_pocket_review(
         excel_label="Download selected member table as Excel",
         key=f"pocket_review_{focus}_members_download",
     )
+    if focus == "alignment":
+        try:
+            alignment_fasta = selected_group_alignment_fasta_bytes(
+                bundle=bundle,
+                review_rank=int(row["review_rank"]),
+            )
+        except AppError as exc:
+            st.caption(f"Alignment FASTA is unavailable: {exc}")
+        else:
+            st.download_button(
+                label="Download selected MAFFT alignment as FASTA",
+                data=alignment_fasta,
+                file_name=f"{safe_group}_mafft_alignment.fasta",
+                mime="text/x-fasta",
+                key="pocket_review_alignment_fasta_download",
+            )
     st.download_button(
         label="Download the self-contained group review HTML",
         data=document,
@@ -1475,6 +2008,12 @@ def _render_candidate_landscape(
         key="visual_candidate_landscape_plot",
         on_select="rerun",
         selection_mode="points",
+    )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem="candidate_landscape",
+        label="Download candidate landscape as PDF",
+        key="visual_candidate_landscape_pdf",
     )
     selected_from_plot = selected_candidate_from_event(
         event=selection,
@@ -1705,6 +2244,12 @@ def _render_expression_heatmap(
         use_container_width=True,
         key=f"{key_prefix}_expression_heatmap_plot",
     )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem=f"{key_prefix}_candidate_expression_heatmap",
+        label="Download expression heatmap as PDF",
+        key=f"{key_prefix}_expression_heatmap_pdf",
+    )
     st.markdown("#### Aggregated heatmap cells")
     _display_dataframe(frame=cells, height=460)
     render_table_downloads(
@@ -1891,6 +2436,12 @@ def _render_species_tissue_profiles(
         use_container_width=True,
         key="visual_species_tissue_profile_plot",
     )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem=f"{candidate_id}_species_tissue_profile",
+        label="Download species/tissue graph as PDF",
+        key="visual_species_tissue_profile_pdf",
+    )
     evidence_state_columns = [
         column
         for column in (
@@ -1997,6 +2548,12 @@ def _render_volcano_view(
         figure,
         use_container_width=True,
         key=f"{key_prefix}_volcano_plot",
+    )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem=f"{relation}_volcano_plot",
+        label="Download volcano graph as PDF",
+        key=f"{key_prefix}_volcano_pdf",
     )
     _display_dataframe(frame=rows, height=520)
     render_table_downloads(
@@ -2140,6 +2697,7 @@ def render_app() -> None:
                     "Visual explorer",
                     "Candidates",
                     "Orthology",
+                    "Seed & HOG explorer",
                     "Domains",
                     "Expression",
                     "Ligandability",
@@ -2168,16 +2726,25 @@ def render_app() -> None:
                 _render_threshold_explorer(connection=connection, config=config)
             with tabs[5]:
                 _render_visual_explorer(connection=connection, config=config)
+            with tabs[6]:
+                _render_section(
+                    connection=connection,
+                    config=config,
+                    section="candidates",
+                )
+            with tabs[7]:
+                _render_orthology_explorer(
+                    connection=connection,
+                    config=config,
+                )
+            with tabs[8]:
+                _render_seed_group_explorer(
+                    connection=connection,
+                    config=config,
+                )
             for tab, section in zip(
-                tabs[6:12],
-                (
-                    "candidates",
-                    "orthology",
-                    "domains",
-                    "expression",
-                    "ligandability",
-                    "pocket_conservation",
-                ),
+                tabs[9:13],
+                ("domains", "expression", "ligandability", "pocket_conservation"),
             ):
                 with tab:
                     if section == "expression":
@@ -2191,30 +2758,30 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[12]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[13]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
+                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[14]:
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[15]:
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
-            with tabs[15]:
+            with tabs[16]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[16]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[17]:
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[18]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[18]:
+            with tabs[19]:
                 _render_section(
                     connection=connection,
                     config=config,

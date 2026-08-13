@@ -55,6 +55,11 @@ def test_group_page_is_self_contained_and_explicit(
     assert 'id="viewerStatus" class="note" aria-live="polite"' in page
     assert 'rx=-.28;ry=.45;zoom=1;draw();' in page
     assert "View fitted and centred." in page
+    assert 'id="downloadViewPdf"' in page
+    assert 'id="downloadAlignmentPdf"' in page
+    assert "downloadCurrentViewPdf" in page
+    assert "downloadAlignmentPdf" in page
+    assert "application/pdf" in page
     assert group_page_name(payload) == "rank_001__orthogroup__OG0001.html"
 
 

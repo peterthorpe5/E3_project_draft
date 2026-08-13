@@ -73,6 +73,12 @@ pocket_review_ui <- function(id, focus = c("structure", "alignment")) {
         tsv_label = "Download selected group as TSV",
         excel_label = "Download selected group as Excel"
       ),
+      if (focus == "alignment") {
+        shiny::downloadButton(
+          ns("download_alignment_fasta"),
+          "Download selected MAFFT alignment as FASTA"
+        )
+      },
       DT::DTOutput(ns("member_table"))
     )
   )
@@ -365,6 +371,30 @@ pocket_review_server <- function(
         )
       }
     )
+    if (focus == "alignment") {
+      output$download_alignment_fasta <- shiny::downloadHandler(
+        filename = function() {
+          row <- selected_row()
+          group_id <- if (nrow(row) == 1L) {
+            gsub("[^A-Za-z0-9_.-]", "_", row$primary_group_id[[1L]])
+          } else {
+            "selected_group"
+          }
+          paste0(group_id, "_mafft_alignment.fasta")
+        },
+        content = function(path) {
+          row <- selected_row()
+          if (nrow(row) != 1L) {
+            stop("No selected alignment is available.", call. = FALSE)
+          }
+          fasta <- selected_pocket_review_alignment_fasta(
+            review_config = review_config,
+            review_rank = row$review_rank[[1L]]
+          )
+          writeBin(charToRaw(enc2utf8(fasta)), con = path)
+        }
+      )
+    }
 
     invisible(list(
       selected_row = selected_row,
