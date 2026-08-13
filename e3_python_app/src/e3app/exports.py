@@ -561,7 +561,7 @@ def dataframe_to_fasta_bytes(
             header += " " + " ".join(descriptions)
         records.append(header)
         records.extend(
-            sequence[index : index + int(line_width)]
+            sequence[index:index + int(line_width)]
             for index in range(0, len(sequence), int(line_width))
         )
     if not records:

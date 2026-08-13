@@ -37,6 +37,19 @@ orthology_explorer_ui <- function(id) {
     shiny::uiOutput(ns("availability")),
     shiny::uiOutput(ns("metrics")),
     shiny::p(class = "small text-muted", shiny::textOutput(ns("source_caption"))),
+    bslib::layout_columns(
+      shiny::checkboxInput(
+        ns("log_group_size_axis"),
+        "Log-transform group-size axis",
+        value = FALSE
+      ),
+      shiny::checkboxInput(
+        ns("log_group_count_axis"),
+        "Log-transform group-count axis",
+        value = FALSE
+      ),
+      col_widths = c(6, 6)
+    ),
     shinycssloaders::withSpinner(
       plotly::plotlyOutput(ns("size_distribution"), height = "620px")
     ),
@@ -110,7 +123,8 @@ orthology_explorer_ui <- function(id) {
         "Browse the underlying orthology relations",
         result_section_ui(ns("source_tables"), "orthology")
       )
-    )
+    ),
+    deepclust_onekp_ui(ns("deepclust"))
   )
 }
 
@@ -129,6 +143,11 @@ orthology_explorer_server <- function(
     relations <- shiny::reactiveVal(character())
     species <- shiny::reactiveVal(character())
     taxonomy <- load_species_taxonomy()
+
+    deepclust_onekp_server(
+      id = "deepclust",
+      resource_source = resource_source
+    )
 
     result_section_server(
       id = "source_tables",
@@ -169,6 +188,11 @@ orthology_explorer_server <- function(
         selected = character(),
         server = TRUE
       )
+      represented <- taxonomy[
+        taxonomy$source_species_name %in% values,
+        ,
+        drop = FALSE
+      ]
       taxon_labels <- paste0(
         represented$canonical_species_name,
         " (NCBI taxon ",
@@ -185,7 +209,6 @@ orthology_explorer_server <- function(
         selected = character(),
         server = TRUE
       )
-      represented <- taxonomy[taxonomy$source_species_name %in% values, , drop = FALSE]
       roles <- sort(unique(as.character(represented$role)))
       roles <- roles[!is.na(roles) & nzchar(roles)]
       shiny::updateSelectizeInput(
@@ -271,7 +294,7 @@ orthology_explorer_server <- function(
 
     size_ggplot <- shiny::reactive({
       rows <- size_data()
-      ggplot2::ggplot(
+      plot <- ggplot2::ggplot(
         rows,
         ggplot2::aes(
           x = .data$member_count,
@@ -292,6 +315,13 @@ orthology_explorer_server <- function(
           fill = "Species breadth"
         ) +
         ggplot2::theme_minimal(base_size = 12)
+      if (isTRUE(input$log_group_size_axis)) {
+        plot <- plot + ggplot2::scale_x_log10()
+      }
+      if (isTRUE(input$log_group_count_axis)) {
+        plot <- plot + ggplot2::scale_y_log10()
+      }
+      plot
     })
 
     output$size_distribution <- plotly::renderPlotly({

@@ -1,27 +1,33 @@
-ARIA plant E3 Shiny reporter v0.10.6 validation hand-off
+ARIA plant E3 Shiny reporter v0.12.0 validation hand-off
 =======================================================
 
-Build-environment checks completed on 2026-08-12:
+The user reported that the complete v0.11.1 R suite passed before the v0.12.0
+DeepClust/1KP, log-axis and legacy-PDF additions.
 
-- Delimiters and quoted regions are balanced in all four changed R source and
-  regression-test files.
-- New R unit tests cover group-choice ordering, highest-ranked last-gate
-  defaults, individual filtering, bounded comparison views, selected-group
-  summaries and unavailable selections.
-- The R UI regression contract checks the searchable selector, group-summary
-  output and user-facing search guidance.
-- The companion Python v0.7.6 suite passes all 94 tests with 95% branch-aware
-  coverage, including headless switching to a different evolutionary group.
+Checks completed in this build workspace on 2026-08-13:
+
+- all edited R source and regression-test files pass a quote/comment-aware
+  delimiter-balance check;
+- the iframe compatibility JavaScript parses successfully;
+- both packaged browser PDF scripts parse successfully and the shared PDF
+  builder emits a payload beginning with `%PDF` and ending with `%%EOF`;
+- Python source and tests compile with `python -m compileall`; and
+- edited files pass whitespace/error checks.
 
 Environment limitation:
 
-- This build environment does not contain R/Rscript or the native Shiny package
-  stack, so the complete R testthat suite could not be executed here.
-- The preceding v0.10.4 hotfix suite passed on the target Mac. Re-run the full
-  suite after applying v0.10.6:
+- this build environment does not contain R/Rscript, DuckDB, pytest, Streamlit,
+  Plotly or Kaleido, so it cannot honestly execute either complete app suite.
 
-    Rscript E3_shiny_app/inst/scripts/check_dependencies.R
-    Rscript E3_shiny_app/inst/scripts/run_tests.R
+Run both complete suites before publishing:
+
+    cd e3_python_app
+    python -m pip install --editable '.[dev]'
+    ./run_tests.sh
+
+    cd ../E3_shiny_app
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
 
 The two `test_script_utils.R` skips remain expected when the R session does not
-provide a `--file` argument.
+provide a `--file` argument. Any actual failure blocks release.

@@ -177,6 +177,18 @@ pocket_review_scroll_script <- function(focus = c("structure", "alignment")) {
     "status.className='note';status.setAttribute('aria-live','polite');",
     "fit.parentElement.insertAdjacentElement('afterend',status);}",
     "status.textContent='View fitted and centred.';};}",
+    "if(doc.getElementById('viewer')){if(!doc.getElementById('downloadViewPdf')){",
+    "const row=doc.createElement('div');",
+    "row.className='button-row pdf-download-row';",
+    "row.innerHTML='<button id=\"downloadViewPdf\" type=\"button\">",
+    "Download current view PDF</button><button id=\"downloadAlignmentPdf\" ",
+    "type=\"button\">Download alignment PDF</button>';",
+    "const anchor=fit&&fit.parentElement?fit.parentElement:",
+    "doc.getElementById('viewer');anchor.insertAdjacentElement('afterend',row);}",
+    "if(!doc.querySelector('script[data-e3-pdf-compatibility]')){",
+    "const script=doc.createElement('script');script.src=new URL(",
+    "'pocket_review_pdf_compat.js',window.location.href).href;",
+    "script.dataset.e3PdfCompatibility='true';doc.body.appendChild(script);}}",
     "const headings=Array.from(doc.querySelectorAll('h2'));",
     "const target=headings.find((node)=>node.textContent.trim()==='",
     heading,
@@ -294,16 +306,26 @@ pocket_review_server <- function(
         review_config$resource_prefix,
         row$group_review_html[[1L]]
       )
-      shiny::tags$iframe(
-        class = "pocket-review-frame",
-        src = src,
-        title = if (focus == "structure") {
-          "Interactive protein structure and pocket viewer"
-        } else {
-          "Pocket-annotated protein sequence alignment"
-        },
-        loading = "lazy",
-        onload = pocket_review_scroll_script(focus = focus)
+      shiny::tagList(
+        shiny::tags$iframe(
+          class = "pocket-review-frame",
+          src = src,
+          title = if (focus == "structure") {
+            "Interactive protein structure and pocket viewer"
+          } else {
+            "Pocket-annotated protein sequence alignment"
+          },
+          loading = "lazy",
+          onload = pocket_review_scroll_script(focus = focus)
+        ),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Use Download current view PDF or Download alignment PDF inside",
+            "the embedded report. Compatible legacy reports receive these",
+            "controls automatically."
+          )
+        )
       )
     })
 

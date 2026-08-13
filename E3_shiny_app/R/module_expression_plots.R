@@ -51,6 +51,10 @@ expression_plot_ui <- function(id) {
     ),
     shiny::hr(),
     shinycssloaders::withSpinner(plotly::plotlyOutput(ns("expression_plot"))),
+    shiny::downloadButton(
+      ns("download_expression_plot_pdf"),
+      "Download expression graph as PDF"
+    ),
     shiny::hr(),
     shiny::h4("Plot data"),
     shiny::p(
@@ -106,23 +110,33 @@ expression_plot_server <- function(
       )
     }, ignoreNULL = TRUE)
 
-    output$expression_plot <- plotly::renderPlotly({
+    expression_plot <- shiny::reactive({
       current_data <- plot_data()
 
       if (nrow(current_data) == 0L) {
-        return(plotly::ggplotly(make_empty_expression_plot(
+        return(make_empty_expression_plot(
           "No rows matched the selected gene and filters."
-        )))
+        ))
       }
 
-      plot_object <- build_expression_plot(
+      build_expression_plot(
         expression_tbl = current_data,
         group_column = input$group_column,
         plot_type = input$plot_type
       )
-
-      plotly::ggplotly(plot_object)
     })
+
+    output$expression_plot <- plotly::renderPlotly({
+      plotly::ggplotly(expression_plot())
+    })
+
+    output$download_expression_plot_pdf <- shiny::downloadHandler(
+      filename = function() "selected_expression_graph.pdf",
+      content = function(path) {
+        shiny::req(input$plot_expression > 0L)
+        write_ggplot_pdf(plot = expression_plot(), path = path)
+      }
+    )
 
     output$plot_data_table <- DT::renderDT({
       current_data <- plot_data()

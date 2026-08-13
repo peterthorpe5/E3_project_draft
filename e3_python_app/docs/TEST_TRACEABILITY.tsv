@@ -6,6 +6,7 @@ e3app.pocket_review	required_review_paths; pocket_review_available; discover_poc
 e3app.glossary	SLIDER_HELP; GLOSSARY_ENTRIES; glossary_sections; glossary_rows; packaged project and field-dictionary resources	test_glossary.py
 e3app.exports	safe_file_stem; normalise_excel_scalar; excel_format_kind; excel_column_width; excel_text_is_long; dataframe_display_formats; dataframe_display_widths; dataframe_to_excel_bytes; dataframe_to_fasta_bytes; plotly_figure_to_pdf_bytes; render_plotly_pdf_download; render_table_downloads	test_exports.py
 e3app.orthology	select_orthology_relation; collect_orthology_species; collect_orthology_metrics; collect_orthology_group_summary; collect_orthology_size_distribution; collect_seed_identifiers; collect_seed_group_members; summarise_seed_groups; load_species_taxonomy	test_orthology.py
+e3app.deepclust	select_deepclust_relation; parse_seed_queries; collect_deepclust_metrics; collect_onekp_coverage_distribution; collect_deepclust_summary	test_deepclust.py
 e3app.data	distinct_text_values; filter_expression_context	test_data.py
 e3app.cli	build_parser; streamlit_command; main	test_cli.py
 e3app.streamlit_app	render_app	test_streamlit_app.py

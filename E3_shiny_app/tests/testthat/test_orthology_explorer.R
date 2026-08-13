@@ -12,6 +12,20 @@ testthat::test_that("OrthoFinder grouping levels resolve explicitly", {
     "HIERARCHICAL_ORTHOGROUP"
   )
   testthat::expect_error(orthology_relation_name("cluster"), "Unsupported")
+  testthat::expect_error(orthology_record_type("cluster"), "Unsupported")
+  testthat::expect_error(orthology_relation_name(character()), "Unsupported")
+  testthat::expect_error(orthology_relation_name(NA_character_), "Unsupported")
+  testthat::expect_error(
+    orthology_relation_name(c("orthogroup", "cluster")),
+    "Unsupported"
+  )
+  testthat::expect_identical(
+    resolve_orthology_choice(
+      group_type = "orthogroup",
+      choices = c(orthogroup = "ORTHOGROUP")
+    ),
+    "ORTHOGROUP"
+  )
 })
 
 testthat::test_that("orthology metric and distribution queries stay bounded", {
@@ -92,7 +106,22 @@ testthat::test_that("expanded orthology UIs expose requested controls", {
   testthat::expect_match(orthology_ui, "orthology-taxonomy_taxa", fixed = TRUE)
   testthat::expect_match(
     orthology_ui,
+    "orthology-log_group_size_axis",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    orthology_ui,
+    "orthology-log_group_count_axis",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    orthology_ui,
     "orthology-download_size_distribution_pdf",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    orthology_ui,
+    "orthology-deepclust-download_coverage_pdf",
     fixed = TRUE
   )
   testthat::expect_match(seed_ui, "seed-seeds", fixed = TRUE)

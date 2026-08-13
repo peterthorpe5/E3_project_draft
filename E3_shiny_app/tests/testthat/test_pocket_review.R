@@ -243,4 +243,11 @@ testthat::test_that("pocket-review UI and section focus are stable", {
     "View fitted and centred.",
     fixed = TRUE
   )
+  testthat::expect_match(viewer_script, "downloadViewPdf", fixed = TRUE)
+  testthat::expect_match(viewer_script, "downloadAlignmentPdf", fixed = TRUE)
+  testthat::expect_match(
+    viewer_script,
+    "pocket_review_pdf_compat.js",
+    fixed = TRUE
+  )
 })

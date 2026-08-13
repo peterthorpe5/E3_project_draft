@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
@@ -360,7 +362,8 @@ def repair_pocket_review_viewer_controls(document: str) -> str:
     Older portable reports only reset the zoom when ``Fit structure`` was
     pressed. At the initial auto-fit zoom this looked inert. This compatibility
     repair gives already-generated bundles the same fit-and-centre behaviour as
-    newly generated reports and adds an accessible confirmation message.
+    newly generated reports, adds an accessible confirmation message and adds
+    the offline 3D-view and alignment PDF controls introduced in release 0.4.
 
     Args:
         document: Trusted self-contained pocket-review HTML.
@@ -391,7 +394,56 @@ def repair_pocket_review_viewer_controls(document: str) -> str:
             '<p id="proteinMeta">',
             1,
         )
-    return upgraded
+    if (
+        'id="viewer"' not in upgraded
+        or "Pocket-annotated MAFFT sequence alignment" not in upgraded
+    ):
+        return upgraded
+    fit_markup = '<button id="fit" type="button">Fit and centre</button>'
+    pdf_controls = (
+        '<div class="button-row pdf-download-row">'
+        '<button id="downloadViewPdf" type="button">'
+        'Download current view PDF</button>'
+        '<button id="downloadAlignmentPdf" type="button">'
+        'Download alignment PDF</button></div>'
+    )
+    if 'id="downloadViewPdf"' not in upgraded:
+        if fit_markup not in upgraded:
+            return upgraded
+        complete_button_row = fit_markup + "</div>"
+        if complete_button_row in upgraded:
+            upgraded = upgraded.replace(
+                complete_button_row,
+                complete_button_row + pdf_controls,
+                1,
+            )
+        else:
+            upgraded = upgraded.replace(fit_markup, fit_markup + pdf_controls, 1)
+    if 'data-e3-pdf-compatibility="true"' in upgraded:
+        return upgraded
+    pdf_script = _pocket_review_pdf_compatibility_script()
+    script_markup = (
+        '<script data-e3-pdf-compatibility="true">'
+        f"{pdf_script}</script>"
+    )
+    if "</body>" in upgraded:
+        return upgraded.replace("</body>", script_markup + "</body>", 1)
+    return upgraded + script_markup
+
+
+@lru_cache(maxsize=1)
+def _pocket_review_pdf_compatibility_script() -> str:
+    """Return the packaged browser-side PDF exporter for legacy reports."""
+    try:
+        return (
+            files("e3app")
+            .joinpath("resources", "pocket_review_pdf_compat.js")
+            .read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, OSError, UnicodeError) as exc:
+        raise AppError(
+            "The packaged pocket-review PDF compatibility asset is unavailable"
+        ) from exc
 
 
 def read_group_html(

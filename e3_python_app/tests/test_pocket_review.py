@@ -177,6 +177,25 @@ def test_legacy_fit_control_is_repaired_idempotently() -> None:
     assert repair_pocket_review_viewer_controls(upgraded) == upgraded
 
 
+def test_legacy_group_page_gains_offline_pdf_controls() -> None:
+    """Legacy self-contained pages gain both real browser PDF exporters."""
+    legacy = (
+        '<html><body><canvas id="viewer"></canvas>'
+        '<h2>Pocket-annotated MAFFT sequence alignment</h2>'
+        '<button id="fit" type="button">Fit structure</button>'
+        '<p id="proteinMeta"></p><script>'
+        'document.getElementById("fit").onclick=()=>{zoom=1;draw();};'
+        '</script></body></html>'
+    )
+    upgraded = repair_pocket_review_viewer_controls(legacy)
+    assert 'id="downloadViewPdf"' in upgraded
+    assert 'id="downloadAlignmentPdf"' in upgraded
+    assert "downloadCurrentViewPdf" in upgraded
+    assert "downloadAlignmentPdf" in upgraded
+    assert "application/pdf" in upgraded
+    assert repair_pocket_review_viewer_controls(upgraded) == upgraded
+
+
 def test_review_discovery_requires_one_unambiguous_bundle(tmp_path: Path) -> None:
     """Automatic discovery accepts one sibling but never guesses between two."""
     resource = tmp_path / "e3_integrated_resource.duckdb"

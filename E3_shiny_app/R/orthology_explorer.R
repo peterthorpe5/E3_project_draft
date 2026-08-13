@@ -1,5 +1,26 @@
 #' Query and transformation helpers for OrthoFinder exploration.
 
+#' Resolve one supported OrthoFinder grouping choice defensively.
+#'
+#' @param group_type Requested application grouping-level value.
+#' @param choices Named mapping from grouping levels to source values.
+#' @return Unnamed source value.
+resolve_orthology_choice <- function(group_type, choices) {
+  if (
+    length(group_type) != 1L ||
+      is.na(group_type) ||
+      !is.character(group_type) ||
+      !nzchar(trimws(group_type))
+  ) {
+    stop("Unsupported OrthoFinder group type.", call. = FALSE)
+  }
+  key <- trimws(group_type)
+  if (!key %in% names(choices)) {
+    stop("Unsupported OrthoFinder group type.", call. = FALSE)
+  }
+  unname(choices[[key]])
+}
+
 #' Resolve the membership relation for an OrthoFinder grouping level.
 #'
 #' @param group_type `hierarchical_orthogroup` or `orthogroup`.
@@ -9,11 +30,7 @@ orthology_relation_name <- function(group_type) {
     hierarchical_orthogroup = "hierarchical_membership",
     orthogroup = "orthogroup_membership"
   )
-  value <- unname(choices[[as.character(group_type)]])
-  if (is.null(value) || is.na(value) || !nzchar(value)) {
-    stop("Unsupported OrthoFinder group type.", call. = FALSE)
-  }
-  value
+  resolve_orthology_choice(group_type = group_type, choices = choices)
 }
 
 #' Resolve the source record type for an OrthoFinder grouping level.
@@ -25,11 +42,7 @@ orthology_record_type <- function(group_type) {
     hierarchical_orthogroup = "HIERARCHICAL_ORTHOGROUP",
     orthogroup = "ORTHOGROUP"
   )
-  value <- unname(choices[[as.character(group_type)]])
-  if (is.null(value) || is.na(value) || !nzchar(value)) {
-    stop("Unsupported OrthoFinder group type.", call. = FALSE)
-  }
-  value
+  resolve_orthology_choice(group_type = group_type, choices = choices)
 }
 
 #' Return a qualified, safely quoted resource relation.

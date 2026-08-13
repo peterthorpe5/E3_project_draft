@@ -25,6 +25,16 @@ testthat::test_that("tabular modules expose Excel beside TSV downloads", {
   testthat::expect_match(expression, "expression-open_expression_heatmap")
   testthat::expect_match(expression, "expression-open_expression_volcano")
 
+  expression_plot <- paste(
+    as.character(expression_plot_ui("expression_plot")),
+    collapse = "\n"
+  )
+  testthat::expect_match(
+    expression_plot,
+    "expression_plot-download_expression_plot_pdf",
+    fixed = TRUE
+  )
+
   alignment <- paste(
     as.character(result_section_ui("alignment", "structural_alignment")),
     collapse = "\n"

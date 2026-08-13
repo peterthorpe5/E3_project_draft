@@ -12,6 +12,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from e3app.config import AppConfig, config_from_environment, validate_config
+from e3app.deepclust import (
+    collect_deepclust_metrics,
+    collect_deepclust_summary,
+    collect_onekp_coverage_distribution,
+    select_deepclust_relation,
+)
 from e3app.data import (
     SECTION_SPECS,
     candidate_evidence_relations,
@@ -271,7 +277,7 @@ def _orthology_group_type_control(*, key: str) -> str:
     )
 
 
-def _render_orthology_explorer(
+def _render_orthofinder_explorer(
     *, connection: object, config: AppConfig
 ) -> None:
     """Render release-wide OrthoFinder metrics, filters, plots and group table."""
@@ -331,6 +337,19 @@ def _render_orthology_explorer(
         "only within the currently selected level."
     )
 
+    log_x, log_y = st.columns(2)
+    with log_x:
+        use_log_group_size = st.checkbox(
+            "Log-transform group-size axis",
+            value=False,
+            key="orthology_log_group_size_axis",
+        )
+    with log_y:
+        use_log_group_count = st.checkbox(
+            "Log-transform group-count axis",
+            value=False,
+            key="orthology_log_group_count_axis",
+        )
     figure = px.bar(
         distribution,
         x="member_count",
@@ -349,6 +368,8 @@ def _render_orthology_explorer(
         },
     )
     figure.update_layout(barmode="stack", legend_title_text="Species breadth")
+    figure.update_xaxes(type="log" if use_log_group_size else "linear")
+    figure.update_yaxes(type="log" if use_log_group_count else "linear")
     st.plotly_chart(
         figure,
         use_container_width=True,
@@ -470,6 +491,213 @@ def _render_orthology_explorer(
             section="orthology",
             show_heading=False,
         )
+
+
+def _render_deepclust_onekp_explorer(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Render candidate-relevant DeepClust coverage including parsed 1KP data."""
+    st.markdown("### DeepClust and 1KP sequence neighbourhoods")
+    st.caption(
+        "This is the complementary discovery view. It includes 1KP sequences "
+        "that were clustered by DeepClust, but it does not call them "
+        "OrthoFinder orthologues. Rows are E3-seeded sequence neighbourhoods; "
+        "membership alone is not evidence that every protein is an E3 ligase."
+    )
+    relation = select_deepclust_relation(
+        relation_names=list_relations(connection)
+    )
+    if relation is None:
+        st.info(
+            "This release has no compact candidate-evidence relation, so "
+            "DeepClust/1KP coverage is unavailable rather than zero."
+        )
+        return
+    try:
+        metrics = collect_deepclust_metrics(
+            connection=connection,
+            relation=relation,
+        )
+        distribution = collect_onekp_coverage_distribution(
+            connection=connection,
+            relation=relation,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    columns = st.columns(6)
+    columns[0].metric("E3-seeded neighbourhoods", f"{metrics['cluster_count']:,}")
+    columns[1].metric(
+        "Raw cluster-member links",
+        f"{metrics['raw_cluster_member_links']:,}",
+    )
+    columns[2].metric(
+        "Strict cluster-member links",
+        f"{metrics['strict_cluster_member_links']:,}",
+    )
+    columns[3].metric(
+        "Neighbourhoods with raw 1KP",
+        f"{metrics['clusters_with_raw_onekp']:,}",
+    )
+    columns[4].metric(
+        "Neighbourhoods with strict 1KP",
+        f"{metrics['clusters_with_strict_onekp']:,}",
+    )
+    columns[5].metric(
+        "Strict 1KP cluster-species links",
+        f"{metrics['strict_onekp_cluster_species_links']:,}",
+        help=(
+            "Sum of distinct parsed 1KP species within each cluster. The same "
+            "species in two clusters contributes two links."
+        ),
+    )
+    st.caption(
+        "Source: `candidate_evidence`, derived from the full 1KP+ discovery "
+        "resource. Counts are cluster-member, cluster-sample or cluster-species "
+        "links and are labelled that way to avoid implying a global unique count."
+    )
+    log_x, log_y = st.columns(2)
+    with log_x:
+        use_log_onekp_species = st.checkbox(
+            "Log-transform 1KP-species axis",
+            value=False,
+            key="deepclust_log_onekp_species_axis",
+            help="The zero-coverage bar is omitted by a logarithmic x-axis.",
+        )
+    with log_y:
+        use_log_neighbourhood_count = st.checkbox(
+            "Log-transform neighbourhood-count axis",
+            value=False,
+            key="deepclust_log_neighbourhood_count_axis",
+        )
+    plotted_distribution = distribution
+    if use_log_onekp_species:
+        plotted_distribution = distribution[
+            distribution["strict_onekp_species_count"] > 0
+        ].copy()
+        st.caption(
+            "The log-scaled 1KP-species axis excludes the zero-coverage bin; "
+            "turn log x off to restore it."
+        )
+    figure = px.bar(
+        plotted_distribution,
+        x="strict_onekp_species_count",
+        y="cluster_count",
+        labels={
+            "strict_onekp_species_count": "Strict parsed 1KP species in neighbourhood",
+            "cluster_count": "E3-seeded DeepClust neighbourhoods",
+        },
+        title="Strict 1KP species coverage across E3-seeded sequence neighbourhoods",
+    )
+    figure.update_traces(marker_color="#0b7a75")
+    figure.update_xaxes(type="log" if use_log_onekp_species else "linear")
+    figure.update_yaxes(
+        type="log" if use_log_neighbourhood_count else "linear"
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        key="deepclust_onekp_coverage_plot",
+    )
+    render_plotly_pdf_download(
+        figure=figure,
+        file_stem="deepclust_onekp_species_coverage",
+        label="Download 1KP coverage graph as PDF",
+        key="deepclust_onekp_coverage_pdf",
+    )
+
+    st.markdown("#### Filter sequence neighbourhoods")
+    first, second = st.columns(2)
+    with first:
+        seed_query = st.text_area(
+            "Inherited E3 seed identifier(s)",
+            value="",
+            key="deepclust_seed_query",
+            help=(
+                "Paste one or several identifiers separated by spaces, new "
+                "lines, commas or semicolons. Blank retains every seed."
+            ),
+        )
+        seed_match_mode = st.radio(
+            "When several seeds are entered",
+            options=("any", "all"),
+            format_func=lambda value: (
+                "Match any entered seed" if value == "any" else "Match every entered seed"
+            ),
+            horizontal=True,
+            key="deepclust_seed_match_mode",
+        )
+        cluster_query = st.text_input(
+            "DeepClust representative contains",
+            value="",
+            key="deepclust_cluster_query",
+        )
+    with second:
+        onekp_mode = st.selectbox(
+            "1KP coverage",
+            options=("all", "raw", "strict"),
+            format_func=lambda value: {
+                "all": "All neighbourhoods, including no 1KP coverage",
+                "raw": "At least one raw 1KP member",
+                "strict": "At least one strict 1KP member",
+            }[value],
+            key="deepclust_onekp_mode",
+        )
+        minimum_species = st.number_input(
+            "Minimum strict parsed 1KP species",
+            min_value=0,
+            max_value=1_000_000,
+            value=0,
+            step=1,
+            key="deepclust_minimum_onekp_species",
+        )
+        maximum_rows = st.number_input(
+            "Maximum neighbourhoods to display",
+            min_value=1,
+            max_value=min(100_000, max(config.max_rows, 1)),
+            value=min(1000, max(config.max_rows, 1)),
+            step=100,
+            key="deepclust_maximum_rows",
+        )
+    try:
+        summary = collect_deepclust_summary(
+            connection=connection,
+            relation=relation,
+            seed_queries=(seed_query,),
+            match_mode=seed_match_mode,
+            onekp_mode=onekp_mode,
+            minimum_strict_onekp_species=int(minimum_species),
+            cluster_query=cluster_query,
+            maximum_rows=int(maximum_rows),
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if summary.empty:
+        st.info("No DeepClust sequence neighbourhood matches the selected filters.")
+        return
+    _display_dataframe(frame=summary, height=650)
+    render_table_downloads(
+        frame=summary,
+        file_stem="deepclust_onekp_sequence_neighbourhoods",
+        tsv_label="Download filtered neighbourhoods as TSV",
+        excel_label="Download filtered neighbourhoods as Excel",
+        key="deepclust_onekp_summary_download",
+    )
+    st.caption(
+        "The current integrated release publishes cluster-level 1KP counts, "
+        "not its full 25-million-sequence member relation. Exact 1KP member "
+        "rows therefore remain unavailable in this panel rather than being inferred."
+    )
+
+
+def _render_orthology_explorer(
+    *, connection: object, config: AppConfig
+) -> None:
+    """Render separate OrthoFinder and DeepClust/1KP evidence views."""
+    _render_orthofinder_explorer(connection=connection, config=config)
+    st.divider()
+    _render_deepclust_onekp_explorer(connection=connection, config=config)
 
 
 def _seed_member_fasta(*, members: pd.DataFrame) -> bytes:
@@ -1768,6 +1996,11 @@ def _render_pocket_review(
         f"{row['alignment_sequence_count']} aligned sequences"
     )
     document = read_group_html(bundle, group_page, focus)
+    st.caption(
+        "Use **Download current view PDF** or **Download alignment PDF** inside "
+        "the embedded report. Legacy compatible reports receive these controls "
+        "automatically."
+    )
     components.html(document, height=1100, scrolling=True)
     members = selected_group_members(bundle, int(row["review_rank"]), focus)
     member_title = (

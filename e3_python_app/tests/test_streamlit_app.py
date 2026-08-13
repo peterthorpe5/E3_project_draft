@@ -50,6 +50,11 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     metric_labels = [metric.label for metric in app.metric]
     assert "Evolutionary groups assessed" in metric_labels
     assert "Milestone 1 pre-structure passes" in metric_labels
+    assert "E3-seeded neighbourhoods" in metric_labels
+    checkbox_labels = [checkbox.label for checkbox in app.checkbox]
+    assert "Log-transform group-size axis" in checkbox_labels
+    assert "Log-transform group-count axis" in checkbox_labels
+    assert "Log-transform 1KP-species axis" in checkbox_labels
     app.text_input[0].set_value("Q9SA03").run()
     assert not app.exception
     assert any(

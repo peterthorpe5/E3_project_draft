@@ -49,6 +49,20 @@ def resource_db(tmp_path: Path) -> Path:
             "true, true, 'CONSERVED_3D_POCKET_SUPPORTED', '')"
         )
         connection.execute(
+            "CREATE TABLE candidate_evidence("
+            "representative_id VARCHAR, representative_original_id VARCHAR, "
+            "matched_seed_ids_calculated VARCHAR, raw_member_count INTEGER, "
+            "strict_member_count INTEGER, strict_member_fraction DOUBLE, "
+            "raw_onekp_sample_count INTEGER, raw_onekp_species_count INTEGER, "
+            "strict_onekp_sample_count INTEGER, strict_onekp_species_count INTEGER, "
+            "strict_named_proteome_count INTEGER, strict_named_species_count INTEGER)"
+        )
+        connection.execute(
+            "INSERT INTO candidate_evidence VALUES "
+            "('cluster_1', 'onekp_dataset@@scaffold-AAAA-1', 'Q9SA03', "
+            "12, 10, 0.833, 7, 6, 5, 4, 3, 3)"
+        )
+        connection.execute(
             "CREATE TABLE domain_summary("
             "cluster_id VARCHAR, member_accession VARCHAR, species_column VARCHAR, "
             "domain_support_status VARCHAR)"
