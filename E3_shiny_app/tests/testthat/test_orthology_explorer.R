@@ -101,6 +101,21 @@ testthat::test_that("seed member summaries retain group and species breadth", {
 testthat::test_that("expanded orthology UIs expose requested controls", {
   orthology_ui <- as.character(orthology_explorer_ui("orthology"))
   seed_ui <- as.character(seed_group_explorer_ui("seed"))
+  testthat::expect_match(
+    orthology_ui,
+    "Root-level phylogenetic HOGs (N0.HOG…; recommended)",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    orthology_ui,
+    "Original MCL orthogroups (OG…; broader legacy view)",
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    orthology_ui,
+    "HOG means hierarchical orthogroup",
+    fixed = TRUE
+  )
   testthat::expect_match(orthology_ui, "orthology-required_species", fixed = TRUE)
   testthat::expect_match(orthology_ui, "orthology-taxonomy_roles", fixed = TRUE)
   testthat::expect_match(orthology_ui, "orthology-taxonomy_taxa", fixed = TRUE)

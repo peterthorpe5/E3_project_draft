@@ -5,15 +5,34 @@
 #' @param input_id Namespaced input identifier.
 #' @return Radio-button control.
 orthology_group_type_ui <- function(input_id) {
-  shiny::radioButtons(
-    inputId = input_id,
-    label = "OrthoFinder grouping level",
-    choices = c(
-      "Hierarchical orthogroups (HOGs)" = "hierarchical_orthogroup",
-      "Root orthogroups" = "orthogroup"
+  shiny::tagList(
+    shiny::radioButtons(
+      inputId = input_id,
+      label = "OrthoFinder grouping level",
+      choices = stats::setNames(
+        c("hierarchical_orthogroup", "orthogroup"),
+        c(
+          paste0(
+            "Root-level phylogenetic HOGs ",
+            "(N0.HOG…; recommended)"
+          ),
+          paste0(
+            "Original MCL orthogroups ",
+            "(OG…; broader legacy view)"
+          )
+        )
+      ),
+      selected = "hierarchical_orthogroup",
+      inline = TRUE
     ),
-    selected = "hierarchical_orthogroup",
-    inline = TRUE
+    shiny::p(
+      class = "small text-muted",
+      paste(
+        "HOG means hierarchical orthogroup. N0.HOG… groups reconcile rooted",
+        "gene trees with the species tree and are used by final prioritisation;",
+        "OG… groups are the original MCL-based Orthogroups.tsv legacy view."
+      )
+    )
   )
 }
 
@@ -29,8 +48,10 @@ orthology_explorer_ui <- function(id) {
       class = "grant-question",
       paste(
         "This page summarises OrthoFinder membership independently of",
-        "DeepClust. A HOG/orthogroup is an evolutionary group; a DeepClust",
-        "cluster is a sequence-neighbourhood input to candidate discovery."
+        "DeepClust. The recommended N0 hierarchical orthogroups are",
+        "phylogenetic evolutionary groups; original OG groups are retained as",
+        "a legacy MCL view. A DeepClust cluster remains a non-phylogenetic",
+        "sequence-neighbourhood input to candidate discovery."
       )
     ),
     orthology_group_type_ui(ns("group_type")),
@@ -422,9 +443,10 @@ seed_group_explorer_ui <- function(id) {
     shiny::p(
       class = "grant-question",
       paste(
-        "Select inherited E3 seed identifiers to find their HOGs or root",
-        "orthogroups and inspect every sequence-bearing member. A seed records",
-        "prior E3 evidence; an unseeded member is not labelled non-E3."
+        "Select inherited E3 seed identifiers to find their root-level",
+        "phylogenetic hierarchical orthogroups or original MCL orthogroups",
+        "and inspect every sequence-bearing member. A seed records prior E3",
+        "evidence; an unseeded member is not labelled non-E3."
       )
     ),
     orthology_group_type_ui(ns("group_type")),

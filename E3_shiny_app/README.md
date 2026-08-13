@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.12.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.12.1 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -38,13 +38,17 @@ The main sections follow the evidence path required by the grant:
 8. **Orthology** – release-wide sequence, species and group metrics; E3-seeded,
    all-species and largest-group counts; exact multi-species and curated
    taxonomy-role filters; independently selectable linear/logarithmic plot axes;
-   and group-size graphs that explicitly retain one-species groups. A separate
-   panel on the same page reports full 1KP+ DeepClust sequence-neighbourhood
-   counts, inherited-seed filters, optional evolutionary-group links and 1KP
-   coverage without describing DeepClust membership as inferred orthology.
+   and group-size graphs that explicitly retain one-species groups. The grouping
+   selector distinguishes recommended root-level phylogenetic hierarchical
+   orthogroups (`N0.HOG…`) from the broader original MCL orthogroups (`OG…`). A
+   separate panel on the same page reports full 1KP+ DeepClust
+   sequence-neighbourhood counts, inherited-seed filters, optional
+   evolutionary-group links and 1KP coverage without describing DeepClust
+   membership as inferred orthology.
 9. **Seed & HOG explorer** – one or several inherited E3 seeds with Any/All
-   matching, every sequence-bearing member of each matched HOG/orthogroup,
-   associated evidence, species filtering and filtered protein FASTA export.
+   matching, every sequence-bearing member of each matched root-level
+   phylogenetic hierarchical orthogroup or original MCL orthogroup, associated
+   evidence, species filtering and filtered protein FASTA export.
 10. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
 11. **Expression evidence** – identifier mapping and broad Expression Atlas

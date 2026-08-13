@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.9.0 is the Streamlit companion to `E3_shiny_app` 0.12.0. Both
+Version 0.9.1 is the Streamlit companion to `E3_shiny_app` 0.12.1. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -75,15 +75,18 @@ The reporter provides:
   group, E3-seeded-group, all-species-group and largest-group metrics; exact
   multi-species, breadth, seed-evidence and curated taxonomy-role filters; and
   a full group-size distribution that explicitly retains one-species groups,
-  with independently selectable linear/logarithmic x and y axes;
+  with independently selectable linear/logarithmic x and y axes. Its grouping
+  selector distinguishes recommended root-level phylogenetic hierarchical
+  orthogroups (`N0.HOG…`) from the broader original MCL orthogroups (`OG…`);
 - a scientifically separate DeepClust and 1KP sequence-neighbourhood panel,
   using the full 1KP+ candidate-evidence summaries for raw/strict member,
   sample and parsed-species coverage, inherited-seed filters, optional links to
   reconciled evolutionary groups, a log-switchable coverage graph and TSV/Excel
   downloads without relabelling sequence clusters as orthology;
 - a separate Seed & HOG explorer supporting one or several inherited E3 seed
-  identifiers, Any/All matching, matching-group summaries, member-table species
-  filters, associated evidence, and filtered member protein FASTA export;
+  identifiers, Any/All matching, matching-group summaries for the selected
+  phylogenetic or legacy grouping, member-table species filters, associated
+  evidence, and filtered member protein FASTA export;
 - species, tissue/organism-part and identifier filters for the normalised
   candidate-by-expression-context relation, when supplied by workflow v0.13.0
   or later;
@@ -180,7 +183,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.9.0 quality gate includes branch-aware coverage at or above 95%
+The v0.9.1 quality gate includes branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.

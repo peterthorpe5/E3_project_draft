@@ -1,8 +1,9 @@
-ARIA plant E3 Shiny reporter v0.12.0 validation hand-off
+ARIA plant E3 Shiny reporter v0.12.1 validation hand-off
 =======================================================
 
 The user reported that the complete v0.11.1 R suite passed before the v0.12.0
-DeepClust/1KP, log-axis and legacy-PDF additions.
+DeepClust/1KP, log-axis and legacy-PDF additions. Version 0.12.1 is a
+presentation-only terminology patch over that build.
 
 Checks completed in this build workspace on 2026-08-13:
 
@@ -13,6 +14,8 @@ Checks completed in this build workspace on 2026-08-13:
   builder emits a payload beginning with `%PDF` and ending with `%%EOF`;
 - Python source and tests compile with `python -m compileall`; and
 - edited files pass whitespace/error checks.
+- the corrected N0.HOG… and OG… selector labels are covered by R UI and Python
+  headless regression assertions.
 
 Environment limitation:
 

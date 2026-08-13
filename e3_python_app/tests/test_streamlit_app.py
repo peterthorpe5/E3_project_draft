@@ -55,6 +55,21 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Log-transform group-size axis" in checkbox_labels
     assert "Log-transform group-count axis" in checkbox_labels
     assert "Log-transform 1KP-species axis" in checkbox_labels
+    group_level_radios = [
+        radio
+        for radio in app.radio
+        if radio.label == "OrthoFinder grouping level"
+    ]
+    assert len(group_level_radios) == 2
+    for group_level_radio in group_level_radios:
+        assert (
+            "Root-level phylogenetic HOGs (N0.HOG…; recommended)"
+            in group_level_radio.options
+        )
+        assert (
+            "Original MCL orthogroups (OG…; broader legacy view)"
+            in group_level_radio.options
+        )
     app.text_input[0].set_value("Q9SA03").run()
     assert not app.exception
     assert any(

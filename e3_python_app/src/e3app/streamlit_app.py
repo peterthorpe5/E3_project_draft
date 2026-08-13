@@ -122,6 +122,12 @@ from e3app.visualisations import (
 from e3app.workflow import workflow_schematic_html
 
 LOGGER = logging.getLogger(__name__)
+ORTHOLOGY_GROUP_LABELS = {
+    "hierarchical_orthogroup": (
+        "Root-level phylogenetic HOGs (N0.HOG…; recommended)"
+    ),
+    "orthogroup": "Original MCL orthogroups (OG…; broader legacy view)",
+}
 _WRAPPED_TAB_CSS = """
 <style>
 div[data-testid="stTabs"] {
@@ -260,21 +266,24 @@ def _render_section(
 
 def _orthology_group_type_control(*, key: str) -> str:
     """Render the shared OrthoFinder group-level selector."""
-    return st.radio(
+    selected_group_type = st.radio(
         "OrthoFinder grouping level",
         options=("hierarchical_orthogroup", "orthogroup"),
-        format_func=lambda value: (
-            "Hierarchical orthogroups (HOGs)"
-            if value == "hierarchical_orthogroup"
-            else "Root orthogroups"
-        ),
+        format_func=lambda value: ORTHOLOGY_GROUP_LABELS[value],
         horizontal=True,
         key=key,
         help=(
-            "HOGs are the reconciled evolutionary decision unit used by the final "
-            "prioritisation. Root orthogroups provide the broader OrthoFinder view."
+            "HOG means hierarchical orthogroup. The N0 groups reconcile rooted "
+            "gene trees with the species tree and are used by final prioritisation. "
+            "The OG groups come from the original MCL-based Orthogroups.tsv output "
+            "and are retained as a broader legacy view."
         ),
     )
+    st.caption(
+        "N0.HOG… = root-level phylogenetic hierarchical orthogroup; "
+        "OG… = original MCL-based OrthoFinder orthogroup."
+    )
+    return selected_group_type
 
 
 def _render_orthofinder_explorer(
@@ -284,8 +293,10 @@ def _render_orthofinder_explorer(
     st.subheader("Expanded cross-species orthology")
     st.caption(
         "This page summarises OrthoFinder membership independently of DeepClust. "
-        "A HOG/orthogroup is an evolutionary group; a DeepClust cluster is a "
-        "sequence-neighbourhood input to candidate discovery."
+        "The recommended N0 hierarchical orthogroups are phylogenetic evolutionary "
+        "groups; the original OG groups are retained as a legacy MCL view. A "
+        "DeepClust cluster remains a non-phylogenetic sequence-neighbourhood input "
+        "to candidate discovery."
     )
     group_type = _orthology_group_type_control(key="orthology_group_type")
     relation = select_orthology_relation(
@@ -724,9 +735,10 @@ def _render_seed_group_explorer(
     """Search inherited E3 seeds and return all members of matching groups."""
     st.subheader("E3 seed and OrthoFinder-group explorer")
     st.caption(
-        "Select one or more inherited E3 seed identifiers to find their HOGs or "
-        "root orthogroups, then inspect every sequence-bearing group member. A "
-        "seed records prior E3 evidence; an unseeded member is not labelled non-E3."
+        "Select one or more inherited E3 seed identifiers to find their root-level "
+        "phylogenetic hierarchical orthogroups or original MCL orthogroups, then "
+        "inspect every sequence-bearing group member. A seed records prior E3 "
+        "evidence; an unseeded member is not labelled non-E3."
     )
     seeds = collect_seed_identifiers(connection=connection)
     if not seeds:
