@@ -14,11 +14,13 @@ from e3app.errors import AppError
 from e3app.thresholds import (
     RECORDED_MINIMUM_DRUGGABILITY_SCORE,
     ThresholdSettings,
+    build_threshold_hog_annotation_query,
     build_threshold_result_query,
     build_threshold_summary_query,
     collect_member_druggability_scores,
     compare_final_druggability_passes,
     evaluate_thresholds,
+    enrich_threshold_results,
     final_druggability_settings,
     final_druggability_source_missing_columns,
     group_source_sql,
@@ -67,6 +69,22 @@ def threshold_db(tmp_path: Path) -> Path:
             "(4, 'HIERARCHICAL_ORTHOGROUP', 'N0.HOG0004', 'cluster_4', "
             "1, 1, 12, 1, 10, 1, 0, 0, false, false, "
             "'NO_STRUCTURAL_EVIDENCE', 'NOT_ASSESSED', 0.75, 0.5, 'P6')"
+        )
+        connection.execute(
+            "CREATE TABLE hierarchical_membership("
+            "group_id VARCHAR, species VARCHAR, raw_identifier VARCHAR, "
+            "parsed_accession VARCHAR, parsed_entry VARCHAR, "
+            "orthogroup_id VARCHAR, gene_tree_parent_clade VARCHAR, "
+            "review_status VARCHAR, mapping_status VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO hierarchical_membership VALUES "
+            "('N0.HOG0001', 'Homo_sapiens', 'sp|H1|HUMAN_ONE', 'H1', "
+            "'HUMAN_ONE', 'OG1', 'N1', 'reviewed', 'mapped'), "
+            "('N0.HOG0001', 'Arabidopsis_thaliana', 'sp|A1|ARATH_ONE', "
+            "'A1', 'ARATH_ONE', 'OG1', 'N1', 'reviewed', 'mapped'), "
+            "('N0.HOG0002', 'Hordeum_vulgare', 'BARLEY1', 'B1', '', "
+            "'OG2', 'N2', 'unreviewed', 'mapped')"
         )
     return path
 
@@ -358,6 +376,26 @@ def test_threshold_sql_is_bounded_and_informative(threshold_db: Path) -> None:
         assert "candidate_accessions" in threshold_result_columns(
             available, "structural"
         )
+        rich_columns = threshold_result_columns(
+            [
+                "prestructure_evolutionary_group_rank",
+                "stringent_rank",
+                "discovery_seed_protein_names",
+                "domain_unavailable_species",
+                "expression_supported_species",
+                "missing_evidence",
+                "final_score",
+            ],
+            "prestructure",
+        )
+        assert rich_columns == [
+            "prestructure_evolutionary_group_rank",
+            "stringent_rank",
+            "domain_unavailable_species",
+            "expression_supported_species",
+            "discovery_seed_protein_names",
+            "missing_evidence",
+        ]
         assert threshold_result_columns(["odd"], "prestructure") == ["odd"]
         permissive = build_threshold_result_query(
             "final_evolutionary_candidate_prioritisation",
@@ -382,6 +420,67 @@ def test_threshold_sql_is_bounded_and_informative(threshold_db: Path) -> None:
             ThresholdSettings(),
             10_001,
         )
+
+
+def test_threshold_hog_annotations_include_lineage_and_composition(
+    threshold_db: Path,
+) -> None:
+    """Threshold results add human, Arabidopsis and HOG membership context."""
+    with open_read_only(threshold_db) as connection:
+        query = build_threshold_hog_annotation_query(
+            membership_columns=[
+                "group_id",
+                "species",
+                "raw_identifier",
+                "parsed_accession",
+                "parsed_entry",
+            ],
+            group_count=1,
+        )
+        assert "human_hog_representatives" in query
+        frame = pd.DataFrame(
+            data={"primary_group_id": ["N0.HOG0001", "N0.HOG0004"]}
+        )
+        enriched = enrich_threshold_results(
+            connection=connection,
+            frame=frame,
+        )
+    assert enriched.loc[0, "human_hog_representatives"] == "H1"
+    assert enriched.loc[0, "arabidopsis_hog_representatives"] == "A1"
+    assert enriched.loc[0, "hog_member_count"] == 2
+    assert enriched.loc[0, "hog_species_count"] == 2
+    assert enriched.loc[1, "human_hog_representatives"] == ""
+    assert not enriched.loc[1, "hog_membership_available"]
+    with pytest.raises(AppError, match="between 1 and 10000"):
+        build_threshold_hog_annotation_query(
+            membership_columns=("group_id", "species", "raw_identifier"),
+            group_count=0,
+        )
+    with pytest.raises(AppError, match="lacks fields"):
+        build_threshold_hog_annotation_query(
+            membership_columns=("group_id",),
+            group_count=1,
+        )
+
+
+def test_threshold_hog_enrichment_has_stable_unavailable_fields() -> None:
+    """Missing membership never becomes a biological absence or schema drift."""
+    with duckdb.connect(":memory:") as connection:
+        frame = pd.DataFrame(data={"primary_group_id": ["N0.HOG1"]})
+        result = enrich_threshold_results(connection=connection, frame=frame)
+        empty = enrich_threshold_results(
+            connection=connection,
+            frame=pd.DataFrame(),
+        )
+        unidentified = enrich_threshold_results(
+            connection=connection,
+            frame=pd.DataFrame(data={"score": [0.5]}),
+        )
+    assert result.loc[0, "human_hog_representatives"] == ""
+    assert result.loc[0, "hog_member_count"] == 0
+    assert not result.loc[0, "hog_membership_available"]
+    assert "arabidopsis_hog_representatives" in empty.columns
+    assert "hog_species_present" in unidentified.columns
 
 
 def test_threshold_evaluation_reclassifies_druggability_near_miss(

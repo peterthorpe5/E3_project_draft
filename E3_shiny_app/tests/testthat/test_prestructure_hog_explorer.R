@@ -13,6 +13,7 @@ test_that("authoritative pre-structure HOG sources exclude cluster-only ranks", 
     selected$rank_column,
     "prestructure_evolutionary_group_rank"
   )
+  expect_null(selected$pass_column)
   expect_null(select_prestructure_hog_source(
     relation_columns = list(
       prestructure_ranking = c("primary_group_id", "computational_rank")
@@ -43,9 +44,18 @@ test_that("ranked HOG query validates its required fields and bounds", {
     ),
     "between 1 and 10000"
   )
+  expect_error(
+    build_prestructure_ranked_hog_query(
+      relation = "ranking",
+      available = columns,
+      rank_column = "prestructure_evolutionary_group_rank",
+      passes_only = TRUE
+    ),
+    "pass field"
+  )
 })
 
-test_that("top-N HOG query executes without gate filtering", {
+test_that("top-N shortlist ranks pre-structure evidence only", {
   skip_if_not_installed("DBI")
   skip_if_not_installed("duckdb")
   skip_if_not_installed("duckplyr")
@@ -61,7 +71,9 @@ test_that("top-N HOG query executes without gate filtering", {
     data.frame(
       primary_group_id = c("N0.HOG3", "N0.HOG1", "N0.HOG2", "OG0001"),
       prestructure_evolutionary_group_rank = c(3L, 1L, 2L, 0L),
-      grant_aligned_prestructure_pass = c(FALSE, FALSE, TRUE, TRUE),
+      grant_aligned_prestructure_pass = c(TRUE, FALSE, TRUE, TRUE),
+      final_score = c(0.99, 0.10, 0.50, 0.80),
+      selected_pocket_count = c(3L, 0L, 1L, 2L),
       stringsAsFactors = FALSE
     )
   )
@@ -86,7 +98,8 @@ test_that("top-N HOG query executes without gate filtering", {
       relation = "ranking",
       available = c(
         "primary_group_id", "prestructure_evolutionary_group_rank",
-        "grant_aligned_prestructure_pass"
+        "grant_aligned_prestructure_pass", "final_score",
+        "selected_pocket_count"
       ),
       rank_column = "prestructure_evolutionary_group_rank",
       max_hogs = 2L,
@@ -98,8 +111,41 @@ test_that("top-N HOG query executes without gate filtering", {
   )
   expect_identical(result$primary_group_id, c("N0.HOG1", "N0.HOG2"))
   expect_identical(result$grant_aligned_prestructure_pass, c(FALSE, TRUE))
+  expect_false("final_score" %in% names(result))
+  expect_false("selected_pocket_count" %in% names(result))
   expect_identical(result$human_hog_representatives, c("HUM1", "HUM2"))
   expect_identical(result$arabidopsis_hog_representatives, c("AT1", ""))
+
+  passing <- collect_resource_query(
+    duckdb_path = path,
+    query = build_prestructure_ranked_hog_query(
+      relation = "ranking",
+      available = c(
+        "primary_group_id", "prestructure_evolutionary_group_rank",
+        "grant_aligned_prestructure_pass", "final_score"
+      ),
+      rank_column = "prestructure_evolutionary_group_rank",
+      max_hogs = 2L,
+      passes_only = TRUE,
+      pass_column = "grant_aligned_prestructure_pass"
+    )
+  )
+  expect_identical(passing$primary_group_id, c("N0.HOG2", "N0.HOG3"))
+  expect_true(all(passing$grant_aligned_prestructure_pass))
+})
+
+test_that("review columns preserve rich evidence and remove structural fields", {
+  selected <- prestructure_review_columns(c(
+    "candidate_accessions", "final_score", "expression_score",
+    "prestructure_evolutionary_group_rank", "primary_group_id",
+    "three_dimensional_alignment_status", "sensitivity_alignment_status",
+    "conservation_rescued_accession_count", "alphafold_model_path",
+    "discovery_seed_protein_names"
+  ))
+  expect_identical(selected, c(
+    "prestructure_evolutionary_group_rank", "primary_group_id",
+    "candidate_accessions", "expression_score", "discovery_seed_protein_names"
+  ))
 })
 
 test_that("ranked HOG filtering retains the original recorded ranks", {
@@ -140,6 +186,8 @@ test_that("ranked HOG summaries tolerate empty and unavailable rank values", {
 test_that("ranked HOG UI exposes top-N and both download formats", {
   ui <- as.character(prestructure_hog_explorer_ui("ranked"))
   expect_match(ui, "ranked-top_n", fixed = TRUE)
+  expect_match(ui, "ranked-pass_filter", fixed = TRUE)
+  expect_match(ui, "max=\"500\"", fixed = TRUE)
   expect_match(ui, "ranked-download_tsv", fixed = TRUE)
   expect_match(ui, "ranked-download_excel", fixed = TRUE)
 })

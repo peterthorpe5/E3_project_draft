@@ -13,7 +13,6 @@ from e3app.data import quote_literal
 @pytest.fixture
 def resource_db(tmp_path: Path) -> Path:
     """Create candidate, orthology, pocket and provenance relations."""
-
     path = tmp_path / "resource.duckdb"
     with duckdb.connect(str(path)) as connection:
         connection.execute(

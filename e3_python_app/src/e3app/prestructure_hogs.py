@@ -27,6 +27,51 @@ PRESTRUCTURE_HOG_RANK_COLUMNS = (
     "prestructure_evolutionary_group_rank",
     "evolutionary_group_rank",
 )
+PRESTRUCTURE_HOG_PASS_COLUMNS = (
+    "grant_aligned_prestructure_pass",
+    "grant_aligned_stringent_pass",
+)
+STRUCTURAL_REVIEW_COLUMN_MARKERS = (
+    "druggability",
+    "ligandability",
+    "pocket",
+    "structural",
+    "three_dimensional",
+    "sensitivity_",
+    "alignment",
+    "conservation",
+    "centroid_distance",
+    "minimum_tm_score",
+    "predictor_agreement",
+    "plddt",
+    "alphafold",
+    "colabfold",
+    "foldseek",
+    "usalign",
+    "tm_align",
+    "model",
+    "mmcif",
+    "pdb",
+)
+STRUCTURAL_REVIEW_EXCLUDED_COLUMNS = frozenset(
+    {
+        "final_evolutionary_rank",
+        "final_rank",
+        "stringent_rank",
+        "boss_review_status",
+        "recommendation_status",
+        "grant_aligned_prediction_status",
+        "final_score",
+        "grant_aligned_base_pass",
+        "grant_aligned_final_pass",
+        "conservation_status",
+        "all_assessed_members_pass_mapping",
+        "computational_structure_selected",
+        "lead_computational_structure_selected",
+        "mean_pairwise_region_overlap",
+        "mean_chemical_group_conservation",
+    }
+)
 
 
 def prestructure_hog_capability(*, connection: object) -> dict[str, object]:
@@ -36,8 +81,9 @@ def prestructure_hog_capability(*, connection: object) -> dict[str, object]:
         connection: Open read-only DuckDB connection.
 
     Returns:
-        Availability, relation and rank-column metadata. Cluster-level
-        ``computational_rank`` is deliberately not accepted as a HOG rank.
+        Availability, relation, rank-column and optional pass-column metadata.
+        Cluster-level ``computational_rank`` is deliberately not accepted as a
+        HOG rank.
     """
     available_relations = set(list_relations(connection))
     for relation in PRESTRUCTURE_HOG_RELATION_PREFERENCE:
@@ -52,17 +98,62 @@ def prestructure_hog_capability(*, connection: object) -> dict[str, object]:
             ),
             None,
         )
+        pass_column = next(
+            (
+                column
+                for column in PRESTRUCTURE_HOG_PASS_COLUMNS
+                if column in columns
+            ),
+            None,
+        )
         if "primary_group_id" in columns and rank_column is not None:
             return {
                 "available": True,
                 "relation": relation,
                 "rank_column": rank_column,
+                "pass_column": pass_column,
             }
     return {
         "available": False,
         "relation": None,
         "rank_column": None,
+        "pass_column": None,
     }
+
+
+def prestructure_review_columns(*, available: Sequence[str]) -> list[str]:
+    """Select source columns which cannot expose structural-stage evidence.
+
+    Args:
+        available: Source relation columns in their published order.
+
+    Returns:
+        Pre-structure and provenance columns, with the authoritative HOG rank
+        and identifier placed first.
+    """
+    safe = [
+        column
+        for column in available
+        if column not in STRUCTURAL_REVIEW_EXCLUDED_COLUMNS
+        and not any(
+            marker in column.casefold()
+            for marker in STRUCTURAL_REVIEW_COLUMN_MARKERS
+        )
+    ]
+    preferred = (
+        "prestructure_evolutionary_group_rank",
+        "evolutionary_group_rank",
+        "primary_group_id",
+        "prestructure_score",
+        "best_prestructure_score",
+        "mean_prestructure_score",
+        "minimum_prestructure_score",
+        "grant_aligned_prestructure_pass",
+        "grant_aligned_stringent_pass",
+    )
+    ordered = [column for column in preferred if column in safe]
+    ordered.extend(column for column in safe if column not in ordered)
+    return ordered
 
 
 def _empty_representatives_cte() -> str:
@@ -119,39 +210,57 @@ def _representatives_ctes(*, connection: object) -> str:
 def _ranked_row_order(*, available: Sequence[str], rank_column: str) -> str:
     """Return deterministic row ordering for duplicate source HOG rows."""
     choices = (
-        rank_column,
-        "final_evolutionary_rank",
-        "final_rank",
-        "lead_cluster_id",
-        "cluster_id",
-        "candidate_accessions",
+        (rank_column, "ASC"),
+        ("prestructure_score", "DESC"),
+        ("best_prestructure_score", "DESC"),
+        ("mean_prestructure_score", "DESC"),
+        ("lead_computational_rank", "ASC"),
+        ("lead_cluster_id", "ASC"),
+        ("cluster_id", "ASC"),
+        ("candidate_accessions", "ASC"),
     )
-    selected = list(dict.fromkeys(column for column in choices if column in available))
-    return ", ".join(f"{quote_identifier(column)} NULLS LAST" for column in selected)
+    selected = list(
+        dict.fromkeys(
+            (column, direction)
+            for column, direction in choices
+            if column in available
+        )
+    )
+    return ", ".join(
+        f"{quote_identifier(column)} {direction} NULLS LAST"
+        for column, direction in selected
+    )
 
 
 def collect_prestructure_ranked_hogs(
     *,
     connection: duckdb.DuckDBPyConnection,
     maximum_hogs: int = 200,
+    passes_only: bool = False,
 ) -> pd.DataFrame:
-    """Collect the top root-level HOGs by recorded pre-structure rank.
+    """Collect HOGs for an independent structural-review shortlist.
 
-    No pre-structure, pocket, druggability or structural gate is applied.
+    The recorded rank integrates discovery, orthology/species, domain and
+    expression evidence. Structural-stage fields and tie-breaks are excluded.
+    The recorded stringent pre-structure gate is an optional filter.
 
     Args:
         connection: Open read-only DuckDB connection.
         maximum_hogs: Number of ranked HOGs to return, from 1 to 10,000.
+        passes_only: Require the recorded group-level pre-structure pass.
 
     Returns:
         One richly annotated row per ranked root-level HOG.
 
     Raises:
-        AppError: If no authoritative HOG rank exists, the limit is invalid or
-            DuckDB cannot execute the bounded query.
+        AppError: If no authoritative HOG rank exists, a requested pass field
+            is unavailable, the arguments are invalid or DuckDB cannot execute
+            the bounded query.
     """
     if not 1 <= maximum_hogs <= 10_000:
         raise AppError("maximum ranked HOGs must be between 1 and 10000")
+    if not isinstance(passes_only, bool):
+        raise AppError("passes_only must be a boolean")
     capability = prestructure_hog_capability(connection=connection)
     if not capability["available"]:
         raise AppError(
@@ -161,16 +270,33 @@ def collect_prestructure_ranked_hogs(
     relation = str(capability["relation"])
     rank_column = str(capability["rank_column"])
     available = relation_columns(connection, relation)
+    selected_columns = prestructure_review_columns(available=available)
+    if not selected_columns:
+        raise AppError("No non-structural fields are available for the shortlist")
+    pass_column = capability["pass_column"]
+    if passes_only and pass_column is None:
+        raise AppError(
+            "The source has no group-level recorded pre-structure pass field"
+        )
+    eligibility_filter = ""
+    if passes_only:
+        eligibility_filter = (
+            " AND coalesce(TRY_CAST("
+            f"{quote_identifier(str(pass_column))} AS BOOLEAN), FALSE)"
+        )
     row_order = _ranked_row_order(
         available=available,
         rank_column=rank_column,
+    )
+    source_select = ", ".join(
+        quote_identifier(column) for column in selected_columns
     )
     representatives = _representatives_ctes(connection=connection)
     query = f"""
         WITH ranked_source AS (
             SELECT * EXCLUDE (_e3_hog_row)
             FROM (
-                SELECT *, ROW_NUMBER() OVER (
+                SELECT {source_select}, ROW_NUMBER() OVER (
                     PARTITION BY CAST(primary_group_id AS VARCHAR)
                     ORDER BY {row_order}
                 ) AS _e3_hog_row
@@ -181,6 +307,7 @@ def collect_prestructure_ranked_hogs(
                   )
                   AND TRY_CAST({quote_identifier(rank_column)} AS BIGINT)
                       IS NOT NULL
+                  {eligibility_filter}
             )
             WHERE _e3_hog_row = 1
         ), top_hogs AS (
@@ -209,8 +336,9 @@ def collect_prestructure_ranked_hogs(
         )
         raise AppError(f"Could not collect pre-structure ranked HOGs: {exc}") from exc
     LOGGER.info(
-        "Collected %s pre-structure ranked HOGs from %s",
+        "Collected %s independent structural-review HOGs from %s passes_only=%s",
         len(result),
         relation,
+        passes_only,
     )
     return result

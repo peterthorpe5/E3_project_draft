@@ -22,9 +22,10 @@ tab_help_entries <- function() {
       "Change documented gates to create sensitivity lists, then compare the",
       "separate pre-structure and structurally informed tables and downloads."
     ),
-    "Pre-structure ranked HOGs" = paste(
-      "Choose how many HOGs to return. The recorded pre-structure HOG rank is",
-      "used directly without biological, pocket, druggability or structural gates."
+    "Independent structural-review shortlist" = paste(
+      "Choose the top 200 to 500 HOGs using the complete recorded pre-structure",
+      "evidence ranking. Existing pocket and structural results are deliberately",
+      "excluded; the pre-structure-pass-only filter remains optional."
     ),
     "Visual explorer" = paste(
       "Choose candidate metrics and a group to connect overview plots to exact",
@@ -49,6 +50,12 @@ tab_help_entries <- function() {
     "Seed & HOG explorer" = paste(
       "Paste one or several E3 seeds, choose Any or All matching, and inspect",
       "matching HOG members and sequences before downloading FASTA."
+    ),
+    "E3 seed catalogue" = paste(
+      "Search inherited known-E3 identifiers, names and source annotations.",
+      "The exact seed authority is preferred; older resources use a clearly",
+      "labelled cluster-associated fallback. Sequences are downloadable as FASTA",
+      "only where an accession-level match exists."
     ),
     "Domains" = paste(
       "Select summary or hit-level domain evidence. Keep assessed negatives",

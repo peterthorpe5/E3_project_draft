@@ -95,6 +95,11 @@ from e3app.ranking import (
     recompute_exploratory_ranking,
     select_ranking_relation,
 )
+from e3app.seed_catalogue import (
+    collect_seed_catalogue,
+    filter_seed_catalogue,
+    seed_catalogue_capability,
+)
 from e3app.thresholds import (
     LOGICAL_THRESHOLD_FIELDS,
     NUMERIC_THRESHOLD_FIELDS,
@@ -757,6 +762,118 @@ def _seed_member_fasta(*, members: pd.DataFrame) -> bytes:
     )
 
 
+def _render_seed_catalogue(*, connection: object, config: AppConfig) -> None:
+    """Render exact inherited seed identifiers and available annotations."""
+    st.subheader("E3 seed catalogue")
+    st.info(
+        "This is the inherited known-E3 seed set used by sequence discovery. "
+        "The exact `known_e3_seeds` authority is preferred when it is published; "
+        "otherwise matched seed identifiers are reconstructed from candidate "
+        "summaries and their annotations are labelled as cluster-associated. "
+        "A protein sequence is shown only when the same seed identifier can be "
+        "reconciled to a sequence-bearing HOG member in the loaded resource."
+    )
+    capability = seed_catalogue_capability(connection=connection)
+    if not capability["available"]:
+        st.warning(
+            "The loaded release has no seed-level evidence relation. No seed "
+            "catalogue has been inferred from unrelated candidate identifiers."
+        )
+        return
+    controls = st.columns(spec=(1, 3))
+    with controls[0]:
+        maximum_rows = int(
+            st.number_input(
+                "Maximum seed records (up to 100,000)",
+                min_value=1,
+                max_value=100_000,
+                value=min(max(config.max_rows, 1), 10_000),
+                step=100,
+                key="seed_catalogue_maximum_rows",
+                help=(
+                    "This dedicated bounded catalogue can exceed the normal table "
+                    "preview cap so the complete controlled seed set can be searched "
+                    "and downloaded. Increase it when a release contains more seeds."
+                ),
+            )
+        )
+    with controls[1]:
+        search_text = st.text_area(
+            "Filter seed identifiers, names or annotations",
+            value="",
+            height=100,
+            key="seed_catalogue_filter",
+            placeholder="One or several terms separated by new lines, commas or tabs",
+        )
+    try:
+        catalogue = collect_seed_catalogue(
+            connection=connection,
+            maximum_rows=maximum_rows,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    displayed = filter_seed_catalogue(frame=catalogue, query=search_text)
+    metrics = st.columns(spec=3)
+    metrics[0].metric("Seed records shown", f"{len(displayed):,}")
+    sequence_count = int(
+        displayed.get("sequence_available", pd.Series(dtype=bool))
+        .fillna(False)
+        .astype(bool)
+        .sum()
+    )
+    metrics[1].metric("Seeds with an exact sequence", f"{sequence_count:,}")
+    cluster_links = pd.to_numeric(
+        displayed["source_cluster_count"],
+        errors="coerce",
+    ).fillna(0).sum()
+    metrics[2].metric(
+        "Seed-to-cluster links",
+        f"{cluster_links:,.0f}",
+    )
+    st.caption(
+        f"Catalogue source: `{capability['relation']}` ({capability['mode']}). "
+        "Exact authority fields and cluster-associated fallback fields are kept "
+        "separate rather than silently relabelled."
+    )
+    _display_dataframe(frame=displayed, height=680)
+    render_table_downloads(
+        frame=displayed,
+        file_stem="e3_seed_catalogue",
+        tsv_label="Download seed catalogue as TSV",
+        excel_label="Download seed catalogue as Excel",
+        key="seed_catalogue_download",
+    )
+    sequence_rows = displayed.loc[
+        displayed["protein_sequence"].fillna("").astype(str).str.strip().ne("")
+    ].copy()
+    if sequence_rows.empty:
+        st.caption("No exact seed protein sequences are available for this selection.")
+        return
+    try:
+        fasta_payload = dataframe_to_fasta_bytes(
+            frame=sequence_rows,
+            identifier_column="seed_id",
+            sequence_column="protein_sequence",
+            description_columns=(
+                "seed_protein_names",
+                "associated_seed_protein_names",
+                "sequence_species",
+                "sequence_identifiers",
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        st.caption(f"Seed FASTA is unavailable: {exc}")
+        return
+    st.download_button(
+        "Download available exact seed protein sequences as FASTA",
+        data=fasta_payload,
+        file_name="e3_seed_catalogue_sequences.fasta",
+        mime="text/x-fasta",
+        key="seed_catalogue_fasta_download",
+    )
+
+
 def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
     """Apply a literal case-insensitive HOG/member filter to a result frame."""
     cleaned = query.strip().casefold()
@@ -796,12 +913,14 @@ def _render_prestructure_ranked_hogs(
     connection: object,
     config: AppConfig,
 ) -> None:
-    """Render an ungated top-N list using the recorded HOG rank directly."""
-    st.subheader("Top pre-structure ranked HOGs")
+    """Render a pre-structure shortlist for independent structural review."""
+    st.subheader("Independent structural-review shortlist")
     st.info(
-        "This list applies no target-species, domain, expression, pocket, "
-        "druggability or structural gate. It selects root-level N0.HOG… groups "
-        "directly by the recorded pre-structure evolutionary-group rank."
+        "This shortlist ranks root-level N0.HOG… groups using all recorded "
+        "pre-structure evidence: discovery, orthology/species coverage, E3-domain "
+        "support and expression. Existing AlphaFold models, pockets, "
+        "druggability, mapping and 3D comparisons are neither used nor shown here. "
+        "They remain available in the other tabs."
     )
     capability = prestructure_hog_capability(connection=connection)
     if not capability["available"]:
@@ -810,26 +929,39 @@ def _render_prestructure_ranked_hogs(
             "authoritative pre-structure evolutionary-group rank."
         )
         return
-    maximum_allowed = min(config.max_rows, 10_000)
-    controls = st.columns(spec=(1, 2))
+    maximum_allowed = min(config.max_rows, 500)
+    controls = st.columns(spec=(1, 1, 2))
     with controls[0]:
         requested_hogs = int(
             st.number_input(
-                label="Number of ranked HOGs",
+                label="Shortlist size",
                 min_value=1,
                 max_value=maximum_allowed,
                 value=min(200, maximum_allowed),
                 step=50,
                 key="prestructure_hog_top_n",
                 help=(
-                    "Returns this many root-level HOGs in ascending recorded "
-                    "pre-structure rank. The default is the requested top 200."
+                    "Choose the top 200 by default, or expand the independent "
+                    "structural-review shortlist up to the top 500."
                 ),
             )
         )
     with controls[1]:
+        passes_only = st.checkbox(
+            label="Pre-structure passes only",
+            value=False,
+            key="prestructure_hog_passes_only",
+            disabled=capability["pass_column"] is None,
+            help=(
+                "Optional. Restricts the evidence-ranked shortlist to HOGs which "
+                "pass every recorded pre-structure biological gate. Leave this "
+                "off when the computational team wants to choose among the full "
+                "ranked set."
+            ),
+        )
+    with controls[2]:
         filter_text = st.text_input(
-            label="Filter within the selected top-ranked HOGs",
+            label="Filter within the selected shortlist",
             value="",
             key="prestructure_hog_filter",
             placeholder="HOG ID, accession, seed, protein name or representative",
@@ -842,6 +974,7 @@ def _render_prestructure_ranked_hogs(
         ranked_hogs = collect_prestructure_ranked_hogs(
             connection=connection,
             maximum_hogs=requested_hogs,
+            passes_only=passes_only,
         )
     except AppError as exc:
         st.warning(str(exc))
@@ -850,7 +983,7 @@ def _render_prestructure_ranked_hogs(
     rank_column = str(capability["rank_column"])
     ranks = pd.to_numeric(displayed[rank_column], errors="coerce").dropna()
     metrics = st.columns(spec=3)
-    metrics[0].metric("Ranked HOGs returned", f"{len(displayed):,}")
+    metrics[0].metric("Shortlisted HOGs returned", f"{len(displayed):,}")
     metrics[1].metric(
         "Best recorded rank",
         "—" if ranks.empty else f"{int(ranks.min()):,}",
@@ -861,15 +994,17 @@ def _render_prestructure_ranked_hogs(
     )
     st.caption(
         f"Authoritative source: `{capability['relation']}`; rank field: "
-        f"`{rank_column}`. Human and Arabidopsis representatives are added from "
-        "root-level hierarchical membership where available."
+        f"`{rank_column}`. The production pre-structure rank is retained and is "
+        "never recalculated from structural evidence. Human and Arabidopsis "
+        "representatives are added from root-level hierarchical membership where "
+        "available."
     )
     _display_dataframe(frame=displayed, height=720)
     render_table_downloads(
         frame=displayed,
-        file_stem=f"top_{requested_hogs}_prestructure_ranked_hogs",
-        tsv_label="Download ranked HOGs as TSV",
-        excel_label="Download ranked HOGs as Excel",
+        file_stem=f"top_{requested_hogs}_independent_structural_review_hogs",
+        tsv_label="Download shortlist as TSV",
+        excel_label="Download shortlist as Excel",
         key="prestructure_ranked_hogs_download",
     )
 
@@ -3433,13 +3568,14 @@ def render_app() -> None:
                     "Glossary",
                     "Computational recommendations",
                     "Threshold explorer",
-                    "Pre-structure ranked HOGs",
+                    "Independent structural-review shortlist",
                     "Visual explorer",
                     "Candidates",
                     "Orthology",
                     "Human HOGs",
                     "Plant & human HOGs",
                     "Seed & HOG explorer",
+                    "E3 seed catalogue",
                     "Domains",
                     "Expression",
                     "Ligandability",
@@ -3472,7 +3608,9 @@ def render_app() -> None:
                 _render_tab_help(tab_name="Threshold explorer")
                 _render_threshold_explorer(connection=connection, config=config)
             with tabs[5]:
-                _render_tab_help(tab_name="Pre-structure ranked HOGs")
+                _render_tab_help(
+                    tab_name="Independent structural-review shortlist"
+                )
                 _render_prestructure_ranked_hogs(
                     connection=connection,
                     config=config,
@@ -3513,8 +3651,14 @@ def render_app() -> None:
                     connection=connection,
                     config=config,
                 )
+            with tabs[12]:
+                _render_tab_help(tab_name="E3 seed catalogue")
+                _render_seed_catalogue(
+                    connection=connection,
+                    config=config,
+                )
             for tab, section, tab_name in zip(
-                tabs[12:16],
+                tabs[13:17],
                 ("domains", "expression", "ligandability", "pocket_conservation"),
                 ("Domains", "Expression", "Ligandability", "Pocket conservation"),
                 strict=True,
@@ -3532,36 +3676,36 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[16]:
+            with tabs[17]:
                 _render_tab_help(tab_name="3D structures & pockets")
                 _render_pocket_review(bundle=pocket_review, focus="structure")
-            with tabs[17]:
+            with tabs[18]:
                 _render_tab_help(tab_name="Pocket-aligned sequences")
                 _render_pocket_review(bundle=pocket_review, focus="alignment")
-            with tabs[18]:
+            with tabs[19]:
                 _render_tab_help(tab_name="3D alignment")
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
-            with tabs[19]:
+            with tabs[20]:
                 _render_tab_help(tab_name="Computational chemistry")
                 _render_section(
                     connection=connection,
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[20]:
+            with tabs[21]:
                 _render_tab_help(tab_name="Search")
                 _render_search(connection=connection, max_rows=config.max_rows)
-            with tabs[21]:
+            with tabs[22]:
                 _render_tab_help(tab_name="All results")
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[22]:
+            with tabs[23]:
                 _render_tab_help(tab_name="Provenance and QC")
                 _render_section(
                     connection=connection,

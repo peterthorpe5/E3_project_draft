@@ -937,15 +937,20 @@ threshold_result_columns <- function(available, mode = "prestructure") {
   shared <- c(
     "final_evolutionary_rank",
     "prestructure_evolutionary_group_rank",
+    "stringent_rank",
+    "structurally_supported_rank",
+    "boss_review_status",
     "evolutionary_group_key",
     "primary_group_type",
     "primary_group_id",
     "lead_cluster_id",
+    "lead_computational_rank",
     "cluster_id",
     "contributing_deepclust_cluster_count",
     "contributing_deepclust_cluster_ids",
     "candidate_accession_count",
     "candidate_accessions",
+    "alternative_group_count",
     "orthofinder_orthogroup_ids",
     "orthofinder_hierarchical_group_ids",
     "orthofinder_group_member_count",
@@ -953,6 +958,11 @@ threshold_result_columns <- function(available, mode = "prestructure") {
     "prestructure_score",
     "best_prestructure_score",
     "mean_prestructure_score",
+    "minimum_prestructure_score",
+    "discovery_score",
+    "orthology_score",
+    "domain_score",
+    "expression_score",
     "evidence_completeness_fraction",
     "target_species_count",
     "target_species_total",
@@ -965,23 +975,57 @@ threshold_result_columns <- function(available, mode = "prestructure") {
     "mandatory_species_missing",
     "domain_supported_species_count",
     "domain_assessed_species_count",
+    "domain_unavailable_species_count",
     "domain_annotation_coverage_fraction",
     "domain_species_fraction",
     "domain_supported_species",
     "domain_annotated_negative_species",
     "domain_unavailable_species",
     "expression_supported_species_count",
+    "expression_available_species_count",
     "expression_assessed_species_count",
+    "expression_unavailable_species_count",
     "expression_evidence_coverage_fraction",
     "expression_species_fraction",
     "expression_supported_species",
     "expression_assessed_negative_species",
     "expression_unavailable_species",
+    "reviewed_seed_fraction",
+    "ubiquitin_go_positive_seed_fraction",
+    "exclusion_flag_fraction",
+    "discovery_known_e3_sequence_count",
+    "discovery_known_e3_seed_count",
+    "discovery_known_e3_seed_ids",
+    "discovery_matched_seed_sequence_count",
+    "discovery_matched_seed_id_count",
+    "discovery_matched_seed_ids_calculated",
+    "discovery_seed_categories",
+    "discovery_seed_review_statuses",
+    "discovery_seed_ubiquitin_go_statuses",
+    "discovery_seed_organisms",
+    "discovery_seed_protein_names",
+    "discovery_reviewed_seed_count",
+    "discovery_ubiquitin_go_positive_seed_count",
+    "discovery_seed_with_exclusion_go_term_count",
+    "discovery_raw_member_count",
+    "discovery_strict_member_count",
+    "discovery_strict_nonseed_candidate_count",
+    "discovery_strict_member_fraction",
+    "discovery_strict_nonseed_fraction",
+    "discovery_raw_species_count_calculated",
+    "discovery_strict_species_count",
+    "discovery_strict_onekp_species_count",
+    "domain_evidence_row_count",
+    "expression_evidence_row_count",
     "grant_aligned_prestructure_pass",
+    "grant_aligned_stringent_pass",
     "grant_aligned_criteria_status",
+    "computational_structure_selected",
     "inclusion_reasons",
     "exclusion_reasons",
-    "missing_evidence"
+    "missing_evidence",
+    "profile_name",
+    "interpretation"
   )
   structural <- c(
     "final_rank",
@@ -1203,6 +1247,202 @@ build_threshold_summary_query <- function(
   )
 }
 
+threshold_hog_text_columns <- function() {
+  c(
+    "human_hog_representatives", "arabidopsis_hog_representatives",
+    "human_hog_accessions", "human_hog_entries", "human_hog_raw_identifiers",
+    "arabidopsis_hog_accessions", "arabidopsis_hog_entries",
+    "arabidopsis_hog_raw_identifiers", "hog_species_present",
+    "hog_orthogroup_ids", "hog_gene_tree_parent_clades",
+    "hog_review_statuses", "hog_mapping_statuses"
+  )
+}
+
+threshold_hog_count_columns <- function() {
+  c(
+    "hog_member_count", "hog_species_count", "hog_human_member_count",
+    "hog_arabidopsis_member_count"
+  )
+}
+
+threshold_hog_annotation_columns <- function() {
+  c(
+    threshold_hog_text_columns(), threshold_hog_count_columns(),
+    "hog_membership_available"
+  )
+}
+
+threshold_membership_text_expression <- function(available, column) {
+  if (!column %in% available) return("CAST(NULL AS VARCHAR)")
+  paste0("CAST(", quote_duckdb_identifier(column), " AS VARCHAR)")
+}
+
+#' Build root-HOG annotations for a bounded threshold-result group set.
+#'
+#' @param membership_columns Available hierarchical-membership fields.
+#' @param group_ids Requested evolutionary-group identifiers.
+#' @param alias Attached resource alias.
+#' @return DuckDB SQL query.
+build_threshold_hog_annotation_query <- function(
+  membership_columns,
+  group_ids,
+  alias = "e3_resource"
+) {
+  groups <- unique(trimws(as.character(group_ids)))
+  groups <- groups[nzchar(groups) & !is.na(groups)]
+  if (length(groups) < 1L || length(groups) > 10000L) {
+    stop("Threshold HOG group count must be between 1 and 10000.", call. = FALSE)
+  }
+  required <- c("group_id", "species", "raw_identifier")
+  missing <- setdiff(required, membership_columns)
+  if (length(missing) > 0L) {
+    stop(
+      paste("Hierarchical membership lacks fields:", paste(missing, collapse = ", ")),
+      call. = FALSE
+    )
+  }
+  parsed_accession <- threshold_membership_text_expression(
+    available = membership_columns,
+    column = "parsed_accession"
+  )
+  parsed_entry <- threshold_membership_text_expression(
+    available = membership_columns,
+    column = "parsed_entry"
+  )
+  optional <- function(column) {
+    threshold_membership_text_expression(
+      available = membership_columns,
+      column = column
+    )
+  }
+  representative <- paste0(
+    "coalesce(nullif(trim(", parsed_accession, "), ''), nullif(trim(",
+    parsed_entry, "), ''), nullif(trim(CAST(raw_identifier AS VARCHAR)), ''))"
+  )
+  group_values <- paste0(
+    "('", vapply(groups, escape_sql_literal, character(1L)), "')",
+    collapse = ", "
+  )
+  membership <- qualified_resource_relation(
+    relation = "hierarchical_membership",
+    alias = alias
+  )
+  paste0(
+    "WITH requested(hog_id) AS (VALUES ", group_values, "), members AS (SELECT ",
+    "CAST(group_id AS VARCHAR) AS primary_group_id, CAST(species AS VARCHAR) ",
+    "AS species, CAST(raw_identifier AS VARCHAR) AS raw_identifier, ",
+    parsed_accession, " AS parsed_accession, ", parsed_entry,
+    " AS parsed_entry, ", representative, " AS representative, ",
+    optional("orthogroup_id"), " AS orthogroup_id, ",
+    optional("gene_tree_parent_clade"), " AS gene_tree_parent_clade, ",
+    optional("review_status"), " AS review_status, ",
+    optional("mapping_status"), " AS mapping_status FROM ", membership,
+    " INNER JOIN requested ON requested.hog_id = CAST(group_id AS VARCHAR)) ",
+    "SELECT primary_group_id, coalesce(string_agg(DISTINCT representative, ';' ",
+    "ORDER BY representative) FILTER (WHERE species = 'Homo_sapiens' AND ",
+    "representative IS NOT NULL), '') AS human_hog_representatives, ",
+    "coalesce(string_agg(DISTINCT representative, ';' ORDER BY representative) ",
+    "FILTER (WHERE species = 'Arabidopsis_thaliana' AND representative IS NOT ",
+    "NULL), '') AS arabidopsis_hog_representatives, ",
+    "coalesce(string_agg(DISTINCT parsed_accession, ';' ORDER BY parsed_accession) ",
+    "FILTER (WHERE species = 'Homo_sapiens' AND nullif(trim(parsed_accession), ",
+    "'') IS NOT NULL), '') AS human_hog_accessions, ",
+    "coalesce(string_agg(DISTINCT parsed_entry, ';' ORDER BY parsed_entry) FILTER ",
+    "(WHERE species = 'Homo_sapiens' AND nullif(trim(parsed_entry), '') IS NOT ",
+    "NULL), '') AS human_hog_entries, coalesce(string_agg(DISTINCT raw_identifier, ",
+    "';' ORDER BY raw_identifier) FILTER (WHERE species = 'Homo_sapiens'), '') ",
+    "AS human_hog_raw_identifiers, coalesce(string_agg(DISTINCT parsed_accession, ",
+    "';' ORDER BY parsed_accession) FILTER (WHERE species = ",
+    "'Arabidopsis_thaliana' AND nullif(trim(parsed_accession), '') IS NOT NULL), ",
+    "'') AS arabidopsis_hog_accessions, coalesce(string_agg(DISTINCT parsed_entry, ",
+    "';' ORDER BY parsed_entry) FILTER (WHERE species = 'Arabidopsis_thaliana' ",
+    "AND nullif(trim(parsed_entry), '') IS NOT NULL), '') AS ",
+    "arabidopsis_hog_entries, coalesce(string_agg(DISTINCT raw_identifier, ';' ",
+    "ORDER BY raw_identifier) FILTER (WHERE species = 'Arabidopsis_thaliana'), ",
+    "'') AS arabidopsis_hog_raw_identifiers, count(*) AS hog_member_count, ",
+    "count(DISTINCT species) AS hog_species_count, count(*) FILTER (WHERE species ",
+    "= 'Homo_sapiens') AS hog_human_member_count, count(*) FILTER (WHERE species ",
+    "= 'Arabidopsis_thaliana') AS hog_arabidopsis_member_count, coalesce(",
+    "string_agg(DISTINCT species, ';' ORDER BY species), '') AS ",
+    "hog_species_present, coalesce(string_agg(DISTINCT orthogroup_id, ';' ORDER BY ",
+    "orthogroup_id) FILTER (WHERE nullif(trim(orthogroup_id), '') IS NOT NULL), ",
+    "'') AS hog_orthogroup_ids, coalesce(string_agg(DISTINCT ",
+    "gene_tree_parent_clade, ';' ORDER BY gene_tree_parent_clade) FILTER (WHERE ",
+    "nullif(trim(gene_tree_parent_clade), '') IS NOT NULL), '') AS ",
+    "hog_gene_tree_parent_clades, coalesce(string_agg(DISTINCT review_status, ';' ",
+    "ORDER BY review_status) FILTER (WHERE nullif(trim(review_status), '') IS NOT ",
+    "NULL), '') AS hog_review_statuses, coalesce(string_agg(DISTINCT mapping_status, ",
+    "';' ORDER BY mapping_status) FILTER (WHERE nullif(trim(mapping_status), '') ",
+    "IS NOT NULL), '') AS hog_mapping_statuses, TRUE AS hog_membership_available ",
+    "FROM members GROUP BY primary_group_id"
+  )
+}
+
+add_empty_threshold_hog_annotations <- function(data) {
+  result <- data
+  for (column in threshold_hog_text_columns()) {
+    if (!column %in% names(result)) result[[column]] <- rep("", nrow(result))
+  }
+  for (column in threshold_hog_count_columns()) {
+    if (!column %in% names(result)) result[[column]] <- rep(0L, nrow(result))
+  }
+  if (!"hog_membership_available" %in% names(result)) {
+    result$hog_membership_available <- rep(FALSE, nrow(result))
+  }
+  result
+}
+
+#' Add root-HOG membership context to bounded threshold results.
+#'
+#' @param resource_source Flexible E3 resource source.
+#' @param data Bounded threshold result.
+#' @return Enriched threshold result.
+enrich_threshold_results <- function(resource_source, data) {
+  empty <- add_empty_threshold_hog_annotations(data = data)
+  if (nrow(data) == 0L || !"primary_group_id" %in% names(data)) return(empty)
+  relations <- collect_resource_view_names(duckdb_path = resource_source)
+  if (!"hierarchical_membership" %in% relations) return(empty)
+  metadata <- collect_resource_columns(
+    duckdb_path = resource_source,
+    view_name = "hierarchical_membership"
+  )
+  membership_columns <- as.character(metadata$column_name)
+  required <- c("group_id", "species", "raw_identifier")
+  if (!all(required %in% membership_columns)) return(empty)
+  groups <- unique(data$primary_group_id)
+  groups <- groups[!is.na(groups) & nzchar(trimws(as.character(groups)))]
+  if (length(groups) == 0L) return(empty)
+  annotations <- tryCatch(
+    collect_resource_query(
+      duckdb_path = resource_source,
+      query = build_threshold_hog_annotation_query(
+        membership_columns = membership_columns,
+        group_ids = groups
+      )
+    ),
+    error = function(error) {
+      message("Threshold HOG annotations are unavailable: ", conditionMessage(error))
+      NULL
+    }
+  )
+  if (is.null(annotations)) return(empty)
+  new_columns <- setdiff(threshold_hog_annotation_columns(), names(data))
+  if (length(new_columns) == 0L) return(data)
+  annotations <- annotations[, c("primary_group_id", new_columns), drop = FALSE]
+  enriched <- dplyr::left_join(data, annotations, by = "primary_group_id")
+  for (column in intersect(threshold_hog_text_columns(), names(enriched))) {
+    enriched[[column]][is.na(enriched[[column]])] <- ""
+  }
+  for (column in intersect(threshold_hog_count_columns(), names(enriched))) {
+    enriched[[column]][is.na(enriched[[column]])] <- 0L
+  }
+  if ("hog_membership_available" %in% names(enriched)) {
+    enriched$hog_membership_available[is.na(enriched$hog_membership_available)] <-
+      FALSE
+  }
+  enriched
+}
+
 #' Collect a custom threshold candidate list.
 #'
 #' @param resource_source Flexible result source.
@@ -1218,7 +1458,7 @@ collect_threshold_results <- function(
   settings = list(),
   max_rows = 1000L
 ) {
-  collect_resource_query(
+  data <- collect_resource_query(
     duckdb_path = resource_source,
     query = build_threshold_result_query(
       relation = relation,
@@ -1227,6 +1467,7 @@ collect_threshold_results <- function(
       max_rows = max_rows
     )
   )
+  enrich_threshold_results(resource_source = resource_source, data = data)
 }
 
 #' Collect custom-threshold summary counts.

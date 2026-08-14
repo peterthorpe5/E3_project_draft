@@ -1,0 +1,36 @@
+ARIA plant E3 Shiny reporter v0.16.0 validation hand-off
+=======================================================
+
+Implemented scope
+-----------------
+
+- Added the independent structural-review top-200-to-500 HOG shortlist.
+- Excluded structural-stage fields and tie-breaks from that shortlist.
+- Enriched both Threshold explorer tables with source and root-HOG context.
+- Added the exact-authority-aware E3 seed catalogue with TSV, formatted Excel
+  and available-sequence FASTA downloads.
+- Added focused unit, query-contract, fallback and DuckDB integration tests.
+
+Build-workspace checks on 2026-08-14
+------------------------------------
+
+- Every edited R file passes delimiter-balance inspection.
+- Application launch scripts pass `bash -n`.
+- Edited files pass whitespace and terminal-newline checks.
+
+Environment limitation
+----------------------
+
+This build workspace does not provide R, Rscript, DuckDB or duckplyr. The
+dependency-backed R test suite therefore cannot honestly be claimed as run
+here.
+
+Required release gate
+---------------------
+
+    cd E3_shiny_app
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
+
+The two `test_script_utils.R` skips are expected when no `--file` argument is
+available. Any actual test failure blocks release.

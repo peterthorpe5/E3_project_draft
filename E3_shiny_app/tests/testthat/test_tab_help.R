@@ -2,8 +2,10 @@ test_that("every R application tab has substantive contextual help", {
   expected <- c(
     "Grant overview", "Workflow schematic", "Glossary",
     "Computational recommendations", "Threshold explorer",
-    "Pre-structure ranked HOGs", "Visual explorer", "Candidates", "Orthology",
-    "Human HOGs", "Plant & human HOGs", "Seed & HOG explorer", "Domains",
+    "Independent structural-review shortlist", "Visual explorer", "Candidates",
+    "Orthology",
+    "Human HOGs", "Plant & human HOGs", "Seed & HOG explorer",
+    "E3 seed catalogue", "Domains",
     "Expression evidence", "Ligandability", "Pocket conservation",
     "3D structures & pockets", "Pocket-aligned sequences", "3D alignment",
     "Computational chemistry", "Search", "All results", "Provenance and QC",

@@ -1,6 +1,6 @@
 Package: E3ExpressionShiny
 Title: Grant-Focused Shiny Reporter for the ARIA Plant E3 Resource
-Version: 0.15.0
+Version: 0.16.0
 Authors@R: c(
     person("Peter", "Thorpe", role = c("aut", "cre"), email = "p.thorpe@dundee.ac.uk")
     )
@@ -19,9 +19,13 @@ Description: A modular Shiny application for querying and visualising candidate
     retain candidate ranking, identifier, co-member and available sequence
     context. A pasted-list search spans recognised identifiers and names while
     retaining source-relation and matched-field provenance.
-    An ungated top-N view returns root-level groups directly from their recorded
-    pre-structure evolutionary-group rank. Every primary tab provides collapsed
-    contextual operating and interpretation help. The complete-results browser
+    An independent structural-review shortlist returns 200 to 500 root-level
+    groups from the recorded discovery, orthology/species, domain and expression
+    evidence rank while excluding existing structural-stage results. A dedicated
+    seed catalogue prefers exact known-seed authority rows, retains source-scope
+    provenance and exports available accession-matched sequences. Every primary
+    tab provides collapsed contextual operating and interpretation help. The
+    complete-results browser
     adds joined root-HOG overview and member-detail views with both ranking
     stages, lineage representatives, membership summaries and all fields from
     the strongest available HOG-linked ranking relation while preserving raw

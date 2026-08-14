@@ -1,41 +1,44 @@
-#' Dedicated ungated pre-structure HOG ranking module.
+#' Independent structural-review HOG shortlist module.
 
-#' Build the pre-structure ranked-HOG tab.
+#' Build the independent structural-review shortlist tab.
 #'
 #' @param id Module identifier.
 #' @return Shiny UI.
 prestructure_hog_explorer_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    shiny::h2("Top pre-structure ranked HOGs"),
+    shiny::h2("Independent structural-review shortlist"),
     shiny::div(
       class = "alert alert-info",
       paste(
-        "This list applies no target-species, domain, expression, pocket,",
-        "druggability or structural gate. It selects root-level N0.HOG groups",
-        "directly by the recorded pre-structure evolutionary-group rank."
+        "This shortlist ranks root-level N0.HOG groups using all recorded",
+        "pre-structure evidence: discovery, orthology/species coverage, E3-domain",
+        "support and expression. Existing AlphaFold models, pockets, druggability,",
+        "mapping and 3D comparisons are neither used nor shown here. They remain",
+        "available in the other tabs."
       )
     ),
     bslib::layout_columns(
       shiny::numericInput(
         ns("top_n"),
-        "Number of ranked HOGs",
+        "Shortlist size",
         value = 200,
         min = 1,
-        max = 10000,
+        max = 500,
         step = 50
       ),
+      shiny::uiOutput(ns("pass_filter")),
       shiny::textInput(
         ns("filter"),
-        "Filter within the selected top-ranked HOGs",
+        "Filter within the selected shortlist",
         placeholder = "HOG ID, accession, seed, name or representative"
       ),
-      col_widths = c(4, 8)
+      col_widths = c(3, 3, 6)
     ),
     shiny::uiOutput(ns("availability")),
     bslib::layout_columns(
       bslib::value_box(
-        "Ranked HOGs returned",
+        "Shortlisted HOGs returned",
         shiny::textOutput(ns("returned_count"))
       ),
       bslib::value_box(
@@ -51,14 +54,14 @@ prestructure_hog_explorer_ui <- function(id) {
       ns,
       "download_tsv",
       "download_excel",
-      "Download ranked HOGs as TSV",
-      "Download ranked HOGs as Excel"
+      "Download shortlist as TSV",
+      "Download shortlist as Excel"
     ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("ranked_hog_table")))
   )
 }
 
-#' Serve the pre-structure ranked-HOG tab.
+#' Serve the independent structural-review shortlist tab.
 #'
 #' @param id Module identifier.
 #' @param resource_source Flexible E3 result source.
@@ -106,13 +109,15 @@ prestructure_hog_explorer_server <- function(
       source <- context()
       if (is.null(source)) return(tibble::tibble())
       requested <- suppressWarnings(as.integer(input$top_n %||% 200L))
-      requested <- min(max(1L, requested), as.integer(max_rows), 10000L)
+      requested <- min(max(1L, requested), as.integer(max_rows), 500L)
       tryCatch({
         query <- build_prestructure_ranked_hog_query(
           relation = source$relation,
           available = source$columns,
           rank_column = source$rank_column,
           max_hogs = requested,
+          passes_only = isTRUE(input$passes_only),
+          pass_column = source$pass_column,
           membership_available = source$membership_available,
           membership_columns = source$membership_columns
         )
@@ -122,7 +127,8 @@ prestructure_hog_explorer_server <- function(
         )
         message(
           "Collected ", nrow(result),
-          " ungated pre-structure ranked HOGs from ", source$relation
+          " independent structural-review HOGs from ", source$relation,
+          "; passes_only=", isTRUE(input$passes_only)
         )
         result
       }, error = function(error) {
@@ -136,6 +142,24 @@ prestructure_hog_explorer_server <- function(
         )
         tibble::tibble()
       })
+    })
+
+    output$pass_filter <- shiny::renderUI({
+      source <- context()
+      if (is.null(source) || is.null(source$pass_column)) {
+        return(shiny::div(
+          shiny::strong("Pre-structure passes only"),
+          shiny::p(
+            class = "small text-muted",
+            "Unavailable because this release has no group-level pass field."
+          )
+        ))
+      }
+      shiny::checkboxInput(
+        session$ns("passes_only"),
+        "Pre-structure passes only",
+        value = FALSE
+      )
     })
 
     displayed <- shiny::reactive({
@@ -169,8 +193,9 @@ prestructure_hog_explorer_server <- function(
         class = "small text-muted",
         paste0(
           "Authoritative source: `", source$relation, "`; rank field: `",
-          source$rank_column, "`. Human and Arabidopsis representatives are ",
-          "added from root-level membership where available."
+          source$rank_column, "`. The production pre-structure rank is retained ",
+          "and never recalculated from structural evidence. Human and Arabidopsis ",
+          "representatives are added from root-level membership where available."
         )
       )
     })
@@ -206,7 +231,10 @@ prestructure_hog_explorer_server <- function(
     })
     output$download_tsv <- shiny::downloadHandler(
       filename = function() {
-        paste0("top_", input$top_n %||% 200L, "_prestructure_ranked_hogs.tsv")
+        paste0(
+          "top_", input$top_n %||% 200L,
+          "_independent_structural_review_hogs.tsv"
+        )
       },
       content = function(path) {
         human_hog_write_tsv(data = displayed(), path = path)
@@ -214,7 +242,10 @@ prestructure_hog_explorer_server <- function(
     )
     output$download_excel <- shiny::downloadHandler(
       filename = function() {
-        paste0("top_", input$top_n %||% 200L, "_prestructure_ranked_hogs.xlsx")
+        paste0(
+          "top_", input$top_n %||% 200L,
+          "_independent_structural_review_hogs.xlsx"
+        )
       },
       content = function(path) {
         write_formatted_excel(

@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.15.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.16.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -18,13 +18,20 @@ The main sections follow the evidence path required by the grant:
    interpretation cautions, gates, thresholds and result labels.
 4. **Threshold explorer** – separate pre-structure and structurally informed
    sensitivity-analysis lists, using sliders and exact typed values while the
-   primary grant-aligned result remains unchanged.
-5. **Visual explorer** – a selectable multi-axis candidate landscape linked to
+   primary grant-aligned result remains unchanged. Both tables now retain rich
+   ranking, seed, species, domain, expression, missing-evidence and exclusion
+   fields, plus HOG composition and human and Arabidopsis representatives.
+5. **Independent structural-review shortlist** – the top 200 root-level HOGs by
+   default, expandable to 500, using the recorded discovery, orthology/species,
+   E3-domain and expression evidence rank. The pre-structure pass is optional;
+   existing models, pockets, druggability, alignments and 3D results are excluded
+   from this table and remain available elsewhere in the app.
+6. **Visual explorer** – a selectable multi-axis candidate landscape linked to
    the exact evidence tables, a cross-species expression heatmap and every
    available species-by-tissue Expression Atlas profile for the selected group.
    The volcano view remains inactive unless a real differential-expression
    relation supplies both effect sizes and P/FDR/Q values.
-6. **Final recommendations** – the ordered top-50 review shortlist, strict
+7. **Final recommendations** – the ordered top-50 review shortlist, strict
    grant-aligned predictions, named gate-sensitivity scenarios, group-level
    scorecard, DeepClust contributors, representative audit and explicit
    exclusion reasons. A focused slider varies only the final inclusive
@@ -32,10 +39,10 @@ The main sections follow the evidence path required by the grant:
    with member-level box plots for lead clusters reaching that last gate,
    followed by the full methods-style account of score construction, unavailable
    denominators, effective weights and tie-breaks.
-7. **Candidates** – combined discovery, conservation, domain, expression and
+8. **Candidates** – combined discovery, conservation, domain, expression and
    structural prioritisation, with inclusion, exclusion and missing-evidence
    reasons.
-8. **Orthology** – release-wide sequence, species and group metrics; E3-seeded,
+9. **Orthology** – release-wide sequence, species and group metrics; E3-seeded,
    all-species and largest-group counts; exact multi-species and curated
    taxonomy-role filters; independently selectable linear/logarithmic plot axes;
    and group-size graphs that explicitly retain one-species groups. The grouping
@@ -45,53 +52,58 @@ The main sections follow the evidence path required by the grant:
    sequence-neighbourhood counts, inherited-seed filters, optional
    evolutionary-group links and 1KP coverage without describing DeepClust
    membership as inferred orthology.
-9. **Human HOGs** – every root-level `N0.HOG…` containing a
+10. **Human HOGs** – every root-level `N0.HOG…` containing a
    `Homo_sapiens` member, with candidate-ranking position/status where
    available, human identifiers, all other HOG members, published aliases and
    candidate-linked sequences. Unranked HOGs remain visible as
    `NOT_IN_CANDIDATE_RANKING` rather than being called failures.
-10. **Plant & human HOGs** – the cross-lineage subset containing both a human
+11. **Plant & human HOGs** – the cross-lineage subset containing both a human
     sequence and at least one of the 12 curated target plant species, with the
     same rich summary, human-member, all-member, TSV, Excel and available FASTA
     outputs.
-11. **Seed & HOG explorer** – one or several inherited E3 seeds with Any/All
+12. **Seed & HOG explorer** – one or several inherited E3 seeds with Any/All
    matching, every sequence-bearing member of each matched root-level
    phylogenetic hierarchical orthogroup or original MCL orthogroup, associated
    evidence, species filtering and filtered protein FASTA export.
-12. **Domains** – catalogued E3-associated domain support and explicit annotation
+13. **E3 seed catalogue** – exact inherited seed identifiers and, where the
+   loaded resource publishes them, exact seed-level names, annotations and
+   provenance. Older releases use a clearly labelled cluster-associated
+   fallback. Available accession-matched sequences, TSV and formatted Excel are
+   downloadable; its dedicated bounded cap can be raised to 100,000 records.
+14. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-13. **Expression evidence** – identifier mapping and broad Expression Atlas
+15. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
    workflow v0.13.0 resources also retain tissue/organism part, developmental
    stage, condition, treatment, experiment and sample context. Direct controls
    open the matching heatmap and volcano-eligibility views.
-14. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+16. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-15. **Pocket conservation** – conserved pocket-bearing alignment regions and
+17. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-16. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+18. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation, with an
    interactive TM-score/pocket-overlap evidence map and recorded threshold
    references.
-17. **3D structures & pockets** – selected-group, rotatable member structures
+19. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
-18. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+20. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights, original OrthoFinder-group identifiers and selected-alignment
     FASTA download.
-19. **Computational chemistry** – chemistry hand-off decisions, review tiers,
+21. **Computational chemistry** – chemistry hand-off decisions, review tiers,
     sensitivity analysis, residue-derived pharmacophore features and optional
     fragment-ranking evidence.
-20. **Search** – a complete-resource search for names, root HOG IDs, legacy OG
+22. **Search** – a complete-resource search for names, root HOG IDs, legacy OG
     IDs, E3 seeds, accessions, entries, genes and DeepClust identifiers. It
     accepts pasted newline/comma/semicolon/tab lists, offers smart/exact/literal
     contains modes, and returns the input term, source relation, matched fields
     and every source column with TSV and formatted Excel downloads.
-21. **All results** – a default one-row-per-HOG enriched view joining human and
+23. **All results** – a default one-row-per-HOG enriched view joining human and
     Arabidopsis representatives, canonical pre-structure and post-structure
     ranks, every source-ranking field and HOG composition. A member-detail view
     repeats this context for every member, while raw relations remain available
     for exact source-level audit.
-22. **Provenance and QC** – release metadata, relation catalogue and source paths.
+24. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -107,13 +119,14 @@ source values remain exact; only their display is shortened. The **All results**
 browser includes the same paired downloads and distinguishes enriched joined
 HOG results from unmodified raw relations.
 
-The dedicated **Pre-structure ranked HOGs** tab is the direct route to the
-team's ungated top-200 analysis set. It selects root-level `N0.HOG…` groups by
-the authoritative recorded pre-structure evolutionary-group rank, applies no
-target-species, domain, expression, pocket, druggability or structural gate,
-and supports an adjustable top-N count, within-list search, human and
-Arabidopsis representative columns and paired TSV/Excel downloads. It does not
-recalculate or renumber the production rank.
+The dedicated **Independent structural-review shortlist** is the direct route
+for the computational team choosing HOGs for new structural work. It selects
+root-level `N0.HOG…` groups from the authoritative recorded pre-structure
+evolutionary-group rank, which integrates discovery, orthology/species,
+E3-domain and expression evidence. It returns 200 by default, can expand to
+500, and can optionally require the recorded pre-structure pass. Existing
+AlphaFold models, pockets, druggability, mapping, alignment and 3D results are
+neither used nor displayed there; they remain unchanged in the other tabs.
 
 Every primary tab starts with a collapsed **❓ How to use this tab** box. The
 text is specific to that tab and explains the main controls, evidence boundary
@@ -151,6 +164,9 @@ candidate list** applies those same gates plus the selected pocket conservation,
 mapping, structural coverage, member druggability and strict 3D requirements.
 There is no hidden mode switch, and moving a structural control affects only
 the second table. Each list has its own TSV and formatted Excel downloads.
+Both lists retain available ranking, identifier, seed, species, domain,
+expression, missing-evidence and exclusion fields and add human/Arabidopsis
+representatives plus HOG membership composition from the root-level authority.
 
 A multiple-selection control can optionally add post-hoc
 gates for recorded aggregate scores such as evidence completeness, mean pocket

@@ -37,6 +37,7 @@ source("R/deepclust_explorer.R")
 source("R/human_hog_explorer.R")
 source("R/enriched_hogs.R")
 source("R/prestructure_hog_explorer.R")
+source("R/seed_catalogue.R")
 source("R/unified_search.R")
 source("R/tab_help.R")
 source("R/module_resource_overview.R")
@@ -52,6 +53,7 @@ source("R/module_deepclust_explorer.R")
 source("R/module_orthology_explorer.R")
 source("R/module_human_hog_explorer.R")
 source("R/module_prestructure_hog_explorer.R")
+source("R/module_seed_catalogue.R")
 source("R/module_unified_search.R")
 
 # Configuration can come from command-line arguments, environment variables, or
@@ -94,8 +96,8 @@ ui <- bslib::page_navbar(
       threshold_explorer_ui("threshold_explorer")
     ),
     bslib::nav_panel(
-      "Pre-structure ranked HOGs",
-      tab_help_ui(tab_name = "Pre-structure ranked HOGs"),
+      "Independent structural-review shortlist",
+      tab_help_ui(tab_name = "Independent structural-review shortlist"),
       prestructure_hog_explorer_ui(id = "prestructure_ranked_hogs")
     ),
     bslib::nav_panel(
@@ -133,6 +135,11 @@ ui <- bslib::page_navbar(
       "Seed & HOG explorer",
       tab_help_ui(tab_name = "Seed & HOG explorer"),
       seed_group_explorer_ui("seed_group_explorer")
+    ),
+    bslib::nav_panel(
+      "E3 seed catalogue",
+      tab_help_ui(tab_name = "E3 seed catalogue"),
+      seed_catalogue_ui("seed_catalogue")
     ),
     bslib::nav_panel(
       "Domains",
@@ -258,6 +265,11 @@ server <- function(input, output, session) {
   )
   seed_group_explorer_server(
     id = "seed_group_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  seed_catalogue_server(
+    id = "seed_catalogue",
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )

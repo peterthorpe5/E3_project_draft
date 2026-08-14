@@ -25,9 +25,10 @@ TOP_LEVEL_TAB_HELP = {
         "Change documented gates to create sensitivity lists. Compare the separate "
         "pre-structure and structural tables and download the active result set."
     ),
-    "Pre-structure ranked HOGs": (
-        "Choose the number of HOGs required. Results use the recorded pre-structure "
-        "HOG rank directly and apply no biological, pocket or structural gate."
+    "Independent structural-review shortlist": (
+        "Choose the top 200 to 500 HOGs using the complete recorded pre-structure "
+        "evidence ranking. Existing pocket and structural results are deliberately "
+        "excluded; the pre-structure-pass-only filter remains optional."
     ),
     "Visual explorer": (
         "Choose candidate metrics and a group to connect the overview plot to exact "
@@ -52,6 +53,12 @@ TOP_LEVEL_TAB_HELP = {
     "Seed & HOG explorer": (
         "Paste one or several E3 seed identifiers, choose Any or All matching and "
         "inspect every member of the matching HOGs before downloading FASTA."
+    ),
+    "E3 seed catalogue": (
+        "Search the inherited known-E3 identifiers, names and source annotations. "
+        "The exact seed authority is preferred; older resources use a clearly "
+        "labelled cluster-associated fallback. Sequences are downloadable as FASTA "
+        "only where an accession-level match exists."
     ),
     "Domains": (
         "Select summary or hit-level domain evidence. Keep assessed negatives "

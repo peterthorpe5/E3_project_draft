@@ -342,6 +342,22 @@ testthat::test_that("selected optional score gates enter SQL and exports", {
   )
 })
 
+testthat::test_that("threshold results retain rich pre-structure evidence", {
+  selected <- threshold_result_columns(
+    available = c(
+      "prestructure_evolutionary_group_rank", "stringent_rank",
+      "discovery_seed_protein_names", "domain_unavailable_species",
+      "expression_supported_species", "missing_evidence", "final_score"
+    ),
+    mode = "prestructure"
+  )
+  testthat::expect_identical(selected, c(
+    "prestructure_evolutionary_group_rank", "stringent_rank",
+    "domain_unavailable_species", "expression_supported_species",
+    "discovery_seed_protein_names", "missing_evidence"
+  ))
+})
+
 testthat::test_that("threshold explorer reclassifies a druggability near-miss", {
   testthat::skip_if_not_installed("DBI")
   testthat::skip_if_not_installed("duckdb")
@@ -388,6 +404,24 @@ testthat::test_that("threshold explorer reclassifies a druggability near-miss", 
     name = "final_evolutionary_candidate_prioritisation",
     value = candidates
   )
+  DBI::dbWriteTable(
+    conn = connection,
+    name = "hierarchical_membership",
+    value = data.frame(
+      group_id = c("N0.HOG0001", "N0.HOG0001", "N0.HOG0002"),
+      species = c(
+        "Homo_sapiens", "Arabidopsis_thaliana", "Hordeum_vulgare"
+      ),
+      raw_identifier = c("HUM1", "AT1", "BARLEY1"),
+      parsed_accession = c("H1", "A1", "B1"),
+      parsed_entry = c("HUMAN_ONE", "ARATH_ONE", ""),
+      orthogroup_id = c("OG1", "OG1", "OG2"),
+      gene_tree_parent_clade = c("N1", "N1", "N2"),
+      review_status = c("reviewed", "reviewed", "unreviewed"),
+      mapping_status = c("mapped", "mapped", "mapped"),
+      stringsAsFactors = FALSE
+    )
+  )
   DBI::dbDisconnect(conn = connection, shutdown = TRUE)
   source <- resolve_resource_source(resource_duckdb_path = duckdb_path)
   available <- names(candidates)
@@ -413,6 +447,13 @@ testthat::test_that("threshold explorer reclassifies a druggability near-miss", 
     strict$primary_group_id,
     c("N0.HOG0001", "N0.HOG0002")
   )
+  testthat::expect_identical(strict$human_hog_representatives, c("H1", ""))
+  testthat::expect_identical(
+    strict$arabidopsis_hog_representatives,
+    c("A1", "")
+  )
+  testthat::expect_equal(strict$hog_member_count, c(2, 1))
+  testthat::expect_equal(strict$hog_species_count, c(2, 1))
 
   relaxed <- collect_threshold_results(
     resource_source = source,
@@ -483,6 +524,7 @@ testthat::test_that("the new explorer retains every existing application tab", {
     "Candidates",
     "Orthology",
     "Seed & HOG explorer",
+    "E3 seed catalogue",
     "Domains",
     "Expression evidence",
     "Ligandability",

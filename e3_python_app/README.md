@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.12.1 is the Streamlit companion to `E3_shiny_app` 0.15.0. Both
+Version 0.13.0 is the Streamlit companion to `E3_shiny_app` 0.16.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -95,20 +95,27 @@ The reporter provides:
   identifiers, Any/All matching, matching-group summaries for the selected
   phylogenetic or legacy grouping, member-table species filters, associated
   evidence, and filtered member protein FASTA export;
+- an **E3 seed catalogue** listing the exact inherited identifiers and, when
+  published, their exact authority-level names, annotations and provenance.
+  Older resources fall back to clearly labelled cluster-associated annotation;
+  accession-matched sequences can be downloaded as FASTA, and the displayed
+  catalogue is also downloadable as TSV or formatted Excel. Its dedicated hard
+  cap can be increased to 100,000 records independently of normal previews;
 - species, tissue/organism-part and identifier filters for the normalised
   candidate-by-expression-context relation, when supplied by workflow v0.13.0
   or later;
 - a separate Threshold explorer with the completed analysis defaults, paired
   sliders and typed values, simultaneously displayed pre-structure and
   structurally informed candidate lists, explicit `PASS`, `NEAR_MISS`, `FAIL`
-  and `NOT_STRUCTURALLY_ASSESSED` labels, expanded candidate evidence plus
-  separate TSV and formatted Excel exports for both lists;
-- a dedicated **Pre-structure ranked HOGs** tab that returns the requested top
-  200 root-level `N0.HOG…` groups by the authoritative recorded pre-structure
-  evolutionary-group rank, without applying target-species, domain,
-  expression, pocket, druggability or structural gates. The row count is
-  adjustable and the rich table includes human and Arabidopsis representatives,
-  a within-list search and paired TSV/Excel downloads;
+  and `NOT_STRUCTURALLY_ASSESSED` labels, expanded candidate, seed, domain,
+  expression and missing-evidence fields, HOG composition, human and
+  Arabidopsis representatives, plus separate TSV and formatted Excel exports;
+- a dedicated **Independent structural-review shortlist** returning the top
+  200 root-level `N0.HOG…` groups by default, expandable to 500. It uses the
+  authoritative ranking from all recorded discovery, orthology/species,
+  E3-domain and expression evidence, with an optional pre-structure-pass filter.
+  Existing AlphaFold models, pockets, druggability, mapping, alignment and 3D
+  results are excluded from this decision table but retained in other tabs;
 - a linked Visual explorer containing a selectable multi-axis candidate
   landscape, a cross-species expression heatmap, exact species-by-tissue
   profiles and the bounded evidence tables behind every selected candidate;

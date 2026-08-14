@@ -10,13 +10,18 @@ testthat::test_that("application omits the retired raw-expression interface", {
   testthat::expect_true(grepl('"Workflow schematic"', app_text, fixed = TRUE))
   testthat::expect_true(grepl("workflow_schematic_ui()", app_text, fixed = TRUE))
   testthat::expect_true(grepl(
-    '"Pre-structure ranked HOGs"',
+    '"Independent structural-review shortlist"',
+    app_text,
+    fixed = TRUE
+  ))
+  testthat::expect_true(grepl(
+    '"E3 seed catalogue"',
     app_text,
     fixed = TRUE
   ))
   testthat::expect_identical(
     stringr::str_count(app_text, "tab_help_ui\\("),
-    25L
+    26L
   )
 })
 

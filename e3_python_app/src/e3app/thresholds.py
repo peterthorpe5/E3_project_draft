@@ -7,6 +7,7 @@ resource. It never reruns domain, expression, pocket or structural analyses.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
+import logging
 from typing import Literal, Mapping, Sequence
 
 import duckdb
@@ -14,6 +15,8 @@ import pandas as pd
 
 from e3app.data import list_relations, quote_identifier, relation_columns
 from e3app.errors import AppError
+
+LOGGER = logging.getLogger(__name__)
 
 ThresholdMode = Literal["prestructure", "structural"]
 ResultScope = Literal["passing", "pass_near", "all"]
@@ -55,6 +58,33 @@ THRESHOLD_RELATION_PREFERENCE = (
 MEMBER_DRUGGABILITY_RELATION_PREFERENCE = (
     "selected_pockets",
     "ranked_member_pockets",
+)
+
+THRESHOLD_HOG_TEXT_COLUMNS = (
+    "human_hog_representatives",
+    "arabidopsis_hog_representatives",
+    "human_hog_accessions",
+    "human_hog_entries",
+    "human_hog_raw_identifiers",
+    "arabidopsis_hog_accessions",
+    "arabidopsis_hog_entries",
+    "arabidopsis_hog_raw_identifiers",
+    "hog_species_present",
+    "hog_orthogroup_ids",
+    "hog_gene_tree_parent_clades",
+    "hog_review_statuses",
+    "hog_mapping_statuses",
+)
+THRESHOLD_HOG_COUNT_COLUMNS = (
+    "hog_member_count",
+    "hog_species_count",
+    "hog_human_member_count",
+    "hog_arabidopsis_member_count",
+)
+THRESHOLD_HOG_ANNOTATION_COLUMNS = (
+    *THRESHOLD_HOG_TEXT_COLUMNS,
+    *THRESHOLD_HOG_COUNT_COLUMNS,
+    "hog_membership_available",
 )
 
 
@@ -744,15 +774,20 @@ def threshold_result_columns(
     shared = (
         "final_evolutionary_rank",
         "prestructure_evolutionary_group_rank",
+        "stringent_rank",
+        "structurally_supported_rank",
+        "boss_review_status",
         "evolutionary_group_key",
         "primary_group_type",
         "primary_group_id",
         "lead_cluster_id",
+        "lead_computational_rank",
         "cluster_id",
         "contributing_deepclust_cluster_count",
         "contributing_deepclust_cluster_ids",
         "candidate_accession_count",
         "candidate_accessions",
+        "alternative_group_count",
         "orthofinder_orthogroup_ids",
         "orthofinder_hierarchical_group_ids",
         "orthofinder_group_member_count",
@@ -760,6 +795,11 @@ def threshold_result_columns(
         "prestructure_score",
         "best_prestructure_score",
         "mean_prestructure_score",
+        "minimum_prestructure_score",
+        "discovery_score",
+        "orthology_score",
+        "domain_score",
+        "expression_score",
         "evidence_completeness_fraction",
         "target_species_count",
         "target_species_total",
@@ -772,23 +812,57 @@ def threshold_result_columns(
         "mandatory_species_missing",
         "domain_supported_species_count",
         "domain_assessed_species_count",
+        "domain_unavailable_species_count",
         "domain_annotation_coverage_fraction",
         "domain_species_fraction",
         "domain_supported_species",
         "domain_annotated_negative_species",
         "domain_unavailable_species",
         "expression_supported_species_count",
+        "expression_available_species_count",
         "expression_assessed_species_count",
+        "expression_unavailable_species_count",
         "expression_evidence_coverage_fraction",
         "expression_species_fraction",
         "expression_supported_species",
         "expression_assessed_negative_species",
         "expression_unavailable_species",
+        "reviewed_seed_fraction",
+        "ubiquitin_go_positive_seed_fraction",
+        "exclusion_flag_fraction",
+        "discovery_known_e3_sequence_count",
+        "discovery_known_e3_seed_count",
+        "discovery_known_e3_seed_ids",
+        "discovery_matched_seed_sequence_count",
+        "discovery_matched_seed_id_count",
+        "discovery_matched_seed_ids_calculated",
+        "discovery_seed_categories",
+        "discovery_seed_review_statuses",
+        "discovery_seed_ubiquitin_go_statuses",
+        "discovery_seed_organisms",
+        "discovery_seed_protein_names",
+        "discovery_reviewed_seed_count",
+        "discovery_ubiquitin_go_positive_seed_count",
+        "discovery_seed_with_exclusion_go_term_count",
+        "discovery_raw_member_count",
+        "discovery_strict_member_count",
+        "discovery_strict_nonseed_candidate_count",
+        "discovery_strict_member_fraction",
+        "discovery_strict_nonseed_fraction",
+        "discovery_raw_species_count_calculated",
+        "discovery_strict_species_count",
+        "discovery_strict_onekp_species_count",
+        "domain_evidence_row_count",
+        "expression_evidence_row_count",
         "grant_aligned_prestructure_pass",
+        "grant_aligned_stringent_pass",
         "grant_aligned_criteria_status",
+        "computational_structure_selected",
         "inclusion_reasons",
         "exclusion_reasons",
         "missing_evidence",
+        "profile_name",
+        "interpretation",
     )
     structural = (
         "final_rank",
@@ -824,6 +898,240 @@ def threshold_result_columns(
     preferred = shared + structural if mode == "structural" else shared
     selected = [column for column in preferred if column in available]
     return list(dict.fromkeys(selected)) or list(available[:30])
+
+
+def _threshold_membership_text_expression(
+    *,
+    available: set[str],
+    column: str,
+) -> str:
+    """Return a nullable text expression for one membership field."""
+    if column not in available:
+        return "CAST(NULL AS VARCHAR)"
+    return f"CAST({quote_identifier(column)} AS VARCHAR)"
+
+
+def build_threshold_hog_annotation_query(
+    *,
+    membership_columns: Sequence[str],
+    group_count: int,
+) -> str:
+    """Build a bounded root-HOG membership annotation query.
+
+    Args:
+        membership_columns: Available ``hierarchical_membership`` fields.
+        group_count: Number of requested HOG identifiers and placeholders.
+
+    Returns:
+        Parameterised DuckDB SQL returning one annotation row per requested HOG.
+
+    Raises:
+        AppError: If required membership fields or the group count are invalid.
+    """
+    if not 1 <= group_count <= 10_000:
+        raise AppError("threshold HOG group count must be between 1 and 10000")
+    available = set(membership_columns)
+    required = {"group_id", "species", "raw_identifier"}
+    missing = sorted(required.difference(available))
+    if missing:
+        raise AppError(
+            "hierarchical membership lacks fields: " + ", ".join(missing)
+        )
+    parsed_accession = _threshold_membership_text_expression(
+        available=available,
+        column="parsed_accession",
+    )
+    parsed_entry = _threshold_membership_text_expression(
+        available=available,
+        column="parsed_entry",
+    )
+    raw_identifier = "CAST(raw_identifier AS VARCHAR)"
+    representative = (
+        f"coalesce(nullif(trim({parsed_accession}), ''), "
+        f"nullif(trim({parsed_entry}), ''), "
+        f"nullif(trim({raw_identifier}), ''))"
+    )
+    orthogroup = _threshold_membership_text_expression(
+        available=available,
+        column="orthogroup_id",
+    )
+    parent = _threshold_membership_text_expression(
+        available=available,
+        column="gene_tree_parent_clade",
+    )
+    review = _threshold_membership_text_expression(
+        available=available,
+        column="review_status",
+    )
+    mapping = _threshold_membership_text_expression(
+        available=available,
+        column="mapping_status",
+    )
+    placeholders = ", ".join("?" for _ in range(group_count))
+    return f"""
+        WITH members AS (
+            SELECT CAST(group_id AS VARCHAR) AS primary_group_id,
+                   CAST(species AS VARCHAR) AS species,
+                   {raw_identifier} AS raw_identifier,
+                   {parsed_accession} AS parsed_accession,
+                   {parsed_entry} AS parsed_entry,
+                   {representative} AS representative,
+                   {orthogroup} AS orthogroup_id,
+                   {parent} AS gene_tree_parent_clade,
+                   {review} AS review_status,
+                   {mapping} AS mapping_status
+            FROM hierarchical_membership
+            WHERE CAST(group_id AS VARCHAR) IN ({placeholders})
+        )
+        SELECT primary_group_id,
+               coalesce(string_agg(DISTINCT representative, ';'
+                   ORDER BY representative) FILTER (
+                       WHERE species = 'Homo_sapiens'
+                         AND representative IS NOT NULL
+                   ), '') AS human_hog_representatives,
+               coalesce(string_agg(DISTINCT representative, ';'
+                   ORDER BY representative) FILTER (
+                       WHERE species = 'Arabidopsis_thaliana'
+                         AND representative IS NOT NULL
+                   ), '') AS arabidopsis_hog_representatives,
+               coalesce(string_agg(DISTINCT parsed_accession, ';'
+                   ORDER BY parsed_accession) FILTER (
+                       WHERE species = 'Homo_sapiens'
+                         AND nullif(trim(parsed_accession), '') IS NOT NULL
+                   ), '') AS human_hog_accessions,
+               coalesce(string_agg(DISTINCT parsed_entry, ';'
+                   ORDER BY parsed_entry) FILTER (
+                       WHERE species = 'Homo_sapiens'
+                         AND nullif(trim(parsed_entry), '') IS NOT NULL
+                   ), '') AS human_hog_entries,
+               coalesce(string_agg(DISTINCT raw_identifier, ';'
+                   ORDER BY raw_identifier) FILTER (
+                       WHERE species = 'Homo_sapiens'
+                   ), '') AS human_hog_raw_identifiers,
+               coalesce(string_agg(DISTINCT parsed_accession, ';'
+                   ORDER BY parsed_accession) FILTER (
+                       WHERE species = 'Arabidopsis_thaliana'
+                         AND nullif(trim(parsed_accession), '') IS NOT NULL
+                   ), '') AS arabidopsis_hog_accessions,
+               coalesce(string_agg(DISTINCT parsed_entry, ';'
+                   ORDER BY parsed_entry) FILTER (
+                       WHERE species = 'Arabidopsis_thaliana'
+                         AND nullif(trim(parsed_entry), '') IS NOT NULL
+                   ), '') AS arabidopsis_hog_entries,
+               coalesce(string_agg(DISTINCT raw_identifier, ';'
+                   ORDER BY raw_identifier) FILTER (
+                       WHERE species = 'Arabidopsis_thaliana'
+                   ), '') AS arabidopsis_hog_raw_identifiers,
+               count(*) AS hog_member_count,
+               count(DISTINCT species) AS hog_species_count,
+               count(*) FILTER (WHERE species = 'Homo_sapiens')
+                   AS hog_human_member_count,
+               count(*) FILTER (WHERE species = 'Arabidopsis_thaliana')
+                   AS hog_arabidopsis_member_count,
+               coalesce(string_agg(DISTINCT species, ';' ORDER BY species), '')
+                   AS hog_species_present,
+               coalesce(string_agg(DISTINCT orthogroup_id, ';'
+                   ORDER BY orthogroup_id) FILTER (
+                       WHERE nullif(trim(orthogroup_id), '') IS NOT NULL
+                   ), '') AS hog_orthogroup_ids,
+               coalesce(string_agg(DISTINCT gene_tree_parent_clade, ';'
+                   ORDER BY gene_tree_parent_clade) FILTER (
+                       WHERE nullif(trim(gene_tree_parent_clade), '') IS NOT NULL
+                   ), '') AS hog_gene_tree_parent_clades,
+               coalesce(string_agg(DISTINCT review_status, ';'
+                   ORDER BY review_status) FILTER (
+                       WHERE nullif(trim(review_status), '') IS NOT NULL
+                   ), '') AS hog_review_statuses,
+               coalesce(string_agg(DISTINCT mapping_status, ';'
+                   ORDER BY mapping_status) FILTER (
+                       WHERE nullif(trim(mapping_status), '') IS NOT NULL
+                   ), '') AS hog_mapping_statuses,
+               TRUE AS hog_membership_available
+        FROM members
+        GROUP BY primary_group_id
+    """
+
+
+def _add_empty_threshold_hog_annotations(*, frame: pd.DataFrame) -> pd.DataFrame:
+    """Add stable blank HOG annotation fields to a threshold result."""
+    result = frame.copy()
+    for column in THRESHOLD_HOG_TEXT_COLUMNS:
+        if column not in result.columns:
+            result[column] = ""
+    for column in THRESHOLD_HOG_COUNT_COLUMNS:
+        if column not in result.columns:
+            result[column] = 0
+    if "hog_membership_available" not in result.columns:
+        result["hog_membership_available"] = False
+    return result
+
+
+def enrich_threshold_results(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    frame: pd.DataFrame,
+) -> pd.DataFrame:
+    """Add human, Arabidopsis and HOG composition to threshold rows.
+
+    Args:
+        connection: Open read-only resource connection.
+        frame: Bounded threshold result containing ``primary_group_id``.
+
+    Returns:
+        Threshold rows enriched from root-level membership when available.
+    """
+    result = _add_empty_threshold_hog_annotations(frame=frame)
+    if frame.empty or "primary_group_id" not in frame.columns:
+        return result
+    if "hierarchical_membership" not in set(list_relations(connection)):
+        return result
+    groups = sorted(
+        {
+            str(value).strip()
+            for value in frame["primary_group_id"].dropna().tolist()
+            if str(value).strip()
+        }
+    )
+    if not groups:
+        return result
+    membership_columns = relation_columns(connection, "hierarchical_membership")
+    try:
+        query = build_threshold_hog_annotation_query(
+            membership_columns=membership_columns,
+            group_count=len(groups),
+        )
+        annotations = connection.execute(query, groups).fetchdf()
+    except (AppError, duckdb.Error) as exc:
+        LOGGER.warning("Threshold HOG annotations are unavailable: %s", exc)
+        return result
+    new_columns = [
+        column
+        for column in THRESHOLD_HOG_ANNOTATION_COLUMNS
+        if column not in frame.columns
+    ]
+    if not new_columns:
+        return frame
+    base = frame.copy()
+    enriched = base.merge(
+        annotations[["primary_group_id", *new_columns]],
+        how="left",
+        on="primary_group_id",
+        validate="many_to_one",
+    )
+    for column in THRESHOLD_HOG_TEXT_COLUMNS:
+        if column in enriched.columns:
+            enriched[column] = enriched[column].fillna("")
+    for column in THRESHOLD_HOG_COUNT_COLUMNS:
+        if column in enriched.columns:
+            enriched[column] = pd.to_numeric(
+                enriched[column],
+                errors="coerce",
+            ).fillna(0).astype("Int64")
+    if "hog_membership_available" in enriched.columns:
+        enriched["hog_membership_available"] = (
+            enriched["hog_membership_available"].fillna(False).astype(bool)
+        )
+    return enriched
 
 
 def build_threshold_result_query(
@@ -971,6 +1279,10 @@ def evaluate_thresholds(
         result = connection.execute(
             build_threshold_result_query(relation, available, settings, max_rows)
         ).fetchdf()
+        result = enrich_threshold_results(
+            connection=connection,
+            frame=result,
+        )
         summary_row = connection.execute(
             build_threshold_summary_query(relation, available, settings)
         ).fetchone()
