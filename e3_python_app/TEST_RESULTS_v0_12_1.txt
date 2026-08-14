@@ -1,0 +1,50 @@
+ARIA plant E3 Python reporter v0.12.1 validation hand-off
+========================================================
+
+User-reported predecessor result
+--------------------------------
+
+The complete v0.12.0 suite produced:
+
+    133 passed, 8 warnings in 34.57s
+    TOTAL: 94% coverage
+    Coverage failure: total of 94 is less than fail-under=95
+
+The eight warnings are Plotly/Kaleido third-party deprecation notices. The sole
+release-blocking result was the coverage threshold.
+
+Hotfix scope
+------------
+
+- Added focused tests for 39 previously missed executable lines plus associated
+  branch outcomes.
+- Covered invalid bounds and missing fields across bounded DuckDB collectors.
+- Covered malformed display/FASTA input and actual Plotly renderer exceptions.
+- Covered ranking types, ranges, missing fields and optional-column fallbacks.
+- Covered remaining unified-search input, count, output and empty-result paths.
+- Left production scientific and application code unchanged.
+- Kept the required fail-under threshold at 95%.
+
+Build-workspace checks on 2026-08-14
+------------------------------------
+
+- All Python source and tests compile successfully.
+- New tests pass 100-character line-length, terminal-newline and whitespace
+  checks.
+- Test traceability was updated.
+
+Environment limitation
+----------------------
+
+This build workspace does not contain DuckDB, pytest or the complete application
+environment, so the recalculated executable coverage cannot be claimed here.
+
+Required release gate
+---------------------
+
+    cd e3_python_app
+    python -m pip install --editable '.[dev]'
+    ./run_tests.sh
+
+The expected result is a completely passing functional/style suite and total
+coverage of at least 95%. Any actual failure still blocks release.

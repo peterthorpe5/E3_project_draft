@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.12.0 is the Streamlit companion to `E3_shiny_app` 0.15.0. Both
+Version 0.12.1 is the Streamlit companion to `E3_shiny_app` 0.15.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
