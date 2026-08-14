@@ -14,4 +14,6 @@ e3app.visualisations	prepare_final_gate_druggability_distribution; final_gate_dr
 e3app.workflow	WORKFLOW_STAGES; _stage_card; workflow_schematic_html	test_workflow.py
 e3app.human_hogs	target_plant_species; validate_hog_view; select_hog_ranking_relation; human_hog_capability; collect_human_hog_summary; collect_human_hog_members	test_human_hogs.py
 e3app.unified_search	parse_search_terms; validate_search_mode; searchable_columns; collect_unified_search; summarise_unified_search	test_unified_search.py
-e3app.streamlit_app	_filter_hog_frame; _human_hog_member_fasta; _render_human_hog_explorer; _render_search	test_human_hogs.py; test_streamlit_app.py
+e3app.streamlit_app	_filter_hog_frame; _human_hog_member_fasta; _render_human_hog_explorer; _render_prestructure_ranked_hogs; _render_search; render_app	test_human_hogs.py; test_streamlit_app.py
+e3app.prestructure_hogs	prestructure_hog_capability; collect_prestructure_ranked_hogs	test_prestructure_hogs.py
+e3app.tab_help	TOP_LEVEL_TAB_HELP; tab_help_text	test_tab_help.py; test_streamlit_app.py

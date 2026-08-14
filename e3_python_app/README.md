@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.10.1 is the Streamlit companion to `E3_shiny_app` 0.13.1. Both
+Version 0.11.1 is the Streamlit companion to `E3_shiny_app` 0.14.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -103,6 +103,12 @@ The reporter provides:
   structurally informed candidate lists, explicit `PASS`, `NEAR_MISS`, `FAIL`
   and `NOT_STRUCTURALLY_ASSESSED` labels, expanded candidate evidence plus
   separate TSV and formatted Excel exports for both lists;
+- a dedicated **Pre-structure ranked HOGs** tab that returns the requested top
+  200 root-level `N0.HOG…` groups by the authoritative recorded pre-structure
+  evolutionary-group rank, without applying target-species, domain,
+  expression, pocket, druggability or structural gates. The row count is
+  adjustable and the rich table includes human and Arabidopsis representatives,
+  a within-list search and paired TSV/Excel downloads;
 - a linked Visual explorer containing a selectable multi-axis candidate
   landscape, a cross-species expression heatmap, exact species-by-tissue
   profiles and the bounded evidence tables behind every selected candidate;
@@ -127,6 +133,8 @@ The reporter provides:
   matched fields and all source columns, with TSV and Excel downloads;
 - a schema-agnostic all-results browser with paired TSV and Excel downloads;
 - provenance and QC views; and
+- a collapsed **❓ How to use this tab** panel on every primary tab, with
+  tab-specific operating instructions and interpretation cautions;
 - on-demand vector-PDF downloads for every native application graph. These use
   the packaged Kaleido renderer and are prepared only when requested; and
 - paired TSV and formatted Excel downloads of every downloadable result table.

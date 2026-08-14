@@ -259,3 +259,19 @@ body {
     padding-top: 0;
   }
 }
+.e3-tab-help {
+  background: #f5f8fa;
+  border: 1px solid #cbd5df;
+  border-radius: 0.4rem;
+  margin: 0.75rem 0 1rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.e3-tab-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.e3-tab-help p {
+  margin: 0.65rem 0 0.1rem;
+}

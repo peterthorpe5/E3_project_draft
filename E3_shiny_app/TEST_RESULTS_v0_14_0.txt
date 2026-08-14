@@ -1,0 +1,30 @@
+ARIA plant E3 Shiny reporter v0.14.0 validation hand-off
+=======================================================
+
+The user reported that the complete R v0.13.1 suite passed. Version 0.14.0 adds
+the direct ungated top-N HOG list and contextual help on all 25 primary tabs.
+
+Build-workspace checks on 2026-08-14
+------------------------------------
+
+- New source and tests pass whitespace/error checks.
+- The application contains exactly 25 top-level contextual help calls.
+- Tests cover authoritative rank selection, root-HOG-only top-N ordering,
+  absence of gate filtering, representative annotations, retained ranks,
+  summary edge cases, downloads and complete help-catalogue coverage.
+
+Environment limitation
+----------------------
+
+R and its DuckDB test dependencies are unavailable in this build workspace, so
+the complete executable suite has not been claimed here.
+
+Required release gate
+---------------------
+
+    cd E3_shiny_app
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
+
+The two test_script_utils.R skips are expected without a --file argument. Any
+actual test failure blocks release.

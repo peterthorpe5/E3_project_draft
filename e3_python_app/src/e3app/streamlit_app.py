@@ -65,6 +65,10 @@ from e3app.pocket_review import (
     selected_group_members,
     selected_group_row,
 )
+from e3app.prestructure_hogs import (
+    collect_prestructure_ranked_hogs,
+    prestructure_hog_capability,
+)
 from e3app.orthology import (
     collect_orthology_group_summary,
     collect_orthology_metrics,
@@ -96,6 +100,7 @@ from e3app.thresholds import (
     paired_threshold_settings,
     select_threshold_relation,
 )
+from e3app.tab_help import tab_help_text
 from e3app.unified_search import (
     collect_unified_search,
     parse_search_terms,
@@ -206,13 +211,19 @@ def _display_dataframe(
             )
     arguments: dict[str, object] = {
         "data": table,
-        "use_container_width": True,
+        "width": "stretch",
         "hide_index": True,
         "column_config": column_config,
     }
     arguments["height"] = 620 if height is None else height
     arguments["row_height"] = 36
     st.dataframe(**arguments)
+
+
+def _render_tab_help(*, tab_name: str) -> None:
+    """Render collapsed contextual guidance for one top-level tab."""
+    with st.expander(label="❓ How to use this tab", expanded=False):
+        st.write(tab_help_text(tab_name=tab_name))
 
 
 def _render_section(
@@ -392,7 +403,7 @@ def _render_orthofinder_explorer(
     figure.update_yaxes(type="log" if use_log_group_count else "linear")
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key="orthology_size_distribution_plot",
     )
     render_plotly_pdf_download(
@@ -616,7 +627,7 @@ def _render_deepclust_onekp_explorer(
     )
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key="deepclust_onekp_coverage_plot",
     )
     render_plotly_pdf_download(
@@ -745,6 +756,7 @@ def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
         return frame
     preferred = (
         "hog_id",
+        "primary_group_id",
         "human_hog_representatives",
         "arabidopsis_hog_representatives",
         "human_accessions",
@@ -754,6 +766,8 @@ def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
         "parsed_entry",
         "raw_identifier",
         "available_aliases",
+        "candidate_accessions",
+        "matched_seed_ids_calculated",
         "matched_e3_seeds",
         "seed_protein_names",
     )
@@ -767,6 +781,89 @@ def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
             regex=False,
         )
     return frame.loc[mask].copy()
+
+
+def _render_prestructure_ranked_hogs(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render an ungated top-N list using the recorded HOG rank directly."""
+    st.subheader("Top pre-structure ranked HOGs")
+    st.info(
+        "This list applies no target-species, domain, expression, pocket, "
+        "druggability or structural gate. It selects root-level N0.HOG… groups "
+        "directly by the recorded pre-structure evolutionary-group rank."
+    )
+    capability = prestructure_hog_capability(connection=connection)
+    if not capability["available"]:
+        st.warning(
+            "The loaded source does not contain both `primary_group_id` and an "
+            "authoritative pre-structure evolutionary-group rank."
+        )
+        return
+    maximum_allowed = min(config.max_rows, 10_000)
+    controls = st.columns(spec=(1, 2))
+    with controls[0]:
+        requested_hogs = int(
+            st.number_input(
+                label="Number of ranked HOGs",
+                min_value=1,
+                max_value=maximum_allowed,
+                value=min(200, maximum_allowed),
+                step=50,
+                key="prestructure_hog_top_n",
+                help=(
+                    "Returns this many root-level HOGs in ascending recorded "
+                    "pre-structure rank. The default is the requested top 200."
+                ),
+            )
+        )
+    with controls[1]:
+        filter_text = st.text_input(
+            label="Filter within the selected top-ranked HOGs",
+            value="",
+            key="prestructure_hog_filter",
+            placeholder="HOG ID, accession, seed, protein name or representative",
+            help=(
+                "Filtering changes only the displayed/downloaded subset; it does "
+                "not recalculate or renumber the recorded ranking."
+            ),
+        )
+    try:
+        ranked_hogs = collect_prestructure_ranked_hogs(
+            connection=connection,
+            maximum_hogs=requested_hogs,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    displayed = _filter_hog_frame(frame=ranked_hogs, query=filter_text)
+    rank_column = str(capability["rank_column"])
+    ranks = pd.to_numeric(displayed[rank_column], errors="coerce").dropna()
+    metrics = st.columns(spec=3)
+    metrics[0].metric("Ranked HOGs returned", f"{len(displayed):,}")
+    metrics[1].metric(
+        "Best recorded rank",
+        "—" if ranks.empty else f"{int(ranks.min()):,}",
+    )
+    metrics[2].metric(
+        "Lowest recorded rank shown",
+        "—" if ranks.empty else f"{int(ranks.max()):,}",
+    )
+    st.caption(
+        f"Authoritative source: `{capability['relation']}`; rank field: "
+        f"`{rank_column}`. Human and Arabidopsis representatives are added from "
+        "root-level hierarchical membership where available."
+    )
+    _display_dataframe(frame=displayed, height=720)
+    render_table_downloads(
+        frame=displayed,
+        file_stem=f"top_{requested_hogs}_prestructure_ranked_hogs",
+        tsv_label="Download ranked HOGs as TSV",
+        excel_label="Download ranked HOGs as Excel",
+        key="prestructure_ranked_hogs_download",
+    )
 
 
 def _human_hog_member_fasta(*, members: pd.DataFrame) -> bytes:
@@ -1178,7 +1275,7 @@ def _render_structural_alignment_section(
         figure = build_structural_alignment_figure(frame=plot_rows)
         st.plotly_chart(
             figure,
-            use_container_width=True,
+            width="stretch",
             key="structural_alignment_evidence_map",
         )
         render_plotly_pdf_download(
@@ -1606,7 +1703,6 @@ def _render_final_druggability_sensitivity(
         selected_group = st.selectbox(
             "Evolutionary group to display",
             options=group_values,
-            index=group_values.index(default_group),
             format_func=group_choices.__getitem__,
             key=selector_key,
             help=(
@@ -2561,7 +2657,7 @@ def _render_candidate_landscape(
     )
     selection = st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key="visual_candidate_landscape_plot",
         on_select="rerun",
         selection_mode="points",
@@ -2798,7 +2894,7 @@ def _render_expression_heatmap(
     )
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key=f"{key_prefix}_expression_heatmap_plot",
     )
     render_plotly_pdf_download(
@@ -2990,7 +3086,7 @@ def _render_species_tissue_profiles(
     )
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key="visual_species_tissue_profile_plot",
     )
     render_plotly_pdf_download(
@@ -3103,7 +3199,7 @@ def _render_volcano_view(
     )
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         key=f"{key_prefix}_volcano_plot",
     )
     render_plotly_pdf_download(
@@ -3251,6 +3347,7 @@ def render_app() -> None:
                     "Glossary",
                     "Computational recommendations",
                     "Threshold explorer",
+                    "Pre-structure ranked HOGs",
                     "Visual explorer",
                     "Candidates",
                     "Orthology",
@@ -3271,53 +3368,73 @@ def render_app() -> None:
                 ]
             )
             with tabs[0]:
+                _render_tab_help(tab_name="Overview")
                 _render_overview(connection=connection, config=config)
             with tabs[1]:
+                _render_tab_help(tab_name="Workflow schematic")
                 _render_workflow_schematic()
             with tabs[2]:
+                _render_tab_help(tab_name="Glossary")
                 _render_glossary()
             with tabs[3]:
+                _render_tab_help(tab_name="Computational recommendations")
                 _render_computational_recommendations(
                     connection=connection,
                     config=config,
                 )
             with tabs[4]:
+                _render_tab_help(tab_name="Threshold explorer")
                 _render_threshold_explorer(connection=connection, config=config)
             with tabs[5]:
-                _render_visual_explorer(connection=connection, config=config)
+                _render_tab_help(tab_name="Pre-structure ranked HOGs")
+                _render_prestructure_ranked_hogs(
+                    connection=connection,
+                    config=config,
+                )
             with tabs[6]:
+                _render_tab_help(tab_name="Visual explorer")
+                _render_visual_explorer(connection=connection, config=config)
+            with tabs[7]:
+                _render_tab_help(tab_name="Candidates")
                 _render_section(
                     connection=connection,
                     config=config,
                     section="candidates",
                 )
-            with tabs[7]:
+            with tabs[8]:
+                _render_tab_help(tab_name="Orthology")
                 _render_orthology_explorer(
                     connection=connection,
                     config=config,
                 )
-            with tabs[8]:
+            with tabs[9]:
+                _render_tab_help(tab_name="Human HOGs")
                 _render_human_hog_explorer(
                     connection=connection,
                     config=config,
                     plant_required=False,
                 )
-            with tabs[9]:
+            with tabs[10]:
+                _render_tab_help(tab_name="Plant & human HOGs")
                 _render_human_hog_explorer(
                     connection=connection,
                     config=config,
                     plant_required=True,
                 )
-            with tabs[10]:
+            with tabs[11]:
+                _render_tab_help(tab_name="Seed & HOG explorer")
                 _render_seed_group_explorer(
                     connection=connection,
                     config=config,
                 )
-            for tab, section in zip(
-                tabs[11:15],
+            for tab, section, tab_name in zip(
+                tabs[12:16],
                 ("domains", "expression", "ligandability", "pocket_conservation"),
+                ("Domains", "Expression", "Ligandability", "Pocket conservation"),
+                strict=True,
             ):
                 with tab:
+                    _render_tab_help(tab_name=tab_name)
                     if section == "expression":
                         _render_expression_section(
                             connection=connection,
@@ -3329,30 +3446,37 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[15]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[16]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
+                _render_tab_help(tab_name="3D structures & pockets")
+                _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[17]:
+                _render_tab_help(tab_name="Pocket-aligned sequences")
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[18]:
+                _render_tab_help(tab_name="3D alignment")
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
-            with tabs[18]:
+            with tabs[19]:
+                _render_tab_help(tab_name="Computational chemistry")
                 _render_section(
                     connection=connection,
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[19]:
-                _render_search(connection=connection, max_rows=config.max_rows)
             with tabs[20]:
+                _render_tab_help(tab_name="Search")
+                _render_search(connection=connection, max_rows=config.max_rows)
+            with tabs[21]:
+                _render_tab_help(tab_name="All results")
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[21]:
+            with tabs[22]:
+                _render_tab_help(tab_name="Provenance and QC")
                 _render_section(
                     connection=connection,
                     config=config,

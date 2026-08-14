@@ -69,7 +69,8 @@ def resource_db(tmp_path: Path) -> Path:
         connection.execute("CREATE VIEW candidate_view AS SELECT * FROM candidates")
         connection.execute(
             "CREATE TABLE candidate_master_results("
-            "final_rank INTEGER, recommendation_status VARCHAR, cluster_id VARCHAR, "
+            "final_rank INTEGER, prestructure_evolutionary_group_rank INTEGER, "
+            "recommendation_status VARCHAR, cluster_id VARCHAR, "
             "primary_group_id VARCHAR, orthofinder_orthogroup_ids VARCHAR, "
             "candidate_accessions VARCHAR, final_score DOUBLE, "
             "target_species_fraction DOUBLE, domain_species_fraction DOUBLE, "
@@ -79,7 +80,7 @@ def resource_db(tmp_path: Path) -> Path:
         )
         connection.execute(
             "INSERT INTO candidate_master_results VALUES "
-            "(1, 'PRIORITY_RECOMMENDATION', 'cluster_1', 'N0.HOG0001', "
+            "(1, 1, 'PRIORITY_RECOMMENDATION', 'cluster_1', 'N0.HOG0001', "
             "'OG0001686', 'Q9SA03;Q00002', 0.91, 1.0, 1.0, 1.0, 1.0, "
             "true, true, 'CONSERVED_3D_POCKET_SUPPORTED', '')"
         )

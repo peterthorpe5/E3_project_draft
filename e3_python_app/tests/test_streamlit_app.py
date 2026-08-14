@@ -9,6 +9,16 @@ from streamlit.testing.v1 import AppTest
 from test_pocket_review import make_pocket_review
 
 
+def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> None:
+    """Removed Streamlit APIs and duplicate selectbox defaults do not regress."""
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    source = path.read_text(encoding="utf-8")
+    assert "use_container_width" not in source
+    selector_start = source.index('selector_key = "recommendation_druggability_group"')
+    selector_end = source.index("plot_rows, overview_truncated", selector_start)
+    assert "index=" not in source[selector_start:selector_end]
+
+
 def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> None:
     """The app renders all tabs and accepts a representative accession."""
 
@@ -18,7 +28,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 28
+    assert len(app.tabs) == 29
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -32,6 +42,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Workflow schematic" in tab_labels
     assert "Computational recommendations" in tab_labels
     assert "Threshold explorer" in tab_labels
+    assert "Pre-structure ranked HOGs" in tab_labels
     assert "Visual explorer" in tab_labels
     assert "Expression heatmap" in tab_labels
     assert "Species & tissue expression" in tab_labels
@@ -44,6 +55,21 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Seed & HOG explorer" in tab_labels
     assert "Search" in tab_labels
     assert "3D alignment" in tab_labels
+    primary_help = [
+        expander
+        for expander in app.expander
+        if expander.label == "❓ How to use this tab"
+    ]
+    assert len(primary_help) == 23
+    ranked_hog_tab = next(
+        tab for tab in app.tabs if tab.label == "Pre-structure ranked HOGs"
+    )
+    top_n = next(
+        number
+        for number in ranked_hog_tab.number_input
+        if number.label == "Number of ranked HOGs"
+    )
+    assert top_n.value == 100
     assert any(
         "Stages 00–01" in markdown.value
         for markdown in app.markdown
@@ -193,7 +219,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 26
+    assert len(app.tabs) == 27
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]

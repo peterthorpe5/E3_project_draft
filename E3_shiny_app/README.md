@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.13.1 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.14.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -100,6 +100,18 @@ column widths, visible gridlines and explicit borders, centred body values,
 data-appropriate numeric formats. Numeric
 source values remain exact; only their display is shortened. The **All results**
 browser includes the same paired downloads.
+
+The dedicated **Pre-structure ranked HOGs** tab is the direct route to the
+team's ungated top-200 analysis set. It selects root-level `N0.HOG…` groups by
+the authoritative recorded pre-structure evolutionary-group rank, applies no
+target-species, domain, expression, pocket, druggability or structural gate,
+and supports an adjustable top-N count, within-list search, human and
+Arabidopsis representative columns and paired TSV/Excel downloads. It does not
+recalculate or renumber the production rank.
+
+Every primary tab starts with a collapsed **❓ How to use this tab** box. The
+text is specific to that tab and explains the main controls, evidence boundary
+and common interpretation pitfalls without occupying space until opened.
 
 Wide in-app tables now use a horizontal scrollbar and a bounded vertical body,
 so the header remains stationary while rows scroll. Numeric display is limited

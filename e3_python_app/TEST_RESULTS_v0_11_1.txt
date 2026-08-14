@@ -1,0 +1,33 @@
+ARIA plant E3 Python reporter v0.11.1 validation hand-off
+========================================================
+
+Reported predecessor result
+---------------------------
+
+Python v0.11.0 built and installed successfully. Its style gate then stopped on
+four W391 blank-line-at-end-of-file findings. The user reported that the paired
+R Shiny v0.14.0 suite passed.
+
+Hotfix validation in the build workspace on 2026-08-14
+-------------------------------------------------------
+
+- All four reported files now end with exactly one newline.
+- Python source and tests compile successfully.
+- No edited Python line exceeds 100 characters.
+- git diff --check reports no whitespace errors.
+- No scientific or application logic changed from v0.11.0.
+
+Environment limitation
+----------------------
+
+This workspace does not provide the complete Python application test
+environment, so the full executable suite cannot be claimed here.
+
+Required release gate
+---------------------
+
+    cd e3_python_app
+    python -m pip install --editable '.[dev]'
+    ./run_tests.sh
+
+Any actual failure blocks release.

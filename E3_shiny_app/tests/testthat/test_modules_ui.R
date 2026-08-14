@@ -9,6 +9,15 @@ testthat::test_that("application omits the retired raw-expression interface", {
   testthat::expect_false(grepl('"Visualise expression"', app_text, fixed = TRUE))
   testthat::expect_true(grepl('"Workflow schematic"', app_text, fixed = TRUE))
   testthat::expect_true(grepl("workflow_schematic_ui()", app_text, fixed = TRUE))
+  testthat::expect_true(grepl(
+    '"Pre-structure ranked HOGs"',
+    app_text,
+    fixed = TRUE
+  ))
+  testthat::expect_identical(
+    stringr::str_count(app_text, "tab_help_ui\\("),
+    25L
+  )
 })
 
 testthat::test_that("tabular modules expose Excel beside TSV downloads", {

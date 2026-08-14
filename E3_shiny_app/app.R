@@ -35,7 +35,9 @@ source("R/pocket_review.R")
 source("R/orthology_explorer.R")
 source("R/deepclust_explorer.R")
 source("R/human_hog_explorer.R")
+source("R/prestructure_hog_explorer.R")
 source("R/unified_search.R")
+source("R/tab_help.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
@@ -48,6 +50,7 @@ source("R/module_pocket_review.R")
 source("R/module_deepclust_explorer.R")
 source("R/module_orthology_explorer.R")
 source("R/module_human_hog_explorer.R")
+source("R/module_prestructure_hog_explorer.R")
 source("R/module_unified_search.R")
 
 # Configuration can come from command-line arguments, environment variables, or
@@ -66,38 +69,52 @@ ui <- bslib::page_navbar(
   header = shiny::includeCSS("www/app.css"),
     bslib::nav_panel(
       "Grant overview",
+      tab_help_ui(tab_name = "Grant overview"),
       grant_overview_ui("grant_overview")
     ),
     bslib::nav_panel(
       "Workflow schematic",
+      tab_help_ui(tab_name = "Workflow schematic"),
       workflow_schematic_ui()
     ),
     bslib::nav_panel(
       "Glossary",
+      tab_help_ui(tab_name = "Glossary"),
       glossary_ui("glossary")
     ),
     bslib::nav_panel(
       "Computational recommendations",
+      tab_help_ui(tab_name = "Computational recommendations"),
       result_section_ui("final_recommendation_results", "final_recommendations")
     ),
     bslib::nav_panel(
       "Threshold explorer",
+      tab_help_ui(tab_name = "Threshold explorer"),
       threshold_explorer_ui("threshold_explorer")
     ),
     bslib::nav_panel(
+      "Pre-structure ranked HOGs",
+      tab_help_ui(tab_name = "Pre-structure ranked HOGs"),
+      prestructure_hog_explorer_ui(id = "prestructure_ranked_hogs")
+    ),
+    bslib::nav_panel(
       "Visual explorer",
+      tab_help_ui(tab_name = "Visual explorer"),
       candidate_visualisations_ui("candidate_visualisations")
     ),
     bslib::nav_panel(
       "Candidates",
+      tab_help_ui(tab_name = "Candidates"),
       result_section_ui("candidate_results", "candidates")
     ),
     bslib::nav_panel(
       "Orthology",
+      tab_help_ui(tab_name = "Orthology"),
       orthology_explorer_ui("orthology_explorer")
     ),
     bslib::nav_panel(
       "Human HOGs",
+      tab_help_ui(tab_name = "Human HOGs"),
       human_hog_explorer_ui(
         "human_hogs",
         plant_required = FALSE
@@ -105,6 +122,7 @@ ui <- bslib::page_navbar(
     ),
     bslib::nav_panel(
       "Plant & human HOGs",
+      tab_help_ui(tab_name = "Plant & human HOGs"),
       human_hog_explorer_ui(
         "plant_and_human_hogs",
         plant_required = TRUE
@@ -112,58 +130,72 @@ ui <- bslib::page_navbar(
     ),
     bslib::nav_panel(
       "Seed & HOG explorer",
+      tab_help_ui(tab_name = "Seed & HOG explorer"),
       seed_group_explorer_ui("seed_group_explorer")
     ),
     bslib::nav_panel(
       "Domains",
+      tab_help_ui(tab_name = "Domains"),
       result_section_ui("domain_results", "domains")
     ),
     bslib::nav_panel(
       "Expression evidence",
+      tab_help_ui(tab_name = "Expression evidence"),
       result_section_ui("expression_results", "expression")
     ),
     bslib::nav_panel(
       "Ligandability",
+      tab_help_ui(tab_name = "Ligandability"),
       result_section_ui("ligandability_results", "ligandability")
     ),
     bslib::nav_panel(
       "Pocket conservation",
+      tab_help_ui(tab_name = "Pocket conservation"),
       result_section_ui("pocket_results", "pocket_conservation")
     ),
     bslib::nav_panel(
       "3D structures & pockets",
+      tab_help_ui(tab_name = "3D structures & pockets"),
       pocket_review_ui("structure_review", focus = "structure")
     ),
     bslib::nav_panel(
       "Pocket-aligned sequences",
+      tab_help_ui(tab_name = "Pocket-aligned sequences"),
       pocket_review_ui("alignment_review", focus = "alignment")
     ),
     bslib::nav_panel(
       "3D alignment",
+      tab_help_ui(tab_name = "3D alignment"),
       result_section_ui("alignment_results", "structural_alignment")
     ),
     bslib::nav_panel(
       "Computational chemistry",
+      tab_help_ui(tab_name = "Computational chemistry"),
       result_section_ui("chemistry_results", "computational_chemistry")
     ),
     bslib::nav_panel(
       "Search",
+      tab_help_ui(tab_name = "Search"),
       unified_search_ui("unified_search")
     ),
     bslib::nav_panel(
       "All results",
+      tab_help_ui(tab_name = "All results"),
       resource_browser_ui("resource_browser")
     ),
     bslib::nav_panel(
       "Provenance and QC",
+      tab_help_ui(tab_name = "Provenance and QC"),
       result_section_ui("provenance_results", "provenance")
     ),
     bslib::nav_panel(
       "Files used",
+      tab_help_ui(tab_name = "Files used"),
       data_sources_ui("data_sources")
     ),
     bslib::nav_panel(
       "About",
+      tab_help_ui(tab_name = "About"),
       shiny::h3("About this app"),
       shiny::p(
         "This reporter answers the grant-facing questions across candidate ",
@@ -193,6 +225,11 @@ server <- function(input, output, session) {
   )
   threshold_explorer_server(
     id = "threshold_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  prestructure_hog_explorer_server(
+    id = "prestructure_ranked_hogs",
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )
