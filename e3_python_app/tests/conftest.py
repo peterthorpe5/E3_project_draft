@@ -24,9 +24,44 @@ def resource_db(tmp_path: Path) -> Path:
             "('P38398', 'Homo sapiens', 0.80)"
         )
         connection.execute(
-            "CREATE TABLE orthogroup_membership(parsed_accession VARCHAR, orthogroup VARCHAR)"
+            "CREATE TABLE orthogroup_membership("
+            "group_id VARCHAR, species VARCHAR, raw_identifier VARCHAR, "
+            "parsed_accession VARCHAR, orthogroup VARCHAR)"
         )
-        connection.execute("INSERT INTO orthogroup_membership VALUES ('Q9SA03', 'OG0001686')")
+        connection.execute(
+            "INSERT INTO orthogroup_membership VALUES "
+            "('OG0001686', 'Arabidopsis_thaliana', 'sp|Q9SA03|FB27_ARATH', "
+            "'Q9SA03', 'OG0001686')"
+        )
+        connection.execute(
+            "CREATE TABLE hierarchical_membership("
+            "group_id VARCHAR, species VARCHAR, raw_identifier VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO hierarchical_membership VALUES "
+            "('N0.HOG0001', 'Arabidopsis_thaliana', 'sp|Q9SA03|FB27_ARATH'), "
+            "('N0.HOG0001', 'Homo_sapiens', 'sp|P38398|BRCA1_HUMAN')"
+        )
+        connection.execute(
+            "CREATE TABLE candidate_group_member_sequences("
+            "cluster_id VARCHAR, record_type VARCHAR, group_id VARCHAR, "
+            "species VARCHAR, internal_id VARCHAR, raw_identifier VARCHAR, "
+            "parsed_accession VARCHAR, parsed_entry VARCHAR, review_status VARCHAR, "
+            "mapping_status VARCHAR, is_input_candidate BOOLEAN, "
+            "candidate_accessions_for_cluster VARCHAR, sequence_length INTEGER, "
+            "protein_sequence VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO candidate_group_member_sequences VALUES "
+            "('cluster_1', 'HIERARCHICAL_ORTHOGROUP', 'N0.HOG0001', "
+            "'Arabidopsis_thaliana', '0_0', 'sp|Q9SA03|FB27_ARATH', "
+            "'Q9SA03', 'FB27_ARATH', 'REVIEWED', 'MAPPED', true, "
+            "'Q9SA03', 8, 'MSTNPKPQ'), "
+            "('cluster_1', 'ORTHOGROUP', 'OG0001686', "
+            "'Arabidopsis_thaliana', '0_0', 'sp|Q9SA03|FB27_ARATH', "
+            "'Q9SA03', 'FB27_ARATH', 'REVIEWED', 'MAPPED', true, "
+            "'Q9SA03', 8, 'MSTNPKPQ')"
+        )
         connection.execute("CREATE TABLE pocket_scores(accession VARCHAR, p2rank_score DOUBLE)")
         connection.execute("INSERT INTO pocket_scores VALUES ('Q9SA03', 4.2)")
         connection.execute("CREATE TABLE provenance_manifest(path VARCHAR, checksum VARCHAR)")

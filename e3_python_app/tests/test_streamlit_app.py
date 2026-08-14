@@ -18,7 +18,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 26
+    assert len(app.tabs) == 28
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -39,7 +39,10 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Computational chemistry" in tab_labels
     assert "3D structures & pockets" in tab_labels
     assert "Pocket-aligned sequences" in tab_labels
+    assert "Human HOGs" in tab_labels
+    assert "Plant & human HOGs" in tab_labels
     assert "Seed & HOG explorer" in tab_labels
+    assert "Search" in tab_labels
     assert "3D alignment" in tab_labels
     assert any(
         "Stages 00–01" in markdown.value
@@ -51,17 +54,17 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert "Evolutionary groups assessed" in metric_labels
     assert "Milestone 1 pre-structure passes" in metric_labels
     assert "E3-seeded neighbourhoods" in metric_labels
-    checkbox_labels = [checkbox.label for checkbox in app.checkbox]
-    assert "Log-transform group-size axis" in checkbox_labels
-    assert "Log-transform group-count axis" in checkbox_labels
-    assert "Log-transform 1KP-species axis" in checkbox_labels
-    group_level_radios = [
-        radio
-        for radio in app.radio
-        if radio.label == "OrthoFinder grouping level"
+    orthology_tab = next(tab for tab in app.tabs if tab.label == "Orthology")
+    orthology_checkbox_labels = [
+        checkbox.label for checkbox in orthology_tab.checkbox
     ]
-    assert len(group_level_radios) == 2
+    assert "Log-transform group-size axis" in orthology_checkbox_labels
+    assert "Log-transform group-count axis" in orthology_checkbox_labels
+    assert "Log-transform 1KP-species axis" in orthology_checkbox_labels
+    seed_tab = next(tab for tab in app.tabs if tab.label == "Seed & HOG explorer")
+    group_level_radios = [orthology_tab.radio[0], seed_tab.radio[0]]
     for group_level_radio in group_level_radios:
+        assert group_level_radio.label == "OrthoFinder grouping level"
         assert (
             "Root-level phylogenetic HOGs (N0.HOG…; recommended)"
             in group_level_radio.options
@@ -70,8 +73,22 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
             "Original MCL orthogroups (OG…; broader legacy view)"
             in group_level_radio.options
         )
-    app.text_input[0].set_value("Q9SA03").run()
+    search_area = next(
+        area for area in app.text_area if area.label == "Search term(s)"
+    )
+    search_button = next(
+        button
+        for button in app.button
+        if button.label == "Search the complete loaded resource"
+    )
+    search_area.set_value("Q9SA03")
+    search_button.click()
+    app.run()
     assert not app.exception
+    assert any(
+        metric.label == "Entered terms matched" and metric.value == "1 / 1"
+        for metric in app.metric
+    )
     assert any(
         slider.label == "Minimum member druggability score"
         for slider in app.slider
@@ -176,7 +193,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 24
+    assert len(app.tabs) == 26
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]

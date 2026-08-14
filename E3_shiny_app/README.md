@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.12.1 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.13.1 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -45,34 +45,48 @@ The main sections follow the evidence path required by the grant:
    sequence-neighbourhood counts, inherited-seed filters, optional
    evolutionary-group links and 1KP coverage without describing DeepClust
    membership as inferred orthology.
-9. **Seed & HOG explorer** – one or several inherited E3 seeds with Any/All
+9. **Human HOGs** – every root-level `N0.HOG…` containing a
+   `Homo_sapiens` member, with candidate-ranking position/status where
+   available, human identifiers, all other HOG members, published aliases and
+   candidate-linked sequences. Unranked HOGs remain visible as
+   `NOT_IN_CANDIDATE_RANKING` rather than being called failures.
+10. **Plant & human HOGs** – the cross-lineage subset containing both a human
+    sequence and at least one of the 12 curated target plant species, with the
+    same rich summary, human-member, all-member, TSV, Excel and available FASTA
+    outputs.
+11. **Seed & HOG explorer** – one or several inherited E3 seeds with Any/All
    matching, every sequence-bearing member of each matched root-level
    phylogenetic hierarchical orthogroup or original MCL orthogroup, associated
    evidence, species filtering and filtered protein FASTA export.
-10. **Domains** – catalogued E3-associated domain support and explicit annotation
+12. **Domains** – catalogued E3-associated domain support and explicit annotation
    unavailable states.
-11. **Expression evidence** – identifier mapping and broad Expression Atlas
+13. **Expression evidence** – identifier mapping and broad Expression Atlas
    support without treating unavailable resources as biological negatives;
    workflow v0.13.0 resources also retain tissue/organism part, developmental
    stage, condition, treatment, experiment and sample context. Direct controls
    open the matching heatmap and volcano-eligibility views.
-12. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
+14. **Ligandability** – selected fpocket/P2Rank-supported pockets, structure
    availability, pLDDT and mapping quality.
-13. **Pocket conservation** – conserved pocket-bearing alignment regions and
+15. **Pocket conservation** – conserved pocket-bearing alignment regions and
    validated pocket-residue-to-FASTA coordinates.
-14. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
+16. **3D alignment** – separate US-align/TM-align conclusions for equivalent 3D
    pocket position and stronger local pocket-structure conservation, with an
    interactive TM-score/pocket-overlap evidence map and recorded threshold
    references.
-15. **3D structures & pockets** – selected-group, rotatable member structures
+17. **3D structures & pockets** – selected-group, rotatable member structures
     with strict and top-k pocket residues highlighted.
-16. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
+18. **Pocket-aligned sequences** – the published MAFFT alignment, exact pocket
     highlights, original OrthoFinder-group identifiers and selected-alignment
     FASTA download.
-17. **Provenance and QC** – release metadata, relation catalogue and source paths.
-18. **Computational chemistry** – chemistry hand-off decisions, review tiers,
+19. **Computational chemistry** – chemistry hand-off decisions, review tiers,
     sensitivity analysis, residue-derived pharmacophore features and optional
     fragment-ranking evidence.
+20. **Search** – a complete-resource search for names, root HOG IDs, legacy OG
+    IDs, E3 seeds, accessions, entries, genes and DeepClust identifiers. It
+    accepts pasted newline/comma/semicolon/tab lists, offers smart/exact/literal
+    contains modes, and returns the input term, source relation, matched fields
+    and every source column with TSV and formatted Excel downloads.
+21. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -341,7 +355,8 @@ threshold validation and SQL, focused final-gate boundary behaviour and
 entrant/leaver comparison, searchable member-level druggability group selection,
 box plots, formatted Excel
 export contracts, FASTA and PDF export contracts, expanded orthology metrics,
-species/taxonomy filters, multi-seed HOG searches, druggability near-miss
+species/taxonomy filters, complete human and plant–human HOG summaries and
+members, multi-field pasted-list search, multi-seed HOG searches, druggability near-miss
 reclassification, linked
 candidate/expression visual queries, module UI contracts, portable pocket-review
 validation, repaired fit-and-centre controls, selected-group sequence/model

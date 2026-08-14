@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.9.1 is the Streamlit companion to `E3_shiny_app` 0.12.1. Both
+Version 0.10.1 is the Streamlit companion to `E3_shiny_app` 0.13.1. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -78,6 +78,14 @@ The reporter provides:
   with independently selectable linear/logarithmic x and y axes. Its grouping
   selector distinguishes recommended root-level phylogenetic hierarchical
   orthogroups (`N0.HOG…`) from the broader original MCL orthogroups (`OG…`);
+- separate lazy-loaded **Human HOGs** and **Plant & human HOGs** views. The
+  first retains every root-level `N0.HOG…` containing `Homo_sapiens`; the
+  second requires both a human member and at least one of the 12 curated target
+  plant species. Both expose one-row-per-HOG composition and candidate-ranking
+  annotations, all human sequence identifiers, every co-member, available gene
+  aliases and candidate-linked protein sequences, with TSV, formatted Excel
+  and available-sequence FASTA downloads. A HOG absent from candidate ranking
+  is explicitly `NOT_IN_CANDIDATE_RANKING`, not a biological failure;
 - a scientifically separate DeepClust and 1KP sequence-neighbourhood panel,
   using the full 1KP+ candidate-evidence summaries for raw/strict member,
   sample and parsed-species coverage, inherited-seed filters, optional links to
@@ -112,8 +120,11 @@ The reporter provides:
 - searchable HOG/orthogroup, DeepClust cluster, rank and accession choices,
   alongside downloadable OrthoFinder member sequence/model identifiers;
 - a separate column multiselect and row limit for every section;
-- exact accession search across recognised scalar and semicolon-delimited
-  candidate/member fields;
+- a replacement complete-resource search accepting one item or a pasted
+  newline/comma/semicolon/tab list. Smart, exact and literal-contains modes
+  recognise names, root HOG IDs, legacy OG IDs, E3 seeds, accessions, entries,
+  genes and DeepClust identifiers; every hit retains the input term, relation,
+  matched fields and all source columns, with TSV and Excel downloads;
 - a schema-agnostic all-results browser with paired TSV and Excel downloads;
 - provenance and QC views; and
 - on-demand vector-PDF downloads for every native application graph. These use
@@ -183,7 +194,9 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.9.1 quality gate includes branch-aware coverage at or above 95%
+The v0.10.1 quality gate includes focused human-HOG, plant–human-HOG,
+HOG-level human/Arabidopsis representative and
+multi-field list-search tests in addition to branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,
 visualisation, threshold, portable-review, Excel export and headless Streamlit
 behaviour.

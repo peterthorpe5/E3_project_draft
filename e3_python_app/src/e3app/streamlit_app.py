@@ -39,7 +39,6 @@ from e3app.data import (
     relation_columns,
     relations_for_section,
     resource_overview,
-    search_accession,
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
@@ -51,6 +50,11 @@ from e3app.exports import (
     render_table_downloads,
 )
 from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
+from e3app.human_hogs import (
+    collect_human_hog_members,
+    collect_human_hog_summary,
+    human_hog_capability,
+)
 from e3app.pocket_review import (
     PocketReviewBundle,
     group_choice_labels,
@@ -91,6 +95,11 @@ from e3app.thresholds import (
     final_druggability_source_missing_columns,
     paired_threshold_settings,
     select_threshold_relation,
+)
+from e3app.unified_search import (
+    collect_unified_search,
+    parse_search_terms,
+    summarise_unified_search,
 )
 from e3app.visualisations import (
     ALL_FINAL_GATE_GROUPS,
@@ -727,6 +736,244 @@ def _seed_member_fasta(*, members: pd.DataFrame) -> bytes:
         sequence_column="protein_sequence",
         description_columns=("raw_identifier", "parsed_accession"),
     )
+
+
+def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
+    """Apply a literal case-insensitive HOG/member filter to a result frame."""
+    cleaned = query.strip().casefold()
+    if not cleaned or frame.empty:
+        return frame
+    preferred = (
+        "hog_id",
+        "human_hog_representatives",
+        "arabidopsis_hog_representatives",
+        "human_accessions",
+        "human_entries",
+        "human_raw_identifiers",
+        "parsed_accession",
+        "parsed_entry",
+        "raw_identifier",
+        "available_aliases",
+        "matched_e3_seeds",
+        "seed_protein_names",
+    )
+    columns = [column for column in preferred if column in frame.columns]
+    if not columns:
+        return frame.iloc[0:0].copy()
+    mask = pd.Series(False, index=frame.index)
+    for column in columns:
+        mask |= frame[column].fillna("").astype(str).str.casefold().str.contains(
+            cleaned,
+            regex=False,
+        )
+    return frame.loc[mask].copy()
+
+
+def _human_hog_member_fasta(*, members: pd.DataFrame) -> bytes:
+    """Build FASTA for HOG-member rows with published protein sequences."""
+    if "protein_sequence" not in members.columns:
+        return b""
+    export = members.loc[
+        members["protein_sequence"].fillna("").astype(str).str.strip().ne("")
+    ].copy()
+    if export.empty:
+        return b""
+    export["fasta_identifier"] = (
+        export["hog_id"].fillna("UNKNOWN_HOG").astype(str)
+        + "|"
+        + export["species"].fillna("UNKNOWN_SPECIES").astype(str)
+        + "|"
+        + export["parsed_accession"].fillna("").astype(str)
+    )
+    return dataframe_to_fasta_bytes(
+        frame=export,
+        identifier_column="fasta_identifier",
+        sequence_column="protein_sequence",
+        description_columns=("raw_identifier", "parsed_entry"),
+    )
+
+
+def _render_human_hog_explorer(
+    *,
+    connection: object,
+    config: AppConfig,
+    plant_required: bool,
+) -> None:
+    """Render complete human or plant-and-human root-level HOG evidence."""
+    view = "plant_and_human" if plant_required else "human"
+    title = "Plant and human HOGs" if plant_required else "Human-containing HOGs"
+    stem = "plant_and_human_hogs" if plant_required else "human_hogs"
+    st.subheader(title)
+    if plant_required:
+        st.caption(
+            "Root-level phylogenetic hierarchical orthogroups containing at least "
+            "one Homo sapiens sequence and at least one member from the 12 curated "
+            "target plant species. This is evolutionary co-membership, not evidence "
+            "that every member is an E3 ligase."
+        )
+    else:
+        st.caption(
+            "Every root-level N0.HOG… containing at least one Homo sapiens sequence. "
+            "Candidate-ranking annotations are added where a HOG entered the E3 "
+            "prioritisation; unranked HOGs remain visible and are not labelled as "
+            "biological failures."
+        )
+    capability = human_hog_capability(connection=connection)
+    if not capability["available"]:
+        missing = ", ".join(capability["missing_columns"])
+        st.info(
+            "This source does not contain complete root-level hierarchical "
+            f"membership. Missing fields: {missing}."
+        )
+        return
+    ranking_relation = capability["ranking_relation"]
+    st.caption(
+        "Ranking source: "
+        + (f"`{ranking_relation}`." if ranking_relation else "unavailable in this source.")
+    )
+    st.caption(
+        "Every table repeats the HOG-level human and Arabidopsis representatives. "
+        "Each value prefers the parsed protein accession, then the parsed entry, "
+        "then the published raw identifier; multiple representatives are separated "
+        "by semicolons and absent lineages are blank."
+    )
+    load_tables = st.checkbox(
+        "Load this HOG view",
+        value=False,
+        key=f"{stem}_load",
+        help=(
+            "The complete OrthoFinder membership is queried only when selected, "
+            "so the other large HOG tab does not load in the background."
+        ),
+    )
+    if not load_tables:
+        st.info("Select ‘Load this HOG view’ to query its summary and member tables.")
+        return
+    controls = st.columns(2)
+    with controls[0]:
+        maximum_rows = int(
+            st.number_input(
+                "Maximum rows per downloaded table",
+                min_value=100,
+                max_value=100_000,
+                value=10_000,
+                step=1_000,
+                key=f"{stem}_maximum_rows",
+            )
+        )
+    with controls[1]:
+        filter_text = st.text_input(
+            "Filter loaded HOGs or member identifiers",
+            value="",
+            key=f"{stem}_filter",
+            placeholder="N0.HOG…, UniProt accession, entry, seed or name",
+        )
+    try:
+        summary = collect_human_hog_summary(
+            connection=connection,
+            view=view,
+            maximum_rows=maximum_rows,
+        )
+        human_members = collect_human_hog_members(
+            connection=connection,
+            view=view,
+            member_scope="human",
+            maximum_rows=maximum_rows,
+        )
+        all_members = collect_human_hog_members(
+            connection=connection,
+            view=view,
+            member_scope="all",
+            maximum_rows=maximum_rows,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    all_summary = summary
+    all_human_members = human_members
+    summary = _filter_hog_frame(frame=all_summary, query=filter_text)
+    selected_hogs = set(summary["hog_id"].astype(str)) if not summary.empty else set()
+    if filter_text.strip():
+        matched_human = _filter_hog_frame(
+            frame=all_human_members,
+            query=filter_text,
+        )
+        selected_hogs.update(matched_human["hog_id"].astype(str))
+        summary = all_summary[
+            all_summary["hog_id"].astype(str).isin(selected_hogs)
+        ]
+        human_members = all_human_members[
+            all_human_members["hog_id"].astype(str).isin(selected_hogs)
+        ]
+        all_members = all_members[all_members["hog_id"].astype(str).isin(selected_hogs)]
+    metric_columns = st.columns(5)
+    metric_columns[0].metric("HOGs", f"{len(summary):,}")
+    metric_columns[1].metric("Human members", f"{len(human_members):,}")
+    plant_members = (
+        int((all_members["member_class"] == "TARGET_PLANT").sum())
+        if "member_class" in all_members.columns
+        else 0
+    )
+    metric_columns[2].metric("Target-plant members", f"{plant_members:,}")
+    ranked = (
+        int((summary["ranking_availability"] == "RANKED").sum())
+        if "ranking_availability" in summary.columns
+        else 0
+    )
+    metric_columns[3].metric("HOGs in candidate ranking", f"{ranked:,}")
+    species_count = (
+        all_members["species"].dropna().astype(str).nunique()
+        if "species" in all_members.columns
+        else 0
+    )
+    metric_columns[4].metric("Species represented", f"{species_count:,}")
+    display_rows = min(config.max_rows, maximum_rows)
+    st.markdown("#### HOG summary and candidate ranking")
+    _display_dataframe(frame=summary.head(display_rows), height=520)
+    render_table_downloads(
+        frame=summary,
+        file_stem=f"{stem}_summary",
+        tsv_label="Download complete HOG summary as TSV",
+        excel_label="Download complete HOG summary as Excel",
+        key=f"{stem}_summary_download",
+    )
+    st.markdown("#### Human sequence annotations")
+    _display_dataframe(frame=human_members.head(display_rows), height=560)
+    render_table_downloads(
+        frame=human_members,
+        file_stem=f"{stem}_human_members",
+        tsv_label="Download human members as TSV",
+        excel_label="Download human members as Excel",
+        key=f"{stem}_human_download",
+    )
+    st.markdown("#### Every member of the qualifying HOGs")
+    st.caption(
+        "Includes human, target-plant and any other named OrthoFinder input "
+        "members. Sequence fields are populated only where the integrated release "
+        "published candidate-linked member sequences."
+    )
+    _display_dataframe(frame=all_members.head(display_rows), height=620)
+    render_table_downloads(
+        frame=all_members,
+        file_stem=f"{stem}_all_members",
+        tsv_label="Download every HOG member as TSV",
+        excel_label="Download every HOG member as Excel",
+        key=f"{stem}_all_members_download",
+    )
+    fasta = _human_hog_member_fasta(members=all_members)
+    if fasta:
+        st.download_button(
+            "Download available HOG-member protein sequences as FASTA",
+            data=fasta,
+            file_name=f"{stem}_available_member_sequences.fasta",
+            mime="text/x-fasta",
+            key=f"{stem}_member_fasta_download",
+        )
+    else:
+        st.caption(
+            "No protein sequences for these complete HOG memberships were "
+            "published in the loaded integrated resource."
+        )
 
 
 def _render_seed_group_explorer(
@@ -2078,20 +2325,85 @@ def _render_pocket_review(
 
 
 def _render_search(*, connection: object, max_rows: int) -> None:
-    """Render cross-relation exact accession search."""
-    st.subheader("Candidate or member accession search")
+    """Render batch-capable cross-relation identifier and name search."""
+    st.subheader("Multi-field E3 resource search")
     st.caption(
-        "Searches recognised accession fields and semicolon-delimited candidate lists "
-        "across every loaded relation."
+        "Paste one or several names, N0.HOG… IDs, OG… IDs, E3 seeds, UniProt "
+        "accessions, gene names, entries or DeepClust identifiers. The result "
+        "records the matched term, source relation and matched field before "
+        "returning every available column from that source row."
     )
-    query = st.text_input("UniProt or project accession", placeholder="Q9SA03")
-    if not query:
+    with st.form("unified_resource_search"):
+        query = st.text_area(
+            "Search term(s)",
+            value="",
+            placeholder=(
+                "One item per line, or separated by commas/semicolons\n"
+                "Q9SA03\nN0.HOG0002084\nFB27"
+            ),
+            height=150,
+        )
+        match_mode = st.radio(
+            "Matching method",
+            options=("smart", "exact", "contains"),
+            format_func=lambda value: {
+                "smart": "Smart: exact identifiers plus partial name matching",
+                "exact": "Exact identifiers or semicolon-list tokens only",
+                "contains": "Literal contains matching across identifiers and names",
+            }[value],
+            horizontal=True,
+        )
+        maximum_rows_per_relation = int(
+            st.number_input(
+                "Maximum matching rows per source relation",
+                min_value=1,
+                max_value=min(10_000, max(1, max_rows)),
+                value=min(250, max(1, max_rows)),
+            )
+        )
+        submitted = st.form_submit_button("Search the complete loaded resource")
+    if not submitted:
         return
-    matches = search_accession(connection, query, min(max_rows, 1000))
+    try:
+        terms = parse_search_terms(value=query)
+        matches = collect_unified_search(
+            connection=connection,
+            search_terms=terms,
+            mode=match_mode,
+            maximum_rows_per_relation=maximum_rows_per_relation,
+            maximum_total_rows=min(100_000, max(10_000, max_rows)),
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
     if matches.empty:
-        st.warning("No exact accession match was found in recognised columns.")
-    else:
-        _display_dataframe(frame=matches)
+        st.warning("No identifier or name match was found in recognised fields.")
+        return
+    summary = summarise_unified_search(matches=matches)
+    matched_terms = summary["search_term"].nunique()
+    matched_relations = summary["relation"].nunique()
+    metrics = st.columns(3)
+    metrics[0].metric("Entered terms matched", f"{matched_terms:,} / {len(terms):,}")
+    metrics[1].metric("Source relations", f"{matched_relations:,}")
+    metrics[2].metric("Matching source rows", f"{len(matches):,}")
+    st.markdown("#### Match summary")
+    _display_dataframe(frame=summary, height=360)
+    render_table_downloads(
+        frame=summary,
+        file_stem="unified_search_summary",
+        tsv_label="Download search summary as TSV",
+        excel_label="Download search summary as Excel",
+        key="unified_search_summary_download",
+    )
+    st.markdown("#### Complete matching rows")
+    _display_dataframe(frame=matches, height=650)
+    render_table_downloads(
+        frame=matches,
+        file_stem="unified_search_matches",
+        tsv_label="Download complete matches as TSV",
+        excel_label="Download complete matches as Excel",
+        key="unified_search_matches_download",
+    )
 
 
 def _render_all_results(
@@ -2942,6 +3254,8 @@ def render_app() -> None:
                     "Visual explorer",
                     "Candidates",
                     "Orthology",
+                    "Human HOGs",
+                    "Plant & human HOGs",
                     "Seed & HOG explorer",
                     "Domains",
                     "Expression",
@@ -2951,7 +3265,7 @@ def render_app() -> None:
                     "Pocket-aligned sequences",
                     "3D alignment",
                     "Computational chemistry",
-                    "Accession search",
+                    "Search",
                     "All results",
                     "Provenance and QC",
                 ]
@@ -2983,12 +3297,24 @@ def render_app() -> None:
                     config=config,
                 )
             with tabs[8]:
+                _render_human_hog_explorer(
+                    connection=connection,
+                    config=config,
+                    plant_required=False,
+                )
+            with tabs[9]:
+                _render_human_hog_explorer(
+                    connection=connection,
+                    config=config,
+                    plant_required=True,
+                )
+            with tabs[10]:
                 _render_seed_group_explorer(
                     connection=connection,
                     config=config,
                 )
             for tab, section in zip(
-                tabs[9:13],
+                tabs[11:15],
                 ("domains", "expression", "ligandability", "pocket_conservation"),
             ):
                 with tab:
@@ -3003,30 +3329,30 @@ def render_app() -> None:
                             config=config,
                             section=section,
                         )
-            with tabs[13]:
-                _render_pocket_review(bundle=pocket_review, focus="structure")
-            with tabs[14]:
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
             with tabs[15]:
+                _render_pocket_review(bundle=pocket_review, focus="structure")
+            with tabs[16]:
+                _render_pocket_review(bundle=pocket_review, focus="alignment")
+            with tabs[17]:
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
-            with tabs[16]:
+            with tabs[18]:
                 _render_section(
                     connection=connection,
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[17]:
+            with tabs[19]:
                 _render_search(connection=connection, max_rows=config.max_rows)
-            with tabs[18]:
+            with tabs[20]:
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[19]:
+            with tabs[21]:
                 _render_section(
                     connection=connection,
                     config=config,

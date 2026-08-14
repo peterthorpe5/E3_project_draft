@@ -34,6 +34,8 @@ source("R/workflow_schematic.R")
 source("R/pocket_review.R")
 source("R/orthology_explorer.R")
 source("R/deepclust_explorer.R")
+source("R/human_hog_explorer.R")
+source("R/unified_search.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
@@ -45,6 +47,8 @@ source("R/module_candidate_visualisations.R")
 source("R/module_pocket_review.R")
 source("R/module_deepclust_explorer.R")
 source("R/module_orthology_explorer.R")
+source("R/module_human_hog_explorer.R")
+source("R/module_unified_search.R")
 
 # Configuration can come from command-line arguments, environment variables, or
 # defaults. See README.md for the supported options.
@@ -93,6 +97,20 @@ ui <- bslib::page_navbar(
       orthology_explorer_ui("orthology_explorer")
     ),
     bslib::nav_panel(
+      "Human HOGs",
+      human_hog_explorer_ui(
+        "human_hogs",
+        plant_required = FALSE
+      )
+    ),
+    bslib::nav_panel(
+      "Plant & human HOGs",
+      human_hog_explorer_ui(
+        "plant_and_human_hogs",
+        plant_required = TRUE
+      )
+    ),
+    bslib::nav_panel(
       "Seed & HOG explorer",
       seed_group_explorer_ui("seed_group_explorer")
     ),
@@ -127,6 +145,10 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Computational chemistry",
       result_section_ui("chemistry_results", "computational_chemistry")
+    ),
+    bslib::nav_panel(
+      "Search",
+      unified_search_ui("unified_search")
     ),
     bslib::nav_panel(
       "All results",
@@ -184,8 +206,25 @@ server <- function(input, output, session) {
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )
+  human_hog_explorer_server(
+    id = "human_hogs",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows,
+    plant_required = FALSE
+  )
+  human_hog_explorer_server(
+    id = "plant_and_human_hogs",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows,
+    plant_required = TRUE
+  )
   seed_group_explorer_server(
     id = "seed_group_explorer",
+    resource_source = app_config$resource_source,
+    max_rows = app_config$max_table_rows
+  )
+  unified_search_server(
+    id = "unified_search",
     resource_source = app_config$resource_source,
     max_rows = app_config$max_table_rows
   )

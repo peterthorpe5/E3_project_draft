@@ -1,0 +1,34 @@
+ARIA plant E3 Shiny reporter v0.13.1 validation hand-off
+=======================================================
+
+User-reported predecessor result
+--------------------------------
+
+The user reported that the complete R v0.13.0 suite passed.
+
+Build-workspace checks on 2026-08-14
+------------------------------------
+
+- Both HOG tab query builders now expose the same two representative columns in
+  summary, human-member and complete-member tables.
+- Integration assertions cover multiple human representatives, Arabidopsis
+  representatives, blank absent-lineage values and member-row repetition.
+- Filtering assertions cover the new representative fields.
+- git diff --check reports no whitespace errors in the edited app files.
+
+Environment limitation
+----------------------
+
+This build workspace does not provide R, Rscript, DuckDB or duckplyr. The
+complete executable R suite therefore cannot be claimed as run here.
+
+Required release gate
+---------------------
+
+    cd E3_shiny_app
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
+
+The two test_script_utils.R skips are expected when no --file argument is
+available. Any actual test failure blocks release.
+

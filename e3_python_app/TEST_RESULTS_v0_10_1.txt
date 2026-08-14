@@ -1,0 +1,41 @@
+ARIA plant E3 Python reporter v0.10.1 validation hand-off
+========================================================
+
+User-reported predecessor result
+--------------------------------
+
+v0.10.0 completed with 120 passing tests, one failing test and eight dependency
+warnings. The single failure was:
+
+    tests/test_unified_search.py::test_smart_search_matches_hog_seed_accession_and_name
+
+The search result was correct: Q9SA03 matched both aliases.member_accession and
+ranked.candidate_accessions. The assertion incorrectly assumed that the ranked
+row must be first. v0.10.1 asserts both source-provenance matches explicitly.
+
+Build-workspace checks on 2026-08-14
+------------------------------------
+
+- All edited Python source and test files compile successfully.
+- No edited Python line exceeds 100 characters.
+- git diff --check reports no whitespace errors in the edited app files.
+- Focused tests now cover multiple human HOG representatives, an Arabidopsis
+  representative, absent-lineage blanks, repeated member-table columns and
+  representative-field filtering.
+
+Environment limitation
+----------------------
+
+This build workspace does not provide pytest, DuckDB, Streamlit, Plotly or R.
+The complete executable suites therefore cannot be claimed as run here.
+
+Required release gate
+---------------------
+
+    cd e3_python_app
+    python -m pip install --editable '.[dev]'
+    ./run_tests.sh
+
+The expected Python result is 121 passing tests, subject only to non-failing
+dependency warnings. Any actual failure blocks release.
+

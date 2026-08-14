@@ -1,6 +1,6 @@
 Package: E3ExpressionShiny
 Title: Grant-Focused Shiny Reporter for the ARIA Plant E3 Resource
-Version: 0.12.1
+Version: 0.13.1
 Authors@R: c(
     person("Peter", "Thorpe", role = c("aut", "cre"), email = "p.thorpe@dundee.ac.uk")
     )
@@ -15,6 +15,10 @@ Description: A modular Shiny application for querying and visualising candidate
     visual explorer combines a multi-axis candidate landscape, exact supporting
     tables, expression heatmaps and species-by-tissue profiles without
     conflating unavailable evidence with measured zero.
+    Dedicated human and plant-human root-level hierarchical-orthogroup views
+    retain candidate ranking, identifier, co-member and available sequence
+    context. A pasted-list search spans recognised identifiers and names while
+    retaining source-relation and matched-field provenance.
     Optional offline pocket-review pages provide interactive selected-group
     structure, pocket-location and pocket-annotated alignment views.
 License: MIT + file LICENSE

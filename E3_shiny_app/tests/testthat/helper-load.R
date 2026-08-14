@@ -48,6 +48,8 @@ source(file.path(repo_dir, "R", "workflow_schematic.R"))
 source(file.path(repo_dir, "R", "pocket_review.R"))
 source(file.path(repo_dir, "R", "orthology_explorer.R"))
 source(file.path(repo_dir, "R", "deepclust_explorer.R"))
+source(file.path(repo_dir, "R", "human_hog_explorer.R"))
+source(file.path(repo_dir, "R", "unified_search.R"))
 source(file.path(repo_dir, "R", "module_expression_filters.R"))
 source(file.path(repo_dir, "R", "module_expression_summary.R"))
 source(file.path(repo_dir, "R", "module_expression_table.R"))
@@ -64,6 +66,8 @@ source(file.path(repo_dir, "R", "module_candidate_visualisations.R"))
 source(file.path(repo_dir, "R", "module_pocket_review.R"))
 source(file.path(repo_dir, "R", "module_deepclust_explorer.R"))
 source(file.path(repo_dir, "R", "module_orthology_explorer.R"))
+source(file.path(repo_dir, "R", "module_human_hog_explorer.R"))
+source(file.path(repo_dir, "R", "module_unified_search.R"))
 
 make_test_expression_tbl <- function() {
   tibble::tibble(
