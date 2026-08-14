@@ -42,6 +42,14 @@ from e3app.data import (
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
+from e3app.enriched_hogs import (
+    ENRICHED_HOG_LABELS,
+    ENRICHED_HOG_MEMBERS,
+    ENRICHED_HOG_OVERVIEW,
+    collect_enriched_hog_results,
+    enriched_hog_capability,
+    enriched_hog_columns,
+)
 from e3app.exports import (
     dataframe_to_fasta_bytes,
     dataframe_display_formats,
@@ -2508,22 +2516,92 @@ def _render_all_results(
     config: AppConfig,
     relations: Sequence[str],
 ) -> None:
-    """Render a schema-agnostic bounded result browser."""
-    st.subheader("All imported results")
+    """Render enriched HOG results and raw resource relations."""
+    st.subheader("All results and complete HOG information")
     st.caption(
-        "Use this audit view for relations not covered by a grant-facing section. "
-        "Queries remain bounded and execute inside DuckDB."
+        "The enriched HOG views join membership, human and Arabidopsis "
+        "representatives, pre-structure and post-structure rankings, and every "
+        "field from the strongest HOG-linked ranking result. Raw relations remain "
+        "available for exact source-level audit. Queries are bounded in DuckDB."
     )
     if not relations:
         st.info("No relations are available to browse.")
         return
-    relation = st.selectbox("Relation", relations, key="all_results_relation")
-    available = relation_columns(connection, relation)
+
+    capability = enriched_hog_capability(connection=connection)
+    virtual_results: list[str] = []
+    if capability["available"]:
+        virtual_results.append(ENRICHED_HOG_OVERVIEW)
+    if capability["membership_available"]:
+        virtual_results.append(ENRICHED_HOG_MEMBERS)
+    result_choices = [*virtual_results, *relations]
+    relation = st.selectbox(
+        "Result view",
+        result_choices,
+        format_func=lambda value: ENRICHED_HOG_LABELS.get(value, value),
+        key="all_results_relation",
+        help=(
+            "Choose an enriched joined view for complete HOG-level information, "
+            "or a raw relation for its exact stored rows."
+        ),
+    )
+    is_enriched = relation in ENRICHED_HOG_LABELS
+    if is_enriched:
+        available = enriched_hog_columns(
+            connection=connection,
+            result=relation,
+        )
+        if relation == ENRICHED_HOG_OVERVIEW:
+            st.info(
+                "One row represents one root HOG. Both canonical rank columns and "
+                "the original source ranking fields are selectable. Canonical ranks "
+                "use the strongest compatible field available in this release."
+            )
+        else:
+            st.info(
+                "One row represents one HOG member. HOG-level annotations and "
+                "rankings repeat so each exported member row remains interpretable."
+            )
+    else:
+        available = relation_columns(connection=connection, relation=relation)
+        st.info(
+            "This is a raw source relation. ‘Select all fields’ includes every "
+            "stored field in this relation, but does not join other relations."
+        )
+
+    selector_key = f"all_results_columns_{relation}"
+    current_selection = [
+        column
+        for column in st.session_state.get(selector_key, [])
+        if column in available
+    ]
+    if not current_selection and selector_key not in st.session_state:
+        current_selection = list(available[: min(18, len(available))])
+    st.session_state[selector_key] = current_selection
+    actions = st.columns(3)
+    if actions[0].button(
+        "Select all fields",
+        key=f"all_results_select_all_{relation}",
+    ):
+        st.session_state[selector_key] = list(available)
+    if actions[1].button(
+        "First 18 fields",
+        key=f"all_results_select_first_{relation}",
+    ):
+        st.session_state[selector_key] = list(available[: min(18, len(available))])
+    if actions[2].button(
+        "Clear fields",
+        key=f"all_results_select_none_{relation}",
+    ):
+        st.session_state[selector_key] = []
     selected = st.multiselect(
         "Columns to display",
         available,
-        default=list(available[: min(12, len(available))]),
-        key="all_results_columns",
+        key=selector_key,
+        help=(
+            "Select all fields for a complete export. The first fields in enriched "
+            "views include both ranking stages and species representatives."
+        ),
     )
     requested = st.number_input(
         "Rows to display",
@@ -2533,16 +2611,24 @@ def _render_all_results(
         key="all_results_rows",
     )
     if selected:
-        result = preview_selected_columns(
-            connection,
-            relation,
-            selected,
-            int(requested),
-        )
+        if is_enriched:
+            result = collect_enriched_hog_results(
+                connection=connection,
+                result=relation,
+                selected_columns=selected,
+                maximum_rows=int(requested),
+            )
+        else:
+            result = preview_selected_columns(
+                connection=connection,
+                relation=relation,
+                columns=selected,
+                limit=int(requested),
+            )
         _display_dataframe(frame=result)
         render_table_downloads(
             frame=result,
-            file_stem=f"all_results_{relation}",
+            file_stem=f"all_results_{relation.strip('_')}",
             tsv_label="Download displayed rows as TSV",
             excel_label="Download displayed rows as Excel",
             key="all_results_download",

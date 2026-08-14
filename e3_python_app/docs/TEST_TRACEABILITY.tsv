@@ -17,3 +17,4 @@ e3app.unified_search	parse_search_terms; validate_search_mode; searchable_column
 e3app.streamlit_app	_filter_hog_frame; _human_hog_member_fasta; _render_human_hog_explorer; _render_prestructure_ranked_hogs; _render_search; render_app	test_human_hogs.py; test_streamlit_app.py
 e3app.prestructure_hogs	prestructure_hog_capability; collect_prestructure_ranked_hogs	test_prestructure_hogs.py
 e3app.tab_help	TOP_LEVEL_TAB_HELP; tab_help_text	test_tab_help.py; test_streamlit_app.py
+e3app.enriched_hogs	validate_enriched_hog_result; enriched_hog_capability; enriched_hog_columns; collect_enriched_hog_results	test_enriched_hogs.py; test_streamlit_app.py

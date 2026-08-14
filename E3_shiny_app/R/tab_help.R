@@ -87,8 +87,9 @@ tab_help_entries <- function() {
       "matching relation and column, so one term may return several rows."
     ),
     "All results" = paste(
-      "Choose any loaded relation for schema-level audit and select columns",
-      "before previewing. Downloads contain only the bounded requested rows."
+      "Use the enriched HOG overview for human and Arabidopsis representatives,",
+      "pre-structure and post-structure rankings, and complete ranking fields.",
+      "Use member detail for every member, or a raw relation for exact audit."
     ),
     "Provenance and QC" = paste(
       "Inspect release identifiers, source files, checksums and validation",

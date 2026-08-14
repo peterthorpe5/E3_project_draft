@@ -6,24 +6,35 @@ resource_browser_ui <- function(id) {
   ns <- shiny::NS(id)
 
   shiny::tagList(
-    shiny::h3("Browse source-derived tables"),
+    shiny::h3("All results and complete HOG information"),
     shiny::p(
-      "Choose any DuckDB view created from the source-first Parquet layer. ",
-      "Only a bounded preview is collected into R."
+      paste(
+        "Use an enriched HOG view to join membership, human and Arabidopsis",
+        "representatives, pre-structure and post-structure rankings, and every",
+        "field in the strongest HOG-linked ranking result. Raw DuckDB relations",
+        "remain available for exact source-level audit."
+      )
     ),
     bslib::layout_columns(
-      shiny::selectInput(ns("view_name"), "DuckDB view", choices = "Loading..."),
-      shiny::numericInput(ns("max_rows"), "Preview rows", value = 1000, min = 1, max = 10000),
+      shiny::selectInput(ns("view_name"), "Result view", choices = "Loading..."),
+      shiny::numericInput(
+        ns("max_rows"),
+        "Preview rows",
+        value = 1000,
+        min = 1,
+        max = 10000
+      ),
       shiny::actionButton(ns("refresh"), "Refresh views"),
       shiny::actionButton(ns("preview"), "Preview table", class = "btn-primary")
     ),
+    shiny::uiOutput(ns("result_guidance")),
     shiny::div(
       class = "column-selector-panel",
       shiny::h4("Columns to display"),
       shiny::div(
         class = "column-selector-actions",
-        shiny::actionButton(ns("select_first"), "First 12"),
-        shiny::actionButton(ns("select_all"), "Select all"),
+        shiny::actionButton(ns("select_first"), "First 18 fields"),
+        shiny::actionButton(ns("select_all"), "Select all fields"),
         shiny::actionButton(ns("select_none"), "Clear")
       ),
       shiny::checkboxGroupInput(
@@ -57,6 +68,7 @@ resource_browser_server <- function(id, resource_duckdb_path) {
   shiny::moduleServer(id, function(input, output, session) {
     view_names <- shiny::reactiveVal(character())
     current_columns <- shiny::reactiveVal(character())
+    enrichment_capability <- shiny::reactiveVal(list(available = FALSE))
 
     load_view_names <- function() {
       if (!resource_database_available(resource_duckdb_path)) {
@@ -77,17 +89,81 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         }
       )
 
-      if (length(names) == 0L) {
-        names <- "No views found"
+      relation_columns <- tryCatch(
+        expr = collect_enriched_hog_relation_columns(
+          resource_source = resource_duckdb_path,
+          relations = names
+        ),
+        error = function(error) {
+          shiny::showNotification(
+            paste("Failed to inspect HOG-linked views:", conditionMessage(error)),
+            type = "warning",
+            duration = NULL
+          )
+          list()
+        }
+      )
+      capability <- enriched_hog_capability(
+        relation_columns = relation_columns
+      )
+      enrichment_capability(capability)
+      virtual_choices <- enriched_hog_result_labels()
+      if (!isTRUE(capability$available)) {
+        virtual_choices <- character()
+      } else if (!isTRUE(capability$membership_available)) {
+        virtual_choices <- virtual_choices[
+          virtual_choices != enriched_hog_members_key()
+        ]
       }
 
       view_names(names)
-      shiny::updateSelectInput(session, "view_name", choices = names, selected = names[[1L]])
+      raw_choices <- stats::setNames(names, names)
+      choices <- c(virtual_choices, raw_choices)
+      if (length(choices) == 0L) {
+        choices <- "No views found"
+      }
+      shiny::updateSelectInput(
+        session,
+        "view_name",
+        choices = choices,
+        selected = unname(choices[[1L]])
+      )
       invisible(names)
     }
 
     shiny::observeEvent(TRUE, load_view_names(), once = TRUE)
     shiny::observeEvent(input$refresh, load_view_names())
+
+    output$result_guidance <- shiny::renderUI({
+      shiny::req(input$view_name)
+      if (input$view_name == enriched_hog_overview_key()) {
+        return(shiny::div(
+          class = "alert alert-info",
+          paste(
+            "One row represents one root HOG. Both canonical ranking stages,",
+            "all original ranking fields, species representatives and HOG",
+            "membership summaries are selectable. Canonical ranks use the",
+            "strongest compatible field available in this release."
+          )
+        ))
+      }
+      if (input$view_name == enriched_hog_members_key()) {
+        return(shiny::div(
+          class = "alert alert-info",
+          paste(
+            "One row represents one HOG member. HOG annotations and rankings",
+            "repeat so every exported member row remains interpretable."
+          )
+        ))
+      }
+      shiny::div(
+        class = "alert alert-secondary",
+        paste(
+          "This is a raw source relation. Select all fields includes every",
+          "stored field in this relation, but does not join other relations."
+        )
+      )
+    })
 
     output$columns <- DT::renderDT({
       shiny::req(input$view_name)
@@ -99,10 +175,17 @@ resource_browser_server <- function(id, resource_duckdb_path) {
       }
 
       columns <- tryCatch(
-        expr = collect_resource_columns(
-          duckdb_path = resource_duckdb_path,
-          view_name = input$view_name
-        ),
+        expr = if (input$view_name %in% unname(enriched_hog_result_labels())) {
+          enriched_hog_column_schema(
+            result = input$view_name,
+            capability = enrichment_capability()
+          )
+        } else {
+          collect_resource_columns(
+            duckdb_path = resource_duckdb_path,
+            view_name = input$view_name
+          )
+        },
         error = function(error) tibble::tibble(error = conditionMessage(error))
       )
       names <- if ("column_name" %in% names(columns)) {
@@ -115,7 +198,7 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         session,
         "selected_columns",
         choices = names,
-        selected = head(names, 12L)
+        selected = head(names, 18L)
       )
 
       readable_datatable(
@@ -129,7 +212,7 @@ resource_browser_server <- function(id, resource_duckdb_path) {
         session,
         "selected_columns",
         choices = current_columns(),
-        selected = head(current_columns(), 12L)
+        selected = head(current_columns(), 18L)
       )
     })
     shiny::observeEvent(input$select_all, {
@@ -166,16 +249,28 @@ resource_browser_server <- function(id, resource_duckdb_path) {
           ))
         }
         tryCatch(
-          expr = collect_selected_result(
-            resource_source = resource_duckdb_path,
-            relation = input$view_name,
-            selected_columns = input$selected_columns,
-            max_rows = input$max_rows
-          ),
+          expr = if (input$view_name %in% unname(enriched_hog_result_labels())) {
+            collect_resource_query(
+              duckdb_path = resource_duckdb_path,
+              query = build_enriched_hog_query(
+                result = input$view_name,
+                selected_columns = input$selected_columns,
+                capability = enrichment_capability(),
+                max_rows = input$max_rows
+              )
+            )
+          } else {
+            collect_selected_result(
+              resource_source = resource_duckdb_path,
+              relation = input$view_name,
+              selected_columns = input$selected_columns,
+              max_rows = input$max_rows
+            )
+          },
           error = function(error) {
             shiny::showNotification(
               paste(
-                "Failed to preview resource view:",
+                "Failed to preview result view:",
                 conditionMessage(error)
               ),
               type = "error",

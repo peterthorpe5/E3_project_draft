@@ -90,8 +90,10 @@ TOP_LEVEL_TAB_HELP = {
         "every matching relation and matched column, so one term may return several rows."
     ),
     "All results": (
-        "Choose any loaded relation for schema-level audit. Select columns before "
-        "previewing; downloads contain only the bounded rows currently requested."
+        "Use the enriched HOG overview for one row per HOG with human and "
+        "Arabidopsis representatives, both ranking stages and complete ranking "
+        "fields. Use member detail for every HOG member, or choose a raw relation "
+        "for exact source-level audit. Downloads contain the selected bounded rows."
     ),
     "Provenance and QC": (
         "Inspect release identifiers, source files, checksums and validation outcomes "

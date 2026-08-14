@@ -10,6 +10,9 @@ testthat::test_that("resource browser UI exposes bounded preview controls", {
   ui_text <- paste(as.character(resource_browser_ui("browser")), collapse = "\n")
 
   testthat::expect_match(ui_text, "browser-view_name", fixed = TRUE)
+  testthat::expect_match(ui_text, "complete HOG information", fixed = TRUE)
+  testthat::expect_match(ui_text, "Select all fields", fixed = TRUE)
+  testthat::expect_match(ui_text, "browser-result_guidance", fixed = TRUE)
   testthat::expect_match(ui_text, "browser-max_rows", fixed = TRUE)
   testthat::expect_match(ui_text, "browser-selected_columns", fixed = TRUE)
   testthat::expect_match(ui_text, "browser-preview_table", fixed = TRUE)

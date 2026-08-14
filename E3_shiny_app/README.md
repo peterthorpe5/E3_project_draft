@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.14.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.15.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -86,7 +86,12 @@ The main sections follow the evidence path required by the grant:
     accepts pasted newline/comma/semicolon/tab lists, offers smart/exact/literal
     contains modes, and returns the input term, source relation, matched fields
     and every source column with TSV and formatted Excel downloads.
-21. **Provenance and QC** – release metadata, relation catalogue and source paths.
+21. **All results** – a default one-row-per-HOG enriched view joining human and
+    Arabidopsis representatives, canonical pre-structure and post-structure
+    ranks, every source-ranking field and HOG composition. A member-detail view
+    repeats this context for every member, while raw relations remain available
+    for exact source-level audit.
+22. **Provenance and QC** – release metadata, relation catalogue and source paths.
 
 Every section has its own checkbox column selector. `Grant defaults` restores a
 concise scientific view, `Select all` exposes the complete schema and `Clear`
@@ -99,7 +104,8 @@ column widths, visible gridlines and explicit borders, centred body values,
 10-point wrapped narrative text, capped long-text row heights and
 data-appropriate numeric formats. Numeric
 source values remain exact; only their display is shortened. The **All results**
-browser includes the same paired downloads.
+browser includes the same paired downloads and distinguishes enriched joined
+HOG results from unmodified raw relations.
 
 The dedicated **Pre-structure ranked HOGs** tab is the direct route to the
 team's ungated top-200 analysis set. It selects root-level `N0.HOG…` groups by

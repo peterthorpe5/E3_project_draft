@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.11.1 is the Streamlit companion to `E3_shiny_app` 0.14.0. Both
+Version 0.12.0 is the Streamlit companion to `E3_shiny_app` 0.15.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -131,7 +131,11 @@ The reporter provides:
   recognise names, root HOG IDs, legacy OG IDs, E3 seeds, accessions, entries,
   genes and DeepClust identifiers; every hit retains the input term, relation,
   matched fields and all source columns, with TSV and Excel downloads;
-- a schema-agnostic all-results browser with paired TSV and Excel downloads;
+- an **All results** browser whose default enriched overview joins one row per
+  root HOG to human and Arabidopsis representatives, canonical pre-structure
+  and post-structure ranks, complete source-ranking fields and membership
+  summaries. A separate enriched member view repeats that context beside every
+  HOG member; all unmodified raw relations remain selectable for exact audit;
 - provenance and QC views; and
 - a collapsed **❓ How to use this tab** panel on every primary tab, with
   tab-specific operating instructions and interpretation cautions;
