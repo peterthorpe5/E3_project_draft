@@ -1,0 +1,36 @@
+ARIA plant E3 Shiny reporter v0.17.0 validation hand-off
+=======================================================
+
+Implemented scope
+-----------------
+
+- Expanded every primary-tab operating panel with a separate description of
+  what the tab yields.
+- Added recorded-method and threshold annotations to 14 scientific tabs.
+- Added the Xu and Zhang (2010) reference for the established approximate
+  TM-score 0.50 same-fold/topology boundary.
+- Added focused annotation and defensive tests.
+
+Build-workspace checks on 2026-08-19
+------------------------------------
+
+- All 85 R source and test files parsed without a tree-sitter syntax error.
+- Repository whitespace and terminal-newline checks passed.
+- The corresponding Python implementation passed its full application-level
+  and annotation test suite.
+
+Environment limitation
+----------------------
+
+This build workspace does not provide R or Rscript. The dependency-backed R
+testthat suite therefore cannot honestly be claimed as run here. Static parsing
+does not replace the full R release gate.
+
+Required release gate
+---------------------
+
+    cd E3_shiny_app
+    Rscript inst/scripts/check_dependencies.R
+    Rscript inst/scripts/run_tests.R
+
+Any actual dependency, parse, functional or test failure blocks release.

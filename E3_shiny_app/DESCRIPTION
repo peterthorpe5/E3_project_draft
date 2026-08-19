@@ -1,6 +1,6 @@
 Package: E3ExpressionShiny
 Title: Grant-Focused Shiny Reporter for the ARIA Plant E3 Resource
-Version: 0.16.0
+Version: 0.17.0
 Authors@R: c(
     person("Peter", "Thorpe", role = c("aut", "cre"), email = "p.thorpe@dundee.ac.uk")
     )
@@ -24,7 +24,10 @@ Description: A modular Shiny application for querying and visualising candidate
     evidence rank while excluding existing structural-stage results. A dedicated
     seed catalogue prefers exact known-seed authority rows, retains source-scope
     provenance and exports available accession-matched sequences. Every primary
-    tab provides collapsed contextual operating and interpretation help. The
+    tab provides collapsed contextual operating help with an explicit account
+    of what the tab yields. Scientific tabs also provide a separate collapsed
+    methods-and-thresholds annotation with recorded production settings,
+    interpretation boundaries and method references where applicable. The
     complete-results browser
     adds joined root-HOG overview and member-detail views with both ranking
     stages, lineage representatives, membership summaries and all fields from

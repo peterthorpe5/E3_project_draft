@@ -40,6 +40,7 @@ source("R/prestructure_hog_explorer.R")
 source("R/seed_catalogue.R")
 source("R/unified_search.R")
 source("R/tab_help.R")
+source("R/method_annotations.R")
 source("R/module_resource_overview.R")
 source("R/module_resource_browser.R")
 source("R/module_data_sources.R")
@@ -78,6 +79,7 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Workflow schematic",
       tab_help_ui(tab_name = "Workflow schematic"),
+      method_annotation_ui(tab_name = "Workflow schematic"),
       workflow_schematic_ui()
     ),
     bslib::nav_panel(
@@ -88,16 +90,19 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Computational recommendations",
       tab_help_ui(tab_name = "Computational recommendations"),
+      method_annotation_ui(tab_name = "Computational recommendations"),
       result_section_ui("final_recommendation_results", "final_recommendations")
     ),
     bslib::nav_panel(
       "Threshold explorer",
       tab_help_ui(tab_name = "Threshold explorer"),
+      method_annotation_ui(tab_name = "Threshold explorer"),
       threshold_explorer_ui("threshold_explorer")
     ),
     bslib::nav_panel(
       "Independent structural-review shortlist",
       tab_help_ui(tab_name = "Independent structural-review shortlist"),
+      method_annotation_ui(tab_name = "Independent structural-review shortlist"),
       prestructure_hog_explorer_ui(id = "prestructure_ranked_hogs")
     ),
     bslib::nav_panel(
@@ -113,6 +118,7 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Orthology",
       tab_help_ui(tab_name = "Orthology"),
+      method_annotation_ui(tab_name = "Orthology"),
       orthology_explorer_ui("orthology_explorer")
     ),
     bslib::nav_panel(
@@ -144,41 +150,49 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Domains",
       tab_help_ui(tab_name = "Domains"),
+      method_annotation_ui(tab_name = "Domains"),
       result_section_ui("domain_results", "domains")
     ),
     bslib::nav_panel(
       "Expression evidence",
       tab_help_ui(tab_name = "Expression evidence"),
+      method_annotation_ui(tab_name = "Expression evidence"),
       result_section_ui("expression_results", "expression")
     ),
     bslib::nav_panel(
       "Ligandability",
       tab_help_ui(tab_name = "Ligandability"),
+      method_annotation_ui(tab_name = "Ligandability"),
       result_section_ui("ligandability_results", "ligandability")
     ),
     bslib::nav_panel(
       "Pocket conservation",
       tab_help_ui(tab_name = "Pocket conservation"),
+      method_annotation_ui(tab_name = "Pocket conservation"),
       result_section_ui("pocket_results", "pocket_conservation")
     ),
     bslib::nav_panel(
       "3D structures & pockets",
       tab_help_ui(tab_name = "3D structures & pockets"),
+      method_annotation_ui(tab_name = "3D structures & pockets"),
       pocket_review_ui("structure_review", focus = "structure")
     ),
     bslib::nav_panel(
       "Pocket-aligned sequences",
       tab_help_ui(tab_name = "Pocket-aligned sequences"),
+      method_annotation_ui(tab_name = "Pocket-aligned sequences"),
       pocket_review_ui("alignment_review", focus = "alignment")
     ),
     bslib::nav_panel(
       "3D alignment",
       tab_help_ui(tab_name = "3D alignment"),
+      method_annotation_ui(tab_name = "3D alignment"),
       result_section_ui("alignment_results", "structural_alignment")
     ),
     bslib::nav_panel(
       "Computational chemistry",
       tab_help_ui(tab_name = "Computational chemistry"),
+      method_annotation_ui(tab_name = "Computational chemistry"),
       result_section_ui("chemistry_results", "computational_chemistry")
     ),
     bslib::nav_panel(
@@ -194,6 +208,7 @@ ui <- bslib::page_navbar(
     bslib::nav_panel(
       "Provenance and QC",
       tab_help_ui(tab_name = "Provenance and QC"),
+      method_annotation_ui(tab_name = "Provenance and QC"),
       result_section_ui("provenance_results", "provenance")
     ),
     bslib::nav_panel(

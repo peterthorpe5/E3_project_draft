@@ -1,1 +1,1 @@
-See `TEST_RESULTS_v0_16_0.txt` for the current R Shiny validation hand-off.
+See `TEST_RESULTS_v0_17_0.txt` for the current R Shiny validation hand-off.

@@ -8,6 +8,33 @@ from streamlit.testing.v1 import AppTest
 
 from test_pocket_review import make_pocket_review
 
+PRIMARY_TAB_LABELS = {
+    "Overview",
+    "Workflow schematic",
+    "Glossary",
+    "Computational recommendations",
+    "Threshold explorer",
+    "Independent structural-review shortlist",
+    "Visual explorer",
+    "Candidates",
+    "Orthology",
+    "Human HOGs",
+    "Plant & human HOGs",
+    "Seed & HOG explorer",
+    "E3 seed catalogue",
+    "Domains",
+    "Expression",
+    "Ligandability",
+    "Pocket conservation",
+    "3D structures & pockets",
+    "Pocket-aligned sequences",
+    "3D alignment",
+    "Computational chemistry",
+    "Search",
+    "All results",
+    "Provenance and QC",
+}
+
 
 def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> None:
     """Removed Streamlit APIs and duplicate selectbox defaults do not regress."""
@@ -29,7 +56,7 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert len(app.tabs) == 30
+    assert PRIMARY_TAB_LABELS.issubset({tab.label for tab in app.tabs})
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -63,6 +90,18 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         if expander.label == "❓ How to use this tab"
     ]
     assert len(primary_help) == 24
+    method_help = [
+        expander
+        for expander in app.expander
+        if expander.label == "ⓘ Methods and thresholds"
+    ]
+    assert len(method_help) == 14
+    alignment_tab = next(tab for tab in app.tabs if tab.label == "3D alignment")
+    assert any(
+        "not a threshold invented for this project" in markdown.value
+        and "bioinformatics/btq066" in markdown.value
+        for markdown in alignment_tab.markdown
+    )
     ranked_hog_tab = next(
         tab
         for tab in app.tabs
@@ -229,7 +268,7 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.tabs) == 27
+    assert PRIMARY_TAB_LABELS.issubset({tab.label for tab in app.tabs})
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]

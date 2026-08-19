@@ -63,6 +63,7 @@ from e3app.human_hogs import (
     collect_human_hog_summary,
     human_hog_capability,
 )
+from e3app.method_annotations import method_annotation_markdown
 from e3app.pocket_review import (
     PocketReviewBundle,
     group_choice_labels,
@@ -236,7 +237,13 @@ def _display_dataframe(
 def _render_tab_help(*, tab_name: str) -> None:
     """Render collapsed contextual guidance for one top-level tab."""
     with st.expander(label="❓ How to use this tab", expanded=False):
-        st.write(tab_help_text(tab_name=tab_name))
+        st.markdown(tab_help_text(tab_name=tab_name))
+
+
+def _render_method_annotation(*, tab_name: str) -> None:
+    """Render collapsed recorded-method and threshold guidance."""
+    with st.expander(label="ⓘ Methods and thresholds", expanded=False):
+        st.markdown(method_annotation_markdown(tab_name=tab_name))
 
 
 def _render_section(
@@ -3594,21 +3601,27 @@ def render_app() -> None:
                 _render_overview(connection=connection, config=config)
             with tabs[1]:
                 _render_tab_help(tab_name="Workflow schematic")
+                _render_method_annotation(tab_name="Workflow schematic")
                 _render_workflow_schematic()
             with tabs[2]:
                 _render_tab_help(tab_name="Glossary")
                 _render_glossary()
             with tabs[3]:
                 _render_tab_help(tab_name="Computational recommendations")
+                _render_method_annotation(tab_name="Computational recommendations")
                 _render_computational_recommendations(
                     connection=connection,
                     config=config,
                 )
             with tabs[4]:
                 _render_tab_help(tab_name="Threshold explorer")
+                _render_method_annotation(tab_name="Threshold explorer")
                 _render_threshold_explorer(connection=connection, config=config)
             with tabs[5]:
                 _render_tab_help(
+                    tab_name="Independent structural-review shortlist"
+                )
+                _render_method_annotation(
                     tab_name="Independent structural-review shortlist"
                 )
                 _render_prestructure_ranked_hogs(
@@ -3627,6 +3640,7 @@ def render_app() -> None:
                 )
             with tabs[8]:
                 _render_tab_help(tab_name="Orthology")
+                _render_method_annotation(tab_name="Orthology")
                 _render_orthology_explorer(
                     connection=connection,
                     config=config,
@@ -3665,6 +3679,7 @@ def render_app() -> None:
             ):
                 with tab:
                     _render_tab_help(tab_name=tab_name)
+                    _render_method_annotation(tab_name=tab_name)
                     if section == "expression":
                         _render_expression_section(
                             connection=connection,
@@ -3678,18 +3693,22 @@ def render_app() -> None:
                         )
             with tabs[17]:
                 _render_tab_help(tab_name="3D structures & pockets")
+                _render_method_annotation(tab_name="3D structures & pockets")
                 _render_pocket_review(bundle=pocket_review, focus="structure")
             with tabs[18]:
                 _render_tab_help(tab_name="Pocket-aligned sequences")
+                _render_method_annotation(tab_name="Pocket-aligned sequences")
                 _render_pocket_review(bundle=pocket_review, focus="alignment")
             with tabs[19]:
                 _render_tab_help(tab_name="3D alignment")
+                _render_method_annotation(tab_name="3D alignment")
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
                 )
             with tabs[20]:
                 _render_tab_help(tab_name="Computational chemistry")
+                _render_method_annotation(tab_name="Computational chemistry")
                 _render_section(
                     connection=connection,
                     config=config,
@@ -3707,6 +3726,7 @@ def render_app() -> None:
                 )
             with tabs[23]:
                 _render_tab_help(tab_name="Provenance and QC")
+                _render_method_annotation(tab_name="Provenance and QC")
                 _render_section(
                     connection=connection,
                     config=config,

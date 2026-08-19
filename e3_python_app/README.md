@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.13.0 is the Streamlit companion to `E3_shiny_app` 0.16.0. Both
+Version 0.14.0 is the Streamlit companion to `E3_shiny_app` 0.17.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -145,7 +145,14 @@ The reporter provides:
   HOG member; all unmodified raw relations remain selectable for exact audit;
 - provenance and QC views; and
 - a collapsed **❓ How to use this tab** panel on every primary tab, with
-  tab-specific operating instructions and interpretation cautions;
+  tab-specific operating instructions followed by an explicit description of
+  the tables, plots or downloads that the tab yields;
+- a separate collapsed **ⓘ Methods and thresholds** panel on each relevant
+  scientific tab. These panels record the production methods, gates, ranking
+  weights, missing-evidence rules and interpretation boundaries without
+  duplicating or changing the active sensitivity controls. The 3D-alignment
+  panel includes the clickable Xu and Zhang (2010) reference supporting the
+  approximate TM-score 0.50 fold-similarity boundary;
 - on-demand vector-PDF downloads for every native application graph. These use
   the packaged Kaleido renderer and are prepared only when requested; and
 - paired TSV and formatted Excel downloads of every downloadable result table.

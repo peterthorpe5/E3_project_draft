@@ -13,9 +13,19 @@ test_that("every R application tab has substantive contextual help", {
   )
   expect_setequal(names(tab_help_entries()), expected)
   expect_true(all(nchar(tab_help_entries()) >= 80L))
+  expect_true(all(vapply(
+    tab_help_details(),
+    function(entry) nchar(entry$instruction) >= 60L && nchar(entry$yields) >= 70L,
+    logical(1)
+  )))
   expect_match(
     as.character(tab_help_ui(tab_name = "Grant overview")),
     "How to use this tab",
+    fixed = TRUE
+  )
+  expect_match(
+    as.character(tab_help_ui(tab_name = "Grant overview")),
+    "What this tab yields",
     fixed = TRUE
   )
   expect_error(tab_help_text("Unknown"), "No contextual help")

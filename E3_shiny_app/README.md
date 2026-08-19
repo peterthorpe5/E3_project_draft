@@ -1,6 +1,6 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.16.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.17.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
 
@@ -129,8 +129,16 @@ AlphaFold models, pockets, druggability, mapping, alignment and 3D results are
 neither used nor displayed there; they remain unchanged in the other tabs.
 
 Every primary tab starts with a collapsed **❓ How to use this tab** box. The
-text is specific to that tab and explains the main controls, evidence boundary
-and common interpretation pitfalls without occupying space until opened.
+first paragraph explains how to use the page and a separate **What this tab
+yields** paragraph identifies the tables, plots, files or decisions produced.
+This operating help remains compact and occupies no space until opened.
+
+Relevant scientific tabs also contain a separate collapsed **ⓘ Methods and
+thresholds** box. It records the production methods, gates, ranking weights,
+missing-evidence rules and interpretation boundaries without altering any
+source result or sensitivity control. The 3D-alignment box includes the
+clickable Xu and Zhang (2010) reference supporting the approximate TM-score
+0.50 fold-similarity boundary.
 
 Wide in-app tables now use a horizontal scrollbar and a bounded vertical body,
 so the header remains stationary while rows scroll. Numeric display is limited

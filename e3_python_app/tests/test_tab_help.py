@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from e3app.errors import AppError
-from e3app.tab_help import TOP_LEVEL_TAB_HELP, tab_help_text
+from e3app.tab_help import TOP_LEVEL_TAB_HELP, tab_help_entry, tab_help_text
 
 
 def test_every_top_level_tab_has_substantive_help() -> None:
@@ -37,7 +37,14 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Provenance and QC",
     }
     assert set(TOP_LEVEL_TAB_HELP) == expected
-    assert all(len(tab_help_text(tab_name=name)) >= 80 for name in expected)
+    for name in expected:
+        entry = tab_help_entry(tab_name=name)
+        assert len(entry.instruction) >= 80
+        assert len(entry.yields) >= 80
+        text = tab_help_text(tab_name=name)
+        assert "**What this tab yields:**" in text
+        assert entry.instruction in text
+        assert entry.yields in text
 
 
 def test_unknown_tab_help_fails_explicitly() -> None:
