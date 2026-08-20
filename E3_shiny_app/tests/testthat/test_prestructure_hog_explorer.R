@@ -81,12 +81,13 @@ test_that("top-N shortlist ranks pre-structure evidence only", {
     con,
     "hierarchical_membership",
     data.frame(
-      group_id = c("N0.HOG1", "N0.HOG1", "N0.HOG2"),
+      group_id = c("N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG2"),
       species = c(
-        "Homo_sapiens", "Arabidopsis_thaliana", "Homo_sapiens"
+        "Homo_sapiens", "Arabidopsis_thaliana", "Oryza_sativa",
+        "Hordeum_vulgare", "Homo_sapiens"
       ),
-      raw_identifier = c("HUM1", "AT1", "HUM2"),
-      parsed_accession = c("HUM1", "AT1", "HUM2"),
+      raw_identifier = c("HUM1", "AT1", "OS1", "HV1", "HUM2"),
+      parsed_accession = c("HUM1", "AT1", "OS1", "HV1", "HUM2"),
       stringsAsFactors = FALSE
     )
   )
@@ -115,6 +116,8 @@ test_that("top-N shortlist ranks pre-structure evidence only", {
   expect_false("selected_pocket_count" %in% names(result))
   expect_identical(result$human_hog_representatives, c("HUM1", "HUM2"))
   expect_identical(result$arabidopsis_hog_representatives, c("AT1", ""))
+  expect_identical(result$rice_hog_representatives, c("OS1", ""))
+  expect_identical(result$barley_hog_representatives, c("HV1", ""))
 
   passing <- collect_resource_query(
     duckdb_path = path,

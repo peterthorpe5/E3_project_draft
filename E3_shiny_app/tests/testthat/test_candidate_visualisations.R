@@ -262,6 +262,11 @@ testthat::test_that("expression heatmap preparation retains unavailable cells", 
     log_transform = TRUE
   )
   testthat::expect_s3_class(plot, "ggplot")
+  fill_scale <- plot$scales$get_scales("fill")
+  testthat::expect_identical(
+    fill_scale$palette(c(0, 1)),
+    c("#FFFFFF", "#CB181D")
+  )
 })
 
 testthat::test_that("species and tissue profiles retain exact source rows", {

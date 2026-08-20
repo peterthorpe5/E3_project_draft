@@ -32,6 +32,10 @@ def enriched_hog_connection() -> duckdb.DuckDBPyConnection:
         "'HUM1', 'HUMAN_ONE', 'OG1', 'clade1'), "
         "('N0.HOG1', 'Arabidopsis_thaliana', 'sp|AT1|ARATH_ONE', "
         "'AT1', 'ARATH_ONE', 'OG1', 'clade1'), "
+        "('N0.HOG1', 'Oryza_sativa', 'sp|OS1|RICE_ONE', "
+        "'OS1', 'RICE_ONE', 'OG1', 'clade1'), "
+        "('N0.HOG1', 'Hordeum_vulgare', 'sp|HV1|BARLEY_ONE', "
+        "'HV1', 'BARLEY_ONE', 'OG1', 'clade1'), "
         "('N0.HOG2', 'Zea_mays', 'MAIZE1', 'MAIZE1', '', 'OG2', 'clade2')"
     )
     connection.execute(
@@ -39,13 +43,41 @@ def enriched_hog_connection() -> duckdb.DuckDBPyConnection:
         "primary_group_id VARCHAR, prestructure_evolutionary_group_rank INTEGER, "
         "final_evolutionary_rank INTEGER, lead_cluster_id VARCHAR, "
         "candidate_accessions VARCHAR, domain_species_fraction DOUBLE, "
-        "recommendation_status VARCHAR, hog_species_count INTEGER)"
+        "recommendation_status VARCHAR, hog_species_count INTEGER, "
+        "three_dimensional_position_status VARCHAR, "
+        "three_dimensional_alignment_status VARCHAR, conservation_status VARCHAR, "
+        "minimum_druggability_score DOUBLE, "
+        "all_assessed_members_pass_druggability BOOLEAN, "
+        "structural_species_fraction DOUBLE, mean_minimum_tm_score DOUBLE, "
+        "mean_pocket_overlap_fraction DOUBLE, "
+        "median_centroid_distance_angstrom DOUBLE, "
+        "mean_structural_residue_match_fraction DOUBLE, "
+        "mean_structural_chemical_group_conservation DOUBLE)"
     )
     connection.execute(
         "INSERT INTO final_evolutionary_candidate_prioritisation VALUES "
-        "('N0.HOG1', 3, 1, 'cluster_1', 'HUM1;AT1', 0.8, 'PASS', 99), "
-        "('N0.HOG1', 4, 2, 'cluster_1b', 'HUM1', 0.7, 'FAIL', 98), "
-        "('N0.HOG3', 2, 5, 'cluster_3', 'OTHER1', 0.6, 'PASS', 97)"
+        "('N0.HOG1', 3, 1, 'cluster_1', 'HUM1;AT1', 0.8, 'PASS', 99, "
+        "'SAME_3D_POCKET_POSITION_SUPPORTED', 'CONSERVED_3D_POCKET_SUPPORTED', "
+        "'CONSERVED_REGION_SUPPORTED', 0.61, TRUE, 0.75, 0.58, 0.70, 2.1, 0.65, 0.72), "
+        "('N0.HOG1', 4, 2, 'cluster_1b', 'HUM1', 0.7, 'FAIL', 98, "
+        "'THREE_DIMENSIONAL_POSITION_NOT_SUPPORTED', "
+        "'THREE_DIMENSIONAL_POCKET_NOT_SUPPORTED', 'INSUFFICIENT_STRUCTURES', "
+        "0.4, FALSE, 0.25, 0.4, 0.3, 7.0, 0.2, 0.3), "
+        "('N0.HOG3', 2, 5, 'cluster_3', 'OTHER1', 0.6, 'PASS', 97, "
+        "'NOT_ASSESSED', 'NOT_ASSESSED', 'NO_STRUCTURAL_EVIDENCE', NULL, "
+        "FALSE, 0.0, NULL, NULL, NULL, NULL, NULL)"
+    )
+    connection.execute(
+        "CREATE TABLE selected_pockets(primary_group_id VARCHAR, "
+        "candidate_accession VARCHAR, species_column VARCHAR, pocket_number INTEGER, "
+        "druggability_score DOUBLE, passes_druggability_threshold BOOLEAN, "
+        "mapping_fraction DOUBLE, conservative_fraction_plddt_ge_70 DOUBLE, "
+        "predictor_agreement DOUBLE, structural_evidence_status VARCHAR)"
+    )
+    connection.execute(
+        "INSERT INTO selected_pockets VALUES "
+        "('N0.HOG1', 'HUM1', 'Homo_sapiens', 1, 0.72, TRUE, 0.8, 0.9, 1.0, 'SELECTED'), "
+        "('N0.HOG1', 'AT1', 'Arabidopsis_thaliana', 2, 0.61, TRUE, 0.7, 0.8, 1.0, 'SELECTED')"
     )
     try:
         yield connection
@@ -63,6 +95,11 @@ def test_enriched_hog_overview_joins_representatives_and_both_rankings(
     )
     assert "human_hog_representatives" in columns
     assert "arabidopsis_hog_representatives" in columns
+    assert "rice_hog_representatives" in columns
+    assert "barley_hog_representatives" in columns
+    assert "hog_three_dimensional_position_status" in columns
+    assert "hog_three_dimensional_alignment_status" in columns
+    assert "hog_minimum_druggability_score" in columns
     assert "human_hog_raw_identifiers" in columns
     assert "arabidopsis_hog_entries" in columns
     assert "hog_mapping_statuses" in columns
@@ -83,6 +120,8 @@ def test_enriched_hog_overview_joins_representatives_and_both_rankings(
     hog1 = result[result["hog_id"] == "N0.HOG1"].iloc[0]
     assert hog1["human_hog_representatives"] == "HUM1"
     assert hog1["arabidopsis_hog_representatives"] == "AT1"
+    assert hog1["rice_hog_representatives"] == "OS1"
+    assert hog1["barley_hog_representatives"] == "HV1"
     assert hog1["human_hog_entries"] == "HUMAN_ONE"
     assert hog1["arabidopsis_hog_raw_identifiers"] == "sp|AT1|ARATH_ONE"
     assert int(hog1["hog_prestructure_rank"]) == 3
@@ -90,6 +129,9 @@ def test_enriched_hog_overview_joins_representatives_and_both_rankings(
     assert int(hog1["hog_ranking_source_row_count"]) == 2
     assert hog1["lead_cluster_id"] == "cluster_1"
     assert int(hog1["ranking_hog_species_count"]) == 99
+    assert bool(hog1["hog_same_3d_pocket_position_supported"])
+    assert bool(hog1["hog_conserved_3d_pocket_supported"])
+    assert float(hog1["hog_minimum_druggability_score"]) == pytest.approx(0.61)
     hog2 = result[result["hog_id"] == "N0.HOG2"].iloc[0]
     assert bool(hog2["hog_membership_available"])
     assert not bool(hog2["hog_ranking_available"])
@@ -108,14 +150,19 @@ def test_enriched_hog_member_detail_repeats_complete_hog_context(
     )
     assert "member_species" in columns
     assert "member_raw_identifier" in columns
+    assert "member_druggability_score" in columns
     selected = [
         "hog_id",
         "hog_prestructure_rank",
         "hog_poststructure_rank",
         "human_hog_representatives",
         "arabidopsis_hog_representatives",
+        "rice_hog_representatives",
+        "barley_hog_representatives",
         "member_species",
         "member_raw_identifier",
+        "member_structure_assessed",
+        "member_druggability_score",
     ]
     result = collect_enriched_hog_results(
         connection=enriched_hog_connection,
@@ -127,8 +174,13 @@ def test_enriched_hog_member_detail_repeats_complete_hog_context(
     assert hog1["member_species"].tolist() == [
         "Arabidopsis_thaliana",
         "Homo_sapiens",
+        "Hordeum_vulgare",
+        "Oryza_sativa",
     ]
     assert set(hog1["hog_poststructure_rank"]) == {1}
+    human = hog1[hog1["member_species"] == "Homo_sapiens"].iloc[0]
+    assert bool(human["member_structure_assessed"])
+    assert float(human["member_druggability_score"]) == pytest.approx(0.72)
     ranked_only = result[result["hog_id"] == "N0.HOG3"].iloc[0]
     assert ranked_only["member_species"] is None
 

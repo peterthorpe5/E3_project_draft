@@ -84,7 +84,7 @@ tab_help_details <- function() {
       paste(
         "An independent root-HOG review queue with pre-structure rank and pass",
         "status, candidate and seed context, species, domain and expression",
-        "evidence, human and Arabidopsis representatives and table downloads."
+        "evidence, human, Arabidopsis, rice and barley representatives and table downloads."
       )
     ),
     "Visual explorer" = detail(
@@ -269,7 +269,7 @@ tab_help_details <- function() {
       ),
       paste(
         "Joined HOG overview and member-detail views containing rankings, human and",
-        "Arabidopsis representatives, membership and species context, plus every raw",
+        "Arabidopsis, rice and barley representatives, membership and species context, plus every raw",
         "DuckDB relation under bounded preview and download controls."
       )
     ),

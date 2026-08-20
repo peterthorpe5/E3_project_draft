@@ -281,7 +281,13 @@ human_hog_base_ctes <- function(
       "'') AS human_hog_representatives, ",
       "coalesce(string_agg(DISTINCT representative, ';' ORDER BY ",
       "representative) FILTER (WHERE species = 'Arabidopsis_thaliana' AND ",
-      "representative IS NOT NULL), '') AS arabidopsis_hog_representatives ",
+      "representative IS NOT NULL), '') AS arabidopsis_hog_representatives, ",
+      "coalesce(string_agg(DISTINCT representative, ';' ORDER BY ",
+      "representative) FILTER (WHERE species = 'Oryza_sativa' AND ",
+      "representative IS NOT NULL), '') AS rice_hog_representatives, ",
+      "coalesce(string_agg(DISTINCT representative, ';' ORDER BY ",
+      "representative) FILTER (WHERE species = 'Hordeum_vulgare' AND ",
+      "representative IS NOT NULL), '') AS barley_hog_representatives ",
       "FROM representative_members GROUP BY hog_id)"
     ),
     paste0(
@@ -345,6 +351,7 @@ build_human_hog_summary_query <- function(
     "c.member_count, c.species_count, c.human_member_count, ",
     "c.plant_member_count, c.plant_species_count) SELECT s.hog_id, ",
     "h.human_hog_representatives, h.arabidopsis_hog_representatives, ",
+    "h.rice_hog_representatives, h.barley_hog_representatives, ",
     "s.member_count, s.species_count, s.human_member_count, ",
     "s.plant_member_count, s.plant_species_count, s.species_present, ",
     "s.plant_species_present, s.human_accessions, s.human_entries, ",
@@ -498,6 +505,7 @@ build_human_hog_member_query <- function(
     "WITH ", ctes, ", ", sequence_cte, ", ", alias_cte,
     " SELECT m.hog_id, ",
     "h.human_hog_representatives, h.arabidopsis_hog_representatives, ",
+    "h.rice_hog_representatives, h.barley_hog_representatives, ",
     "CASE WHEN r.hog_id IS NULL THEN 'NOT_IN_CANDIDATE_RANKING' ",
     "ELSE 'RANKED' END AS ranking_availability, r.ranking_position, ",
     "r.ranking_statuses, r.final_score, r.prestructure_pass, r.final_pass, ",
@@ -563,7 +571,8 @@ filter_human_hog_results <- function(
       summary,
       c(
         "hog_id", "human_hog_representatives",
-        "arabidopsis_hog_representatives", "human_accessions", "human_entries",
+        "arabidopsis_hog_representatives", "rice_hog_representatives",
+        "barley_hog_representatives", "human_accessions", "human_entries",
         "human_raw_identifiers", "matched_e3_seeds", "seed_protein_names"
       )
     ),
@@ -571,7 +580,8 @@ filter_human_hog_results <- function(
       human_members,
       c(
         "hog_id", "human_hog_representatives",
-        "arabidopsis_hog_representatives", "parsed_accession", "parsed_entry",
+        "arabidopsis_hog_representatives", "rice_hog_representatives",
+        "barley_hog_representatives", "parsed_accession", "parsed_entry",
         "raw_identifier",
         "matched_e3_seeds", "seed_protein_names", "available_aliases"
       )

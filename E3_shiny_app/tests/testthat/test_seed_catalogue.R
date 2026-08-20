@@ -90,12 +90,16 @@ test_that("seed catalogue query returns annotations and exact sequences", {
     )
   ))
   expect_identical(capability$mode, "authority")
-  result <- collect_resource_query(
+  query <- build_seed_catalogue_query(
+    capability = capability,
+    max_rows = 10L
+  )
+  expect_false(grepl("json_extract", query, fixed = TRUE))
+  expect_false(grepl("AS JSON", query, fixed = TRUE))
+  result <- collect_seed_catalogue(
     duckdb_path = path,
-    query = build_seed_catalogue_query(
-      capability = capability,
-      max_rows = 10L
-    )
+    capability = capability,
+    max_rows = 10L
   )
   expect_identical(result$seed_id, c("S1", "S2"))
   expect_equal(result$source_cluster_count, c(2, 1))
@@ -114,15 +118,55 @@ test_that("seed catalogue filters pasted terms and validates bounds", {
     protein_sequence = c("MA", "MB", "MC"),
     stringsAsFactors = FALSE
   )
+  expect_identical(
+    parse_seed_catalogue_terms(query = "S1\nBeta;NRT"),
+    c("s1", "beta", "nrt")
+  )
+  expect_identical(parse_seed_catalogue_terms(query = NA_character_), character())
   selected <- filter_seed_catalogue(data = data, query = "S1\nBeta")
   expect_identical(selected$seed_id, c("S1", "S2"))
   expect_identical(filter_seed_catalogue(data = data, query = ""), data)
+  expect_error(
+    parse_seed_catalogue_terms(query = "S1", maximum_terms = 0L),
+    "positive integer"
+  )
   expect_error(
     build_seed_catalogue_query(
       capability = list(available = TRUE),
       max_rows = 0L
     ),
     "between 1 and 100000"
+  )
+})
+
+test_that("seed metadata parsing is defensive and preserves existing values", {
+  parsed <- parse_seed_catalogue_metadata(
+    value = paste0(
+      '{"protein_names":"Seed one","e3_category":"U-box",',
+      '"reviewed":true,"taxon_id":3702}'
+    )
+  )
+  expect_identical(unname(parsed[["seed_protein_names"]]), "Seed one")
+  expect_identical(unname(parsed[["seed_category"]]), "U-box")
+  expect_identical(unname(parsed[["seed_review_status"]]), "true")
+  expect_identical(unname(parsed[["seed_taxon_id"]]), "3702")
+  expect_false(isTRUE(attr(parsed, "parse_failed")))
+
+  invalid <- parse_seed_catalogue_metadata(value = "not-json")
+  expect_true(isTRUE(attr(invalid, "parse_failed")))
+  frame <- data.frame(
+    seed_metadata_json = c("not-json", '{"protein_names":"Parsed"}'),
+    seed_protein_names = c("Existing", ""),
+    stringsAsFactors = FALSE
+  )
+  expect_warning(
+    enriched <- enrich_seed_catalogue_metadata(data = frame),
+    "Ignored 1 invalid"
+  )
+  expect_identical(enriched$seed_protein_names, c("Existing", "Parsed"))
+  expect_error(
+    enrich_seed_catalogue_metadata(data = "not-a-data-frame"),
+    "requires a data frame"
   )
 })
 

@@ -14,6 +14,8 @@ test_that("unified-search UI exposes list, mode and downloads", {
   expect_match(ui, "search-terms", fixed = TRUE)
   expect_match(ui, "search-mode", fixed = TRUE)
   expect_match(ui, "Search the complete loaded resource", fixed = TRUE)
+  expect_match(ui, "search-selected_columns", fixed = TRUE)
+  expect_match(ui, "search-select_all", fixed = TRUE)
   expect_match(ui, "search-download_matches_excel", fixed = TRUE)
 })
 

@@ -137,10 +137,24 @@ build_expression_filter_conditions <- function(filters = list()) {
   gene_search <- filters$gene_search
 
   if (!is_inactive_filter_value(gene_search)) {
-    conditions <- c(
-      conditions,
-      build_gene_instr_condition(search_value = gene_search[[1L]])
-    )
+    terms <- parse_expression_search_terms(gene_search[[1L]])
+    if (length(terms) > 0L) {
+      conditions <- c(
+        conditions,
+        paste0(
+          "(",
+          paste(
+            vapply(
+              terms,
+              build_gene_instr_condition,
+              character(1L)
+            ),
+            collapse = " OR "
+          ),
+          ")"
+        )
+      )
+    }
   }
 
   conditions

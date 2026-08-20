@@ -1,9 +1,16 @@
 # ARIA plant E3 Python reporter
 
-Version 0.14.0 is the Streamlit companion to `E3_shiny_app` 0.17.0. Both
+Version 0.15.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
+
+This reporting release foregrounds strict 3D pocket-position support, the
+separate conserved-pocket/chemical gate and assessed-member druggability in
+the complete HOG results. Human, Arabidopsis, rice and barley representatives
+are reported separately. Unified-search matches now have selectable/exportable
+columns, expression identifiers accept pasted lists with direct value-table
+downloads, and expression heatmaps use a white-to-red low-to-high scale.
 
 The app is read-only. It opens a completed DuckDB directly or registers Parquet
 files as views in an in-memory DuckDB. Every table query has a hard row cap and
@@ -220,7 +227,7 @@ python -m pip install --editable '.[dev]'
 source tests can run before editable installation. The editable install remains
 required for the `e3-python-app` command.
 
-The v0.10.1 quality gate includes focused human-HOG, plant–human-HOG,
+The release quality gate includes focused human-HOG, plant–human-HOG,
 HOG-level human/Arabidopsis representative and
 multi-field list-search tests in addition to branch-aware coverage at or above 95%
 of DuckDB, master-Parquet, run-directory, glossary, expression-context,

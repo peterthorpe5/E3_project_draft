@@ -44,6 +44,9 @@ def prestructure_hog_connection() -> duckdb.DuckDBPyConnection:
         "('N0.HOG1', 'Homo_sapiens', 'sp|H2|HUMAN_TWO', 'H2', 'HUMAN_TWO'), "
         "('N0.HOG1', 'Arabidopsis_thaliana', 'sp|AT1|ARATH_ONE', "
         "'AT1', 'ARATH_ONE'), "
+        "('N0.HOG1', 'Oryza_sativa', 'sp|OS1|RICE_ONE', 'OS1', 'RICE_ONE'), "
+        "('N0.HOG1', 'Hordeum_vulgare', 'sp|HV1|BARLEY_ONE', "
+        "'HV1', 'BARLEY_ONE'), "
         "('N0.HOG2', 'Homo_sapiens', 'sp|H3|HUMAN_THREE', 'H3', "
         "'HUMAN_THREE')"
     )
@@ -93,6 +96,8 @@ def test_top_n_hogs_use_prestructure_rank_and_hide_structural_fields(
     assert "selected_pocket_count" not in result.columns
     assert result.loc[0, "human_hog_representatives"] == "H1;H2"
     assert result.loc[0, "arabidopsis_hog_representatives"] == "AT1"
+    assert result.loc[0, "rice_hog_representatives"] == "OS1"
+    assert result.loc[0, "barley_hog_representatives"] == "HV1"
     assert result.loc[1, "human_hog_representatives"] == "H3"
     assert result.loc[1, "arabidopsis_hog_representatives"] == ""
 

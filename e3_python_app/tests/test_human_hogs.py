@@ -42,6 +42,12 @@ def human_hog_connection() -> duckdb.DuckDBPyConnection:
         "'Arabidopsis_thaliana', 'sp|PLANT1|PLANT_ONE', 'PLANT1', "
         "'PLANT_ONE', 'REVIEWED', 'UNIPROT', 'MAPPED', '', 'N0.tsv', 2), "
         "('HIERARCHICAL_ORTHOGROUP', 'N0.HOG1', 'OG1', 'n1', "
+        "'Oryza_sativa', 'sp|RICE1|RICE_ONE', 'RICE1', "
+        "'RICE_ONE', 'REVIEWED', 'UNIPROT', 'MAPPED', '', 'N0.tsv', 2), "
+        "('HIERARCHICAL_ORTHOGROUP', 'N0.HOG1', 'OG1', 'n1', "
+        "'Hordeum_vulgare', 'sp|BARLEY1|BARLEY_ONE', 'BARLEY1', "
+        "'BARLEY_ONE', 'REVIEWED', 'UNIPROT', 'MAPPED', '', 'N0.tsv', 2), "
+        "('HIERARCHICAL_ORTHOGROUP', 'N0.HOG1', 'OG1', 'n1', "
         "'Zea_mays', 'PLANT2', 'PLANT2', '', 'UNREVIEWED', 'BARE', "
         "'MAPPED', '', 'N0.tsv', 2), "
         "('HIERARCHICAL_ORTHOGROUP', 'N0.HOG2', 'OG2', 'n2', "
@@ -112,6 +118,8 @@ def test_human_hog_summary_retains_ranked_and_unranked_groups(
     assert ranked["human_accessions"] == "HUM1;HUM1B"
     assert ranked["human_hog_representatives"] == "HUM1;HUM1B"
     assert ranked["arabidopsis_hog_representatives"] == "PLANT1"
+    assert ranked["rice_hog_representatives"] == "RICE1"
+    assert ranked["barley_hog_representatives"] == "BARLEY1"
     unranked = summary[summary["hog_id"] == "N0.HOG2"].iloc[0]
     assert unranked["ranking_availability"] == "NOT_IN_CANDIDATE_RANKING"
     assert unranked["human_hog_representatives"] == "HUM2"
@@ -127,8 +135,10 @@ def test_plant_and_human_view_requires_both_lineages(
         view="plant_and_human",
     )
     assert summary["hog_id"].tolist() == ["N0.HOG1"]
-    assert int(summary.loc[0, "plant_species_count"]) == 2
-    assert summary.loc[0, "plant_species_present"] == "Arabidopsis_thaliana;Zea_mays"
+    assert int(summary.loc[0, "plant_species_count"]) == 4
+    assert summary.loc[0, "plant_species_present"] == (
+        "Arabidopsis_thaliana;Hordeum_vulgare;Oryza_sativa;Zea_mays"
+    )
 
 
 def test_member_tables_include_human_aliases_sequences_and_co_members(
@@ -150,9 +160,11 @@ def test_member_tables_include_human_aliases_sequences_and_co_members(
         member_scope="all",
     )
     assert set(all_members["member_class"]) == {"HUMAN", "TARGET_PLANT"}
-    assert len(all_members) == 4
+    assert len(all_members) == 6
     assert set(all_members["human_hog_representatives"]) == {"HUM1;HUM1B"}
     assert set(all_members["arabidopsis_hog_representatives"]) == {"PLANT1"}
+    assert set(all_members["rice_hog_representatives"]) == {"RICE1"}
+    assert set(all_members["barley_hog_representatives"]) == {"BARLEY1"}
 
 
 def test_human_hog_validation_is_defensive() -> None:

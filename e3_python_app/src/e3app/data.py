@@ -642,7 +642,8 @@ def filter_expression_context(
         organism_part: Exact tissue/organism-part filter or ``All``.
         metadata_status: Exact metadata-availability state or ``All``.
         expression_positive: ``Positive``, ``Below threshold`` or ``All``.
-        search_text: Case-insensitive partial identifier search.
+        search_text: One or more case-insensitive partial identifiers, separated
+            by semicolons, commas, tabs or newlines.
         maximum_rows: Hard result limit.
 
     Returns:
@@ -675,7 +676,15 @@ def filter_expression_context(
     if expression_positive != "All" and "expression_positive" in available:
         conditions.append("CAST(expression_positive AS BOOLEAN) = ?")
         parameters.append(expression_positive == "Positive")
-    cleaned_search = search_text.strip().lower()
+    search_terms = tuple(
+        dict.fromkeys(
+            piece.strip().lower()
+            for piece in re.split(r"[\n\r\t,;]+", search_text)
+            if piece.strip()
+        )
+    )
+    if len(search_terms) > 50:
+        raise AppError("expression search accepts at most 50 unique terms")
     search_columns = [
         column
         for column in (
@@ -688,17 +697,20 @@ def filter_expression_context(
         )
         if column in available
     ]
-    if cleaned_search and search_columns:
+    if search_terms and search_columns:
         conditions.append(
             "("
             + " OR ".join(
                 "contains(lower(COALESCE(CAST("
                 f"{quote_identifier(column)} AS VARCHAR), '')), ?)"
+                for _term in search_terms
                 for column in search_columns
             )
             + ")"
         )
-        parameters.extend([cleaned_search] * len(search_columns))
+        parameters.extend(
+            term for term in search_terms for _column in search_columns
+        )
     selected_sql = ", ".join(
         quote_identifier(column) for column in selected_columns
     )

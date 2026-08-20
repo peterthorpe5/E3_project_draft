@@ -9,9 +9,10 @@ resource_browser_ui <- function(id) {
     shiny::h3("All results and complete HOG information"),
     shiny::p(
       paste(
-        "Use an enriched HOG view to join membership, human and Arabidopsis",
-        "representatives, pre-structure and post-structure rankings, and every",
-        "field in the strongest HOG-linked ranking result. Raw DuckDB relations",
+        "Use an enriched HOG view to join membership; human, Arabidopsis, rice",
+        "and barley representatives; explicit 3D-position and 3D-conservation",
+        "status; druggability evidence; both ranking stages; and every field in",
+        "the strongest HOG-linked ranking result. Raw DuckDB relations",
         "remain available for exact source-level audit."
       )
     ),
@@ -142,8 +143,13 @@ resource_browser_server <- function(id, resource_duckdb_path) {
           paste(
             "One row represents one root HOG. Both canonical ranking stages,",
             "all original ranking fields, species representatives and HOG",
-            "membership summaries are selectable. Canonical ranks use the",
-            "strongest compatible field available in this release."
+            "membership summaries are selectable. The first fields foreground",
+            "strict pocket-position support, strict 3D conservation and",
+            "group-level druggability. Canonical ranks use the strongest",
+            "compatible field available in this release. Same-position support",
+            "alone does not establish conserved pocket chemistry. Blank support",
+            "flags mean unavailable or not assessed; interpret scores with their",
+            "assessment-status fields."
           )
         ))
       }
@@ -152,7 +158,10 @@ resource_browser_server <- function(id, resource_duckdb_path) {
           class = "alert alert-info",
           paste(
             "One row represents one HOG member. HOG annotations and rankings",
-            "repeat so every exported member row remains interpretable."
+            "repeat so every exported member row remains interpretable. When",
+            "selected-pocket evidence exists, member druggability and its source",
+            "are selectable too. A member with no joined selected-pocket row is",
+            "unassessed, not a zero-scoring pocket."
           )
         ))
       }

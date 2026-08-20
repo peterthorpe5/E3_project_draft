@@ -924,7 +924,11 @@ def build_expression_heatmap_figure(
             x=column_order,
             y=row_order,
             customdata=custom_values,
-            colorscale="Viridis",
+            colorscale=(
+                (0.0, "#ffffff"),
+                (0.5, "#fcae91"),
+                (1.0, "#cb181d"),
+            ),
             colorbar={"title": colour_title},
             hovertemplate=(
                 "Candidate: %{y}<br>Species / context: %{x}<br>"

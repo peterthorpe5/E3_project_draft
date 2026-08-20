@@ -102,6 +102,14 @@ testthat::test_that("selected-result SQL quotes columns and remains bounded", {
 })
 
 testthat::test_that("expression SQL supports context and threshold selection", {
+  testthat::expect_identical(
+    parse_expression_search_terms("N0.HOG0001\nAT1G31090;Os01g01010"),
+    c("N0.HOG0001", "AT1G31090", "Os01g01010")
+  )
+  testthat::expect_error(
+    parse_expression_search_terms("AT1G31090", maximum_terms = 0L),
+    "positive integer"
+  )
   query <- build_filtered_expression_query(
     relation = "candidate_expression_context_summary",
     selected_columns = c(
@@ -116,14 +124,16 @@ testthat::test_that("expression SQL supports context and threshold selection", {
     tissue = "leaf",
     metadata_status = "MAPPED",
     expression_positive = "true",
-    search = "N0.HOG0001",
+    search = "N0.HOG0001;AT1G31090",
     max_rows = 50
   )
   testthat::expect_match(query, '"species_column" AS VARCHAR\\) = \'Zea_mays\'')
   testthat::expect_match(query, '"organism_part" AS VARCHAR\\) = \'leaf\'')
   testthat::expect_match(query, '"metadata_status" AS VARCHAR\\) = \'MAPPED\'')
   testthat::expect_match(query, '"expression_positive" = TRUE', fixed = TRUE)
-  testthat::expect_match(query, "ILIKE '%N0.HOG0001%'", fixed = TRUE)
+  testthat::expect_match(query, "instr(lower", fixed = TRUE)
+  testthat::expect_match(query, "n0.hog0001", fixed = TRUE)
+  testthat::expect_match(query, "at1g31090", fixed = TRUE)
   testthat::expect_match(query, "LIMIT 50$")
   testthat::expect_error(
     build_filtered_expression_query(

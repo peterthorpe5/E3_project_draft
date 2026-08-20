@@ -165,6 +165,8 @@ def test_expression_heatmap_preparation_and_figure() -> None:
     figure = build_expression_heatmap_figure(cells=cells, log_transform=True)
     assert isinstance(figure, go.Figure)
     assert figure.data[0].z[1][1] is None
+    assert figure.data[0].colorscale[0][1] == "#ffffff"
+    assert figure.data[0].colorscale[-1][1] == "#cb181d"
     with pytest.raises(AppError, match="heatmap columns"):
         prepare_expression_heatmap_cells(
             cells=pd.DataFrame({"candidate_id": ["N0.HOG1"]}),

@@ -1,0 +1,29 @@
+ARIA plant E3 Python reporter v0.15.0 validation hand-off
+========================================================
+
+Implemented scope
+-----------------
+
+- Added decision-facing HOG structural-position, conserved-pocket and
+  assessed-member druggability evidence.
+- Added separate human, Arabidopsis, rice and barley HOG summaries.
+- Added selectable/exportable unified-search columns.
+- Added pasted-list expression filtering and direct filtered-value downloads.
+- Changed expression heatmaps to white-low/red-high.
+- Retained the complete recorded methods and threshold annotations.
+
+Build-workspace checks on 2026-08-20
+------------------------------------
+
+- The complete Python test suite passed: 154 tests, no failures.
+- Full-project compileall, pycodestyle with a 100-character limit and
+  pydocstyle checks passed.
+- Application and test launch scripts passed `bash -n`.
+- Branch-aware coverage remained above the required 95% release gate.
+
+Release gate used
+-----------------
+
+    cd e3_python_app
+    python -m pip install --editable '.[dev]'
+    ./run_tests.sh

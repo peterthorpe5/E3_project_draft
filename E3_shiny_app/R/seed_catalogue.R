@@ -43,6 +43,21 @@ seed_catalogue_exact_annotation_fields <- function() {
   )
 }
 
+seed_catalogue_metadata_fields <- function() {
+  list(
+    seed_protein_names = c("protein_names", "protein_name", "name"),
+    seed_category = c("category", "e3_category"),
+    seed_review_status = c("reviewed", "review_status"),
+    seed_ubiquitin_go_status = "ubiquitin_go_term",
+    seed_exclusion_go_term = "exclusion_go_term",
+    seed_organism = "organism",
+    seed_taxon_id = c("organism_id", "taxon_id"),
+    seed_sequence_md5 = "sequence_md5",
+    seed_evidence_type = "evidence_type",
+    seed_source = "source"
+  )
+}
+
 seed_catalogue_first_column <- function(available, choices) {
   selected <- choices[choices %in% available]
   if (length(selected) == 0L) return(NULL)
@@ -190,18 +205,6 @@ seed_catalogue_sequence_cte <- function(capability, alias = "e3_resource") {
   )
 }
 
-seed_catalogue_json_text <- function(keys, available) {
-  if (!"seed_metadata_json" %in% available) return("CAST('' AS VARCHAR)")
-  candidates <- vapply(keys, function(key) {
-    paste0(
-      "nullif(trim(json_extract_string(TRY_CAST(seed_metadata_json AS JSON), '$.",
-      key,
-      "')), '')"
-    )
-  }, character(1L))
-  paste0("coalesce(", paste(candidates, collapse = ", "), ", '')")
-}
-
 seed_catalogue_authority_source <- function(column, available) {
   if (!column %in% available) return("CAST('' AS VARCHAR)")
   paste0(
@@ -243,25 +246,10 @@ build_seed_catalogue_authority_query <- function(
   max_rows,
   alias = "e3_resource"
 ) {
-  metadata <- list(
-    seed_protein_names = c("protein_names", "protein_name", "name"),
-    seed_category = c("category", "e3_category"),
-    seed_review_status = c("reviewed", "review_status"),
-    seed_ubiquitin_go_status = "ubiquitin_go_term",
-    seed_exclusion_go_term = "exclusion_go_term",
-    seed_organism = "organism",
-    seed_taxon_id = c("organism_id", "taxon_id"),
-    seed_sequence_md5 = "sequence_md5",
-    seed_evidence_type = "evidence_type",
-    seed_source = "source"
-  )
+  metadata <- seed_catalogue_metadata_fields()
   annotations <- vapply(names(metadata), function(output) {
     paste0(
-      seed_catalogue_json_text(
-        keys = metadata[[output]],
-        available = capability$columns
-      ),
-      " AS ", quote_duckdb_identifier(output)
+      "CAST('' AS VARCHAR) AS ", quote_duckdb_identifier(output)
     )
   }, character(1L))
   provenance_columns <- c(
@@ -420,14 +408,139 @@ build_seed_catalogue_query <- function(
   )
 }
 
+#' Parse one exact known-seed metadata object without DuckDB JSON extensions.
+#'
+#' @param value JSON object retained in the seed authority relation.
+#' @return Named character vector of exact annotation fields. The
+#'   `parse_failed` attribute is true for non-empty invalid input.
+parse_seed_catalogue_metadata <- function(value) {
+  fields <- seed_catalogue_metadata_fields()
+  result <- stats::setNames(rep("", length(fields)), names(fields))
+  if (
+    length(value) == 0L || is.na(value[[1L]]) ||
+      !nzchar(trimws(as.character(value[[1L]])))
+  ) {
+    attr(result, "parse_failed") <- FALSE
+    return(result)
+  }
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("The jsonlite package is required to parse seed metadata.", call. = FALSE)
+  }
+  metadata <- tryCatch(
+    jsonlite::fromJSON(as.character(value[[1L]]), simplifyVector = FALSE),
+    error = function(error) NULL
+  )
+  if (is.null(metadata) || !is.list(metadata) || is.null(names(metadata))) {
+    attr(result, "parse_failed") <- TRUE
+    return(result)
+  }
+  for (output in names(fields)) {
+    for (key in fields[[output]]) {
+      candidate <- metadata[[key]]
+      if (
+        is.null(candidate) || is.list(candidate) || length(candidate) != 1L ||
+          is.na(candidate)
+      ) {
+        next
+      }
+      text <- trimws(as.character(candidate))
+      if (!nzchar(text)) next
+      if (is.logical(candidate)) text <- tolower(text)
+      result[[output]] <- text
+      break
+    }
+  }
+  attr(result, "parse_failed") <- FALSE
+  result
+}
+
+#' Add exact seed metadata fields after the bounded DuckDB query.
+#'
+#' @param data Collected seed catalogue containing raw `seed_metadata_json`.
+#' @return Catalogue with exact fields populated from valid metadata objects.
+enrich_seed_catalogue_metadata <- function(data) {
+  if (!is.data.frame(data)) {
+    stop("Seed catalogue metadata enrichment requires a data frame.", call. = FALSE)
+  }
+  if (nrow(data) == 0L || !"seed_metadata_json" %in% names(data)) return(data)
+  parsed <- lapply(data$seed_metadata_json, parse_seed_catalogue_metadata)
+  failed <- sum(vapply(parsed, function(value) {
+    isTRUE(attr(value, "parse_failed"))
+  }, logical(1L)))
+  if (failed > 0L) {
+    warning(
+      paste("Ignored", failed, "invalid seed_metadata_json value(s)."),
+      call. = FALSE
+    )
+  }
+  for (output in names(seed_catalogue_metadata_fields())) {
+    values <- vapply(parsed, function(value) value[[output]], character(1L))
+    existing <- if (output %in% names(data)) {
+      as.character(data[[output]])
+    } else {
+      rep("", nrow(data))
+    }
+    replace <- is.na(existing) | !nzchar(trimws(existing))
+    existing[replace] <- values[replace]
+    data[[output]] <- existing
+  }
+  data
+}
+
+#' Collect and enrich the bounded E3 seed catalogue.
+#'
+#' @param duckdb_path Flexible E3 resource source or DuckDB path.
+#' @param capability Seed-catalogue capability metadata.
+#' @param max_rows Hard row limit.
+#' @return Collected catalogue with exact metadata annotations.
+collect_seed_catalogue <- function(duckdb_path, capability, max_rows = 10000L) {
+  result <- collect_resource_query(
+    duckdb_path = duckdb_path,
+    query = build_seed_catalogue_query(
+      capability = capability,
+      max_rows = max_rows
+    )
+  )
+  enrich_seed_catalogue_metadata(data = result)
+}
+
+#' Parse pasted seed-catalogue search terms.
+#'
+#' @param query Pasted newline, tab, comma or semicolon-delimited text.
+#' @param maximum_terms Maximum accepted number of unique terms.
+#' @return Unique lower-case terms in input order.
+parse_seed_catalogue_terms <- function(query, maximum_terms = 200L) {
+  maximum_terms <- suppressWarnings(as.integer(maximum_terms))
+  if (
+    length(maximum_terms) != 1L || is.na(maximum_terms) ||
+      maximum_terms < 1L
+  ) {
+    stop("maximum_terms must be a positive integer.", call. = FALSE)
+  }
+  if (length(query) == 0L || is.na(query[[1L]])) return(character())
+  terms <- unlist(
+    strsplit(as.character(query[[1L]]), "[\r\n\t,;]+"),
+    use.names = FALSE
+  )
+  terms <- tolower(trimws(terms))
+  terms <- terms[nzchar(terms)]
+  terms <- terms[!duplicated(terms)]
+  if (length(terms) > maximum_terms) {
+    stop(
+      paste("At most", maximum_terms, "unique seed search terms are accepted."),
+      call. = FALSE
+    )
+  }
+  terms
+}
+
 #' Filter a seed catalogue using pasted literal terms.
 #'
 #' @param data Seed catalogue.
 #' @param query One or several terms separated by common delimiters.
 #' @return Filtered catalogue.
 filter_seed_catalogue <- function(data, query = "") {
-  terms <- unlist(strsplit(as.character(query %||% ""), "[\\n\\r\\t,;]+"))
-  terms <- unique(tolower(trimws(terms[nzchar(trimws(terms))])))
+  terms <- parse_seed_catalogue_terms(query = query)
   if (length(terms) == 0L || nrow(data) == 0L) return(data)
   columns <- setdiff(names(data), "protein_sequence")
   combined <- apply(data[, columns, drop = FALSE], 1L, function(row) {

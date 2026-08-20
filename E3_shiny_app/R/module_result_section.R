@@ -767,10 +767,17 @@ result_section_ui <- function(id, section) {
           ),
           shiny::textInput(
             ns("expression_search"),
-            "Candidate group, accession or gene",
+            "Candidate group, accession or gene(s)",
             value = ""
           ),
           col_widths = c(3, 3, 6)
+        ),
+        shiny::p(
+          class = "small text-muted",
+          paste(
+            "Paste up to 50 identifiers or names separated by semicolons,",
+            "commas, tabs or new lines; any term may match."
+          )
         ),
         bslib::layout_columns(
           shiny::selectInput(
@@ -816,8 +823,16 @@ result_section_ui <- function(id, section) {
       ns = ns,
       tsv_id = "download_tsv",
       excel_id = "download_excel",
-      tsv_label = "Download displayed rows as TSV",
-      excel_label = "Download displayed rows as Excel"
+      tsv_label = if (identical(section, "expression")) {
+        "Download selected-gene expression values as TSV"
+      } else {
+        "Download displayed rows as TSV"
+      },
+      excel_label = if (identical(section, "expression")) {
+        "Download selected-gene expression values as Excel"
+      } else {
+        "Download displayed rows as Excel"
+      }
     ),
     if (identical(section, "structural_alignment")) {
       shiny::tagList(

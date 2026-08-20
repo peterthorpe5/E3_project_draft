@@ -32,7 +32,8 @@ human_hog_explorer_ui <- function(id, plant_required = FALSE) {
     shiny::p(
       class = "small text-muted",
       paste(
-        "Every table repeats the HOG-level human and Arabidopsis representatives.",
+        "Every table repeats the HOG-level human, Arabidopsis, rice and barley",
+        "representatives.",
         "Values prefer parsed protein accessions, then parsed entries, then raw",
         "identifiers. Multiple representatives are separated by semicolons;",
         "an absent lineage is blank."

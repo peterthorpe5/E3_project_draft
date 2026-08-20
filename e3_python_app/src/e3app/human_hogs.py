@@ -19,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 
 HUMAN_SPECIES = "Homo_sapiens"
 ARABIDOPSIS_SPECIES = "Arabidopsis_thaliana"
+RICE_SPECIES = "Oryza_sativa"
+BARLEY_SPECIES = "Hordeum_vulgare"
 HIERARCHICAL_RELATION = "hierarchical_membership"
 HOG_MEMBERSHIP_REQUIRED_COLUMNS = {"group_id", "species", "raw_identifier"}
 RANKING_RELATION_PREFERENCE = (
@@ -440,7 +442,15 @@ def _view_ctes(
         "coalesce(string_agg(DISTINCT representative, ';' "
         "ORDER BY representative) FILTER (WHERE species = "
         f"'{ARABIDOPSIS_SPECIES}' AND representative IS NOT NULL), '') "
-        "AS arabidopsis_hog_representatives "
+        "AS arabidopsis_hog_representatives, "
+        "coalesce(string_agg(DISTINCT representative, ';' "
+        "ORDER BY representative) FILTER (WHERE species = "
+        f"'{RICE_SPECIES}' AND representative IS NOT NULL), '') "
+        "AS rice_hog_representatives, "
+        "coalesce(string_agg(DISTINCT representative, ';' "
+        "ORDER BY representative) FILTER (WHERE species = "
+        f"'{BARLEY_SPECIES}' AND representative IS NOT NULL), '') "
+        "AS barley_hog_representatives "
         "FROM representative_members GROUP BY hog_id)",
         "hog_counts AS (SELECT hog_id, count(*) AS member_count, "
         "count(DISTINCT species) AS species_count, "
@@ -516,6 +526,8 @@ def collect_human_hog_summary(
         SELECT s.hog_id,
                h.human_hog_representatives,
                h.arabidopsis_hog_representatives,
+               h.rice_hog_representatives,
+               h.barley_hog_representatives,
                s.member_count, s.species_count, s.human_member_count,
                s.plant_member_count, s.plant_species_count,
                s.species_present, s.plant_species_present,
@@ -582,6 +594,8 @@ def collect_human_hog_members(
         SELECT m.hog_id,
                h.human_hog_representatives,
                h.arabidopsis_hog_representatives,
+               h.rice_hog_representatives,
+               h.barley_hog_representatives,
                CASE WHEN r.hog_id IS NULL THEN 'NOT_IN_CANDIDATE_RANKING'
                     ELSE 'RANKED' END AS ranking_availability,
                r.ranking_position, r.ranking_statuses, r.final_score,

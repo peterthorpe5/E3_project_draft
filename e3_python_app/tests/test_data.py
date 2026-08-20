@@ -351,6 +351,15 @@ def test_candidate_expression_context_filters(resource_db: Path) -> None:
             expression_positive="Below threshold",
         )
         assert below_threshold["organism_part"].tolist() == ["root"]
+        pasted_genes = filter_expression_context(
+            connection=connection,
+            relation=relation,
+            selected_columns=("gene_id", "member_accession"),
+            search_text="AT1G31090;Q9SA03",
+            maximum_rows=10,
+        )
+        assert len(pasted_genes) == 2
+        assert set(pasted_genes["gene_id"]) == {"AT1G31090"}
         with pytest.raises(AppError, match="Unknown expression support"):
             filter_expression_context(
                 connection=connection,

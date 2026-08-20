@@ -422,6 +422,11 @@ build_expression_heatmap_plot <- function(summary_tbl) {
     )
   ) +
     ggplot2::geom_tile() +
+    ggplot2::scale_fill_gradient(
+      low = "#ffffff",
+      high = "#cb181d",
+      na.value = "transparent"
+    ) +
     ggplot2::labs(
       x = "Group",
       y = "Gene ID",

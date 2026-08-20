@@ -104,12 +104,10 @@ seed_catalogue_server <- function(id, resource_source, max_rows = 1000L) {
       }
       requested <- min(max(requested, 1L), 100000L)
       tryCatch(
-        collect_resource_query(
+        collect_seed_catalogue(
           duckdb_path = resource_source,
-          query = build_seed_catalogue_query(
-            capability = capability,
-            max_rows = requested
-          )
+          capability = capability,
+          max_rows = requested
         ),
         error = function(error) {
           message("Could not collect the E3 seed catalogue: ", conditionMessage(error))

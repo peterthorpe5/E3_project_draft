@@ -73,18 +73,21 @@ test_that("human and plant-human HOG queries execute on representative data", {
     con,
     "hierarchical_membership",
     data.frame(
-      group_id = c("N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG2"),
+      group_id = c(
+        "N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG1", "N0.HOG2"
+      ),
       species = c(
         "Homo_sapiens", "Homo_sapiens", "Arabidopsis_thaliana",
-        "Homo_sapiens"
+        "Oryza_sativa", "Hordeum_vulgare", "Homo_sapiens"
       ),
       raw_identifier = c(
         "sp|HUM1|ONE_HUMAN", "sp|HUM1B|ONE_HUMAN_B",
-        "sp|AT1|ONE_ARATH", "HUM2"
+        "sp|AT1|ONE_ARATH", "sp|OS1|ONE_RICE", "sp|HV1|ONE_BARLEY", "HUM2"
       ),
-      parsed_accession = c("HUM1", "HUM1B", "AT1", "HUM2"),
+      parsed_accession = c("HUM1", "HUM1B", "AT1", "OS1", "HV1", "HUM2"),
       parsed_entry = c(
-        "ONE_HUMAN", "ONE_HUMAN_B", "ONE_ARATH", "TWO_HUMAN"
+        "ONE_HUMAN", "ONE_HUMAN_B", "ONE_ARATH", "ONE_RICE", "ONE_BARLEY",
+        "TWO_HUMAN"
       ),
       stringsAsFactors = FALSE
     )
@@ -148,6 +151,8 @@ test_that("human and plant-human HOG queries execute on representative data", {
     c("HUM1;HUM1B", "HUM2")
   )
   expect_identical(human$arabidopsis_hog_representatives, c("AT1", ""))
+  expect_identical(human$rice_hog_representatives, c("OS1", ""))
+  expect_identical(human$barley_hog_representatives, c("HV1", ""))
   expect_identical(plant_human$hog_id, "N0.HOG1")
   expect_identical(as.integer(plant_human$ranking_position), 7L)
   expect_identical(
@@ -157,5 +162,10 @@ test_that("human and plant-human HOG queries execute on representative data", {
   expect_identical(
     unique(plant_human_members$arabidopsis_hog_representatives),
     "AT1"
+  )
+  expect_identical(unique(plant_human_members$rice_hog_representatives), "OS1")
+  expect_identical(
+    unique(plant_human_members$barley_hog_representatives),
+    "HV1"
   )
 })

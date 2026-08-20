@@ -16,6 +16,8 @@ LOGGER = logging.getLogger(__name__)
 HIERARCHICAL_RELATION = "hierarchical_membership"
 HUMAN_SPECIES = "Homo_sapiens"
 ARABIDOPSIS_SPECIES = "Arabidopsis_thaliana"
+RICE_SPECIES = "Oryza_sativa"
+BARLEY_SPECIES = "Hordeum_vulgare"
 PRESTRUCTURE_HOG_RELATION_PREFERENCE = (
     "final_evolutionary_candidate_prioritisation",
     "evolutionary_candidate_group_ranking",
@@ -161,13 +163,15 @@ def _empty_representatives_cte() -> str:
     return (
         "hog_representatives AS (SELECT CAST(NULL AS VARCHAR) AS hog_id, "
         "CAST(NULL AS VARCHAR) AS human_hog_representatives, "
-        "CAST(NULL AS VARCHAR) AS arabidopsis_hog_representatives "
+        "CAST(NULL AS VARCHAR) AS arabidopsis_hog_representatives, "
+        "CAST(NULL AS VARCHAR) AS rice_hog_representatives, "
+        "CAST(NULL AS VARCHAR) AS barley_hog_representatives "
         "WHERE FALSE)"
     )
 
 
 def _representatives_ctes(*, connection: object) -> str:
-    """Build optional human and Arabidopsis representative annotations."""
+    """Build optional human, Arabidopsis, rice and barley annotations."""
     if HIERARCHICAL_RELATION not in set(list_relations(connection)):
         return _empty_representatives_cte()
     columns = set(relation_columns(connection, HIERARCHICAL_RELATION))
@@ -202,7 +206,15 @@ def _representatives_ctes(*, connection: object) -> str:
         "coalesce(string_agg(DISTINCT representative, ';' "
         "ORDER BY representative) FILTER (WHERE species = "
         f"'{ARABIDOPSIS_SPECIES}' AND representative IS NOT NULL), '') "
-        "AS arabidopsis_hog_representatives "
+        "AS arabidopsis_hog_representatives, "
+        "coalesce(string_agg(DISTINCT representative, ';' "
+        "ORDER BY representative) FILTER (WHERE species = "
+        f"'{RICE_SPECIES}' AND representative IS NOT NULL), '') "
+        "AS rice_hog_representatives, "
+        "coalesce(string_agg(DISTINCT representative, ';' "
+        "ORDER BY representative) FILTER (WHERE species = "
+        f"'{BARLEY_SPECIES}' AND representative IS NOT NULL), '') "
+        "AS barley_hog_representatives "
         "FROM membership_representatives GROUP BY hog_id)"
     )
 
@@ -320,7 +332,11 @@ def collect_prestructure_ranked_hogs(
                coalesce(h.human_hog_representatives, '')
                    AS human_hog_representatives,
                coalesce(h.arabidopsis_hog_representatives, '')
-                   AS arabidopsis_hog_representatives
+                   AS arabidopsis_hog_representatives,
+               coalesce(h.rice_hog_representatives, '')
+                   AS rice_hog_representatives,
+               coalesce(h.barley_hog_representatives, '')
+                   AS barley_hog_representatives
         FROM top_hogs t
         LEFT JOIN hog_representatives h
           ON h.hog_id = CAST(t.primary_group_id AS VARCHAR)

@@ -115,6 +115,12 @@ testthat::test_that("expression SQL WHERE clauses include active filters only", 
   testthat::expect_match(where_clause, "instr\\(lower")
   testthat::expect_false(grepl("ESCAPE", where_clause, fixed = TRUE))
   testthat::expect_false(grepl("experiment_accession", where_clause))
+  pasted <- build_expression_where_clause(list(
+    gene_search = "Zm00001;NAC001"
+  ))
+  testthat::expect_match(pasted, "zm00001", fixed = TRUE)
+  testthat::expect_match(pasted, "nac001", fixed = TRUE)
+  testthat::expect_match(pasted, " OR ", fixed = TRUE)
 })
 
 testthat::test_that("summary, coverage and display SQL target the metadata-aware view", {

@@ -1,8 +1,15 @@
 # ARIA plant E3 Shiny reporter
 
-Version 0.17.0 is the grant-focused R reporter for the end-to-end workflow. It is a
+Version 0.18.0 is the grant-focused R reporter for the end-to-end workflow. It is a
 read-only consumer: scientific transformations happen in the workflow packages,
 while Shiny sends bounded lazy queries to DuckDB through duckplyr.
+
+This reporting release foregrounds strict 3D pocket-position support, the
+separate conserved-pocket/chemical gate and assessed-member druggability in
+the complete HOG results. Human, Arabidopsis, rice and barley representatives
+are reported separately. Unified-search matches now have selectable/exportable
+columns, expression identifiers accept pasted lists with direct value-table
+downloads, and expression heatmaps use a white-to-red low-to-high scale.
 
 ## Questions the reporter answers
 
@@ -383,7 +390,7 @@ and never alter the official ranks, mandatory gates, DuckDB or pipeline output.
 
 ```bash
 conda install -c conda-forge \
-  r-base r-shiny r-bslib r-dplyr r-dt r-ggplot2 r-htmltools r-plotly \
+  r-base r-shiny r-bslib r-dplyr r-dt r-ggplot2 r-htmltools r-jsonlite r-plotly \
   r-openxlsx r-rlang r-shinycssloaders r-stringr r-tibble r-testthat \
   r-duckdb r-duckplyr python-kaleido=0.2.1
 

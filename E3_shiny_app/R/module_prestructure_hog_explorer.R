@@ -194,8 +194,9 @@ prestructure_hog_explorer_server <- function(
         paste0(
           "Authoritative source: `", source$relation, "`; rank field: `",
           source$rank_column, "`. The production pre-structure rank is retained ",
-          "and never recalculated from structural evidence. Human and Arabidopsis ",
-          "representatives are added from root-level membership where available."
+          "and never recalculated from structural evidence. Human, Arabidopsis, ",
+          "rice and barley representatives are added from root-level membership ",
+          "where available."
         )
       )
     })

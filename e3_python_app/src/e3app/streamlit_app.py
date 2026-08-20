@@ -891,6 +891,8 @@ def _filter_hog_frame(*, frame: pd.DataFrame, query: str) -> pd.DataFrame:
         "primary_group_id",
         "human_hog_representatives",
         "arabidopsis_hog_representatives",
+        "rice_hog_representatives",
+        "barley_hog_representatives",
         "human_accessions",
         "human_entries",
         "human_raw_identifiers",
@@ -1002,9 +1004,9 @@ def _render_prestructure_ranked_hogs(
     st.caption(
         f"Authoritative source: `{capability['relation']}`; rank field: "
         f"`{rank_column}`. The production pre-structure rank is retained and is "
-        "never recalculated from structural evidence. Human and Arabidopsis "
-        "representatives are added from root-level hierarchical membership where "
-        "available."
+        "never recalculated from structural evidence. Human, Arabidopsis, rice and "
+        "barley representatives are added from root-level hierarchical membership "
+        "where available."
     )
     _display_dataframe(frame=displayed, height=720)
     render_table_downloads(
@@ -1079,7 +1081,8 @@ def _render_human_hog_explorer(
         + (f"`{ranking_relation}`." if ranking_relation else "unavailable in this source.")
     )
     st.caption(
-        "Every table repeats the HOG-level human and Arabidopsis representatives. "
+        "Every table repeats the HOG-level human, Arabidopsis, rice and barley "
+        "representatives. "
         "Each value prefers the parsed protein accession, then the parsed entry, "
         "then the published raw identifier; multiple representatives are separated "
         "by semicolons and absent lineages are blank."
@@ -2046,9 +2049,13 @@ def _render_expression_section(
         )
     with filter_three:
         search_text = st.text_input(
-            "Group, accession or gene contains",
+            "Group, accession or gene(s)",
             value="",
             key="expression_context_search",
+            help=(
+                "Enter one identifier/name or paste up to 50 values separated "
+                "by semicolons, commas, tabs or new lines. Any term may match."
+            ),
         )
     status_one, status_two = st.columns(2)
     with status_one:
@@ -2095,8 +2102,8 @@ def _render_expression_section(
     render_table_downloads(
         frame=result,
         file_stem="candidate_expression_by_tissue",
-        tsv_label="Download filtered candidate-by-tissue rows as TSV",
-        excel_label="Download filtered candidate-by-tissue rows as Excel",
+        tsv_label="Download selected-gene expression values as TSV",
+        excel_label="Download selected-gene expression values as Excel",
         key="expression_context_download",
     )
     with st.expander("Mapping summary and audit relations"):
@@ -2608,20 +2615,25 @@ def _render_search(*, connection: object, max_rows: int) -> None:
             )
         )
         submitted = st.form_submit_button("Search the complete loaded resource")
-    if not submitted:
+    if submitted:
+        try:
+            terms = parse_search_terms(value=query)
+            matches = collect_unified_search(
+                connection=connection,
+                search_terms=terms,
+                mode=match_mode,
+                maximum_rows_per_relation=maximum_rows_per_relation,
+                maximum_total_rows=min(100_000, max(10_000, max_rows)),
+            )
+        except AppError as exc:
+            st.warning(str(exc))
+            return
+        st.session_state["unified_search_matches"] = matches
+        st.session_state["unified_search_term_count"] = len(terms)
+    elif "unified_search_matches" not in st.session_state:
         return
-    try:
-        terms = parse_search_terms(value=query)
-        matches = collect_unified_search(
-            connection=connection,
-            search_terms=terms,
-            mode=match_mode,
-            maximum_rows_per_relation=maximum_rows_per_relation,
-            maximum_total_rows=min(100_000, max(10_000, max_rows)),
-        )
-    except AppError as exc:
-        st.warning(str(exc))
-        return
+    matches = st.session_state["unified_search_matches"]
+    term_count = int(st.session_state.get("unified_search_term_count", 0))
     if matches.empty:
         st.warning("No identifier or name match was found in recognised fields.")
         return
@@ -2629,7 +2641,7 @@ def _render_search(*, connection: object, max_rows: int) -> None:
     matched_terms = summary["search_term"].nunique()
     matched_relations = summary["relation"].nunique()
     metrics = st.columns(3)
-    metrics[0].metric("Entered terms matched", f"{matched_terms:,} / {len(terms):,}")
+    metrics[0].metric("Entered terms matched", f"{matched_terms:,} / {term_count:,}")
     metrics[1].metric("Source relations", f"{matched_relations:,}")
     metrics[2].metric("Matching source rows", f"{len(matches):,}")
     st.markdown("#### Match summary")
@@ -2642,12 +2654,42 @@ def _render_search(*, connection: object, max_rows: int) -> None:
         key="unified_search_summary_download",
     )
     st.markdown("#### Complete matching rows")
-    _display_dataframe(frame=matches, height=650)
+    available = list(matches.columns)
+    selector_key = "unified_search_selected_columns"
+    existing = [
+        column
+        for column in st.session_state.get(selector_key, [])
+        if column in available
+    ]
+    if selector_key not in st.session_state:
+        existing = list(available[: min(18, len(available))])
+    st.session_state[selector_key] = existing
+    actions = st.columns(3)
+    if actions[0].button("Select all columns", key="search_select_all"):
+        st.session_state[selector_key] = available
+    if actions[1].button("First 18 columns", key="search_select_first"):
+        st.session_state[selector_key] = available[: min(18, len(available))]
+    if actions[2].button("Clear columns", key="search_select_none"):
+        st.session_state[selector_key] = []
+    selected_columns = st.multiselect(
+        "Columns to display and download",
+        available,
+        key=selector_key,
+        help=(
+            "All columns returned by every matching source relation are "
+            "available. Choose a focused subset or select all for audit."
+        ),
+    )
+    if not selected_columns:
+        st.warning("Select at least one matching-row column.")
+        return
+    displayed_matches = matches.loc[:, selected_columns]
+    _display_dataframe(frame=displayed_matches, height=650)
     render_table_downloads(
-        frame=matches,
+        frame=displayed_matches,
         file_stem="unified_search_matches",
-        tsv_label="Download complete matches as TSV",
-        excel_label="Download complete matches as Excel",
+        tsv_label="Download selected matching columns as TSV",
+        excel_label="Download selected matching columns as Excel",
         key="unified_search_matches_download",
     )
 
@@ -2661,9 +2703,10 @@ def _render_all_results(
     """Render enriched HOG results and raw resource relations."""
     st.subheader("All results and complete HOG information")
     st.caption(
-        "The enriched HOG views join membership, human and Arabidopsis "
-        "representatives, pre-structure and post-structure rankings, and every "
-        "field from the strongest HOG-linked ranking result. Raw relations remain "
+        "The enriched HOG views join membership; human, Arabidopsis, rice and "
+        "barley representatives; explicit 3D-position and 3D-conservation status; "
+        "druggability evidence; both ranking stages; and every field from the "
+        "strongest HOG-linked ranking result. Raw relations remain "
         "available for exact source-level audit. Queries are bounded in DuckDB."
     )
     if not relations:
@@ -2696,13 +2739,22 @@ def _render_all_results(
         if relation == ENRICHED_HOG_OVERVIEW:
             st.info(
                 "One row represents one root HOG. Both canonical rank columns and "
-                "the original source ranking fields are selectable. Canonical ranks "
-                "use the strongest compatible field available in this release."
+                "the original source ranking fields are selectable. The first fields "
+                "foreground strict pocket-position support, strict 3D conservation "
+                "and group-level druggability; canonical ranks use the strongest "
+                "compatible field available in this release. Same-position support "
+                "alone does not establish conserved pocket chemistry. Blank support "
+                "flags mean unavailable or not assessed; interpret group scores with "
+                "their assessment-status fields."
             )
         else:
             st.info(
                 "One row represents one HOG member. HOG-level annotations and "
-                "rankings repeat so each exported member row remains interpretable."
+                "rankings repeat so each exported member row remains interpretable. "
+                "When selected-pocket evidence is available, the member-level "
+                "druggability score and its assessment source are also selectable. "
+                "A member with no joined selected-pocket row is explicitly unassessed, "
+                "not a zero-scoring pocket."
             )
     else:
         available = relation_columns(connection=connection, relation=relation)
@@ -2742,7 +2794,8 @@ def _render_all_results(
         key=selector_key,
         help=(
             "Select all fields for a complete export. The first fields in enriched "
-            "views include both ranking stages and species representatives."
+            "views include both ranking stages, four lineage representatives and "
+            "the decision-facing structural and druggability evidence."
         ),
     )
     requested = st.number_input(

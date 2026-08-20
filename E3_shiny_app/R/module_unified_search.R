@@ -65,12 +65,36 @@ unified_search_ui <- function(id) {
     ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("summary_table"))),
     shiny::h3("Complete matching source rows"),
+    shiny::div(
+      class = "column-selector-panel",
+      shiny::h4("Columns to display and download"),
+      shiny::p(
+        class = "small text-muted",
+        paste(
+          "All fields returned by every matching relation remain selectable.",
+          "Choose a focused subset or select all for a complete audit."
+        )
+      ),
+      shiny::div(
+        class = "column-selector-actions",
+        shiny::actionButton(ns("select_first"), "First 18 columns"),
+        shiny::actionButton(ns("select_all"), "Select all columns"),
+        shiny::actionButton(ns("select_none"), "Clear")
+      ),
+      shiny::checkboxGroupInput(
+        ns("selected_columns"),
+        label = NULL,
+        choices = character(),
+        selected = character(),
+        inline = TRUE
+      )
+    ),
     tabular_download_buttons(
       ns,
       "download_matches_tsv",
       "download_matches_excel",
-      "Download complete matches as TSV",
-      "Download complete matches as Excel"
+      "Download selected matching columns as TSV",
+      "Download selected matching columns as Excel"
     ),
     shinycssloaders::withSpinner(DT::DTOutput(ns("matches_table")))
   )
@@ -113,6 +137,49 @@ unified_search_server <- function(id, resource_source, max_rows = 1000L) {
 
     summary <- shiny::reactive({
       summarise_unified_search_results(matches())
+    })
+
+    matching_columns <- shiny::reactive({ names(matches()) })
+    shiny::observeEvent(matches(), {
+      columns <- matching_columns()
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = columns,
+        selected = head(columns, 18L)
+      )
+    })
+    shiny::observeEvent(input$select_first, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = matching_columns(),
+        selected = head(matching_columns(), 18L)
+      )
+    })
+    shiny::observeEvent(input$select_all, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = matching_columns(),
+        selected = matching_columns()
+      )
+    })
+    shiny::observeEvent(input$select_none, {
+      shiny::updateCheckboxGroupInput(
+        session,
+        "selected_columns",
+        choices = matching_columns(),
+        selected = character()
+      )
+    })
+    displayed_matches <- shiny::reactive({
+      data <- matches()
+      selected <- intersect(input$selected_columns %||% character(), names(data))
+      if (length(selected) == 0L) {
+        return(tibble::tibble(message = "Select at least one matching-row column."))
+      }
+      data[, selected, drop = FALSE]
     })
 
     output$status <- shiny::renderUI({
@@ -162,7 +229,7 @@ unified_search_server <- function(id, resource_source, max_rows = 1000L) {
       readable_datatable(summary(), rownames = FALSE, filter = "top")
     })
     output$matches_table <- DT::renderDT({
-      readable_datatable(matches(), rownames = FALSE, filter = "top")
+      readable_datatable(displayed_matches(), rownames = FALSE, filter = "top")
     })
 
     human_hog_table_downloads(
@@ -174,7 +241,7 @@ unified_search_server <- function(id, resource_source, max_rows = 1000L) {
     human_hog_table_downloads(
       output,
       "matches",
-      matches,
+      displayed_matches,
       "unified_search_matches"
     )
 

@@ -69,6 +69,14 @@ THRESHOLD_HOG_TEXT_COLUMNS = (
     "arabidopsis_hog_accessions",
     "arabidopsis_hog_entries",
     "arabidopsis_hog_raw_identifiers",
+    "rice_hog_representatives",
+    "rice_hog_accessions",
+    "rice_hog_entries",
+    "rice_hog_raw_identifiers",
+    "barley_hog_representatives",
+    "barley_hog_accessions",
+    "barley_hog_entries",
+    "barley_hog_raw_identifiers",
     "hog_species_present",
     "hog_orthogroup_ids",
     "hog_gene_tree_parent_clades",
@@ -80,6 +88,8 @@ THRESHOLD_HOG_COUNT_COLUMNS = (
     "hog_species_count",
     "hog_human_member_count",
     "hog_arabidopsis_member_count",
+    "hog_rice_member_count",
+    "hog_barley_member_count",
 )
 THRESHOLD_HOG_ANNOTATION_COLUMNS = (
     *THRESHOLD_HOG_TEXT_COLUMNS,
@@ -1022,12 +1032,54 @@ def build_threshold_hog_annotation_query(
                    ORDER BY raw_identifier) FILTER (
                        WHERE species = 'Arabidopsis_thaliana'
                    ), '') AS arabidopsis_hog_raw_identifiers,
+               coalesce(string_agg(DISTINCT representative, ';'
+                   ORDER BY representative) FILTER (
+                       WHERE species = 'Oryza_sativa'
+                         AND representative IS NOT NULL
+                   ), '') AS rice_hog_representatives,
+               coalesce(string_agg(DISTINCT parsed_accession, ';'
+                   ORDER BY parsed_accession) FILTER (
+                       WHERE species = 'Oryza_sativa'
+                         AND nullif(trim(parsed_accession), '') IS NOT NULL
+                   ), '') AS rice_hog_accessions,
+               coalesce(string_agg(DISTINCT parsed_entry, ';'
+                   ORDER BY parsed_entry) FILTER (
+                       WHERE species = 'Oryza_sativa'
+                         AND nullif(trim(parsed_entry), '') IS NOT NULL
+                   ), '') AS rice_hog_entries,
+               coalesce(string_agg(DISTINCT raw_identifier, ';'
+                   ORDER BY raw_identifier) FILTER (
+                       WHERE species = 'Oryza_sativa'
+                   ), '') AS rice_hog_raw_identifiers,
+               coalesce(string_agg(DISTINCT representative, ';'
+                   ORDER BY representative) FILTER (
+                       WHERE species = 'Hordeum_vulgare'
+                         AND representative IS NOT NULL
+                   ), '') AS barley_hog_representatives,
+               coalesce(string_agg(DISTINCT parsed_accession, ';'
+                   ORDER BY parsed_accession) FILTER (
+                       WHERE species = 'Hordeum_vulgare'
+                         AND nullif(trim(parsed_accession), '') IS NOT NULL
+                   ), '') AS barley_hog_accessions,
+               coalesce(string_agg(DISTINCT parsed_entry, ';'
+                   ORDER BY parsed_entry) FILTER (
+                       WHERE species = 'Hordeum_vulgare'
+                         AND nullif(trim(parsed_entry), '') IS NOT NULL
+                   ), '') AS barley_hog_entries,
+               coalesce(string_agg(DISTINCT raw_identifier, ';'
+                   ORDER BY raw_identifier) FILTER (
+                       WHERE species = 'Hordeum_vulgare'
+                   ), '') AS barley_hog_raw_identifiers,
                count(*) AS hog_member_count,
                count(DISTINCT species) AS hog_species_count,
                count(*) FILTER (WHERE species = 'Homo_sapiens')
                    AS hog_human_member_count,
                count(*) FILTER (WHERE species = 'Arabidopsis_thaliana')
                    AS hog_arabidopsis_member_count,
+               count(*) FILTER (WHERE species = 'Oryza_sativa')
+                   AS hog_rice_member_count,
+               count(*) FILTER (WHERE species = 'Hordeum_vulgare')
+                   AS hog_barley_member_count,
                coalesce(string_agg(DISTINCT species, ';' ORDER BY species), '')
                    AS hog_species_present,
                coalesce(string_agg(DISTINCT orthogroup_id, ';'
@@ -1071,7 +1123,7 @@ def enrich_threshold_results(
     connection: duckdb.DuckDBPyConnection,
     frame: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Add human, Arabidopsis and HOG composition to threshold rows.
+    """Add four-species representatives and HOG composition to threshold rows.
 
     Args:
         connection: Open read-only resource connection.

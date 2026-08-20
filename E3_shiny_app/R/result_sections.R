@@ -474,8 +474,8 @@ build_filtered_expression_query <- function(
       )
     )
   }
-  search <- trimws(search)
-  if (nzchar(search)) {
+  search_terms <- parse_expression_search_terms(search)
+  if (length(search_terms) > 0L) {
     searchable <- intersect(
       c(
         "cluster_id", "primary_group_id", "member_accession",
@@ -484,21 +484,24 @@ build_filtered_expression_query <- function(
       available_columns
     )
     if (length(searchable) > 0L) {
-      pattern <- paste0("%", escape_sql_literal(search), "%")
-      predicates <- c(
-        predicates,
+      term_predicates <- vapply(search_terms, function(term) {
+        safe_term <- escape_sql_literal(tolower(term))
         paste0(
           "(",
           paste(
             paste0(
-              "CAST(",
+              "instr(lower(coalesce(CAST(",
               vapply(searchable, quote_duckdb_identifier, character(1L)),
-              " AS VARCHAR) ILIKE '", pattern, "'"
+              " AS VARCHAR), '')), '", safe_term, "') > 0"
             ),
             collapse = " OR "
           ),
           ")"
         )
+      }, character(1L))
+      predicates <- c(
+        predicates,
+        paste0("(", paste(term_predicates, collapse = " OR "), ")")
       )
     }
   }
@@ -516,6 +519,33 @@ build_filtered_expression_query <- function(
     query,
     fixed = TRUE
   )
+}
+
+#' Parse one or more expression identifiers or names.
+#'
+#' @param value Text separated by semicolons, commas, tabs or new lines.
+#' @param maximum_terms Defensive maximum number of unique values.
+#' @return Ordered unique expression search terms.
+parse_expression_search_terms <- function(value, maximum_terms = 50L) {
+  if (
+    length(maximum_terms) != 1L ||
+      is.na(maximum_terms) ||
+      maximum_terms < 1L
+  ) {
+    stop("Expression search maximum_terms must be a positive integer.", call. = FALSE)
+  }
+  if (length(value) == 0L || is.na(value[[1L]])) return(character())
+  terms <- unlist(strsplit(as.character(value[[1L]]), "[\r\n\t,;]+"))
+  terms <- trimws(terms)
+  terms <- terms[nzchar(terms)]
+  terms <- terms[!duplicated(tolower(terms))]
+  if (length(terms) > as.integer(maximum_terms)) {
+    stop(
+      paste0("Expression search accepts at most ", maximum_terms, " terms."),
+      call. = FALSE
+    )
+  }
+  terms
 }
 
 #' Collect a filtered candidate-expression context result.

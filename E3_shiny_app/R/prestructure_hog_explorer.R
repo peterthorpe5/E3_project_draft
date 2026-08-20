@@ -93,7 +93,9 @@ prestructure_hog_representative_ctes <- function(
     return(paste0(
       "hog_representatives AS (SELECT CAST(NULL AS VARCHAR) AS hog_id, ",
       "CAST(NULL AS VARCHAR) AS human_hog_representatives, ",
-      "CAST(NULL AS VARCHAR) AS arabidopsis_hog_representatives WHERE FALSE)"
+      "CAST(NULL AS VARCHAR) AS arabidopsis_hog_representatives, ",
+      "CAST(NULL AS VARCHAR) AS rice_hog_representatives, ",
+      "CAST(NULL AS VARCHAR) AS barley_hog_representatives WHERE FALSE)"
     ))
   }
   membership <- human_hog_membership_cte(
@@ -110,7 +112,13 @@ prestructure_hog_representative_ctes <- function(
     "representative IS NOT NULL), '') AS human_hog_representatives, ",
     "coalesce(string_agg(DISTINCT representative, ';' ORDER BY representative) ",
     "FILTER (WHERE species = 'Arabidopsis_thaliana' AND representative IS NOT ",
-    "NULL), '') AS arabidopsis_hog_representatives ",
+    "NULL), '') AS arabidopsis_hog_representatives, ",
+    "coalesce(string_agg(DISTINCT representative, ';' ORDER BY representative) ",
+    "FILTER (WHERE species = 'Oryza_sativa' AND representative IS NOT NULL), ",
+    "'') AS rice_hog_representatives, ",
+    "coalesce(string_agg(DISTINCT representative, ';' ORDER BY representative) ",
+    "FILTER (WHERE species = 'Hordeum_vulgare' AND representative IS NOT NULL), ",
+    "'') AS barley_hog_representatives ",
     "FROM representative_members GROUP BY hog_id)"
   )
 }
@@ -218,7 +226,10 @@ build_prestructure_ranked_hog_query <- function(
     "VARCHAR) LIMIT ", limit, "), ", representatives, " SELECT t.*, ",
     "coalesce(h.human_hog_representatives, '') AS human_hog_representatives, ",
     "coalesce(h.arabidopsis_hog_representatives, '') AS ",
-    "arabidopsis_hog_representatives FROM top_hogs t LEFT JOIN ",
+    "arabidopsis_hog_representatives, ",
+    "coalesce(h.rice_hog_representatives, '') AS rice_hog_representatives, ",
+    "coalesce(h.barley_hog_representatives, '') AS barley_hog_representatives ",
+    "FROM top_hogs t LEFT JOIN ",
     "hog_representatives h ON h.hog_id = CAST(t.primary_group_id AS VARCHAR) ",
     "ORDER BY TRY_CAST(t.", safe_rank, " AS BIGINT), ",
     "CAST(t.primary_group_id AS VARCHAR)"
@@ -240,7 +251,8 @@ filter_prestructure_ranked_hogs <- function(data, query = "") {
   preferred <- c(
     "primary_group_id", "candidate_accessions", "matched_seed_ids_calculated",
     "matched_e3_seeds", "seed_protein_names", "human_hog_representatives",
-    "arabidopsis_hog_representatives"
+    "arabidopsis_hog_representatives", "rice_hog_representatives",
+    "barley_hog_representatives"
   )
   columns <- intersect(preferred, names(data))
   if (length(columns) == 0L) return(data[0, , drop = FALSE])

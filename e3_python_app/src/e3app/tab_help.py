@@ -81,7 +81,7 @@ TOP_LEVEL_TAB_HELP = {
         yields=(
             "An independent root-HOG review queue with authoritative pre-structure rank, pass "
             "status, candidate and seed context, species coverage, domain and expression evidence, "
-            "human and Arabidopsis representatives and table downloads."
+            "human, Arabidopsis, rice and barley representatives and table downloads."
         ),
     ),
     "Visual explorer": TabHelpEntry(
@@ -263,8 +263,8 @@ TOP_LEVEL_TAB_HELP = {
         ),
         yields=(
             "Joined HOG overview and member-detail views containing rankings, human and "
-            "Arabidopsis representatives, membership and species context, plus every raw DuckDB "
-            "relation under bounded preview and download controls."
+            "Arabidopsis, rice and barley representatives, membership and species context, plus "
+            "every raw DuckDB relation under bounded preview and download controls."
         ),
     ),
     "Provenance and QC": TabHelpEntry(

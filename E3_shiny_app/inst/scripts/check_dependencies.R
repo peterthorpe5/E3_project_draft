@@ -12,6 +12,7 @@ required_packages <- c(
   "duckplyr",
   "ggplot2",
   "htmltools",
+  "jsonlite",
   "openxlsx",
   "plotly",
   "rlang",

@@ -795,7 +795,11 @@ build_candidate_expression_heatmap_plot <- function(
     )
   ) +
     ggplot2::geom_tile() +
-    ggplot2::scale_fill_viridis_c(na.value = "transparent") +
+    ggplot2::scale_fill_gradient(
+      low = "#ffffff",
+      high = "#cb181d",
+      na.value = "transparent"
+    ) +
     ggplot2::labs(
       x = "Species and biological context",
       y = "Candidate group",
