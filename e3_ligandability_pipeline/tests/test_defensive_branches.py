@@ -478,7 +478,10 @@ class IoToolProvenanceDefensiveTests(unittest.TestCase):
                     root / "err",
                     0.01,
                 )
-            version = capture_tool_version(Path("/bin/false"))
+            false_executable = shutil.which("false")
+            if false_executable is None:
+                self.fail("Expected the POSIX false command to be available.")
+            version = capture_tool_version(Path(false_executable))
             self.assertNotEqual(version["return_code"], 0)
 
     def test_capture_git_success_and_failure(self) -> None:

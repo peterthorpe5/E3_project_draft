@@ -172,8 +172,14 @@ class ConfigurationAndLoggingTests(unittest.TestCase):
             self.assertEqual(config["input"]["expected_species_count"], 72)
             self.assertEqual(config["execution"]["threads"], 8)
             self.assertEqual(DEFAULT_CONFIG["input"]["expected_species_count"], 60)
-            self.assertEqual(resolve_project_path(project_root=root, value="a"), root / "a")
-            self.assertEqual(resolve_project_path(project_root=root, value=root / "b"), root / "b")
+            self.assertEqual(
+                resolve_project_path(project_root=root, value="a"),
+                (root / "a").resolve(),
+            )
+            self.assertEqual(
+                resolve_project_path(project_root=root, value=root / "b"),
+                (root / "b").resolve(),
+            )
 
     def test_invalid_configs_are_rejected(self) -> None:
         """Malformed YAML and invalid scientific values fail explicitly."""

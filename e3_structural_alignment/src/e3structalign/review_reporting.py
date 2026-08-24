@@ -369,7 +369,8 @@ function downloadBlob(blob,name){const link=document.createElement("a");
 link.href=URL.createObjectURL(blob);link.download=name;link.click();
 setTimeout(()=>URL.revokeObjectURL(link.href),1000);}
 function safePdfName(value){return String(value||"e3_group").replace(/[^A-Za-z0-9_.-]+/g,"_");}
-function jpegBytes(url){const binary=atob(url.split(",")[1]);const bytes=new Uint8Array(binary.length);
+function jpegBytes(url){const binary=atob(url.split(",")[1]);
+const bytes=new Uint8Array(binary.length);
 for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);return bytes;}
 function downloadCurrentViewPdf(){draw();const image=jpegBytes(canvas.toDataURL("image/jpeg",.95));
 const pageW=842,pageH=595,scale=Math.min(792/canvas.width,545/canvas.height);
@@ -395,7 +396,8 @@ for(let first=0;first<records.length;first+=rowsPerPage){const lines=[
 for(const record of records.slice(first,first+rowsPerPage)){const label=
 `${record.is_reference?"*":" "}${record.accession} ${record.species}`.slice(0,28).padEnd(28," ");
 lines.push(label+" "+record.sequence.slice(start,start+blockSize));}pages.push(lines);}}
-const objects=["<< /Type /Catalog /Pages 2 0 R >>","","<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"];
+const objects=["<< /Type /Catalog /Pages 2 0 R >>","",
+"<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>"];
 const kids=[];pages.forEach((lines,index)=>{const pageObject=4+index*2,contentObject=pageObject+1;
 kids.push(`${pageObject} 0 R`);const commands="BT /F1 6 Tf 24 570 Td 8 TL "+
 lines.map(line=>`(${pdfText(line)}) Tj T*`).join(" ")+" ET";
@@ -545,7 +547,8 @@ ranked index.</p></section>
 <label>Pocket display<select id="pocketSelect"></select></label>
 <div class="button-row"><button id="reset" type="button">Reset rotation</button>
 <button id="fit" type="button">Fit and centre</button></div>
-<div class="button-row"><button id="downloadViewPdf" type="button">Download current view PDF</button>
+<div class="button-row"><button id="downloadViewPdf" type="button">
+Download current view PDF</button>
 <button id="downloadAlignmentPdf" type="button">Download alignment PDF</button></div>
 <p id="viewerStatus" class="note" aria-live="polite"></p>
 <p id="proteinMeta"></p><p id="pocketMeta" class="note"></p>

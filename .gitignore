@@ -5,3 +5,12 @@ __pycache__/
 .pytest_cache/
 .snakemake/
 test_runs/
+**/test_outputs/
+**/config/generated_runs/
+**/build/
+**/dist/
+**/*.egg-info/
+**/*.whl
+*.log
+.DS_Store
+._*

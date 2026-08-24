@@ -47,10 +47,11 @@ isolated output directories and checksum-bound manifests.
 | File | Role |
 |---|---|
 | `LICENSE` | Repository licence. |
-| `E3_MASTER_WORKFLOW_AND_PYTHON_APP_HANDOVER_v0_1_0.md` | Historical handover describing the earlier master-workflow and Python-app state. Use current package READMEs and release notes for present behaviour. |
+| `README.md` | Public project overview, installation and principal execution routes. |
 | `REPOSITORY_FILE_GUIDE.md` | This cross-package map. |
-| `START_HERE_v0_9_1.txt` | Short release, installation and recovery entry point. |
-| `RELEASE_VALIDATION_v0_9_1.md` | Checks completed for the current release and the remaining cluster acceptance boundary. |
+| `TEST_ASSURANCE_AUDIT_v0_13_0.md` | Consolidated automated-test assurance record. |
+| `docs/SCIENTIFIC_TEST_ASSURANCE_MATRIX.tsv` | Scientific contracts mapped to executable tests. |
+| `docs_site/`, `mkdocs.yml` | Public operational documentation and navigation. |
 
 ## `e3_end_to_end_workflow`
 
@@ -63,7 +64,7 @@ collects resource measurements and creates the integrated release.
 | File or group | Role |
 |---|---|
 | `README.md` | Primary installation, “how to start”, configuration, restart and cluster-operation guide. |
-| `RELEASE_NOTES_v0_2_0.md` through `RELEASE_NOTES_v0_9_2.md` | Versioned history. `v0.9.2` is the current release note. |
+| `CHANGELOG.md` | Consolidated version history, newest first. |
 | `pyproject.toml` | Python package metadata, version, console entry point and style/coverage settings. |
 | `environment.yml` | Reproducible Conda environment, including Snakemake 9 and OrthoFinder 2.5.5. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime and development dependencies. |
@@ -73,7 +74,6 @@ collects resource measurements and creates the integrated release.
 | `run_e3_end_to_end.sh` | Foreground Snakemake runner; resolves named stage controls and never embeds Python source. |
 | `run_tests.sh` | Full Python, shell, style, coverage and Snakemake validation. |
 | `.gitignore` | Package-local generated-file exclusions. |
-| `TEST_RESULTS_*` | Historical test-output captures; useful as release evidence but not executable inputs. |
 
 ### Configuration and controlled data
 
@@ -141,7 +141,7 @@ alignment engine or geometric method can evolve without embedding Python in the 
 | File or module | Role |
 |---|---|
 | `README.md` | Method, inputs, output schema, standalone command and integration instructions. |
-| `RELEASE_NOTES_v0_1_0.md` through `RELEASE_NOTES_v0_1_2.md` | Structural method, graphical/interactive reporting and source-layout test fixes. |
+| `CHANGELOG.md` | Consolidated structural-alignment version history. |
 | `pyproject.toml` | Package/version/CLI and quality settings. |
 | `environment.yml` | Independent environment with pinned US-align, TM-align, Biopython and DuckDB. |
 | `requirements.txt`, `requirements-dev.txt` | Pip runtime/development dependencies. |
@@ -174,17 +174,14 @@ clusters, not OrthoFinder orthogroups.
 | `run_workflow.sh` | General named workflow wrapper. |
 | `run_e3_discovery_engine_full_onekp_cluster.sh` | Main full-panel cluster entry point. |
 | `run_tests.sh` | Complete package test/quality runner. |
-| `PACKAGE_MANIFEST.tsv` | Package file/checksum register. |
 | `config/config.example.production.yaml` | Production configuration example. |
 | `config/config.cluster.full_onekp.example.yaml` | Full 1KP cluster example. |
 | `config/config.example.legacy_reproduction.yaml` | Explicit inherited-method reproduction configuration. |
-| `config/config.five_proteome_*.local.yaml` | Five-proteome principal, no-mask and TANTAN comparisons. |
-| `config/samples*.tsv`, `five_proteome_samples.local.tsv` | Sample/proteome manifests. |
-| `config/generated_runs/.../benchmark_{10,20,40,60}_proteomes.*` | Frozen scaling-ladder configurations and sample selections. |
+| `config/config.yaml`, `config/samples.tsv` | Synthetic development example. |
+| `config/samples.production.example.tsv` | Production sample-manifest example. |
 | `workflow/envs/production.yml` | Production rule environment. |
 | `workflow/envs/legacy_diamond_2_1_23.yml` | Environment retained only for the declared legacy comparison. |
-| `dist/*.whl` | Historical built wheel; source plus the current environment remains the development authority. |
-| `.coverage`, generated results and validation captures | Non-scientific development artefacts. |
+| `.coverage`, generated results and build products | Ignored local artefacts; they are not repository inputs. |
 
 ### Scripts and source modules
 
@@ -214,7 +211,7 @@ DuckDB-view resources.
 
 | File or module | Role |
 |---|---|
-| `README.md`, `RELEASE_NOTES_v0_4_0.md` | Current user/release documentation. |
+| `README.md`, `CHANGELOG.md` | Current user documentation and consolidated version history. |
 | `pyproject.toml`, `requirements.txt` | Package and dependency definition. |
 | `run_e3_seed_pipeline.sh` | Seed-source conversion workflow. |
 | `run_e3_candidate_evidence.sh` | Candidate-evidence builder. |
@@ -243,7 +240,7 @@ relationships.
 
 | File or module | Role |
 |---|---|
-| `README.md`, `RELEASE_NOTES_v0_1_3.md`, `RELEASE_NOTES_v0_1_4.md` | User guide plus maintenance and current group-sequence release records. |
+| `README.md`, `CHANGELOG.md` | User guide and consolidated version history. |
 | `config/results_feb26.yaml` | Reviewed authoritative Results_Feb26 settings. |
 | `config/species_manifest_results_feb26.tsv` | 60-proteome species mapping. |
 | `e3orthology/data/*` | Packaged copies of the default Results_Feb26 configuration/manifest. |
@@ -267,8 +264,7 @@ quality. Its outputs are predictions, not experimental binding evidence.
 
 | File or module | Role |
 |---|---|
-| `README.md`, `RELEASE_NOTES_v0_1_*.md` | User and release documentation. |
-| `RELEASE_VALIDATION_SUMMARY_*.txt` | Frozen release validation summaries. |
+| `README.md`, `CHANGELOG.md` | User documentation and consolidated version history. |
 | `pyproject.toml`, `MANIFEST.in`, `requirements*.txt` | Packaging/dependencies. |
 | `environment.cluster.yml` | Cluster tool environment. |
 | `config/config.cluster.example.yaml` | Cluster configuration template. |
@@ -287,7 +283,6 @@ quality. Its outputs are predictions, not experimental binding evidence.
 | `docs/` | Output schema, methods/limits, cluster runbook, legacy decision and traceability. |
 | `legacy_reference/` | Frozen inherited scripts/checksums/environment for audit only. |
 | `tests/` | Unit, CLI regression, structure, tool-output and release-contract tests. |
-| `BUILD_*`, `COVERAGE_*`, `WHEEL_*`, `TWINE_*`, `DIST_CHECKSUMS_*` | Historical packaging/validation evidence, not runtime inputs. |
 
 ## `expression_downloader`
 
@@ -296,7 +291,7 @@ creates queryable DuckDB/duckplyr views.
 
 | File or group | Role |
 |---|---|
-| `README.md`, `PYTHON_FIRST_WORKFLOW.md`, `CONDA_SETUP.md` | Main guides. |
+| `README.md`, `CHANGELOG.md`, `PYTHON_FIRST_WORKFLOW.md`, `CONDA_SETUP.md` | Main guides and consolidated version history. |
 | `DESCRIPTION`, `NAMESPACE`, `LICENSE` | R package metadata/exports/licence. |
 | `envs/e3_atlas_duckplyr*.yml` | Full and minimal environments. |
 | `data/species.txt`, `species_overrides.tsv` | Species registry inputs/overrides. |
@@ -324,7 +319,7 @@ authorities.
 
 | File or module | Role |
 |---|---|
-| `README.md`, `DATA_RESOURCE_GUIDE.md` | App and data-resource guides. |
+| `README.md`, `CHANGELOG.md`, `DATA_RESOURCE_GUIDE.md` | App, version-history and data-resource guides. |
 | `DESCRIPTION`, `NAMESPACE`, `LICENSE` | R package metadata/exports/licence. |
 | `app.R` | Shiny application composition. |
 | `run_app.sh` | Shell launcher. |
@@ -347,7 +342,7 @@ This is the Python/Streamlit read-only viewer intended to parallel the Shiny app
 
 | File or module | Role |
 |---|---|
-| `README.md` | Installation/configuration/use. |
+| `README.md`, `CHANGELOG.md` | Installation/configuration/use and consolidated version history. |
 | `config/app.env.example` | Environment-variable template. |
 | `environment.yml`, `pyproject.toml`, `requirements*.txt` | Environment/package metadata. |
 | `run_e3_python_app.sh` | App launcher. |
@@ -360,17 +355,10 @@ This is the Python/Streamlit read-only viewer intended to parallel the Shiny app
 | `docs/TEST_TRACEABILITY.tsv` | App requirement/test mapping. |
 | `tests/` | Configuration, data, CLI and UI tests. |
 
-## Historical/development artefacts
+## Generated and historical artefacts
 
-The repository currently tracks several file classes that are not analysis authorities:
-
-- `.DS_Store`, `.coverage` and `__pycache__/` files;
-- a malformed-looking `e3_discovery_engine/.gitignore:` filename;
-- old `TEST_RESULTS`, `COVERAGE_RESULTS`, build, wheel, Twine and checksum captures;
-- `e3_discovery_engine/test_outputs/`;
-- `e3_discovery_engine/dist/*.whl`; and
-- duplicated `e3_end_to_end_workflow/data_bk/`.
-
-They are documented here so users do not mistake them for inputs. Removing or reorganising them
-should be a separate, reviewed repository-clean-up change; they are not silently deleted as part of
-scientific workflow releases.
+Generated test outputs, build products, caches, coverage databases, package wheels and local
+configuration files are excluded by `.gitignore`. Consolidated package changelogs retain the
+version history without requiring a separate release-note file for every historical version.
+Scientific fixtures, provenance tables, controlled input manifests and executable tests remain
+tracked because they support reproducibility and the repository's assurance claims.
