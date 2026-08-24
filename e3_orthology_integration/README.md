@@ -203,4 +203,4 @@ Google-style docstring checks, Python compilation and shell syntax validation. T
 
 This release adds a checksum-bound, candidate-relevant OrthoFinder group-member sequence table and
 retains explicit group identifiers with every sequence. The v0.1.3 progress, Slurm CPU and PyArrow
-thread controls remain in place. See `RELEASE_NOTES_v0_1_4.md` for the complete change record.
+thread controls remain in place. See `CHANGELOG.md` for the complete change record.

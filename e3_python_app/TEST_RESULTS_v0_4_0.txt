@@ -1,9 +1,0 @@
-ARIA plant E3 Python reporter v0.4.0 validation
-================================================
-
-- 40 tests passed.
-- Overall branch-aware coverage: 98%.
-- PEP8 and Google-style docstring checks passed.
-- Headless Streamlit rendering passed with the Glossary, expression-context,
-  threshold and both portable structural-review tabs present.
-

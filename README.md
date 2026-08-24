@@ -21,12 +21,12 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.14.0 retains the corrected Expression Atlas five-number-summary contract and adds a
-group-level Stage 08 selection correction plus optional open-source structure-guided chemistry.
+Version 0.15.0 retains the verified Expression Atlas five-number-summary contract, the current
+group-level Stage 08 selection rules and the optional open-source structure-guided chemistry
+integration.
 The chemistry stage is disabled by default, requires no commercial or separately negotiated
 software licence, and records FMOPhore, FrAncestor and AlphaFold3 as not run. Earlier completed
-results remain immutable; corrected evidence must be integrated through a new versioned workflow
-run.
+results remain immutable; updated evidence is integrated through a new versioned workflow run.
 
 See `TEST_ASSURANCE_AUDIT_v0_13_0.md` for the package-by-package evidence, defects found,
 coverage results, limitations and mandatory production release checks.
