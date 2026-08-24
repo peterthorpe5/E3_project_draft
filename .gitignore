@@ -5,3 +5,10 @@ __pycache__/
 .pytest_cache/
 .snakemake/
 test_runs/
+# Generated builds, benchmarks and test outputs
+**/test_outputs/
+**/config/generated_runs/
+**/dist/
+**/build/
+**/*.egg-info/
+**/*.whl
