@@ -99,7 +99,19 @@ GROUP_FIELDS = (
 
 
 def _resolve_first(*, root: Path, candidates: Sequence[str], label: str) -> Path:
-    """Resolve the first existing production-contract path."""
+    """Resolve the first existing production-contract path.
+
+    Args:
+        root: Root directory containing the candidate paths.
+        candidates: Relative paths in descending order of preference.
+        label: Human-readable description used in validation errors.
+
+    Returns:
+        The first candidate that exists as a file, resolved to an absolute path.
+
+    Raises:
+        StageError: If none of the candidate files exists below ``root``.
+    """
     present = [root / candidate for candidate in candidates if (root / candidate).is_file()]
     if not present:
         raise StageError(
@@ -110,7 +122,18 @@ def _resolve_first(*, root: Path, candidates: Sequence[str], label: str) -> Path
 
 
 def _require_columns(*, path: Path, required: Sequence[str]) -> set[str]:
-    """Return a Parquet schema after requiring the named columns."""
+    """Return a Parquet schema after requiring the named columns.
+
+    Args:
+        path: Parquet file to inspect.
+        required: Column names that must be present.
+
+    Returns:
+        All column names in the Parquet schema.
+
+    Raises:
+        StageError: If the Parquet file cannot be inspected or lacks a required column.
+    """
     connection = duckdb.connect(":memory:")
     try:
         rows = connection.execute(
@@ -128,7 +151,15 @@ def _require_columns(*, path: Path, required: Sequence[str]) -> set[str]:
 
 
 def _validate_sequence_rows(rows: Sequence[Mapping[str, Any]]) -> None:
-    """Require complete, checksum-consistent exact protein sequences."""
+    """Require complete, checksum-consistent exact protein sequences.
+
+    Args:
+        rows: Human sequence records to validate.
+
+    Raises:
+        StageError: If no rows are supplied or a sequence record is incomplete,
+            internally inconsistent or checksum-invalid.
+    """
     import hashlib
 
     if not rows:
@@ -155,7 +186,22 @@ def prepare_human_plant_extension(
     review_limit: int = 200,
     human_species: str = HUMAN_SPECIES,
 ) -> dict[str, Any]:
-    """Materialise exact human tasks and preserved plant-reference groups."""
+    """Materialise exact human tasks and preserved plant-reference groups.
+
+    Args:
+        parent_config_path: Immutable completed plant-workflow configuration.
+        output_root: Separate human-and-plant extension output root.
+        review_limit: Maximum original final evolutionary rank to include.
+        human_species: Species label used to select exact human group members.
+
+    Returns:
+        Preparation metadata, including task and qualifying-group counts.
+
+    Raises:
+        StageError: If the review limit or a required production authority is
+            invalid, or if exact human sequences and plant references cannot be
+            prepared consistently.
+    """
     if not 1 <= review_limit <= 500:
         raise StageError("review_limit must be between 1 and 500")
     config = load_config(parent_config_path)
@@ -402,7 +448,19 @@ def prepare_human_plant_extension(
 
 
 def _task_record(*, path: Path, task_index: int) -> dict[str, str]:
-    """Return one unique task-manifest row."""
+    """Return one unique task-manifest row.
+
+    Args:
+        path: Tab-separated task manifest.
+        task_index: Zero-based task index to retrieve.
+
+    Returns:
+        The unique matching task record.
+
+    Raises:
+        StageError: If the index column is missing or the requested index is
+            absent or duplicated.
+    """
     fields, rows = read_tsv(path)
     if "task_index" not in fields:
         raise StageError(f"Task manifest lacks task_index: {path}")
@@ -421,7 +479,19 @@ def _write_task_marker(
     entity_id: str,
     output_directory: Path,
 ) -> Path:
-    """Publish one stable extension task marker."""
+    """Publish one stable extension task marker.
+
+    Args:
+        root: Stable task output directory.
+        task_kind: Component task category.
+        task_index: Zero-based task index.
+        configuration_digest: Digest of all task input authorities.
+        entity_id: Stable biological entity identifier.
+        output_directory: Published component output directory.
+
+    Returns:
+        Path to the tab-separated task-completion marker.
+    """
     marker = root / "task_complete.tsv"
     write_tsv(
         marker,
@@ -450,7 +520,22 @@ def run_human_ligandability_task(
     component_config: Path,
     conda_environment: str,
 ) -> Path:
-    """Run one exact human accession through the existing ligandability package."""
+    """Run one exact human accession through the ligandability package.
+
+    Args:
+        parent_config_path: Immutable completed plant-workflow configuration.
+        task_manifest: Prepared human accession task manifest.
+        output_root: Separate human-and-plant extension output root.
+        task_index: Zero-based human accession task index.
+        component_config: Ligandability component configuration.
+        conda_environment: Conda environment containing ``e3-ligandability``.
+
+    Returns:
+        Path to the stable task-completion marker.
+
+    Raises:
+        StageError: If the task is invalid or the component produces no run manifest.
+    """
     config = load_config(parent_config_path)
     row = _task_record(path=task_manifest, task_index=task_index)
     task_root = (
@@ -531,7 +616,17 @@ def run_human_ligandability_task(
 
 
 def _write_parquet_as_tsv(path: Path) -> Path:
-    """Publish a tab-separated companion for one Parquet table."""
+    """Publish a tab-separated companion for one Parquet table.
+
+    Args:
+        path: Source Parquet table.
+
+    Returns:
+        Path to the tab-separated companion file.
+
+    Raises:
+        StageError: If DuckDB cannot convert the source table.
+    """
     destination = path.with_suffix(".tsv")
     connection = duckdb.connect(":memory:")
     try:
@@ -548,7 +643,16 @@ def _write_parquet_as_tsv(path: Path) -> Path:
 
 
 def _union_distinct_assets(*, sources: Sequence[Path], destination: Path) -> None:
-    """Union plant and human asset rows while rejecting accession conflicts."""
+    """Union plant and human asset rows while rejecting accession conflicts.
+
+    Args:
+        sources: Plant and human Parquet asset manifests.
+        destination: Destination Parquet asset manifest.
+
+    Raises:
+        StageError: If one accession maps to conflicting assets or the tables
+            cannot be combined.
+    """
     source_sql = "[" + ", ".join(quote_literal(path) for path in sources) + "]"
     connection = duckdb.connect(":memory:")
     try:
@@ -581,7 +685,22 @@ def aggregate_human_ligandability(
     group_manifest: Path,
     output_root: Path,
 ) -> Path:
-    """Aggregate human pockets and publish combined plant-human alignment inputs."""
+    """Aggregate human pockets and publish combined alignment inputs.
+
+    Args:
+        parent_config_path: Immutable completed plant-workflow configuration.
+        task_manifest: Prepared human accession task manifest.
+        group_member_manifest: Exact human group-member manifest.
+        group_manifest: Prepared human-containing group manifest.
+        output_root: Separate human-and-plant extension output root.
+
+    Returns:
+        Path to the ligandability aggregate manifest.
+
+    Raises:
+        StageError: If component tasks are incomplete or their plant and human
+            ligandability authorities cannot be validated and combined.
+    """
     config = load_config(parent_config_path)
     root = Path(output_root).expanduser().resolve()
     _fields, tasks = read_tsv(task_manifest)
@@ -966,7 +1085,15 @@ def _prepare_human_plant_structural_inputs(
 
 
 def _task_digest(*paths: Path, parent_digest: str) -> str:
-    """Return a deterministic checksum string for extension task authorities."""
+    """Return a deterministic checksum for extension task authorities.
+
+    Args:
+        *paths: Input authorities included in the task identity.
+        parent_digest: Digest of the immutable parent workflow configuration.
+
+    Returns:
+        SHA-256 digest of the parent configuration and resolved input files.
+    """
     import hashlib
 
     canonical = "\n".join(
@@ -984,7 +1111,21 @@ def _reusable_extension_task(
     entity_id: str,
     configuration_digest: str,
 ) -> bool:
-    """Return whether one published extension task exactly matches its inputs."""
+    """Return whether a published extension task exactly matches its inputs.
+
+    Args:
+        root: Stable task output directory.
+        task_kind: Expected component task category.
+        task_index: Expected zero-based task index.
+        entity_id: Expected biological entity identifier.
+        configuration_digest: Expected digest of all task input authorities.
+
+    Returns:
+        ``True`` when the marker and component manifest exactly match the task.
+
+    Raises:
+        StageError: If an existing task marker cannot be read or is malformed.
+    """
     marker_path = root / "task_complete.tsv"
     if not marker_path.is_file():
         return False
@@ -1156,7 +1297,12 @@ def _write_structural_browser(
     destination: Path,
     links: Sequence[tuple[str, str]],
 ) -> None:
-    """Write a minimal, portable index for group-level 3D viewers."""
+    """Write a minimal, portable index for group-level 3D viewers.
+
+    Args:
+        destination: HTML file to publish.
+        links: Pairs of biological entity identifiers and relative viewer paths.
+    """
     items = "".join(
         f'<li><a href="{html.escape(relative)}">{html.escape(entity)}</a></li>'
         for entity, relative in links
@@ -1285,6 +1431,60 @@ def aggregate_human_plant_structural(
     return manifest
 
 
+def _remove_empty_orchestrator_output_tree(*, path: Path) -> None:
+    """Remove an empty output hierarchy created by a workflow orchestrator.
+
+    Snakemake creates parent directories for declared file outputs before a
+    rule runs. The portable-review component publishes through an atomic
+    staging directory and therefore requires its final destination not to
+    exist on a fresh run. This helper removes only a hierarchy containing
+    real, empty directories. Any file, symlink or other filesystem entry keeps
+    the destination intact so the component's resume validation remains
+    fail-closed.
+
+    Args:
+        path: Prospective portable-review destination.
+
+    Raises:
+        StageError: If the destination is a symlink, cannot be inspected or
+            changes while its empty hierarchy is being removed.
+    """
+    destination = Path(path)
+    if destination.is_symlink():
+        raise StageError(
+            f"Refusing to remove orchestrator output symlink: {destination}"
+        )
+    if not destination.exists() or not destination.is_dir():
+        return
+
+    directories = [destination]
+    for directory in directories:
+        try:
+            children = tuple(directory.iterdir())
+        except OSError as exc:
+            raise StageError(
+                f"Could not inspect orchestrator output placeholder "
+                f"{destination}: {exc}"
+            ) from exc
+        for child in children:
+            if child.is_symlink() or not child.is_dir():
+                return
+            directories.append(child)
+
+    try:
+        for directory in reversed(directories):
+            directory.rmdir()
+    except OSError as exc:
+        raise StageError(
+            f"Could not remove empty orchestrator output placeholder "
+            f"{destination}: {exc}"
+        ) from exc
+    LOGGER.info(
+        "Removed empty orchestrator output placeholder: %s",
+        destination,
+    )
+
+
 def build_human_plant_review(
     *,
     parent_config_path: Path,
@@ -1312,6 +1512,7 @@ def build_human_plant_review(
     structural = root / "structural_alignment"
     structural_tables = structural / "tables"
     output_directory = root / "pocket_review"
+    _remove_empty_orchestrator_output_tree(path=output_directory)
     argv = [
         "conda",
         "run",
@@ -1399,6 +1600,7 @@ def build_plant_baseline_review(
     config = load_config(parent_config_path)
     root = Path(output_root).expanduser().resolve()
     output_directory = root / "plant_pocket_review"
+    _remove_empty_orchestrator_output_tree(path=output_directory)
     _run_component(
         argv=(
             "conda",
