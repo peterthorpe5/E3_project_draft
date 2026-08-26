@@ -4,7 +4,7 @@
 
 human_plant_extension:
   enabled: true
-  parent_workflow_config: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs/workflow_configs/grant_aligned_corrected_expression_structural_all1972_v0_15_0_20260811.yaml
+  parent_workflow_config: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/E3_project_draft/e3_end_to_end_workflow/config/grant_aligned_corrected_expression_structural_top200_v0_14_0_20260805.cluster.yaml
   output_root: /gpfs/uod-scale-01/cluster/gjb_lab/pthorpe001/2026_E3_protac/analysis/e3_end_to_end_runs/grant_human_plant_structural_top200_v0_16_0_20260826
   review_limit: 200
   human_species: Homo_sapiens
@@ -16,7 +16,7 @@ human_plant_extension:
     preparation_memory_mb: 8000
     preparation_runtime_minutes: 30
     ligandability_threads: 4
-    ligandability_memory_mb: 16000
+    ligandability_memory_mb: 16000parent_workflow_config
     ligandability_runtime_minutes: 240
     ligandability_aggregate_threads: 4
     ligandability_aggregate_memory_mb: 16000
