@@ -10,13 +10,13 @@ CONFIG=""
 CONDA_ENVIRONMENT="e3_end_to_end_workflow"
 CONDA_EXECUTABLE="${CONDA_EXE:-}"
 CONTROLLER_ACCOUNT="barton"
-CONTROLLER_PARTITION="general"
+CONTROLLER_PARTITION="barton"
 CONTROLLER_MEMORY_MB="4000"
 CONTROLLER_RUNTIME="3-00:00:00"
 CONTROLLER_LOG_DIR="${PWD}"
 MAX_JOBS="50"
 CHILD_ACCOUNT="barton"
-CHILD_PARTITION="general"
+CHILD_PARTITION="barton"
 declare -a EXTRA_ARGS=()
 
 usage() {
@@ -30,7 +30,7 @@ Controller allocation:
   --conda-environment NAME      Workflow environment (default: e3_end_to_end_workflow).
   --conda-executable PATH       Conda executable (default: CONDA_EXE or PATH).
   --controller-account NAME     Controller account (default: barton).
-  --controller-partition NAME   Controller partition (default: general).
+  --controller-partition NAME   Controller partition (default: barton).
   --controller-memory-mb INT    Controller memory in MiB (default: 4000).
   --controller-runtime TIME     Controller walltime (default: 3-00:00:00).
   --controller-log-dir PATH     Durable log directory (default: current directory).
@@ -38,7 +38,7 @@ Controller allocation:
 Scientific jobs:
   --max-jobs INTEGER            Maximum concurrent jobs (default: 50).
   --account NAME                Child-job account (default: barton).
-  --partition NAME              Child-job partition (default: general).
+  --partition NAME              Child-job partition (default: barton).
   --help                        Show this help text.
   --                            Forward remaining arguments to the extension runner.
 
