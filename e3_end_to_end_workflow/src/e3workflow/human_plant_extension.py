@@ -643,21 +643,38 @@ def _write_parquet_as_tsv(path: Path) -> Path:
 
 
 def _union_distinct_assets(*, sources: Sequence[Path], destination: Path) -> None:
-    """Union plant and human asset rows while rejecting accession conflicts.
+    """Publish one model asset per accession from plant and human manifests.
+
+    Ligandability asset manifests can contain a structure model together with
+    auxiliary PAE and confidence JSON files. Structural alignment consumes
+    only PDB, CIF and mmCIF models, so auxiliary assets must not participate in
+    model-checksum conflict detection or model selection.
 
     Args:
         sources: Plant and human Parquet asset manifests.
-        destination: Destination Parquet asset manifest.
+        destination: Destination structural-model Parquet manifest.
 
     Raises:
-        StageError: If one accession maps to conflicting assets or the tables
-            cannot be combined.
+        StageError: If no structure models are available, one accession maps
+            to conflicting structure models or the tables cannot be combined.
     """
     source_sql = "[" + ", ".join(quote_literal(path) for path in sources) + "]"
+    model_predicate = (
+        "lower(CAST(path AS VARCHAR)) LIKE '%.pdb' OR "
+        "lower(CAST(path AS VARCHAR)) LIKE '%.cif' OR "
+        "lower(CAST(path AS VARCHAR)) LIKE '%.mmcif'"
+    )
     connection = duckdb.connect(":memory:")
     try:
+        available = connection.execute(
+            f"SELECT 1 FROM read_parquet({source_sql}, union_by_name=true) "
+            f"WHERE {model_predicate} LIMIT 1"
+        ).fetchone()
+        if available is None:
+            raise StageError("Plant and human manifests contain no structure models")
         conflict = connection.execute(
             f"SELECT accession FROM read_parquet({source_sql}, union_by_name=true) "
+            f"WHERE {model_predicate} "
             "GROUP BY accession HAVING count(DISTINCT sha256) > 1 LIMIT 1"
         ).fetchone()
         if conflict:
@@ -667,7 +684,8 @@ def _union_distinct_assets(*, sources: Sequence[Path], destination: Path) -> Non
             query=(
                 f"SELECT * EXCLUDE (asset_rank) FROM (SELECT *, row_number() OVER ("
                 "PARTITION BY accession ORDER BY sha256, path) AS asset_rank "
-                f"FROM read_parquet({source_sql}, union_by_name=true)) WHERE asset_rank = 1"
+                f"FROM read_parquet({source_sql}, union_by_name=true) "
+                f"WHERE {model_predicate}) WHERE asset_rank = 1"
             ),
             path=destination,
         )

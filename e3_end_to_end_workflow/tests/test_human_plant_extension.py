@@ -19,6 +19,7 @@ from e3workflow.control import initialise_stage_tokens
 from e3workflow.errors import StageError
 from e3workflow.human_plant_extension import (
     _remove_empty_orchestrator_output_tree,
+    _union_distinct_assets,
     build_human_plant_review,
     build_plant_baseline_review,
     prepare_human_plant_extension,
@@ -279,6 +280,103 @@ def test_remove_empty_orchestrator_output_tree_rejects_symlink(
 
     assert destination.is_symlink()
     assert target.is_dir()
+
+
+def test_union_distinct_assets_ignores_auxiliary_json_assets(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Verify that auxiliary AlphaFold assets cannot cause model conflicts.
+
+    Args:
+        tmp_path: Isolated temporary directory supplied by pytest.
+    """
+    schema = (
+        "accession VARCHAR, action VARCHAR, bytes BIGINT, path VARCHAR, "
+        "sha256 VARCHAR, url VARCHAR"
+    )
+    plant = tmp_path / "plant_assets.parquet"
+    human = tmp_path / "human_assets.parquet"
+    model_digest = "a" * 64
+    _write_parquet(
+        path=plant,
+        schema=schema,
+        rows=[
+            ("O60683", "downloaded", 100, "/plant/O60683.cif", model_digest, ""),
+            ("O60683", "downloaded", 50, "/plant/O60683-pae.json", "b" * 64, ""),
+        ],
+    )
+    _write_parquet(
+        path=human,
+        schema=schema,
+        rows=[
+            ("O60683", "downloaded", 100, "/human/O60683.cif", model_digest, ""),
+            (
+                "O60683",
+                "downloaded",
+                50,
+                "/human/O60683-confidence.json",
+                "c" * 64,
+                "",
+            ),
+        ],
+    )
+    destination = tmp_path / "combined_assets.parquet"
+
+    _union_distinct_assets(
+        sources=(plant, human),
+        destination=destination,
+    )
+
+    connection = duckdb.connect(":memory:")
+    try:
+        rows = connection.execute(
+            f"SELECT accession, path, sha256 FROM read_parquet("
+            f"{quote_literal(destination)})"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert rows == [("O60683", "/human/O60683.cif", model_digest)]
+
+
+def test_union_distinct_assets_rejects_conflicting_structure_models(
+    *,
+    tmp_path: Path,
+) -> None:
+    """Verify that distinct structure models for one accession remain fatal.
+
+    Args:
+        tmp_path: Isolated temporary directory supplied by pytest.
+    """
+    schema = (
+        "accession VARCHAR, action VARCHAR, bytes BIGINT, path VARCHAR, "
+        "sha256 VARCHAR, url VARCHAR"
+    )
+    plant = tmp_path / "plant_assets.parquet"
+    human = tmp_path / "human_assets.parquet"
+    _write_parquet(
+        path=plant,
+        schema=schema,
+        rows=[
+            ("O60683", "downloaded", 100, "/plant/O60683.cif", "a" * 64, ""),
+        ],
+    )
+    _write_parquet(
+        path=human,
+        schema=schema,
+        rows=[
+            ("O60683", "downloaded", 100, "/human/O60683.cif", "b" * 64, ""),
+        ],
+    )
+
+    with pytest.raises(
+        StageError,
+        match="Conflicting model assets for accession O60683",
+    ):
+        _union_distinct_assets(
+            sources=(plant, human),
+            destination=tmp_path / "combined_assets.parquet",
+        )
 
 
 @pytest.mark.parametrize(
