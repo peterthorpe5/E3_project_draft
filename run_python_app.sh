@@ -15,6 +15,27 @@ LOCAL_REPO="/Users/PThorpe001/github_repos/E3_project_draft"
 cd "${LOCAL_REPO}/e3_python_app"
 
 
+LOCAL_PARENT_ROOT="/Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_top200_v0_14_0_20260805"
+
+LOCAL_EXTENSION_ROOT="/Users/PThorpe001/e3_app_cache/grant_human_plant_structural_top200_v0_16_0_20260826"
+
+LOCAL_DB="${LOCAL_PARENT_ROOT}/10_integrated_resource/duckdb/e3_integrated_resource.duckdb"
+
+LOCAL_PLANT_REVIEW="${LOCAL_EXTENSION_ROOT}/plant_pocket_review"
+
+LOCAL_COMBINED_REVIEW="${LOCAL_EXTENSION_ROOT}/pocket_review"
+
+
+./run_e3_python_app.sh \
+  --resource-duckdb "${LOCAL_DB}" \
+  --pocket-review-dir "${LOCAL_PLANT_REVIEW}" \
+  --human-plant-review-dir "${LOCAL_COMBINED_REVIEW}" \
+  --max-rows 1000 \
+  --host 127.0.0.1 \
+  --port 8501 \
+  --validate-only
+
+
 ${LOCAL_REPO}/e3_python_app/run_e3_python_app.sh \
   --resource-duckdb "${RESOURCE_DB}" \
   --pocket-review-dir "${POCKET_REVIEW}" \

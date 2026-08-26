@@ -29,6 +29,7 @@ from e3app.pocket_review import (
     selected_group_row,
     selected_group_supplementary_fasta_bytes,
     selected_group_supplementary_sequences,
+    structural_viewer_choice_labels,
 )
 
 
@@ -174,6 +175,10 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     bundle = load_pocket_review(root)
     assert bundle.available
     assert len(bundle.structural_viewers) == 1
+    viewer_labels = structural_viewer_choice_labels(bundle.structural_viewers)
+    viewer_label = next(iter(viewer_labels.values()))
+    assert "Reference: P1 (Arabidopsis thaliana)" in viewer_label
+    assert "aligned member: P2 (Zea mays)" in viewer_label
     assert bundle.index["review_rank"].tolist() == [1]
     labels = group_choice_labels(bundle)
     page = next(iter(labels))
@@ -352,6 +357,16 @@ def test_review_validation_fails_closed(tmp_path: Path) -> None:
     )
     with pytest.raises(AppError, match="unavailable"):
         read_group_html(unavailable, page, "structure")
+
+    with pytest.raises(AppError, match="missing columns"):
+        structural_viewer_choice_labels(pd.DataFrame({"review_rank": [1]}))
+
+    duplicated_viewers = pd.concat(
+        [bundle.structural_viewers, bundle.structural_viewers],
+        ignore_index=True,
+    )
+    with pytest.raises(AppError, match="duplicated"):
+        structural_viewer_choice_labels(duplicated_viewers)
 
     index = pd.read_csv(root / "tables" / "review_report_index.tsv", sep="\t")
     index = pd.concat([index, index], ignore_index=True)

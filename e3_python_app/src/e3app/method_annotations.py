@@ -331,6 +331,26 @@ METHOD_ANNOTATIONS = {
         ),
         sections=(
             MethodSection(
+                heading="Why one protein represented each plant species",
+                bullets=(
+                    "The parent campaign retained one deterministic representative per "
+                    "target species and evolutionary group so that paralogue-rich species "
+                    "could not contribute more structures simply because they contained "
+                    "more accessions.",
+                    "When a group contained several Arabidopsis thaliana accessions, the "
+                    "ordering first preferred a likely full-length sequence (0.75 to 1.35 "
+                    "times the group's median species-maximum length), then a reviewed "
+                    "record, an original input candidate, a mapped record, length closest "
+                    "to that group reference, the longer sequence, and finally stable "
+                    "accession and raw-identifier tie-breaks.",
+                    "Every selected and non-selected alternative, its within-species rank "
+                    "and its selection reason are retained in "
+                    "structural_representative_selection_audit. Selection is therefore "
+                    "auditable and computationally reproducible; it is not a claim that "
+                    "the selected paralogue is biologically superior.",
+                ),
+            ),
+            MethodSection(
                 heading="AlphaFold Database acquisition and QC",
                 bullets=(
                     "Canonical monomer mmCIF models were retrieved for representatives from the "
@@ -447,6 +467,27 @@ METHOD_ANNOTATIONS = {
                     "The human-inclusive outputs are stored under a separate analysis scope. "
                     "They do not change pre-structure rank, post-structure rank or the strict "
                     "plant-only support calls.",
+                ),
+            ),
+            MethodSection(
+                heading="Why these human members and this plant reference were used",
+                bullets=(
+                    "All exact Homo sapiens accessions published in the qualifying "
+                    "OrthoFinder group were carried into the extension; the workflow did "
+                    "not choose one favoured human paralogue. A human member appears in a "
+                    "3D pair only when its model, selected pocket and coordinate mapping "
+                    "are eligible. Exact sequence-only members remain in the supplementary "
+                    "FASTA inventory.",
+                    "The fixed plant reference was inherited unchanged from the completed "
+                    "plant structural summary. The extension supplied it as a preferred "
+                    "reference manifest and failed closed if that accession was not an "
+                    "eligible selected-pocket model; it never chose a new reference to make "
+                    "a human comparison look stronger.",
+                    "In the parent structural analysis, the reference among the selected "
+                    "one-per-species representatives was ordered by high-confidence "
+                    "structural-evidence status, predictor agreement, pocket mapping "
+                    "fraction, pocket pLDDT fraction and druggability, followed by accession "
+                    "as the deterministic final tie-break.",
                 ),
             ),
             MethodSection(

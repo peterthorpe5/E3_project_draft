@@ -1,9 +1,16 @@
 # ARIA plant E3 Python reporter
 
-Version 0.16.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
+Version 0.16.1 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
+
+The human-and-plant 3D tab now uses one synchronised evolutionary-group
+selection for its explicit reference/mobile protein comparison, selectable
+structures and retained pockets, and pocket-annotated MAFFT/FASTA view. Its
+methods state how plant representatives and structural references were chosen,
+how all exact human HOG members were handled and why extension ranks can be
+non-contiguous.
 
 This reporting release foregrounds strict 3D pocket-position support, the
 separate conserved-pocket/chemical gate and assessed-member druggability in

@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.1
+
+- Synchronises the human-and-plant pairwise 3D, structure/pocket and
+  pocket-annotated FASTA views under one evolutionary-group selector.
+- Labels both the fixed reference and transformed mobile protein, including
+  species and structural aligner, for every pairwise superposition.
+- Explains the filtered, non-contiguous extension ranks and reports explicitly
+  when original rank 7 is absent from the portable review bundle.
+- Expands the recorded methods for one-per-species plant representative
+  selection, best-evidence structural-reference selection, retained
+  alternatives and exact human-member handling.
+
 ## v0.16.0
 
 - Opens exact analysis-derived, self-contained US-align/TM-align

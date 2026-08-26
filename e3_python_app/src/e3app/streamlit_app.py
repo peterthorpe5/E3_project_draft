@@ -83,6 +83,7 @@ from e3app.pocket_review import (
     selected_group_supplementary_fasta_bytes,
     selected_group_supplementary_sequences,
     selected_structural_viewers,
+    structural_viewer_choice_labels,
     structural_viewers_available,
 )
 from e3app.prestructure_hogs import (
@@ -1390,6 +1391,7 @@ def _render_structural_superposition(
     bundle: PocketReviewBundle,
     key_prefix: str,
     heading: str,
+    group_page: str | None = None,
 ) -> None:
     """Render one validated, portable pairwise structural superposition."""
     st.markdown(f"#### {heading}")
@@ -1403,47 +1405,59 @@ def _render_structural_superposition(
             "underlying structural analysis does not need to be rerun."
         )
         return
-    available_ranks = set(
-        bundle.structural_viewers["review_rank"].astype(int).tolist()
-    )
-    indexed = bundle.index[
-        bundle.index["review_rank"].astype(int).isin(available_ranks)
-    ]
-    group_options = indexed["group_review_html"].astype(str).tolist()
-    group_labels = group_choice_labels(bundle)
-    group_page = st.selectbox(
-        "Evolutionary group for structural superposition",
-        options=group_options,
-        format_func=lambda value: group_labels[value],
-        key=f"{key_prefix}_group",
-        help=(
-            "Type a HOG, rank, lead cluster or reference accession. Only groups "
-            "with a published pairwise superposition are listed."
-        ),
-    )
+    if group_page is None:
+        available_ranks = set(
+            bundle.structural_viewers["review_rank"].astype(int).tolist()
+        )
+        indexed = bundle.index[
+            bundle.index["review_rank"].astype(int).isin(available_ranks)
+        ]
+        group_options = indexed["group_review_html"].astype(str).tolist()
+        group_labels = group_choice_labels(bundle)
+        group_page = st.selectbox(
+            "Evolutionary group for structural superposition",
+            options=group_options,
+            format_func=lambda value: group_labels[value],
+            key=f"{key_prefix}_group",
+            help=(
+                "Type a HOG, rank, lead cluster or reference accession. Only "
+                "groups with a published pairwise superposition are listed."
+            ),
+        )
     group_row = selected_group_row(bundle, group_page)
     viewers = selected_structural_viewers(
         bundle=bundle,
         review_rank=int(group_row["review_rank"]),
     )
-    viewer_labels = {
-        str(row.interactive_view_html): (
-            f"{row.mobile_species} | {row.mobile_accession} | "
-            f"{row.alignment_tool}"
-        )
-        for row in viewers.itertuples(index=False)
-    }
+    if viewers.empty:
+        st.info("No pairwise structural superposition was published for this group.")
+        return
+    viewer_labels = structural_viewer_choice_labels(viewers)
     viewer_path = st.selectbox(
-        "Aligned member and structural aligner",
+        "Reference and aligned protein pair",
         options=list(viewer_labels),
         format_func=lambda value: viewer_labels[value],
         key=f"{key_prefix}_pair",
+        help=(
+            "The reference protein remains fixed. Choose the mobile protein "
+            "whose coordinates were transformed onto that reference."
+        ),
     )
     selected = viewers[
         viewers["interactive_view_html"].astype(str) == str(viewer_path)
     ]
     if len(selected) != 1:
         raise AppError(f"Unknown structural superposition page: {viewer_path}")
+    comparison = selected.iloc[0]
+    reference_species = str(comparison["reference_species"]).replace("_", " ")
+    mobile_species = str(comparison["mobile_species"]).replace("_", " ")
+    st.markdown(
+        f"**Reference structure (fixed):** `{comparison['reference_accession']}` "
+        f"— {reference_species}  \n"
+        f"**Aligned structure (mobile):** `{comparison['mobile_accession']}` "
+        f"— {mobile_species}  \n"
+        f"**Recorded aligner:** {comparison['alignment_tool']}"
+    )
     viewer_document = read_review_html(bundle, viewer_path)
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
@@ -2649,6 +2663,32 @@ def _render_pocket_review(
         key=f"{key_prefix}_{focus}_group",
         help="Type to search by rank, HOG/orthogroup, lead cluster or accession.",
     )
+    _render_selected_pocket_review(
+        bundle=bundle,
+        focus=focus,
+        group_page=group_page,
+        key_prefix=key_prefix,
+        include_evidence_matrix=True,
+    )
+
+
+def _render_selected_pocket_review(
+    *,
+    bundle: PocketReviewBundle,
+    focus: str,
+    group_page: str,
+    key_prefix: str,
+    include_evidence_matrix: bool,
+) -> None:
+    """Render one already-selected structure or alignment group page.
+
+    Args:
+        bundle: Validated portable review bundle.
+        focus: Structure/pocket controls or pocket-aligned sequences.
+        group_page: Bundle-relative HTML page selected by the caller.
+        key_prefix: Unique prefix for Streamlit widget state.
+        include_evidence_matrix: Whether to offer the release-wide matrix.
+    """
     row = selected_group_row(bundle, group_page)
     st.caption(
         f"Review rank {int(row['review_rank'])} | evolutionary group "
@@ -2740,7 +2780,7 @@ def _render_pocket_review(
         "The embedded report includes the linear pocket-position tracks, retained "
         "pocket evidence and exact alignment/FASTA/structure coordinate audit."
     )
-    if focus == "structure":
+    if focus == "structure" and include_evidence_matrix:
         matrix = read_review_html(bundle, "evidence_matrix.html")
         with st.expander("Cross-group structural evidence matrix"):
             st.caption(
@@ -2770,11 +2810,66 @@ def _render_human_plant_structural_review(
         "recorded plant reference for each group and does not overwrite the "
         "plant-only ranking or its strict structural conclusions."
     )
+    ranks = bundle.index["review_rank"].astype(int).tolist()
+    labels = group_choice_labels(bundle)
+    st.markdown("#### Select one human-and-plant evolutionary group")
+    st.caption(
+        f"This menu contains {len(ranks)} qualifying groups, not every group "
+        "within the configured parent review limit. A group is included only "
+        "when it has parent structural-analysis evidence, contains an exact "
+        "Homo sapiens member in the same OrthoFinder group, and has one preserved "
+        "plant reference. Original parent ranks are kept, so the rank numbers "
+        "are intentionally non-contiguous."
+    )
+    group_page = st.selectbox(
+        "Human-and-plant evolutionary group",
+        options=list(labels),
+        format_func=lambda value: labels[value],
+        key="human_plant_selected_group",
+        help=(
+            "This one selection controls the 3D comparison, pocket viewer and "
+            "pocket-annotated FASTA alignment below."
+        ),
+    )
+    selected_group = selected_group_row(bundle, group_page)
+    selected_rank = int(selected_group["review_rank"])
+    with st.expander("Check whether an original parent rank qualified"):
+        queried_rank = int(
+            st.number_input(
+                "Original parent rank",
+                min_value=1,
+                max_value=500,
+                value=7,
+                step=1,
+                key="human_plant_rank_check",
+            )
+        )
+        if queried_rank in ranks:
+            matched = bundle.index[
+                bundle.index["review_rank"].astype(int) == queried_rank
+            ].iloc[0]
+            st.success(
+                f"Rank {queried_rank} qualified as {matched['primary_group_id']} "
+                "and is available in the group menu."
+            )
+        else:
+            st.warning(
+                f"Original rank {queried_rank} is not present in this review "
+                "bundle. It did not satisfy at least one extension eligibility "
+                "condition above; the portable bundle alone does not record which "
+                "failed condition excluded it. Its absence is not caused by the "
+                "drop-down control."
+            )
+    st.caption(
+        f"The controls below are synchronised to original rank {selected_rank}: "
+        f"{selected_group['primary_group_id']} (plant reference "
+        f"{selected_group['reference_accession']})."
+    )
     review_tabs = st.tabs(
         [
-            "3D superpositions",
-            "Pocket-aligned sequences",
-            "Structures & pockets",
+            "Pairwise 3D comparison",
+            "Choose structures & pockets",
+            "Pocket-aligned FASTA",
             "Evidence tables",
         ]
     )
@@ -2783,18 +2878,33 @@ def _render_human_plant_structural_review(
             bundle=bundle,
             key_prefix="human_plant_structural_alignment",
             heading="Interactive human and plant structural superposition",
+            group_page=group_page,
         )
     with review_tabs[1]:
-        _render_pocket_review(
-            bundle=bundle,
-            focus="alignment",
-            key_prefix="human_plant_review",
+        st.markdown("#### Select protein models and retained pockets")
+        st.caption(
+            "Use the member and pocket-rank controls inside the report to choose "
+            "which protein and which retained P2Rank pocket are displayed."
         )
-    with review_tabs[2]:
-        _render_pocket_review(
+        _render_selected_pocket_review(
             bundle=bundle,
             focus="structure",
-            key_prefix="human_plant_review",
+            group_page=group_page,
+            key_prefix="human_plant_structure",
+            include_evidence_matrix=False,
+        )
+    with review_tabs[2]:
+        st.markdown("#### Pocket positions on the aligned protein sequences")
+        st.caption(
+            "The schematic maps retained pocket residues onto the published "
+            "MAFFT alignment. The exact gapped FASTA is downloadable below it."
+        )
+        _render_selected_pocket_review(
+            bundle=bundle,
+            focus="alignment",
+            group_page=group_page,
+            key_prefix="human_plant_alignment",
+            include_evidence_matrix=False,
         )
     with review_tabs[3]:
         st.markdown("#### Human-and-plant review index")

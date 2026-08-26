@@ -62,6 +62,19 @@ def test_alphafold_annotation_distinguishes_retrieval_qc_and_scope() -> None:
     assert "0.50 of residues at pLDDT at least 70" in markdown
     assert "not a standalone downstream exclusion gate" in markdown
     assert "PAE was downloaded where available but was not a formal production gate" in markdown
+    assert "several Arabidopsis thaliana accessions" in markdown
+    assert "structural_representative_selection_audit" in markdown
+    assert "not a claim that the selected paralogue is biologically superior" in markdown
+
+
+def test_human_extension_annotation_explains_member_and_reference_selection() -> None:
+    """Human inclusion and the preserved plant reference are not conflated."""
+    markdown = method_annotation_markdown(tab_name="Human & plant 3D alignment")
+    assert "did not choose one favoured human paralogue" in markdown
+    assert "Exact sequence-only members remain" in markdown
+    assert "inherited unchanged" in markdown
+    assert "never chose a new reference" in markdown
+    assert "pocket mapping fraction" in markdown
 
 
 def test_mapping_annotation_distinguishes_integrated_and_component_qc() -> None:

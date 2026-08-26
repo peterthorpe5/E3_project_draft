@@ -430,6 +430,38 @@ def selected_structural_viewers(
     return selected.reset_index(drop=True)
 
 
+def structural_viewer_choice_labels(viewers: pd.DataFrame) -> dict[str, str]:
+    """Map pairwise-viewer paths to explicit reference/mobile labels.
+
+    Args:
+        viewers: Validated viewer-index rows for one evolutionary group.
+
+    Returns:
+        Viewer paths mapped to labels that state both protein roles and species.
+
+    Raises:
+        AppError: If a required viewer field is absent or a path is duplicated.
+    """
+    missing = sorted(set(VIEWER_COLUMNS).difference(viewers.columns))
+    if missing:
+        raise AppError(
+            "Structural-viewer rows are missing columns: " + ", ".join(missing)
+        )
+    labels: dict[str, str] = {}
+    for row in viewers.itertuples(index=False):
+        path = str(row.interactive_view_html)
+        if path in labels:
+            raise AppError(f"Structural-viewer page is duplicated: {path}")
+        reference_species = str(row.reference_species).replace("_", " ")
+        mobile_species = str(row.mobile_species).replace("_", " ")
+        labels[path] = (
+            f"Reference: {row.reference_accession} ({reference_species}) → "
+            f"aligned member: {row.mobile_accession} ({mobile_species}) | "
+            f"{row.alignment_tool}"
+        )
+    return labels
+
+
 def group_choice_labels(bundle: PocketReviewBundle) -> dict[str, str]:
     """Map group-page paths to searchable, descriptive labels."""
     if not bundle.available:

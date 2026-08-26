@@ -313,7 +313,7 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     group_selectors = [
         selector for selector in app.selectbox if selector.label == "Evolutionary group"
     ]
-    assert len(group_selectors) == 4
+    assert len(group_selectors) == 2
     assert all(
         selector.value == "groups/rank_001__hog__N0.HOG1.html"
         for selector in group_selectors
@@ -323,7 +323,34 @@ def test_app_renders_portable_structure_and_alignment_tabs(
         for selector in app.selectbox
         if selector.label == "Evolutionary group for structural superposition"
     ]
-    assert len(superposition_selectors) == 2
+    assert len(superposition_selectors) == 1
+    human_group_selectors = [
+        selector
+        for selector in app.selectbox
+        if selector.label == "Human-and-plant evolutionary group"
+    ]
+    assert len(human_group_selectors) == 1
+    rank_checks = [
+        number
+        for number in app.number_input
+        if number.label == "Original parent rank"
+    ]
+    assert len(rank_checks) == 1
+    assert rank_checks[0].value == 7
+    pair_selectors = [
+        selector
+        for selector in app.selectbox
+        if selector.label == "Reference and aligned protein pair"
+    ]
+    assert len(pair_selectors) == 2
+    assert any("Reference: P1" in option for option in pair_selectors[0].options)
+    human_tab = next(
+        tab for tab in app.tabs if tab.label == "Human & plant 3D alignment"
+    )
+    nested_labels = {tab.label for tab in human_tab.tabs}
+    assert "Pairwise 3D comparison" in nested_labels
+    assert "Choose structures & pockets" in nested_labels
+    assert "Pocket-aligned FASTA" in nested_labels
     assert any(
         tab.label == "Human & plant 3D alignment" for tab in app.tabs
     )
