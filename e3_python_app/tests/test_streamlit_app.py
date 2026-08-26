@@ -29,6 +29,7 @@ PRIMARY_TAB_LABELS = {
     "3D structures & pockets",
     "Pocket-aligned sequences",
     "3D alignment",
+    "Human & plant 3D alignment",
     "Computational chemistry",
     "Search",
     "All results",
@@ -89,13 +90,13 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         for expander in app.expander
         if expander.label == "❓ How to use this tab"
     ]
-    assert len(primary_help) == 24
+    assert len(primary_help) == 25
     method_help = [
         expander
         for expander in app.expander
         if expander.label == "ⓘ Methods and thresholds"
     ]
-    assert len(method_help) == 14
+    assert len(method_help) == 15
     alignment_tab = next(tab for tab in app.tabs if tab.label == "3D alignment")
     assert any(
         "not a threshold invented for this project" in markdown.value
@@ -305,14 +306,24 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     review_dir = make_pocket_review(tmp_path)
     monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
     monkeypatch.setenv("E3_POCKET_REVIEW_DIR", str(review_dir))
+    monkeypatch.setenv("E3_HUMAN_PLANT_REVIEW_DIR", str(review_dir))
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     group_selectors = [
         selector for selector in app.selectbox if selector.label == "Evolutionary group"
     ]
-    assert len(group_selectors) == 2
+    assert len(group_selectors) == 4
     assert all(
         selector.value == "groups/rank_001__hog__N0.HOG1.html"
         for selector in group_selectors
+    )
+    superposition_selectors = [
+        selector
+        for selector in app.selectbox
+        if selector.label == "Evolutionary group for structural superposition"
+    ]
+    assert len(superposition_selectors) == 2
+    assert any(
+        tab.label == "Human & plant 3D alignment" for tab in app.tabs
     )

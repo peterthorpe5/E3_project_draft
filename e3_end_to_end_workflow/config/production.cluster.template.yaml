@@ -427,3 +427,23 @@ stages:
     threads: 1
     memory_mb: 8000
     runtime_minutes: 120
+
+# Optional final branch. When enabled, the same start-to-finish Snakemake run
+# continues from the immutable plant release into human AlphaFold/pocket work,
+# combined human-and-plant structural superpositions and an app-ready review
+# bundle. The plant stages and their reference choices are not overwritten.
+human_plant_extension:
+  enabled: false
+  output_root: /CHANGE_ME/human_plant_structural_extension
+  review_limit: 200
+  human_species: Homo_sapiens
+  ligandability_component_config: ../../e3_ligandability_pipeline/config/structural_completion.cluster.yaml
+  ligandability_conda_environment: e3_ligandability
+  structural_alignment_conda_environment: e3_structural_alignment
+  resources:
+    ligandability_threads: 4
+    ligandability_memory_mb: 16000
+    ligandability_runtime_minutes: 240
+    structural_threads: 4
+    structural_memory_mb: 16000
+    structural_runtime_minutes: 240

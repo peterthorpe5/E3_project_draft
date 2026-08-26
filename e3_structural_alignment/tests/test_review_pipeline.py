@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from e3structalign.errors import StructuralAlignmentError
+from e3structalign.io_utils import sha256_file, write_tsv
 from e3structalign.review_models import ReviewInputOverrides, ReviewSettings
 from e3structalign.review_pipeline import (
     _sequence_rows,
@@ -47,6 +49,14 @@ def test_complete_report_build_and_checksum_resume(
     assert (output / "tables" / "top_group_evidence_matrix.tsv").is_file()
     assert (output / "tables" / "pocket_residue_annotations.tsv").is_file()
     assert (output / "tables" / "protein_model_inventory.tsv").is_file()
+    viewer_table = output / "tables" / "structural_alignment_viewers.tsv"
+    assert viewer_table.is_file()
+    with viewer_table.open("r", encoding="utf-8", newline="") as handle:
+        viewer_rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert len(viewer_rows) == 1
+    viewer_page = output / viewer_rows[0]["interactive_view_html"]
+    assert viewer_page.is_file()
+    assert sha256_file(viewer_page) == viewer_rows[0]["viewer_source_sha256"]
     sequence_table = output / "tables" / "prioritised_group_sequences.tsv"
     sequence_fasta = output / "sequences" / "prioritised_group_sequences.fasta"
     assert sequence_table.is_file()
@@ -65,11 +75,12 @@ def test_complete_report_build_and_checksum_resume(
     assert (output / "qc" / "pocket_review_validation.tsv").is_file()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["status"] == "complete"
-    assert payload["package_version"] == "0.4.0"
+    assert payload["package_version"] == "0.5.0"
     assert payload["validation"]["reported_group_count"] == 1
     assert payload["validation"]["exact_pocket_residue_annotation_count"] == 4
     assert payload["validation"]["sequence_export_group_count"] == 1
     assert payload["validation"]["sequence_export_record_count"] == 2
+    assert payload["validation"]["structural_superposition_viewer_count"] == 1
     assert payload["embedded_sources"][0]["models"][0]["sha256"]
     assert _build(review_run, resume=True) == manifest_path
 
@@ -95,6 +106,92 @@ def test_sequence_export_retains_alignment_members_without_pockets(
     assert third["sequence_length"] == "1"
     assert third["amino_acid_sequence"] == "A"
     assert third["aligned_sequence"] == "A-"
+
+
+def test_supplementary_exact_sequences_are_checksum_bound_and_published(
+    review_run: dict[str, Path],
+) -> None:
+    """Members without structures remain explicit in a separate FASTA/table."""
+    sequence = "ACDE"
+    supplementary = review_run["run_root"] / "human_group_members.tsv"
+    rows = [
+        {
+            "review_rank": 1,
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "species_column": "Homo_sapiens",
+            "accession": "H1",
+            "sequence_length": len(sequence),
+            "sequence_sha256": hashlib.sha256(
+                sequence.encode("ascii")
+            ).hexdigest(),
+            "protein_sequence": sequence,
+        }
+    ]
+    write_tsv(supplementary, rows, tuple(rows[0]))
+    manifest = build_review_report(
+        run_root=review_run["run_root"],
+        output_dir=review_run["output"],
+        settings=ReviewSettings(),
+        overrides=ReviewInputOverrides(
+            supplementary_group_sequences=supplementary
+        ),
+        resume=False,
+        force=False,
+        verbose=False,
+    )
+    output = review_run["output"]
+    table = output / "tables" / "supplementary_group_sequences.tsv"
+    fasta = output / "sequences" / "supplementary_group_sequences.fasta"
+    assert table.is_file()
+    assert fasta.read_text(encoding="utf-8").endswith("\nACDE\n")
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["validation"]["supplementary_sequence_record_count"] == 1
+    assert "supplementary_group_sequences" in payload["inputs"]
+
+
+def test_report_resolves_group_nested_extension_viewer_layout(
+    review_run: dict[str, Path],
+) -> None:
+    """Combined extension viewers may be nested beneath their group slug."""
+    interactive = (
+        review_run["run_root"]
+        / "09b_structural_alignment"
+        / "structural_alignment"
+        / "interactive"
+    )
+    source = (
+        interactive
+        / "pairs"
+        / "us-align"
+        / "cluster_1__OG0001"
+        / "P1__P2.html"
+    )
+    destination = (
+        interactive
+        / "groups"
+        / "orthogroup__OG0001"
+        / "pairs"
+        / "us-align"
+        / "cluster_1__OG0001"
+        / "P1__P2.html"
+    )
+    destination.parent.mkdir(parents=True)
+    source.replace(destination)
+    manifest = _build(review_run)
+    assert manifest.is_file()
+    published = (
+        review_run["output"]
+        / "structural_alignment"
+        / "groups"
+        / "orthogroup__OG0001"
+        / "pairs"
+        / "us-align"
+        / "cluster_1__OG0001"
+        / "P1__P2.html"
+    )
+    assert published.is_file()
 
 
 def test_sequence_export_rejects_all_gap_and_empty_outputs(

@@ -40,7 +40,7 @@ def test_resolve_and_load_complete_review_payload(
     digest, inventory = input_digest(inputs=inputs, settings=settings)
     payloads = load_report_payloads(inputs=inputs, settings=settings)
     assert len(digest) == 64
-    assert len(inventory) == 8
+    assert len(inventory) == 10
     assert payloads[0]["review_rank"] == 1
     assert payloads[0]["reference_accession"] == "P1"
     assert payloads[0]["reference_source"] == "STRUCTURAL_ALIGNMENT_SUMMARY"

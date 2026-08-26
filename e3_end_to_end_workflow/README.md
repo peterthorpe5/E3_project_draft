@@ -5,12 +5,12 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.14.0` retains the corrected Expression Atlas contract and adds two
-linked changes: Stage 08 now applies the structure limit to distinct
-evolutionary groups, and optional Stage 09c provides an open-source
-structure-guided chemistry hand-off without commercial-licence tools.
+Version `0.16.0` adds a restartable human-and-plant structural extension while
+retaining the completed plant analysis as an immutable comparison baseline.
+The same extension can attach to an existing checksum-valid release or run as
+the final branch of a future start-to-finish workflow.
 
-The workflow supports four explicit production strategies:
+The workflow supports five explicit production strategies:
 
 - **reviewed reuse** for the current grant analysis: reuse checksum-bound Discovery/candidate,
   OrthoFinder 2.5.5, Expression Atlas and ligandability results, then rebuild every join, ranking,
@@ -23,7 +23,11 @@ The workflow supports four explicit production strategies:
   each reference pocket with the top five member pockets, require both aligners to support the
   same alternative pocket, publish gate scenarios and expose the ordered top 50 for review; and
 - **fresh scalable execution** for a future, larger proteome panel: prepare an arbitrary manifest
-  of proteomes and run configured component adapters under the same output contracts.
+  of proteomes and run configured component adapters under the same output contracts; and
+- **human-and-plant structural extension**: select exact human members of the
+  same root HOGs, compute only missing human AlphaFold/FPocket/P2Rank evidence,
+  preserve each established plant reference and publish a separate combined
+  3D/pocket/alignment review bundle without rewriting plant conclusions.
 
 Every enabled stage declares an `evidence_mode` (`validate`, `prepare`, `reuse`, `download`,
 `derive` or `generate`). Reports and manifests therefore distinguish reused evidence from newly
@@ -52,6 +56,48 @@ previous-analysis authorities and submits the complete generation DAG through a 
 controller.
 
 ## How to start
+
+For a future complete run, add an enabled `human_plant_extension` section to
+the normal immutable workflow YAML and launch the repository as usual:
+
+```bash
+./run_e3_pipeline.sh \
+    --config e3_end_to_end_workflow/config/my_complete_run.yaml \
+    --mode slurm \
+    --max-jobs 50 \
+    --resume
+```
+
+The normal final target then depends on Stage 11 and on the separate
+human-and-plant review manifest. No second manual command is required. The
+extension reads the Stage 05 exact group-member sequences and reuses the newly
+completed plant stages from that same run.
+
+To extend an already completed plant release without rerunning it, copy
+`config/human_plant_structural_extension.example.yaml`, set its immutable parent
+configuration and a new output root, dry-run it, then submit its controller:
+
+```bash
+./run_human_plant_structural_extension.sh \
+    --config config/my_human_plant_extension.yaml \
+    --profile slurm \
+    --max-jobs 50 \
+    --dry-run
+
+./submit_human_plant_extension_slurm.sh \
+    --config config/my_human_plant_extension.yaml \
+    --max-jobs 50 \
+    --account barton \
+    --partition general \
+    --controller-log-dir /path/to/durable/workflow_logs
+```
+
+The second command returns after Slurm accepts the controller and is safe after
+logout. Completed checksum-matching human accessions and combined group jobs are
+reused on restart; the parent plant release is read-only. The extension output
+contains both a refreshed reporting-only `plant_pocket_review` bundle and the
+combined `pocket_review` bundle. Rebuilding the plant bundle copies the existing
+alignment-derived viewers and does not rerun structural calculations.
 
 For the grant structural-completion run, use the supplied immutable
 `config/grant_aligned_structural_completion_top20_v0_10_0_20260728.cluster.yaml`.
@@ -140,7 +186,10 @@ Before the first submission, create an immutable run YAML:
    reviewed component YAML have been installed. Disabled is the default and does not block Stage 10.
 10. Keep `analysis.structural_alignment.use_for_prioritisation: false` until the selected 3D
    thresholds have been reviewed on a multi-structure result.
-11. Validate and dry-run:
+11. To include human-and-plant structural evidence in a future complete run,
+    enable `human_plant_extension` and give it a separate output root. Leave it
+    disabled when only the plant analysis is required.
+12. Validate and dry-run:
 
 ```bash
 e3-workflow validate --config config/my_immutable_run.yaml
@@ -178,6 +227,7 @@ and diagnostics.
 | `09c_computational_chemistry` | `e3_structure_guided_chemistry` | optional residue-derived pharmacophores and open-fragment compatibility priorities; no FMOPhore, FrAncestor or AlphaFold3 execution |
 | `10_integrated_resource` | native release assembler | complete DuckDB, candidate master Parquet, final TSV/Parquet and scientific HTML |
 | `11_app_ready` | native hand-off | Python/Shiny configuration and release manifest |
+| post-`11_app_ready` human-and-plant extension | master workflow plus structural packages | exact human HOG sequences, missing human structure/pocket work, reference-preserving combined superpositions and a separate app-ready review bundle |
 
 DeepClust clusters and OrthoFinder groups remain different concepts. OrthoFinder labels are scoped
 to a run. Final candidate records expose both the DeepClust cluster ID and the OrthoFinder

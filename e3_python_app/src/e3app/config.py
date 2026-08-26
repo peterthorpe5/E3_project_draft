@@ -20,6 +20,7 @@ class AppConfig:
     max_rows: int = 1000
     resource_parquet: Path | None = None
     resource_run_dir: Path | None = None
+    human_plant_review_dir: Path | None = None
 
     @property
     def source_mode(self) -> str:
@@ -62,6 +63,9 @@ def config_from_environment(environment: Mapping[str, str] | None = None) -> App
         )
     expression = values.get("E3_EXPRESSION_DUCKDB", "").strip()
     pocket_review = values.get("E3_POCKET_REVIEW_DIR", "").strip()
+    human_plant_review = values.get(
+        "E3_HUMAN_PLANT_REVIEW_DIR", ""
+    ).strip()
     max_rows = parse_positive_integer(values.get("E3_MAX_TABLE_ROWS", "1000"), "max rows")
     return AppConfig(
         resource_duckdb=(
@@ -77,6 +81,11 @@ def config_from_environment(environment: Mapping[str, str] | None = None) -> App
         ),
         resource_run_dir=(
             Path(resource_run_dir).expanduser().resolve() if resource_run_dir else None
+        ),
+        human_plant_review_dir=(
+            Path(human_plant_review).expanduser().resolve()
+            if human_plant_review
+            else None
         ),
     )
 
@@ -115,5 +124,13 @@ def validate_config(config: AppConfig) -> None:
     if config.pocket_review_dir is not None and not config.pocket_review_dir.is_dir():
         raise AppError(
             f"Pocket-review directory does not exist: {config.pocket_review_dir}"
+        )
+    if (
+        config.human_plant_review_dir is not None
+        and not config.human_plant_review_dir.is_dir()
+    ):
+        raise AppError(
+            "Human-and-plant review directory does not exist: "
+            f"{config.human_plant_review_dir}"
         )
     parse_positive_integer(str(config.max_rows), "max rows")

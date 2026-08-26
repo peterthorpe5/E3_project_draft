@@ -47,6 +47,8 @@ Modes:
 
 Every unrecognised named option is forwarded to the selected workflow launcher.
 Running without --stop-after requests the entire enabled end-to-end DAG.
+If human_plant_extension.enabled is true in the workflow YAML, that same DAG
+continues through the separate human-and-plant structural review bundle.
 EOF
 }
 

@@ -52,6 +52,7 @@ Use submit_e3_controller_slurm.sh for durable cluster execution, or use this run
 --profile local on a non-Slurm workstation. This foreground runner always launches the package
 Snakefile. Independent branches run concurrently when dependencies and resources permit.
 --start-at never bypasses missing prerequisites.
+An enabled human_plant_extension configuration runs after the plant app-ready stage.
 EOF
 }
 

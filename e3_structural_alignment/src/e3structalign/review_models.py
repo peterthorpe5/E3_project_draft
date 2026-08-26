@@ -43,6 +43,10 @@ class ReviewInputOverrides:
     structural_summary: Path | None = None
     sensitivity_group_summary: Path | None = None
     sensitivity_member_summary: Path | None = None
+    structural_alignments: Path | None = None
+    structural_pocket_comparisons: Path | None = None
+    structural_interactive_root: Path | None = None
+    supplementary_group_sequences: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -59,10 +63,14 @@ class ReviewInputs:
     structural_summary: Path
     sensitivity_group_summary: Path
     sensitivity_member_summary: Path
+    structural_alignments: Path
+    structural_pocket_comparisons: Path
+    structural_interactive_root: Path
+    supplementary_group_sequences: Path | None = None
 
     def file_inputs(self) -> dict[str, Path]:
         """Return every checksum-bound input file keyed by stable role."""
-        return {
+        inputs = {
             "shortlist": self.shortlist,
             "selected_pockets": self.selected_pockets,
             "ranked_pockets": self.ranked_pockets,
@@ -73,4 +81,13 @@ class ReviewInputs:
             "structural_summary": self.structural_summary,
             "sensitivity_group_summary": self.sensitivity_group_summary,
             "sensitivity_member_summary": self.sensitivity_member_summary,
+            "structural_alignments": self.structural_alignments,
+            "structural_pocket_comparisons": (
+                self.structural_pocket_comparisons
+            ),
         }
+        if self.supplementary_group_sequences is not None:
+            inputs["supplementary_group_sequences"] = (
+                self.supplementary_group_sequences
+            )
+        return inputs

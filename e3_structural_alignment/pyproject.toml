@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-structural-alignment"
-version = "0.4.0"
+version = "0.5.0"
 description = "Structural pocket comparison and ranked visual review for ARIA E3 candidates"
 readme = "README.md"
 requires-python = ">=3.11"

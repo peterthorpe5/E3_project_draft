@@ -55,6 +55,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--structural-summary", type=Path)
     parser.add_argument("--sensitivity-group-summary", type=Path)
     parser.add_argument("--sensitivity-member-summary", type=Path)
+    parser.add_argument("--structural-alignments", type=Path)
+    parser.add_argument("--structural-pocket-comparisons", type=Path)
+    parser.add_argument("--structural-interactive-root", type=Path)
+    parser.add_argument(
+        "--supplementary-group-sequences",
+        type=Path,
+        help=(
+            "Optional exact group-member sequence table retained even when a "
+            "member has no assessable structure or pocket."
+        ),
+    )
     output_mode = parser.add_mutually_exclusive_group()
     output_mode.add_argument("--resume", action="store_true")
     output_mode.add_argument("--force", action="store_true")
@@ -87,6 +98,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 structural_summary=args.structural_summary,
                 sensitivity_group_summary=args.sensitivity_group_summary,
                 sensitivity_member_summary=args.sensitivity_member_summary,
+                structural_alignments=args.structural_alignments,
+                structural_pocket_comparisons=(
+                    args.structural_pocket_comparisons
+                ),
+                structural_interactive_root=(
+                    args.structural_interactive_root
+                ),
+                supplementary_group_sequences=(
+                    args.supplementary_group_sequences
+                ),
             ),
             resume=args.resume,
             force=args.force,

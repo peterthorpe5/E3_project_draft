@@ -8,6 +8,7 @@ RESOURCE_PARQUET=""
 RESOURCE_RUN_DIR=""
 EXPRESSION_DUCKDB=""
 POCKET_REVIEW_DIR=""
+HUMAN_PLANT_REVIEW_DIR=""
 MAX_ROWS="1000"
 HOST="127.0.0.1"
 PORT="8501"
@@ -24,6 +25,8 @@ Options:
   --resource-run-dir PATH    Current workflow run containing stage Parquets.
   --expression-duckdb PATH   Optional Expression Atlas DuckDB.
   --pocket-review-dir PATH   Optional portable 3D/alignment review bundle.
+  --human-plant-review-dir PATH
+                             Optional human-and-plant 3D/alignment review bundle.
   --max-rows INTEGER         Hard preview/search row cap (default: 1000).
   --host HOST                Bind address (default: 127.0.0.1).
   --port INTEGER             TCP port (default: 8501).
@@ -40,6 +43,7 @@ while (($#)); do
         --resource-run-dir) RESOURCE_RUN_DIR="$2"; shift 2 ;;
         --expression-duckdb) EXPRESSION_DUCKDB="$2"; shift 2 ;;
         --pocket-review-dir) POCKET_REVIEW_DIR="$2"; shift 2 ;;
+        --human-plant-review-dir) HUMAN_PLANT_REVIEW_DIR="$2"; shift 2 ;;
         --max-rows) MAX_ROWS="$2"; shift 2 ;;
         --host) HOST="$2"; shift 2 ;;
         --port) PORT="$2"; shift 2 ;;
@@ -65,6 +69,8 @@ COMMAND=(e3-python-app --max-rows "${MAX_ROWS}"
 [[ -n "${RESOURCE_RUN_DIR}" ]] && COMMAND+=(--resource-run-dir "${RESOURCE_RUN_DIR}")
 [[ -n "${EXPRESSION_DUCKDB}" ]] && COMMAND+=(--expression-duckdb "${EXPRESSION_DUCKDB}")
 [[ -n "${POCKET_REVIEW_DIR}" ]] && COMMAND+=(--pocket-review-dir "${POCKET_REVIEW_DIR}")
+[[ -n "${HUMAN_PLANT_REVIEW_DIR}" ]] && \
+    COMMAND+=(--human-plant-review-dir "${HUMAN_PLANT_REVIEW_DIR}")
 [[ "${HEADLESS}" == "true" ]] && COMMAND+=(--headless)
 [[ "${VALIDATE_ONLY}" == "true" ]] && COMMAND+=(--validate-only)
 printf 'Command:'; printf ' %q' "${COMMAND[@]}"; printf '\n'

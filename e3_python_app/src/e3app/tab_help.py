@@ -226,13 +226,25 @@ TOP_LEVEL_TAB_HELP = {
     ),
     "3D alignment": TabHelpEntry(
         instruction=(
-            "Select an alignment relation and group to inspect global and pocket-local "
-            "comparisons; TM-scores and pocket overlap answer different questions."
+            "Select a plant group, aligned member and aligner to rotate the recorded "
+            "superposition, then inspect the release-wide global and pocket-local evidence."
         ),
         yields=(
-            "An interactive TM-score versus 3D pocket-overlap evidence map, the exact plotted "
-            "rows, group and pairwise alignment tables, local residue evidence and a vector PDF "
-            "of the summary plot."
+            "A rotatable pairwise C-alpha and pocket-residue superposition, a downloadable "
+            "self-contained viewer, the TM-score versus 3D pocket-overlap evidence map, exact "
+            "pairwise rows, local residue evidence and a vector PDF of the summary plot."
+        ),
+    ),
+    "Human & plant 3D alignment": TabHelpEntry(
+        instruction=(
+            "Select a ranked HOG and compare each human or plant member with the preserved "
+            "plant reference; use the sequence and structure sub-tabs to inspect the supporting "
+            "pocket evidence before downloading it."
+        ),
+        yields=(
+            "A separate human-inclusive set of rotatable structural superpositions, "
+            "pocket-annotated MAFFT alignments, aligned FASTA, individual structure and pocket "
+            "views, pairwise evidence tables and portable HTML, TSV and Excel downloads."
         ),
     ),
     "Computational chemistry": TabHelpEntry(

@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--resource-run-dir", type=Path)
     parser.add_argument("--expression-duckdb", type=Path)
     parser.add_argument("--pocket-review-dir", type=Path)
+    parser.add_argument("--human-plant-review-dir", type=Path)
     parser.add_argument("--max-rows", type=int, default=1000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
@@ -66,6 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         expression_duckdb=args.expression_duckdb,
         pocket_review_dir=args.pocket_review_dir,
         max_rows=args.max_rows,
+        human_plant_review_dir=args.human_plant_review_dir,
     )
     try:
         validate_config(config)
@@ -96,6 +98,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             environment.pop("E3_POCKET_REVIEW_DIR", None)
+        if config.human_plant_review_dir:
+            environment["E3_HUMAN_PLANT_REVIEW_DIR"] = str(
+                config.human_plant_review_dir.resolve()
+            )
+        else:
+            environment.pop("E3_HUMAN_PLANT_REVIEW_DIR", None)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",

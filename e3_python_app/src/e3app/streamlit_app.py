@@ -36,6 +36,7 @@ from e3app.data import (
     open_resource,
     preview_selected_columns,
     relation_count,
+    relation_column_types,
     relation_columns,
     relations_for_section,
     resource_overview,
@@ -57,7 +58,12 @@ from e3app.exports import (
     render_plotly_pdf_download,
     render_table_downloads,
 )
-from e3app.glossary import SLIDER_HELP, glossary_rows, glossary_sections
+from e3app.glossary import (
+    SLIDER_HELP,
+    database_column_dictionary_rows,
+    glossary_rows,
+    glossary_sections,
+)
 from e3app.human_hogs import (
     collect_human_hog_members,
     collect_human_hog_summary,
@@ -67,12 +73,17 @@ from e3app.method_annotations import method_annotation_markdown
 from e3app.pocket_review import (
     PocketReviewBundle,
     group_choice_labels,
+    prepare_human_plant_review,
     prepare_pocket_review,
     read_group_html,
     read_review_html,
     selected_group_alignment_fasta_bytes,
     selected_group_members,
     selected_group_row,
+    selected_group_supplementary_fasta_bytes,
+    selected_group_supplementary_sequences,
+    selected_structural_viewers,
+    structural_viewers_available,
 )
 from e3app.prestructure_hogs import (
     collect_prestructure_ranked_hogs,
@@ -1374,21 +1385,122 @@ def _render_seed_group_explorer(
                 )
 
 
+def _render_structural_superposition(
+    *,
+    bundle: PocketReviewBundle,
+    key_prefix: str,
+    heading: str,
+) -> None:
+    """Render one validated, portable pairwise structural superposition."""
+    st.markdown(f"#### {heading}")
+    if not bundle.available:
+        st.warning(bundle.reason)
+        return
+    if not structural_viewers_available(bundle):
+        st.info(
+            "This review bundle predates the portable pairwise superpositions. "
+            "Regenerate it with the current `e3-pocket-review` command; the "
+            "underlying structural analysis does not need to be rerun."
+        )
+        return
+    available_ranks = set(
+        bundle.structural_viewers["review_rank"].astype(int).tolist()
+    )
+    indexed = bundle.index[
+        bundle.index["review_rank"].astype(int).isin(available_ranks)
+    ]
+    group_options = indexed["group_review_html"].astype(str).tolist()
+    group_labels = group_choice_labels(bundle)
+    group_page = st.selectbox(
+        "Evolutionary group for structural superposition",
+        options=group_options,
+        format_func=lambda value: group_labels[value],
+        key=f"{key_prefix}_group",
+        help=(
+            "Type a HOG, rank, lead cluster or reference accession. Only groups "
+            "with a published pairwise superposition are listed."
+        ),
+    )
+    group_row = selected_group_row(bundle, group_page)
+    viewers = selected_structural_viewers(
+        bundle=bundle,
+        review_rank=int(group_row["review_rank"]),
+    )
+    viewer_labels = {
+        str(row.interactive_view_html): (
+            f"{row.mobile_species} | {row.mobile_accession} | "
+            f"{row.alignment_tool}"
+        )
+        for row in viewers.itertuples(index=False)
+    }
+    viewer_path = st.selectbox(
+        "Aligned member and structural aligner",
+        options=list(viewer_labels),
+        format_func=lambda value: viewer_labels[value],
+        key=f"{key_prefix}_pair",
+    )
+    selected = viewers[
+        viewers["interactive_view_html"].astype(str) == str(viewer_path)
+    ]
+    if len(selected) != 1:
+        raise AppError(f"Unknown structural superposition page: {viewer_path}")
+    viewer_document = read_review_html(bundle, viewer_path)
+    st.caption(
+        "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
+        "the mapped pocket residues, and select a residue for its chain and "
+        "structure position. The mobile model is shown after applying the "
+        "recorded alignment matrix."
+    )
+    components.html(viewer_document, height=850, scrolling=True)
+    evidence = selected.drop(
+        columns=["interactive_view_html", "viewer_source_sha256"],
+        errors="ignore",
+    )
+    _display_dataframe(frame=evidence)
+    safe_group = "".join(
+        character if character.isalnum() or character in "_.-" else "_"
+        for character in str(group_row["primary_group_id"])
+    )
+    render_table_downloads(
+        frame=viewers.drop(columns=["viewer_source_sha256"], errors="ignore"),
+        file_stem=f"{safe_group}_structural_superpositions",
+        tsv_label="Download this group's superposition index as TSV",
+        excel_label="Download this group's superposition index as Excel",
+        key=f"{key_prefix}_viewer_index_download",
+    )
+    st.download_button(
+        "Download this self-contained 3D superposition HTML",
+        data=viewer_document,
+        file_name=(
+            f"{safe_group}_{selected.iloc[0]['mobile_accession']}_3d.html"
+        ),
+        mime="text/html",
+        key=f"{key_prefix}_viewer_html_download",
+    )
+
+
 def _render_structural_alignment_section(
     *,
     connection: object,
     config: AppConfig,
+    bundle: PocketReviewBundle,
 ) -> None:
     """Render an interactive 3D-alignment evidence map and complete tables."""
     specification = SECTION_SPECS["structural_alignment"]
     st.subheader(str(specification["title"]))
     st.caption(str(specification["description"]))
+    _render_structural_superposition(
+        bundle=bundle,
+        key_prefix="plant_structural_alignment",
+        heading="Interactive plant structural superposition",
+    )
+    st.markdown("#### Release-wide 3D alignment evidence map")
     st.info(
         "The interactive map combines minimum TM-score and 3D pocket overlap. "
         "Dashed lines show the recorded 0.50 thresholds; same-position support "
         "also requires a pocket-centroid distance of at most 8 Å. Hover, zoom "
-        "and pan to inspect groups. Rotatable coordinate models remain in "
-        "3D structures & pockets."
+        "and pan to inspect groups. The superposition above applies the exact "
+        "recorded alignment matrix to the selected member structure."
     )
     relations = relations_for_section(connection, "structural_alignment")
     compatible: list[tuple[str, list[str]]] = []
@@ -2224,32 +2336,68 @@ def _threshold_pair(field: str, label: str, default: float) -> float:
     return float(st.session_state[number_key])
 
 
-def _render_glossary() -> None:
+def _render_glossary(*, connection: object) -> None:
     """Render plain-language terms and the exact recorded scientific rules."""
     st.subheader("Glossary and computational rules")
     st.info(
         "This expanded glossary combines project-wide technical terminology, the complete "
-        "218-field final-candidate data dictionary and the recorded top-200 computational "
-        "rules. Threshold-explorer changes create sensitivity lists and do not rewrite the "
-        "recorded primary result. Every glossary row is available in the browser below; "
-        "downloading is optional."
+        "218-field final-candidate data dictionary, every column in the loaded DuckDB and the "
+        "recorded top-200 computational rules. Every formatted Excel download also contains a "
+        "Column definitions worksheet for its exact headers. Threshold-explorer changes create "
+        "sensitivity lists and do not rewrite the recorded primary result."
     )
-    sections = glossary_sections()
+    database_section = "Downloaded Excel and DuckDB headers"
+    sections = (*glossary_sections(), database_section)
     selected_section = st.selectbox(
         "Glossary section",
         options=("All sections", *sections),
         key="glossary_section",
     )
-    all_rows = [
+    curated_rows = [
         {"Section": section, **row}
-        for section in sections
+        for section in glossary_sections()
         for row in glossary_rows(section)
     ]
+    relation_schemas = {
+        relation: relation_column_types(
+            connection=connection,
+            relation=relation,
+        )
+        for relation in list_relations(connection)
+    }
+    database_rows = [
+        {
+            "Section": database_section,
+            "Term": row["Column"],
+            "Type / unit": row["Type / unit"],
+            "Plain-language definition": row["Plain-language definition"],
+            "Recorded top-200 rule": row["Recorded rule"],
+            "Interpretation / caution": row["Interpretation / caution"],
+            "Source": row["Definition source"],
+            "Relations / exports": row["Relations / exports"],
+        }
+        for row in database_column_dictionary_rows(
+            relation_schemas=relation_schemas
+        )
+    ]
+    all_rows = [*curated_rows, *database_rows]
     rows = (
         all_rows
         if selected_section == "All sections"
         else [row for row in all_rows if row["Section"] == selected_section]
     )
+    filter_text = st.text_input(
+        "Filter glossary terms, definitions or source-table names",
+        value="",
+        key="glossary_filter",
+    ).strip()
+    if filter_text:
+        needle = filter_text.casefold()
+        rows = [
+            row
+            for row in rows
+            if any(needle in str(value).casefold() for value in row.values())
+        ]
     st.caption(f"{len(rows):,} glossary rows are available in this browser table.")
     _display_dataframe(frame=rows, height=760)
     export = pd.DataFrame(all_rows)
@@ -2480,6 +2628,7 @@ def _render_pocket_review(
     *,
     bundle: PocketReviewBundle,
     focus: str,
+    key_prefix: str = "pocket_review",
 ) -> None:
     """Render a selected self-contained structure or alignment group page."""
     title = (
@@ -2497,7 +2646,7 @@ def _render_pocket_review(
         "Evolutionary group",
         options=list(labels),
         format_func=lambda value: labels[value],
-        key=f"pocket_review_{focus}_group",
+        key=f"{key_prefix}_{focus}_group",
         help="Type to search by rank, HOG/orthogroup, lead cluster or accession.",
     )
     row = selected_group_row(bundle, group_page)
@@ -2531,7 +2680,7 @@ def _render_pocket_review(
         file_stem=f"{safe_group}_{focus}_members",
         tsv_label="Download selected member table as TSV",
         excel_label="Download selected member table as Excel",
-        key=f"pocket_review_{focus}_members_download",
+        key=f"{key_prefix}_{focus}_members_download",
     )
     if focus == "alignment":
         try:
@@ -2547,14 +2696,45 @@ def _render_pocket_review(
                 data=alignment_fasta,
                 file_name=f"{safe_group}_mafft_alignment.fasta",
                 mime="text/x-fasta",
-                key="pocket_review_alignment_fasta_download",
+                key=f"{key_prefix}_alignment_fasta_download",
+            )
+        supplementary = selected_group_supplementary_sequences(
+            bundle=bundle,
+            review_rank=int(row["review_rank"]),
+        )
+        if not supplementary.empty:
+            st.markdown("#### Exact supplementary HOG-member sequences")
+            st.caption(
+                "These exact sequences remain available even when a member has "
+                "no assessable AlphaFold structure or qualifying pocket. They "
+                "are therefore not added to the pocket-annotated alignment unless "
+                "structural pocket coordinates exist."
+            )
+            _display_dataframe(frame=supplementary)
+            render_table_downloads(
+                frame=supplementary,
+                file_stem=f"{safe_group}_supplementary_hog_sequences",
+                tsv_label="Download exact sequence inventory as TSV",
+                excel_label="Download exact sequence inventory as Excel",
+                key=f"{key_prefix}_supplementary_sequences_download",
+            )
+            supplementary_fasta = selected_group_supplementary_fasta_bytes(
+                bundle=bundle,
+                review_rank=int(row["review_rank"]),
+            )
+            st.download_button(
+                label="Download exact supplementary sequences as FASTA",
+                data=supplementary_fasta,
+                file_name=f"{safe_group}_supplementary_hog_sequences.fasta",
+                mime="text/x-fasta",
+                key=f"{key_prefix}_supplementary_fasta_download",
             )
     st.download_button(
         label="Download the self-contained group review HTML",
         data=document,
         file_name=f"{safe_group}_pocket_review.html",
         mime="text/html",
-        key=f"pocket_review_{focus}_html_download",
+        key=f"{key_prefix}_{focus}_html_download",
     )
     st.caption(
         "The embedded report includes the linear pocket-position tracks, retained "
@@ -2573,8 +2753,68 @@ def _render_pocket_review(
                 data=matrix,
                 file_name="e3_cross_group_pocket_evidence_matrix.html",
                 mime="text/html",
-                key="pocket_review_matrix_download",
+                key=f"{key_prefix}_matrix_download",
             )
+
+
+def _render_human_plant_structural_review(
+    *, bundle: PocketReviewBundle
+) -> None:
+    """Render the separate human-and-plant structural extension."""
+    if not bundle.available:
+        st.warning(bundle.reason)
+        st.code("--human-plant-review-dir /path/to/human_plant_pocket_review")
+        return
+    st.info(
+        "This is a separate human-inclusive comparison layer. It reuses the "
+        "recorded plant reference for each group and does not overwrite the "
+        "plant-only ranking or its strict structural conclusions."
+    )
+    review_tabs = st.tabs(
+        [
+            "3D superpositions",
+            "Pocket-aligned sequences",
+            "Structures & pockets",
+            "Evidence tables",
+        ]
+    )
+    with review_tabs[0]:
+        _render_structural_superposition(
+            bundle=bundle,
+            key_prefix="human_plant_structural_alignment",
+            heading="Interactive human and plant structural superposition",
+        )
+    with review_tabs[1]:
+        _render_pocket_review(
+            bundle=bundle,
+            focus="alignment",
+            key_prefix="human_plant_review",
+        )
+    with review_tabs[2]:
+        _render_pocket_review(
+            bundle=bundle,
+            focus="structure",
+            key_prefix="human_plant_review",
+        )
+    with review_tabs[3]:
+        st.markdown("#### Human-and-plant review index")
+        _display_dataframe(frame=bundle.index, height=520)
+        render_table_downloads(
+            frame=bundle.index,
+            file_stem="human_plant_structural_review_index",
+            tsv_label="Download review index as TSV",
+            excel_label="Download review index as Excel",
+            key="human_plant_review_index_download",
+        )
+        st.markdown("#### Pairwise structural superpositions")
+        _display_dataframe(frame=bundle.structural_viewers, height=620)
+        render_table_downloads(
+            frame=bundle.structural_viewers,
+            file_stem="human_plant_structural_superpositions",
+            tsv_label="Download superposition evidence as TSV",
+            excel_label="Download superposition evidence as Excel",
+            key="human_plant_superpositions_download",
+        )
 
 
 def _render_search(*, connection: object, max_rows: int) -> None:
@@ -3596,11 +3836,14 @@ def render_app() -> None:
         st.stop()
         return
     pocket_review = prepare_pocket_review(config)
+    human_plant_review = prepare_human_plant_review(config)
     LOGGER.info(
-        "Opening E3 app source_mode=%s source=%s pocket_review=%s",
+        "Opening E3 app source_mode=%s source=%s pocket_review=%s "
+        "human_plant_review=%s",
         config.source_mode,
         config.source_path,
         pocket_review.path,
+        human_plant_review.path,
     )
 
     st.sidebar.header("Data release")
@@ -3612,6 +3855,12 @@ def render_app() -> None:
         st.sidebar.success(f"Pocket review: {pocket_review.path}")
     else:
         st.sidebar.warning("Portable pocket review is not configured.")
+    if human_plant_review.available:
+        st.sidebar.success(
+            f"Human + plant review: {human_plant_review.path}"
+        )
+    else:
+        st.sidebar.caption("Human + plant structural extension is not configured.")
     st.sidebar.caption(f"Maximum rows per query: {config.max_rows:,}")
     st.sidebar.info(
         "Missing annotation or expression resources are shown as unavailable "
@@ -3643,6 +3892,7 @@ def render_app() -> None:
                     "3D structures & pockets",
                     "Pocket-aligned sequences",
                     "3D alignment",
+                    "Human & plant 3D alignment",
                     "Computational chemistry",
                     "Search",
                     "All results",
@@ -3658,7 +3908,7 @@ def render_app() -> None:
                 _render_workflow_schematic()
             with tabs[2]:
                 _render_tab_help(tab_name="Glossary")
-                _render_glossary()
+                _render_glossary(connection=connection)
             with tabs[3]:
                 _render_tab_help(tab_name="Computational recommendations")
                 _render_method_annotation(tab_name="Computational recommendations")
@@ -3758,8 +4008,17 @@ def render_app() -> None:
                 _render_structural_alignment_section(
                     connection=connection,
                     config=config,
+                    bundle=pocket_review,
                 )
             with tabs[20]:
+                _render_tab_help(tab_name="Human & plant 3D alignment")
+                _render_method_annotation(
+                    tab_name="Human & plant 3D alignment"
+                )
+                _render_human_plant_structural_review(
+                    bundle=human_plant_review
+                )
+            with tabs[21]:
                 _render_tab_help(tab_name="Computational chemistry")
                 _render_method_annotation(tab_name="Computational chemistry")
                 _render_section(
@@ -3767,17 +4026,17 @@ def render_app() -> None:
                     config=config,
                     section="computational_chemistry",
                 )
-            with tabs[21]:
+            with tabs[22]:
                 _render_tab_help(tab_name="Search")
                 _render_search(connection=connection, max_rows=config.max_rows)
-            with tabs[22]:
+            with tabs[23]:
                 _render_tab_help(tab_name="All results")
                 _render_all_results(
                     connection=connection,
                     config=config,
                     relations=relations,
                 )
-            with tabs[23]:
+            with tabs[24]:
                 _render_tab_help(tab_name="Provenance and QC")
                 _render_method_annotation(tab_name="Provenance and QC")
                 _render_section(

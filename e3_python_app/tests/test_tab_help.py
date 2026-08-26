@@ -31,6 +31,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "3D structures & pockets",
         "Pocket-aligned sequences",
         "3D alignment",
+        "Human & plant 3D alignment",
         "Computational chemistry",
         "Search",
         "All results",

@@ -1,0 +1,34 @@
+# Add human structures to a completed, checksum-valid plant workflow release.
+# All relative paths resolve from this file's directory. Copy this file and
+# replace every CHANGE_ME value before launch; do not edit the completed parent
+# workflow configuration or any existing parent-run output.
+
+human_plant_extension:
+  enabled: true
+  parent_workflow_config: CHANGE_ME_parent_workflow_config.yaml
+  output_root: CHANGE_ME_human_plant_extension_output
+  review_limit: 200
+  human_species: Homo_sapiens
+  ligandability_component_config: ../../e3_ligandability_pipeline/config/structural_completion.cluster.yaml
+  ligandability_conda_environment: e3_ligandability
+  structural_alignment_conda_environment: e3_structural_alignment
+
+  # These are per-job requests. At most --max-jobs tasks run concurrently.
+  resources:
+    preparation_memory_mb: 8000
+    preparation_runtime_minutes: 30
+    ligandability_threads: 4
+    ligandability_memory_mb: 16000
+    ligandability_runtime_minutes: 240
+    ligandability_aggregate_threads: 4
+    ligandability_aggregate_memory_mb: 16000
+    ligandability_aggregate_runtime_minutes: 120
+    structural_threads: 4
+    structural_memory_mb: 16000
+    structural_runtime_minutes: 240
+    structural_aggregate_threads: 2
+    structural_aggregate_memory_mb: 12000
+    structural_aggregate_runtime_minutes: 60
+    review_threads: 2
+    review_memory_mb: 12000
+    review_runtime_minutes: 120

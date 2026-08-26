@@ -1,6 +1,6 @@
 # ARIA plant E3 Python reporter
 
-Version 0.15.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
+Version 0.16.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
@@ -27,6 +27,7 @@ Choose exactly one:
 ./run_e3_python_app.sh \
   --resource-duckdb /path/to/e3_integrated_resource.duckdb \
   --pocket-review-dir /path/to/portable_release/pocket_review \
+  --human-plant-review-dir /path/to/human_plant_extension/pocket_review \
   --max-rows 1000 \
   --host 127.0.0.1 \
   --port 8501
@@ -46,13 +47,15 @@ Run-directory mode excludes hidden and `superseded` paths, discovers all
 remaining Parquets recursively and assigns deterministic relation names.
 
 Environment equivalents are `E3_RESOURCE_DUCKDB`, `E3_RESOURCE_PARQUET`,
-`E3_RESOURCE_RUN_DIR`, `E3_EXPRESSION_DUCKDB`, `E3_POCKET_REVIEW_DIR` and
-`E3_MAX_TABLE_ROWS`.
+`E3_RESOURCE_RUN_DIR`, `E3_EXPRESSION_DUCKDB`, `E3_POCKET_REVIEW_DIR`,
+`E3_HUMAN_PLANT_REVIEW_DIR` and `E3_MAX_TABLE_ROWS`.
 
 The pocket-review option is additive and optional. When it is omitted, the app
 auto-discovers the bundle only if exactly one valid direct child beginning with
 `pocket_review` is beside the selected DuckDB/Parquet, or inside the selected
-run directory. It never guesses between multiple bundles.
+run directory. It never guesses between multiple bundles. The separate
+human-and-plant review is never auto-discovered: it must be selected explicitly
+so it cannot be confused with the immutable plant-only baseline.
 
 ## Interface
 
@@ -130,13 +133,16 @@ The reporter provides:
   relation contains both a recognised differential-expression effect size and
   a P/FDR/Q-value field; the current absolute Expression Atlas release is not
   misrepresented as a differential analysis;
-- an interactive 3D-alignment evidence map with hover, zoom and threshold
-  references, plus selected-group rotatable structure/pocket and
-  pocket-annotated MAFFT alignment tabs backed by the self-contained top-200
-  review bundle. Current report pages download the rotated 3D canvas and the
-  complete alignment directly as PDFs; 0.9.0 upgrades legacy report pages in
-  memory with the same controls, and the alignment tab also downloads the
-  selected published MAFFT alignment as FASTA;
+- a plant-only 3D-alignment view that opens the exact self-contained,
+  interactive US-align/TM-align structural superpositions used by the analysis,
+  alongside the established evidence map and tables. A separate **Human & plant
+  3D alignment** view retains the recorded plant reference, adds exact human HOG
+  members, and provides the combined superpositions, rotatable structures and
+  pockets, pocket-annotated MAFFT alignments, evidence tables, HTML, TSV, Excel
+  and FASTA downloads. Human members without an assessable AlphaFold model or
+  qualifying pocket remain visible in a separate exact-sequence inventory and
+  are not mislabelled as pocket-aligned evidence. Current report pages download
+  the rotated 3D canvas and complete alignment directly as PDFs;
 - searchable HOG/orthogroup, DeepClust cluster, rank and accession choices,
   alongside downloadable OrthoFinder member sequence/model identifiers;
 - a separate column multiselect and row limit for every section;
@@ -166,8 +172,10 @@ The reporter provides:
   Excel contains the same bounded rows and selected columns, with visible cell
   gridlines, explicit borders, filter arrows, frozen headers, banded rows,
   centred body values, 10-point wrapped narrative text, bounded readable widths
-  and capped long-text row heights, plus data-appropriate display formats.
-  Numeric source values remain exact;
+  and capped long-text row heights, plus data-appropriate display formats. A
+  second **Column definitions** worksheet defines every exact exported header,
+  including its type, unit, rule, caution, source and related fields. Numeric
+  source values remain exact;
   only their display is shortened.
 
 Wide in-app result tables give every column an explicit readable minimum width,
@@ -253,6 +261,21 @@ portable_visualisation_release_top200_20260803/
 │   ├── tables/
 │   ├── provenance/
 │   └── index.html
+├── human_plant_structural_extension/
+│   ├── plant_pocket_review/
+│   │   ├── structural_alignment/
+│   │   ├── groups/
+│   │   ├── sequences/
+│   │   ├── tables/
+│   │   ├── provenance/
+│   │   └── index.html
+│   └── pocket_review/
+│       ├── structural_alignment/
+│       ├── groups/
+│       ├── sequences/
+│       ├── tables/
+│       ├── provenance/
+│       └── index.html
 └── SHA256SUMS.txt
 ```
 
@@ -263,7 +286,10 @@ PORTABLE_ROOT="/Volumes/One Touch/2026_E3_protac/portable_visualisation_release_
 
 ./run_e3_python_app.sh \
   --resource-duckdb "${PORTABLE_ROOT}/e3_integrated_resource.duckdb" \
-  --pocket-review-dir "${PORTABLE_ROOT}/pocket_review" \
+  --pocket-review-dir \
+    "${PORTABLE_ROOT}/human_plant_structural_extension/plant_pocket_review" \
+  --human-plant-review-dir \
+    "${PORTABLE_ROOT}/human_plant_structural_extension/pocket_review" \
   --max-rows 1000 \
   --host 127.0.0.1 \
   --port 8501
@@ -273,7 +299,7 @@ The portable HTML pages embed the C-alpha traces, pocket mappings, alignment,
 CSS and JavaScript. The app does not need cluster access or a remote structure
 service after the release has been copied.
 
-Pocket-review bundles generated by structural-alignment v0.4.0 add direct
+Pocket-review bundles generated by structural-alignment v0.5.0 add direct
 **Download current view PDF** and **Download alignment PDF** controls. The app
 also injects these offline controls into compatible legacy group pages at read
 time, without changing the source bundle. Native

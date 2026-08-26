@@ -189,7 +189,9 @@ def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None
 
     with ZipFile(BytesIO(payload)) as archive:
         sheet_xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        dictionary_xml = archive.read("xl/worksheets/sheet2.xml").decode("utf-8")
         table_xml = archive.read("xl/tables/table1.xml").decode("utf-8")
+        dictionary_table_xml = archive.read("xl/tables/table2.xml").decode("utf-8")
         styles_xml = archive.read("xl/styles.xml").decode("utf-8")
         strings_xml = archive.read("xl/sharedStrings.xml").decode("utf-8")
 
@@ -210,6 +212,10 @@ def test_dataframe_to_excel_bytes_has_table_filters_freeze_and_formats() -> None
     assert '<sz val="10"' in styles_xml
     assert '<borders count="' in styles_xml
     assert "=2+2" in strings_xml
+    assert 'state="frozen"' in dictionary_xml
+    assert 'name="ColumnDictionaryTable"' in dictionary_table_xml
+    assert "Plain-language definition" in strings_xml
+    assert "candidate_accession" in strings_xml
 
 
 def test_dataframe_to_excel_bytes_rejects_invalid_frames() -> None:
@@ -225,7 +231,11 @@ def test_dataframe_to_excel_bytes_rejects_invalid_frames() -> None:
         frame=pd.DataFrame(columns=["candidate_accession"])
     )
     with ZipFile(BytesIO(empty_payload)) as archive:
-        assert "xl/tables/table1.xml" not in archive.namelist()
+        assert "xl/tables/table1.xml" in archive.namelist()
+        strings_xml = archive.read("xl/sharedStrings.xml").decode("utf-8")
+        workbook_xml = archive.read("xl/workbook.xml").decode("utf-8")
+    assert "Column definitions" in workbook_xml
+    assert "candidate_accession" in strings_xml
 
 
 class _FakeColumn(AbstractContextManager["_FakeColumn"]):

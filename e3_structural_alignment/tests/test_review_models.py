@@ -36,6 +36,18 @@ def test_review_inputs_expose_only_checksum_bound_files(tmp_path: Path) -> None:
         structural_summary=source,
         sensitivity_group_summary=source,
         sensitivity_member_summary=source,
+        structural_alignments=source,
+        structural_pocket_comparisons=source,
+        structural_interactive_root=tmp_path,
     )
-    assert len(inputs.file_inputs()) == 8
+    assert len(inputs.file_inputs()) == 10
     assert "alignments_root" not in inputs.file_inputs()
+    assert "structural_interactive_root" not in inputs.file_inputs()
+
+    supplementary = ReviewInputs(
+        **{
+            **inputs.__dict__,
+            "supplementary_group_sequences": source,
+        }
+    )
+    assert supplementary.file_inputs()["supplementary_group_sequences"] == source

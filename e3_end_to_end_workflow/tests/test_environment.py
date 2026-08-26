@@ -129,7 +129,7 @@ exit 99
     )
 
     assert result.returncode == 2
-    assert "source package is 0.15.0" in result.stderr
+    assert "source package is 0.16.0" in result.stderr
     assert "PATH resolves e3-workflow 0.7.6" in result.stderr
     assert str(fake_workflow) in result.stderr
 
@@ -191,7 +191,7 @@ def test_slurm_controller_submission_and_duplicate_guard(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.15.0\\n'
+        printf 'e3-workflow 0.16.0\\n'
         ;;
     diagnose-install|diagnose-slurm-executor|validate)
         exit 0
@@ -656,7 +656,7 @@ def test_slurm_spool_copy_uses_explicit_source_root(
 set -Eeuo pipefail
 case "$1" in
     --version)
-        printf 'e3-workflow 0.15.0\\n'
+        printf 'e3-workflow 0.16.0\\n'
         ;;
     diagnose-install|validate)
         exit 0
@@ -777,7 +777,7 @@ command_name="$1"
 shift
 case "${command_name}" in
     --version)
-        printf 'e3-workflow 0.15.0\\n'
+        printf 'e3-workflow 0.16.0\\n'
         ;;
     diagnose-install|validate|control|record-invocation)
         exit 0

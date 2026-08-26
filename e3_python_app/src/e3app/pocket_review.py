@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -59,6 +60,34 @@ MODEL_COLUMNS = (
     "retained_pocket_count",
 )
 
+VIEWER_COLUMNS = (
+    "review_rank",
+    "primary_group_type",
+    "primary_group_id",
+    "lead_cluster_id",
+    "reference_accession",
+    "mobile_accession",
+    "reference_species",
+    "mobile_species",
+    "alignment_tool",
+    "interactive_view_html",
+    "viewer_source_sha256",
+)
+
+SUPPLEMENTARY_SEQUENCE_COLUMNS = (
+    "review_rank",
+    "primary_group_type",
+    "primary_group_id",
+    "lead_cluster_id",
+    "fasta_identifier",
+    "candidate_accession",
+    "species_column",
+    "sequence_length",
+    "sequence_sha256",
+    "amino_acid_sequence",
+    "structural_assessment_note",
+)
+
 
 @dataclass(frozen=True)
 class PocketReviewBundle:
@@ -70,6 +99,8 @@ class PocketReviewBundle:
     index: pd.DataFrame
     sequences: pd.DataFrame
     models: pd.DataFrame
+    structural_viewers: pd.DataFrame
+    supplementary_sequences: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 def required_review_paths(review_dir: Path) -> dict[str, Path]:
@@ -188,6 +219,18 @@ def load_pocket_review(review_dir: Path) -> PocketReviewBundle:
     index = _read_tsv(paths["report_index"], INDEX_COLUMNS)
     sequences = _read_tsv(paths["sequences"], SEQUENCE_COLUMNS)
     models = _read_tsv(paths["models"], MODEL_COLUMNS)
+    viewer_path = root / "tables" / "structural_alignment_viewers.tsv"
+    structural_viewers = (
+        _read_tsv(viewer_path, VIEWER_COLUMNS)
+        if viewer_path.is_file()
+        else pd.DataFrame(columns=VIEWER_COLUMNS)
+    )
+    supplementary_path = root / "tables" / "supplementary_group_sequences.tsv"
+    supplementary_sequences = (
+        _read_tsv(supplementary_path, SUPPLEMENTARY_SEQUENCE_COLUMNS)
+        if supplementary_path.is_file()
+        else pd.DataFrame(columns=SUPPLEMENTARY_SEQUENCE_COLUMNS)
+    )
     if index.empty:
         raise AppError("Pocket-review index contains no group pages")
     numeric_ranks = pd.to_numeric(index["review_rank"], errors="coerce")
@@ -206,6 +249,91 @@ def load_pocket_review(review_dir: Path) -> PocketReviewBundle:
         if ranks.isna().any() or (ranks % 1 != 0).any():
             raise AppError("Pocket-review member ranks must be integers")
         table["review_rank"] = ranks.astype("int64")
+    if not supplementary_sequences.empty:
+        supplementary_ranks = pd.to_numeric(
+            supplementary_sequences["review_rank"], errors="coerce"
+        )
+        if (
+            supplementary_ranks.isna().any()
+            or (supplementary_ranks % 1 != 0).any()
+        ):
+            raise AppError("Supplementary-sequence review ranks must be integers")
+        supplementary_sequences["review_rank"] = supplementary_ranks.astype(
+            "int64"
+        )
+        indexed_ranks = set(index["review_rank"].astype(int))
+        unknown_ranks = sorted(
+            set(supplementary_ranks.astype(int)).difference(indexed_ranks)
+        )
+        if unknown_ranks:
+            raise AppError(
+                "Supplementary sequence rows refer to absent review ranks: "
+                + ", ".join(map(str, unknown_ranks))
+            )
+        duplicate_fields = [
+            "review_rank",
+            "primary_group_type",
+            "primary_group_id",
+            "candidate_accession",
+        ]
+        if supplementary_sequences.duplicated(duplicate_fields).any():
+            raise AppError("Supplementary group-member sequences must be unique")
+        for row in supplementary_sequences.itertuples(index=False):
+            sequence = str(row.amino_acid_sequence).strip().upper()
+            try:
+                sequence_length = int(row.sequence_length)
+                observed = hashlib.sha256(sequence.encode("ascii")).hexdigest()
+            except (TypeError, ValueError, UnicodeEncodeError) as exc:
+                raise AppError(
+                    "Supplementary sequences must contain ASCII amino-acid "
+                    f"records with integer lengths: {row.candidate_accession}"
+                ) from exc
+            if len(sequence) != sequence_length:
+                raise AppError(
+                    "Supplementary sequence length does not match for "
+                    f"{row.candidate_accession}"
+                )
+            if observed != str(row.sequence_sha256).strip().lower():
+                raise AppError(
+                    "Supplementary sequence checksum does not match for "
+                    f"{row.candidate_accession}"
+                )
+    if not structural_viewers.empty:
+        viewer_ranks = pd.to_numeric(
+            structural_viewers["review_rank"], errors="coerce"
+        )
+        if viewer_ranks.isna().any() or (viewer_ranks % 1 != 0).any():
+            raise AppError("Structural-viewer review ranks must be integers")
+        structural_viewers["review_rank"] = viewer_ranks.astype("int64")
+        indexed_ranks = set(index["review_rank"].astype(int))
+        unknown_ranks = sorted(
+            set(viewer_ranks.astype(int)).difference(indexed_ranks)
+        )
+        if unknown_ranks:
+            raise AppError(
+                "Structural-viewer rows refer to absent review ranks: "
+                + ", ".join(map(str, unknown_ranks))
+            )
+        if (
+            structural_viewers["interactive_view_html"]
+            .astype(str)
+            .duplicated()
+            .any()
+        ):
+            raise AppError("Structural-viewer pages must be unique")
+        for row in structural_viewers.itertuples(index=False):
+            page = _safe_group_page(root, str(row.interactive_view_html))
+            try:
+                digest = hashlib.sha256(page.read_bytes()).hexdigest()
+            except OSError as exc:
+                raise AppError(
+                    f"Could not checksum structural-viewer page {page}: {exc}"
+                ) from exc
+            if digest != str(row.viewer_source_sha256).strip().lower():
+                raise AppError(
+                    "Structural-viewer checksum does not match its bundle index: "
+                    f"{row.interactive_view_html}"
+                )
     return PocketReviewBundle(
         available=True,
         path=root,
@@ -213,6 +341,8 @@ def load_pocket_review(review_dir: Path) -> PocketReviewBundle:
         index=index.sort_values("review_rank").reset_index(drop=True),
         sequences=sequences,
         models=models,
+        structural_viewers=structural_viewers,
+        supplementary_sequences=supplementary_sequences,
     )
 
 
@@ -237,6 +367,7 @@ def prepare_pocket_review(config: AppConfig) -> PocketReviewBundle:
             index=pd.DataFrame(),
             sequences=pd.DataFrame(),
             models=pd.DataFrame(),
+            structural_viewers=pd.DataFrame(),
         )
     try:
         return load_pocket_review(review_dir)
@@ -248,7 +379,55 @@ def prepare_pocket_review(config: AppConfig) -> PocketReviewBundle:
             index=pd.DataFrame(),
             sequences=pd.DataFrame(),
             models=pd.DataFrame(),
+            structural_viewers=pd.DataFrame(),
         )
+
+
+def prepare_human_plant_review(config: AppConfig) -> PocketReviewBundle:
+    """Prepare the optional human-and-plant structural review bundle."""
+    review_dir = config.human_plant_review_dir
+    if review_dir is None:
+        return PocketReviewBundle(
+            available=False,
+            path=None,
+            reason=(
+                "No human-and-plant review bundle is configured. Start the app "
+                "with --human-plant-review-dir /path/to/pocket_review."
+            ),
+            index=pd.DataFrame(),
+            sequences=pd.DataFrame(),
+            models=pd.DataFrame(),
+            structural_viewers=pd.DataFrame(),
+        )
+    try:
+        return load_pocket_review(review_dir)
+    except AppError as exc:
+        return PocketReviewBundle(
+            available=False,
+            path=review_dir,
+            reason=str(exc),
+            index=pd.DataFrame(),
+            sequences=pd.DataFrame(),
+            models=pd.DataFrame(),
+            structural_viewers=pd.DataFrame(),
+        )
+
+
+def structural_viewers_available(bundle: PocketReviewBundle) -> bool:
+    """Return whether a review bundle contains validated pair viewers."""
+    return bundle.available and not bundle.structural_viewers.empty
+
+
+def selected_structural_viewers(
+    *, bundle: PocketReviewBundle, review_rank: int
+) -> pd.DataFrame:
+    """Return all pairwise viewer records for one review-ranked group."""
+    if not structural_viewers_available(bundle):
+        return pd.DataFrame(columns=VIEWER_COLUMNS)
+    selected = bundle.structural_viewers[
+        bundle.structural_viewers["review_rank"] == int(review_rank)
+    ].copy()
+    return selected.reset_index(drop=True)
 
 
 def group_choice_labels(bundle: PocketReviewBundle) -> dict[str, str]:
@@ -327,6 +506,41 @@ def selected_group_alignment_fasta_bytes(
         )
     except (TypeError, ValueError) as exc:
         raise AppError(f"Could not export selected alignment: {exc}") from exc
+
+
+def selected_group_supplementary_sequences(
+    *, bundle: PocketReviewBundle, review_rank: int
+) -> pd.DataFrame:
+    """Return exact supplementary sequences for one review-ranked group."""
+    if bundle.supplementary_sequences.empty:
+        return pd.DataFrame(columns=SUPPLEMENTARY_SEQUENCE_COLUMNS)
+    selected = bundle.supplementary_sequences[
+        bundle.supplementary_sequences["review_rank"] == int(review_rank)
+    ].copy()
+    return selected.reset_index(drop=True)
+
+
+def selected_group_supplementary_fasta_bytes(
+    *, bundle: PocketReviewBundle, review_rank: int
+) -> bytes:
+    """Return exact supplementary member sequences as downloadable FASTA."""
+    selected = selected_group_supplementary_sequences(
+        bundle=bundle,
+        review_rank=review_rank,
+    )
+    if selected.empty:
+        raise AppError("The selected group has no supplementary sequences")
+    try:
+        return dataframe_to_fasta_bytes(
+            frame=selected,
+            identifier_column="fasta_identifier",
+            sequence_column="amino_acid_sequence",
+            description_columns=("species_column", "candidate_accession"),
+        )
+    except (TypeError, ValueError) as exc:
+        raise AppError(
+            f"Could not export supplementary sequences: {exc}"
+        ) from exc
 
 
 def read_review_html(

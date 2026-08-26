@@ -69,6 +69,7 @@ The normal entry point uses named options only:
     --ranked-pocket-sequence-coordinates \
       /path/to/ranked_pocket_sequence_coordinates.parquet \
     --asset-manifest /path/to/reused_asset_manifest.parquet \
+    --reference-manifest /path/to/preserved_group_references.tsv \
     --output-dir /path/to/structural_alignment_result \
     --usalign-executable USalign \
     --tmalign-executable TMalign \
@@ -88,6 +89,12 @@ The output directory is published atomically. `--resume` succeeds only when the 
 settings, output sizes and output checksums match the completed manifest. An existing mismatched
 directory fails closed; `--force` is required for an intentional replacement and preserves the
 previous directory under a unique `superseded` name.
+
+`--reference-manifest` is optional for normal analysis. When supplied, it must
+identify exactly one eligible reference accession for every analysed group.
+The human-and-plant extension uses this contract to retain the plant reference
+selected by the original analysis rather than selecting a new reference after
+human structures are added.
 
 ## Input contracts
 
@@ -176,6 +183,12 @@ contain no external JavaScript or network dependency, so the whole result direct
 from the cluster and opened locally. These views show C-alpha traces and selected residues; they do
 not claim to be an atomistic surface or docking viewer.
 
+Pocket-review publication in version 0.5.0 checksum-validates and copies these
+exact pairwise superposition pages into the portable bundle, with a
+`tables/structural_alignment_viewers.tsv` index. The Python app therefore opens
+the analysis-derived transforms directly and does not reconstruct or
+cosmetically approximate an alignment in Streamlit.
+
 ## Ranked top-50 pocket-review report
 
 Version 0.3.0 adds an additive post-run report for project-lead manual review. It reads the
@@ -208,7 +221,9 @@ pocket_review_top50/
 │   ├── top_group_evidence_matrix.tsv
 │   ├── pocket_residue_annotations.tsv
 │   ├── protein_model_inventory.tsv
-│   └── prioritised_group_sequences.tsv
+│   ├── prioritised_group_sequences.tsv
+│   └── structural_alignment_viewers.tsv
+├── structural_alignment/groups/<group>/pairs/<tool>/...html
 ├── qc/pocket_review_validation.tsv
 ├── logs/pocket_review.log
 └── provenance/run_manifest.json

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +27,8 @@ from e3app.pocket_review import (
     selected_group_members,
     selected_group_alignment_fasta_bytes,
     selected_group_row,
+    selected_group_supplementary_fasta_bytes,
+    selected_group_supplementary_sequences,
 )
 
 
@@ -125,6 +128,41 @@ def make_pocket_review(parent: Path, name: str = "pocket_review") -> Path:
         sep="\t",
         index=False,
     )
+    viewer_relative = (
+        "structural_alignment/groups/HIERARCHICAL_ORTHOGROUP__N0.HOG1/"
+        "pairs/us-align/cluster_1__N0.HOG1/P1__P2.html"
+    )
+    viewer = root / viewer_relative
+    viewer.parent.mkdir(parents=True)
+    viewer.write_text(
+        "<!doctype html><html><body><canvas id='viewer'></canvas>"
+        "<p>pairwise superposition</p></body></html>",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "review_rank": 1,
+                "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+                "primary_group_id": "N0.HOG1",
+                "lead_cluster_id": "cluster_1",
+                "reference_accession": "P1",
+                "mobile_accession": "P2",
+                "reference_species": "Arabidopsis_thaliana",
+                "mobile_species": "Zea_mays",
+                "alignment_tool": "US-align",
+                "minimum_tm_score": 0.9,
+                "interactive_view_html": viewer_relative,
+                "viewer_source_sha256": hashlib.sha256(
+                    viewer.read_bytes()
+                ).hexdigest(),
+            }
+        ]
+    ).to_csv(
+        root / "tables" / "structural_alignment_viewers.tsv",
+        sep="\t",
+        index=False,
+    )
     return root
 
 
@@ -135,6 +173,7 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     assert required_review_paths(root)["groups"].is_dir()
     bundle = load_pocket_review(root)
     assert bundle.available
+    assert len(bundle.structural_viewers) == 1
     assert bundle.index["review_rank"].tolist() == [1]
     labels = group_choice_labels(bundle)
     page = next(iter(labels))
@@ -158,6 +197,49 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     assert "Pocket-annotated MAFFT sequence alignment" in alignment_html
     assert "scrollIntoView" in alignment_html
     assert read_review_html(bundle, "evidence_matrix.html") == "<html>matrix</html>"
+
+
+def test_supplementary_human_sequences_are_validated_and_downloadable(
+    tmp_path: Path,
+) -> None:
+    """Exact human sequences remain visible without implying pocket evidence."""
+    root = make_pocket_review(tmp_path)
+    sequence = "ACDE"
+    pd.DataFrame(
+        [
+            {
+                "review_rank": 1,
+                "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+                "primary_group_id": "N0.HOG1",
+                "lead_cluster_id": "cluster_1",
+                "fasta_identifier": "rank_001__N0.HOG1__H1",
+                "candidate_accession": "H1",
+                "species_column": "Homo_sapiens",
+                "sequence_length": len(sequence),
+                "sequence_sha256": hashlib.sha256(
+                    sequence.encode("ascii")
+                ).hexdigest(),
+                "amino_acid_sequence": sequence,
+                "structural_assessment_note": "Exact sequence only",
+            }
+        ]
+    ).to_csv(
+        root / "tables" / "supplementary_group_sequences.tsv",
+        sep="\t",
+        index=False,
+    )
+    bundle = load_pocket_review(root)
+    selected = selected_group_supplementary_sequences(
+        bundle=bundle,
+        review_rank=1,
+    )
+    assert selected["candidate_accession"].tolist() == ["H1"]
+    fasta = selected_group_supplementary_fasta_bytes(
+        bundle=bundle,
+        review_rank=1,
+    ).decode("utf-8")
+    assert fasta.startswith(">rank_001__N0.HOG1__H1")
+    assert fasta.endswith("ACDE\n")
 
 
 def test_legacy_fit_control_is_repaired_idempotently() -> None:
@@ -266,6 +348,7 @@ def test_review_validation_fails_closed(tmp_path: Path) -> None:
         index=pd.DataFrame(),
         sequences=pd.DataFrame(),
         models=pd.DataFrame(),
+        structural_viewers=pd.DataFrame(),
     )
     with pytest.raises(AppError, match="unavailable"):
         read_group_html(unavailable, page, "structure")

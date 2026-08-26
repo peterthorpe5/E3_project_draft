@@ -4,6 +4,15 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.5.0
+
+- Adds an explicit group-reference manifest so additive comparisons can retain
+  an established plant reference.
+- Copies checksum-validated pairwise structural-superposition pages into each
+  portable pocket-review bundle and publishes their exact viewer index.
+- Supports an optional checksum-bound supplementary sequence inventory and
+  FASTA for members lacking assessable structures or pockets.
+
 ## v0.4.0
 
 <!-- source: RELEASE_NOTES_v0_4_0.md; sha256: 183d45b0b4ef5cca8a895d929b3fdae8074e9c5c62611e735dc046af2ad63f12 -->

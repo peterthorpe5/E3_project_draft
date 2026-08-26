@@ -31,6 +31,15 @@ from e3workflow.distributed import (
 )
 from e3workflow.errors import WorkflowError
 from e3workflow.fresh import validate_fresh_config
+from e3workflow.human_plant_extension import (
+    aggregate_human_ligandability,
+    aggregate_human_plant_structural,
+    build_human_plant_review,
+    build_plant_baseline_review,
+    prepare_human_plant_extension,
+    run_human_ligandability_task,
+    run_human_plant_structural_task,
+)
 from e3workflow.manifests import validate_proteomes, validate_seed_evidence, validate_shortlist
 from e3workflow.reporting import generate_run_report, record_workflow_invocation
 from e3workflow.production import cache_domain_annotations
@@ -78,6 +87,68 @@ def build_parser() -> argparse.ArgumentParser:
     structural_shard = subparsers.add_parser("run-structural-alignment-shard")
     structural_shard.add_argument("--config", type=Path, required=True)
     structural_shard.add_argument("--task-index", type=int, required=True)
+    human_prepare = subparsers.add_parser("prepare-human-plant-extension")
+    human_prepare.add_argument("--parent-config", type=Path, required=True)
+    human_prepare.add_argument("--output-root", type=Path, required=True)
+    human_prepare.add_argument("--review-limit", type=int, default=200)
+    human_prepare.add_argument("--human-species", default="Homo_sapiens")
+    human_ligandability = subparsers.add_parser(
+        "run-human-ligandability-extension-task"
+    )
+    human_ligandability.add_argument("--parent-config", type=Path, required=True)
+    human_ligandability.add_argument("--task-manifest", type=Path, required=True)
+    human_ligandability.add_argument("--output-root", type=Path, required=True)
+    human_ligandability.add_argument("--task-index", type=int, required=True)
+    human_ligandability.add_argument("--component-config", type=Path, required=True)
+    human_ligandability.add_argument("--conda-environment", required=True)
+    human_ligandability_aggregate = subparsers.add_parser(
+        "aggregate-human-ligandability-extension"
+    )
+    human_ligandability_aggregate.add_argument(
+        "--parent-config", type=Path, required=True
+    )
+    human_ligandability_aggregate.add_argument(
+        "--task-manifest", type=Path, required=True
+    )
+    human_ligandability_aggregate.add_argument(
+        "--group-member-manifest", type=Path, required=True
+    )
+    human_ligandability_aggregate.add_argument(
+        "--group-manifest", type=Path, required=True
+    )
+    human_ligandability_aggregate.add_argument(
+        "--output-root", type=Path, required=True
+    )
+    human_structural = subparsers.add_parser(
+        "run-human-plant-structural-extension-task"
+    )
+    human_structural.add_argument("--parent-config", type=Path, required=True)
+    human_structural.add_argument("--group-manifest", type=Path, required=True)
+    human_structural.add_argument(
+        "--ligandability-manifest", type=Path, required=True
+    )
+    human_structural.add_argument("--output-root", type=Path, required=True)
+    human_structural.add_argument("--task-index", type=int, required=True)
+    human_structural.add_argument("--conda-environment", required=True)
+    human_structural_aggregate = subparsers.add_parser(
+        "aggregate-human-plant-structural-extension"
+    )
+    human_structural_aggregate.add_argument(
+        "--group-manifest", type=Path, required=True
+    )
+    human_structural_aggregate.add_argument(
+        "--output-root", type=Path, required=True
+    )
+    human_review = subparsers.add_parser("build-human-plant-review")
+    human_review.add_argument("--parent-config", type=Path, required=True)
+    human_review.add_argument("--output-root", type=Path, required=True)
+    human_review.add_argument("--conda-environment", required=True)
+    human_review.add_argument("--review-limit", type=int, default=200)
+    plant_review = subparsers.add_parser("build-plant-baseline-review")
+    plant_review.add_argument("--parent-config", type=Path, required=True)
+    plant_review.add_argument("--output-root", type=Path, required=True)
+    plant_review.add_argument("--conda-environment", required=True)
+    plant_review.add_argument("--review-limit", type=int, default=200)
     benchmarks = subparsers.add_parser("aggregate-benchmarks")
     benchmarks.add_argument("--config", type=Path, required=True)
     benchmarks.add_argument("--output-dir", type=Path)
@@ -291,6 +362,64 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config=load_config(args.config),
                 task_index=args.task_index,
             )
+        elif args.command == "prepare-human-plant-extension":
+            payload = prepare_human_plant_extension(
+                parent_config_path=args.parent_config,
+                output_root=args.output_root,
+                review_limit=args.review_limit,
+                human_species=args.human_species,
+            )
+        elif args.command == "run-human-ligandability-extension-task":
+            marker = run_human_ligandability_task(
+                parent_config_path=args.parent_config,
+                task_manifest=args.task_manifest,
+                output_root=args.output_root,
+                task_index=args.task_index,
+                component_config=args.component_config,
+                conda_environment=args.conda_environment,
+            )
+            payload = {"status": "complete", "marker": str(marker)}
+        elif args.command == "aggregate-human-ligandability-extension":
+            manifest = aggregate_human_ligandability(
+                parent_config_path=args.parent_config,
+                task_manifest=args.task_manifest,
+                group_member_manifest=args.group_member_manifest,
+                group_manifest=args.group_manifest,
+                output_root=args.output_root,
+            )
+            payload = {"status": "complete", "manifest": str(manifest)}
+        elif args.command == "run-human-plant-structural-extension-task":
+            marker = run_human_plant_structural_task(
+                parent_config_path=args.parent_config,
+                group_manifest=args.group_manifest,
+                ligandability_manifest=args.ligandability_manifest,
+                output_root=args.output_root,
+                task_index=args.task_index,
+                conda_environment=args.conda_environment,
+            )
+            payload = {"status": "complete", "marker": str(marker)}
+        elif args.command == "aggregate-human-plant-structural-extension":
+            manifest = aggregate_human_plant_structural(
+                group_manifest=args.group_manifest,
+                output_root=args.output_root,
+            )
+            payload = {"status": "complete", "manifest": str(manifest)}
+        elif args.command == "build-human-plant-review":
+            manifest = build_human_plant_review(
+                parent_config_path=args.parent_config,
+                output_root=args.output_root,
+                conda_environment=args.conda_environment,
+                review_limit=args.review_limit,
+            )
+            payload = {"status": "complete", "manifest": str(manifest)}
+        elif args.command == "build-plant-baseline-review":
+            manifest = build_plant_baseline_review(
+                parent_config_path=args.parent_config,
+                output_root=args.output_root,
+                conda_environment=args.conda_environment,
+                review_limit=args.review_limit,
+            )
+            payload = {"status": "complete", "manifest": str(manifest)}
         elif args.command == "aggregate-benchmarks":
             config = load_config(path=args.config)
             payload = aggregate_run_benchmarks(

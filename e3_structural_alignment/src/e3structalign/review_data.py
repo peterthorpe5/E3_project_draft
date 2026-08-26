@@ -78,11 +78,27 @@ _RUN_FILE_CANDIDATES = {
         "09b_structural_alignment/structural_alignment/tables/"
         "structural_pocket_sensitivity_member_summary.tsv",
     ),
+    "structural_alignments": (
+        "09b_structural_alignment/structural_alignment/tables/"
+        "structural_alignments.parquet",
+        "09b_structural_alignment/structural_alignment/tables/"
+        "structural_alignments.tsv",
+    ),
+    "structural_pocket_comparisons": (
+        "09b_structural_alignment/structural_alignment/tables/"
+        "pocket_comparisons.parquet",
+        "09b_structural_alignment/structural_alignment/tables/"
+        "pocket_comparisons.tsv",
+    ),
 }
 
 _ALIGNMENT_ROOT_CANDIDATES = (
     "09_ligandability/alignments",
     "09_ligandability/generated_ligandability/alignments",
+)
+
+_STRUCTURAL_INTERACTIVE_ROOT_CANDIDATES = (
+    "09b_structural_alignment/structural_alignment/interactive",
 )
 
 
@@ -159,6 +175,30 @@ def _resolve_alignment_root(
     return present[0].resolve()
 
 
+def _resolve_structural_interactive_root(
+    *, run_root: Path, override: Path | None
+) -> Path:
+    """Resolve the published Stage 09b interactive viewer directory."""
+    if override is not None:
+        resolved = Path(override).expanduser().resolve()
+        if not resolved.is_dir():
+            raise InputValidationError(
+                f"structural_interactive_root is not a directory: {resolved}"
+            )
+        return resolved
+    present = [
+        run_root / relative
+        for relative in _STRUCTURAL_INTERACTIVE_ROOT_CANDIDATES
+        if (run_root / relative).is_dir()
+    ]
+    if len(present) != 1:
+        raise InputValidationError(
+            "Expected exactly one Stage 09b interactive viewer directory below "
+            f"{run_root}; found {len(present)}"
+        )
+    return present[0].resolve()
+
+
 def resolve_review_inputs(
     *,
     run_root: Path,
@@ -176,6 +216,12 @@ def resolve_review_inputs(
         )
         for label in _RUN_FILE_CANDIDATES
     }
+    supplementary_sequences = None
+    if overrides.supplementary_group_sequences is not None:
+        supplementary_sequences = resolve_input_file(
+            overrides.supplementary_group_sequences,
+            "supplementary group sequences",
+        )
     return ReviewInputs(
         run_root=root,
         shortlist=paths["shortlist"],
@@ -192,6 +238,15 @@ def resolve_review_inputs(
         structural_summary=paths["structural_summary"],
         sensitivity_group_summary=paths["sensitivity_group_summary"],
         sensitivity_member_summary=paths["sensitivity_member_summary"],
+        structural_alignments=paths["structural_alignments"],
+        structural_pocket_comparisons=paths[
+            "structural_pocket_comparisons"
+        ],
+        structural_interactive_root=_resolve_structural_interactive_root(
+            run_root=root,
+            override=overrides.structural_interactive_root,
+        ),
+        supplementary_group_sequences=supplementary_sequences,
     )
 
 
@@ -584,6 +639,9 @@ def input_digest(
         "inputs": inventory,
         "run_root": str(inputs.run_root),
         "alignments_root": str(inputs.alignments_root),
+        "structural_interactive_root": str(
+            inputs.structural_interactive_root
+        ),
         "settings": {
             "review_limit": settings.review_limit,
             "member_pocket_top_k": settings.member_pocket_top_k,

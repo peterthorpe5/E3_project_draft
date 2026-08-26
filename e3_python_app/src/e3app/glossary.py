@@ -12,7 +12,8 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from importlib.resources import files
-from typing import Mapping
+import re
+from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -344,6 +345,143 @@ GLOSSARY_ENTRIES = (
         source="Final candidate field dictionary v1.0",
     ),
 )
+
+_TYPE_OR_UNIT_PATTERNS = (
+    (re.compile(r"(^|_)(fraction|proportion|identity|overlap)(_|$)"), "Fraction (0-1)"),
+    (re.compile(r"(^|_)score($|_)"), "Numeric score; consult the named method"),
+    (re.compile(r"(^|_)(count|number|rank|length|position|index)($|_)"), "Integer"),
+    (
+        re.compile(r"(^|_)(pass|supported|available|is_[a-z0-9_]+)($|_)"),
+        "Boolean or categorical status",
+    ),
+    (re.compile(r"(^|_)(date|time|timestamp)($|_)"), "Date/time"),
+    (re.compile(r"(^|_)(id|identifier|accession|entry)($|_)"), "Identifier/text"),
+)
+
+
+def _humanise_column_name(column_name: str) -> str:
+    """Return a readable phrase for one machine-facing field name."""
+    return " ".join(column_name.replace("_", " ").split())
+
+
+def _inferred_column_definition(column_name: str) -> tuple[str, str]:
+    """Return a transparent fallback definition and interpretation."""
+    phrase = _humanise_column_name(column_name)
+    lower = column_name.lower()
+    if lower.endswith("_count"):
+        definition = f"Number of records, members or events represented by {phrase}."
+    elif lower.endswith("_fraction") or lower.endswith("_proportion"):
+        definition = f"Proportion represented by {phrase}, normally reported from 0 to 1."
+    elif lower.endswith("_score"):
+        definition = f"Recorded numerical value for {phrase}."
+    elif lower.endswith("_rank"):
+        definition = (
+            f"Ordered position for {phrase}; lower values normally indicate "
+            "earlier priority."
+        )
+    elif lower.endswith("_status"):
+        definition = f"Controlled categorical result for {phrase}."
+    elif lower.startswith("is_") or lower.endswith("_pass"):
+        definition = f"Indicator recording whether {phrase} is true or satisfied."
+    elif lower.endswith("_id") or lower.endswith("_identifier"):
+        definition = f"Identifier used for {phrase}."
+    elif lower.endswith("_accessions"):
+        definition = f"Semicolon-delimited protein accessions recorded for {phrase}."
+    elif lower.endswith("_accession"):
+        definition = f"Protein or source-record accession used for {phrase}."
+    elif lower.endswith("_path"):
+        definition = f"Recorded file or resource location for {phrase}."
+    elif lower.endswith("_sha256"):
+        definition = f"SHA-256 checksum used to verify the byte identity of {phrase}."
+    elif lower.endswith("_reason"):
+        definition = f"Recorded explanation for {phrase}."
+    elif lower.endswith("_interpretation"):
+        definition = f"Plain-language interpretation supplied for {phrase}."
+    else:
+        definition = f"Source field reporting {phrase}."
+    caution = (
+        "This definition is generated from the exported header because no exact curated "
+        "field entry was present. Interpret it with the source relation and methods annotation."
+    )
+    return definition, caution
+
+
+def _inferred_type_or_unit(column_name: str, declared_type: str = "") -> str:
+    """Infer a conservative type or unit from schema and field-name evidence."""
+    if declared_type.strip():
+        return declared_type.strip()
+    lower = column_name.lower()
+    for pattern, label in _TYPE_OR_UNIT_PATTERNS:
+        if pattern.search(lower):
+            return label
+    return "Text or source-declared value"
+
+
+def column_definition_row(
+    *, column_name: str, declared_type: str = "", relations: Sequence[str] = ()
+) -> dict[str, str]:
+    """Return a complete dictionary row for any exported table header.
+
+    Exact curated glossary entries take precedence. A clearly labelled,
+    deterministic fallback ensures a new source column can never disappear from
+    either an Excel workbook's dictionary sheet or the database-wide glossary.
+    """
+    name = str(column_name).strip()
+    if not name:
+        raise ValueError("Column dictionary headers must be non-empty.")
+    exact = [entry for entry in GLOSSARY_ENTRIES if entry.term == name]
+    if not exact:
+        exact = [
+            entry
+            for entry in GLOSSARY_ENTRIES
+            if entry.term.casefold() == name.casefold()
+        ]
+    if exact:
+        entry = exact[-1]
+        return {
+            "Column": name,
+            "Type / unit": entry.type_or_unit or _inferred_type_or_unit(
+                name, declared_type
+            ),
+            "Plain-language definition": entry.definition,
+            "Recorded rule": entry.recorded_rule,
+            "Interpretation / caution": entry.interpretation_or_caution,
+            "Definition source": entry.source,
+            "Relations / exports": ";".join(sorted(set(relations))),
+        }
+    definition, caution = _inferred_column_definition(name)
+    return {
+        "Column": name,
+        "Type / unit": _inferred_type_or_unit(name, declared_type),
+        "Plain-language definition": definition,
+        "Recorded rule": "",
+        "Interpretation / caution": caution,
+        "Definition source": "Deterministic exported-header definition",
+        "Relations / exports": ";".join(sorted(set(relations))),
+    }
+
+
+def database_column_dictionary_rows(
+    *, relation_schemas: Mapping[str, Mapping[str, str]]
+) -> list[dict[str, str]]:
+    """Return one complete glossary row per distinct loaded relation header."""
+    relations_by_column: dict[str, list[str]] = {}
+    types_by_column: dict[str, set[str]] = {}
+    for relation, schema in relation_schemas.items():
+        for column, declared_type in schema.items():
+            relations_by_column.setdefault(str(column), []).append(str(relation))
+            types_by_column.setdefault(str(column), set()).add(str(declared_type))
+    rows = []
+    for column in sorted(relations_by_column, key=lambda value: value.casefold()):
+        types = ";".join(sorted(types_by_column[column]))
+        rows.append(
+            column_definition_row(
+                column_name=column,
+                declared_type=types,
+                relations=relations_by_column[column],
+            )
+        )
+    return rows
 
 
 def glossary_sections() -> tuple[str, ...]:

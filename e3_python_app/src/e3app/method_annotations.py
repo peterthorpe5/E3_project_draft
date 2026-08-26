@@ -430,6 +430,52 @@ METHOD_ANNOTATIONS = {
             ),
         ),
     ),
+    "Human & plant 3D alignment": MethodAnnotation(
+        introduction=(
+            "This separately labelled extension adds Homo sapiens members to the selected "
+            "plant HOGs while preserving each group's recorded plant reference and the original "
+            "plant-only result. Human AlphaFold Database models and pockets are processed with "
+            "the same versioned methods and thresholds used for the plant campaign."
+        ),
+        sections=(
+            MethodSection(
+                heading="Scope and comparability",
+                bullets=(
+                    "Human membership comes from the same root-level OrthoFinder HOG authority "
+                    "used in the app's Plant & human HOGs view; only exact, uniquely resolved "
+                    "protein accessions and published sequences enter structural processing.",
+                    "The human-inclusive outputs are stored under a separate analysis scope. "
+                    "They do not change pre-structure rank, post-structure rank or the strict "
+                    "plant-only support calls.",
+                ),
+            ),
+            MethodSection(
+                heading="Matched structural rules",
+                bullets=(
+                    "US-align and TM-align both compare each eligible member with the preserved "
+                    "plant reference. The lower length-normalised TM-score must be at least 0.50.",
+                    "Same-position support retains centroid distance at most 8 Angstrom and "
+                    "symmetric pocket overlap at least 0.50. Strict local support retains the "
+                    "4 Angstrom residue distance, 0.50 residue-match, 0.60 chemical-group and "
+                    "0.75 group-support thresholds.",
+                ),
+            ),
+        ),
+        interpretation_boundary=(
+            "Human and plant co-membership and predicted structural correspondence support "
+            "comparative prioritisation; they do not demonstrate conserved E3 activity, ligand "
+            "binding, degradation or transferable PROTAC pharmacology."
+        ),
+        references=(
+            MethodReference(
+                label=(
+                    "Xu and Zhang (2010), How significant is a protein structure similarity "
+                    "with TM-score = 0.5?"
+                ),
+                url=TM_SCORE_REFERENCE_URL,
+            ),
+        ),
+    ),
     "Computational chemistry": MethodAnnotation(
         introduction=(
             "The completed project resource records a preliminary open-source, residue-derived "

@@ -28,6 +28,7 @@ def test_scientific_tabs_have_substantive_method_annotations() -> None:
         "3D structures & pockets",
         "Pocket-aligned sequences",
         "3D alignment",
+        "Human & plant 3D alignment",
         "Computational chemistry",
         "Provenance and QC",
     }

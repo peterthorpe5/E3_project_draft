@@ -371,6 +371,68 @@ def review_run(
         sensitivity_member_rows,
         tuple(sensitivity_member_rows[0]),
     )
+    viewer_relative = (
+        "interactive/pairs/us-align/cluster_1__OG0001/P1__P2.html"
+    )
+    viewer = (
+        stage09b.parent
+        / "interactive"
+        / "pairs"
+        / "us-align"
+        / "cluster_1__OG0001"
+        / "P1__P2.html"
+    )
+    viewer.parent.mkdir(parents=True)
+    viewer.write_text(
+        "<!doctype html><html><body><canvas id='viewer'></canvas>"
+        "<p>validated pairwise superposition</p></body></html>",
+        encoding="utf-8",
+    )
+    alignment_rows = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "reference_accession": "P1",
+            "mobile_accession": "P2",
+            "reference_species": "species_1",
+            "mobile_species": "species_2",
+            "alignment_tool": "US-align",
+            "status": "COMPLETE",
+            "minimum_tm_score": 1.0,
+            "rmsd_angstrom": 0.0,
+            "interactive_view_relative_path": viewer_relative,
+        }
+    ]
+    write_tsv(
+        stage09b / "structural_alignments.tsv",
+        alignment_rows,
+        tuple(alignment_rows[0]),
+    )
+    comparison_rows = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "orthogroup",
+            "primary_group_id": "OG0001",
+            "reference_accession": "P1",
+            "mobile_accession": "P2",
+            "reference_species": "species_1",
+            "mobile_species": "species_2",
+            "alignment_tool": "US-align",
+            "centroid_distance_angstrom": 0.0,
+            "symmetric_overlap_fraction": 1.0,
+            "structural_residue_match_fraction": 1.0,
+            "structural_chemical_group_conservation": 1.0,
+            "same_pocket_position_supported": True,
+            "pocket_structure_conserved": True,
+            "status": "ASSESSED",
+        }
+    ]
+    write_tsv(
+        stage09b / "pocket_comparisons.tsv",
+        comparison_rows,
+        tuple(comparison_rows[0]),
+    )
     return {
         "run_root": run_root,
         "output": tmp_path / "review_report",

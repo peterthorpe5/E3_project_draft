@@ -4,6 +4,20 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.0
+
+- Adds an optional, restartable human-and-plant structural extension to both
+  completed-release and full start-to-finish execution modes.
+- Selects exact human members from the same root HOGs, computes only missing
+  human AlphaFold/FPocket/P2Rank evidence and preserves each recorded plant
+  structural reference.
+- Publishes combined pocket conservation, US-align/TM-align superpositions and
+  a separate app-ready review bundle without modifying plant-only results.
+- Republishes the plant-only portable review from existing Stage 09b viewers so
+  the enhanced plant tab requires no structural recomputation.
+- Adds durable Slurm-controller and local launchers, checksum-bound task reuse,
+  exact human sequence inventories and a reviewed top-200 cluster template.
+
 ## v0.15.0
 
 <!-- source: RELEASE_NOTES_v0_15_0.md; sha256: dd205ea122c6530514e9a2cd995ce601720f6a1ac104e5669d773a2d9d646ca6 -->

@@ -55,6 +55,17 @@ STRUCTURAL_ALIGNMENT_TASKS = [
     f"{index:04d}"
     for index in range(structural_alignment_task_count(E3_CONFIG))
 ]
+HUMAN_PLANT_EXTENSION = dict(config.get("human_plant_extension", {}))
+HUMAN_PLANT_FINAL_OUTPUTS = []
+if HUMAN_PLANT_EXTENSION.get("enabled", False):
+    HUMAN_PLANT_CONFIG_PATH = CONFIG_PATH
+    HUMAN_PLANT_CONFIG_BASE = CONFIG_PATH.parent
+    HUMAN_PLANT_DEFAULT_PARENT_CONFIG = CONFIG_PATH
+    include: "human_plant_extension_rules.smk"
+    HUMAN_PLANT_FINAL_OUTPUTS = [
+        str(HUMAN_PLANT_PLANT_REVIEW_MANIFEST),
+        str(HUMAN_PLANT_REVIEW_MANIFEST),
+    ]
 
 
 def stage_inputs(wildcards):
@@ -80,7 +91,8 @@ rule all:
         workflow_resources=str(BENCHMARK_ROOT / "workflow_resource_summary.tsv"),
         stage_reports=STAGE_REPORTS,
         run_report=str(RUN_REPORT),
-        report_manifest=str(REPORT_MANIFEST)
+        report_manifest=str(REPORT_MANIFEST),
+        human_plant_review=HUMAN_PLANT_FINAL_OUTPUTS
 
 
 rule generate_run_report:

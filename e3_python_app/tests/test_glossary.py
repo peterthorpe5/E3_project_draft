@@ -7,6 +7,8 @@ import pytest
 from e3app.glossary import (
     GLOSSARY_ENTRIES,
     SLIDER_HELP,
+    column_definition_row,
+    database_column_dictionary_rows,
     glossary_rows,
     glossary_sections,
 )
@@ -94,3 +96,34 @@ def test_glossary_resource_validation_rejects_bad_arguments() -> None:
             file_name="project_term_glossary.tsv",
             source="",
         )
+
+
+def test_every_database_header_receives_a_searchable_definition() -> None:
+    """Curated and newly encountered headers must both remain documented."""
+    curated = column_definition_row(column_name="final_evolutionary_rank")
+    assert curated["Definition source"] == "Final candidate field dictionary v1.0"
+    assert "Final rank" in curated["Plain-language definition"]
+
+    inferred = column_definition_row(
+        column_name="new_assessed_member_count",
+        declared_type="BIGINT",
+        relations=("future_relation",),
+    )
+    assert inferred["Type / unit"] == "BIGINT"
+    assert inferred["Plain-language definition"]
+    assert inferred["Relations / exports"] == "future_relation"
+    assert "generated" in inferred["Interpretation / caution"].lower()
+
+    rows = database_column_dictionary_rows(
+        relation_schemas={
+            "first": {"candidate_accession": "VARCHAR", "score": "DOUBLE"},
+            "second": {"candidate_accession": "VARCHAR", "status": "VARCHAR"},
+        }
+    )
+    assert {row["Column"] for row in rows} == {
+        "candidate_accession",
+        "score",
+        "status",
+    }
+    accession = next(row for row in rows if row["Column"] == "candidate_accession")
+    assert accession["Relations / exports"] == "first;second"

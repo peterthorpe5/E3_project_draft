@@ -56,6 +56,8 @@ def test_launcher_subprocess(resource_db: Path) -> None:
                     str(resource_db),
                     "--pocket-review-dir",
                     str(resource_db.parent),
+                    "--human-plant-review-dir",
+                    str(resource_db.parent),
                     "--headless",
                 ]
             )
@@ -66,6 +68,9 @@ def test_launcher_subprocess(resource_db: Path) -> None:
     assert run.call_args.kwargs["env"]["E3_POCKET_REVIEW_DIR"] == str(
         resource_db.parent
     )
+    assert run.call_args.kwargs["env"]["E3_HUMAN_PLANT_REVIEW_DIR"] == str(
+        resource_db.parent
+    )
     assert "E3_RESOURCE_PARQUET" not in run.call_args.kwargs["env"]
 
     with patch.dict(
@@ -73,6 +78,7 @@ def test_launcher_subprocess(resource_db: Path) -> None:
         {
             "E3_EXPRESSION_DUCKDB": "stale",
             "E3_POCKET_REVIEW_DIR": "stale",
+            "E3_HUMAN_PLANT_REVIEW_DIR": "stale",
         },
         clear=True,
     ), patch("e3app.cli.subprocess.run", return_value=Mock(returncode=0)) as clean_run:
@@ -80,6 +86,7 @@ def test_launcher_subprocess(resource_db: Path) -> None:
     clean_environment = clean_run.call_args.kwargs["env"]
     assert "E3_EXPRESSION_DUCKDB" not in clean_environment
     assert "E3_POCKET_REVIEW_DIR" not in clean_environment
+    assert "E3_HUMAN_PLANT_REVIEW_DIR" not in clean_environment
 
 
 def test_bad_host(resource_db: Path) -> None:

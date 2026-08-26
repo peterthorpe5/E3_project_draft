@@ -61,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--pocket-sequence-coordinates", type=Path)
     run.add_argument("--ranked-pocket-sequence-coordinates", type=Path)
     run.add_argument("--asset-manifest", type=Path, required=True)
+    run.add_argument("--reference-manifest", type=Path)
     run.add_argument("--output-dir", type=Path, required=True)
     run.add_argument("--usalign-executable", default="USalign")
     run.add_argument("--tmalign-executable", default="TMalign")
@@ -125,6 +126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.ranked_pocket_sequence_coordinates
             ),
             asset_manifest_path=args.asset_manifest,
+            reference_manifest_path=args.reference_manifest,
             output_dir=args.output_dir,
             settings=AlignmentSettings(
                 usalign_executable=args.usalign_executable,

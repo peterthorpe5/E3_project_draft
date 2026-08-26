@@ -21,9 +21,11 @@ The repository never treats the presence of an output file as proof that a stage
 Checksum-bound manifests, controlled configuration, declared output validation and atomic
 publication are the restart authority.
 
-Version 0.15.0 retains the verified Expression Atlas five-number-summary contract, the current
-group-level Stage 08 selection rules and the optional open-source structure-guided chemistry
-integration.
+Version 0.16.0 retains the verified Expression Atlas and plant structural
+contracts and adds an optional human-and-plant structural branch. An enabled
+`human_plant_extension` is part of the same start-to-finish DAG; the standalone
+extension launcher can instead attach it to a completed checksum-valid plant
+release without rewriting that baseline.
 The chemistry stage is disabled by default, requires no commercial or separately negotiated
 software licence, and records FMOPhore, FrAncestor and AlphaFold3 as not run. Earlier completed
 results remain immutable; updated evidence is integrated through a new versioned workflow run.

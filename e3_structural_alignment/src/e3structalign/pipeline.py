@@ -1726,6 +1726,7 @@ def run_analysis(
     ],
     output_root: Path,
     settings: AlignmentSettings,
+    reference_accessions: Mapping[tuple[str, str, str], str] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -1800,14 +1801,29 @@ def run_analysis(
         tuple[list[SelectedPocket], SelectedPocket | None, list[SelectedPocket]]
     ] = []
     tasks: list[tuple[SelectedPocket, SelectedPocket, str, str]] = []
-    for records in grouped.values():
+    preferred_references = reference_accessions or {}
+    for key, records in grouped.items():
         records.sort(key=lambda item: item.accession)
         eligible = [
             record
             for record in records
             if record.accession in assets and record.accession in atom_records
         ]
-        reference = min(eligible, key=_reference_sort_key) if eligible else None
+        requested_reference = preferred_references.get(key)
+        if requested_reference:
+            requested = [
+                record
+                for record in eligible
+                if record.accession == requested_reference
+            ]
+            if len(requested) != 1:
+                raise InputValidationError(
+                    "The preferred structural reference is not an eligible "
+                    f"selected-pocket model for {key}: {requested_reference}"
+                )
+            reference = requested[0]
+        else:
+            reference = min(eligible, key=_reference_sort_key) if eligible else None
         group_context.append((records, reference, eligible))
         if reference is None:
             continue
@@ -2057,6 +2073,7 @@ def run_pipeline(
     pocket_sequence_coordinates_path: Path | None = None,
     ranked_pockets_path: Path | None = None,
     ranked_pocket_sequence_coordinates_path: Path | None = None,
+    reference_manifest_path: Path | None = None,
 ) -> Path:
     """Run the complete workflow through atomic publication."""
     settings.validate()
@@ -2085,6 +2102,11 @@ def run_pipeline(
         input_paths["ranked_pocket_sequence_coordinates"] = resolve_input_file(
             ranked_pocket_sequence_coordinates_path,
             "ranked pocket sequence coordinates",
+        )
+    if reference_manifest_path is not None:
+        input_paths["reference_manifest"] = resolve_input_file(
+            reference_manifest_path,
+            "preferred structural reference manifest",
         )
     run_digest, input_inventory = _run_digest(
         input_paths=input_paths,
@@ -2162,6 +2184,36 @@ def run_pipeline(
             ),
             ranked=ranked,
         )
+        reference_accessions: dict[tuple[str, str, str], str] = {}
+        if "reference_manifest" in input_paths:
+            reference_rows = read_records(input_paths["reference_manifest"])
+            require_columns(
+                reference_rows,
+                (
+                    "cluster_id",
+                    "primary_group_type",
+                    "primary_group_id",
+                    "reference_accession",
+                ),
+                "preferred structural reference manifest",
+            )
+            for row in reference_rows:
+                key = (
+                    _text(row["cluster_id"]),
+                    _text(row["primary_group_type"]),
+                    _text(row["primary_group_id"]),
+                )
+                accession = _text(row["reference_accession"])
+                if not all(key) or not accession:
+                    raise InputValidationError(
+                        "Preferred structural reference rows must have complete "
+                        "group keys and accessions"
+                    )
+                if key in reference_accessions:
+                    raise InputValidationError(
+                        f"Duplicate preferred structural reference group: {key}"
+                    )
+                reference_accessions[key] = accession
         LOGGER.info(
             "Selected pockets=%d; ranked pockets=%d; resolved models=%d; "
             "mapped-pocket accessions=%d; FASTA-coordinate accessions=%d",
@@ -2191,6 +2243,7 @@ def run_pipeline(
             ranked_sequence_coordinates=ranked_sequence_coordinates,
             output_root=staging,
             settings=settings,
+            reference_accessions=reference_accessions,
         )
         LOGGER.info(
             "Completed strict comparisons=%d; top-k comparisons=%d; "

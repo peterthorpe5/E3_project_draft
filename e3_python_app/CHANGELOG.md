@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.0
+
+- Opens exact analysis-derived, self-contained US-align/TM-align
+  superpositions in the existing plant-only 3D alignment view.
+- Adds a scientifically separate human-and-plant 3D alignment view with
+  structures, pockets, pocket-annotated MAFFT alignments, evidence tables and
+  HTML, TSV, formatted Excel and FASTA downloads.
+- Retains exact human HOG-member sequences when structure or pocket evidence is
+  unavailable, without presenting them as pocket-aligned evidence.
+- Adds a complete runtime DuckDB-header glossary and a `Column definitions`
+  worksheet to every generated Excel workbook.
+
 ## v0.15.0
 
 <!-- source: RELEASE_NOTES_v0_15_0.md; sha256: 703368ef3a67b695dcaa82b727cc64d0bc6a03b3ced9afba8f558ec22983a288 -->

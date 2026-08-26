@@ -13,6 +13,8 @@ from typing import Any, Sequence
 import pandas as pd
 import xlsxwriter
 
+from e3app.glossary import column_definition_row
+
 try:
     import streamlit as st
 except ModuleNotFoundError:  # pragma: no cover - exercised by dependency checks.
@@ -444,6 +446,61 @@ def dataframe_to_excel_bytes(*, frame: pd.DataFrame) -> bytes:
                 "banded_rows": True,
             },
         )
+
+    dictionary = workbook.add_worksheet("Column definitions")
+    dictionary.hide_gridlines(option=0)
+    dictionary.freeze_panes(row=1, col=0)
+    dictionary.set_zoom(zoom=90)
+    definition_rows = [
+        column_definition_row(
+            column_name=column_name,
+            declared_type=str(frame.iloc[:, column_index].dtype),
+            relations=("Selection",),
+        )
+        for column_index, column_name in enumerate(column_names)
+    ]
+    definition_columns = list(definition_rows[0])
+    dictionary_widths = (32, 24, 60, 42, 60, 36, 28)
+    for column_index, (column_name, width) in enumerate(
+        zip(definition_columns, dictionary_widths, strict=True)
+    ):
+        dictionary.set_column(column_index, column_index, width)
+        dictionary.write_string(0, column_index, column_name, header_format)
+    dictionary_cell = workbook.add_format(
+        {
+            "align": "left",
+            "valign": "top",
+            "border": 1,
+            "border_color": "#D9E2F3",
+            "text_wrap": True,
+            "font_size": 10,
+        }
+    )
+    for row_index, row in enumerate(definition_rows, start=1):
+        for column_index, column_name in enumerate(definition_columns):
+            dictionary.write_string(
+                row_index,
+                column_index,
+                str(row[column_name]),
+                dictionary_cell,
+            )
+        dictionary.set_row(row_index, height=48)
+    dictionary.add_table(
+        first_row=0,
+        first_col=0,
+        last_row=len(definition_rows),
+        last_col=len(definition_columns) - 1,
+        options={
+            "name": "ColumnDictionaryTable",
+            "style": "Table Style Medium 2",
+            "columns": [
+                {"header": column, "header_format": header_format}
+                for column in definition_columns
+            ],
+            "autofilter": True,
+            "banded_rows": True,
+        },
+    )
 
     workbook.close()
     return output.getvalue()

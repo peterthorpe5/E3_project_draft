@@ -39,10 +39,12 @@ def test_environment_config_and_validation(
             "E3_RESOURCE_DUCKDB": str(resource_db),
             "E3_EXPRESSION_DUCKDB": str(resource_db),
             "E3_POCKET_REVIEW_DIR": str(run_results_dir),
+            "E3_HUMAN_PLANT_REVIEW_DIR": str(run_results_dir),
         }
     )
     assert expression_config.expression_duckdb == resource_db
     assert expression_config.pocket_review_dir == run_results_dir
+    assert expression_config.human_plant_review_dir == run_results_dir
     validate_config(expression_config)
     parquet_config = config_from_environment(
         {"E3_RESOURCE_PARQUET": str(master_parquet)}
@@ -86,6 +88,13 @@ def test_missing_resource_and_expression(resource_db: Path, tmp_path: Path) -> N
             AppConfig(
                 resource_duckdb=resource_db,
                 pocket_review_dir=tmp_path / "missing_review",
+            )
+        )
+    with pytest.raises(AppError, match="Human-and-plant"):
+        validate_config(
+            AppConfig(
+                resource_duckdb=resource_db,
+                human_plant_review_dir=tmp_path / "missing_human_review",
             )
         )
     with pytest.raises(AppError, match="between"):

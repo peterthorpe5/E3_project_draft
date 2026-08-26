@@ -125,6 +125,40 @@ def test_existing_output_requires_resume_or_force(
         )
 
 
+def test_preferred_reference_manifest_preserves_requested_plant_model(
+    structural_inputs: dict[str, Path],
+) -> None:
+    """An explicit eligible reference overrides deterministic fallback selection."""
+    reference_manifest = structural_inputs["output"].parent / "references.tsv"
+    reference_manifest.write_text(
+        "cluster_id\tprimary_group_type\tprimary_group_id\treference_accession\n"
+        "cluster_1\torthogroup\tOG0001\tP2\n",
+        encoding="utf-8",
+    )
+    output = structural_inputs["output"].parent / "preferred_reference"
+    manifest = run_pipeline(
+        selected_pockets_path=structural_inputs["selected"],
+        pocket_residue_mappings_path=structural_inputs["mappings"],
+        pocket_sequence_coordinates_path=structural_inputs["sequence_coordinates"],
+        asset_manifest_path=structural_inputs["assets"],
+        reference_manifest_path=reference_manifest,
+        output_dir=output,
+        settings=AlignmentSettings(
+            usalign_executable=str(structural_inputs["executable"]),
+            tmalign_executable=str(structural_inputs["tmalign"]),
+            threads=1,
+        ),
+        resume=False,
+        force=False,
+        verbose=False,
+    )
+    assert manifest.is_file()
+    summaries = read_records(
+        output / "tables" / "structural_alignment_summary.parquet"
+    )
+    assert summaries[0]["reference_accession"] == "P2"
+
+
 def test_selected_pocket_validation() -> None:
     """Empty identifiers and duplicate selections fail with context."""
     with pytest.raises(InputValidationError, match="no rows"):
