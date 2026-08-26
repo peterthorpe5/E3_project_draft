@@ -237,7 +237,7 @@ rule aggregate_human_ligandability_extension:
             checkpoints.prepare_human_plant_extension.get().output.task_tsv
         ),
         member_manifest=lambda wildcards: str(
-            checkpoints.prepare_human_plant_extension.get().output.member_tsv
+            checkpoints.prepare_human_plant_extension.get().output.member_parquet
         ),
         group_manifest=lambda wildcards: str(
             checkpoints.prepare_human_plant_extension.get().output.group_tsv

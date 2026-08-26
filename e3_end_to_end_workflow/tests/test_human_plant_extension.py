@@ -377,6 +377,8 @@ def test_extension_snakefiles_support_standalone_and_full_run(
     assert "rule build_human_plant_review" in rules
     assert "HUMAN_PLANT_PLANT_REVIEW_MANIFEST" in main
     assert "python -" not in rules
+    assert "get().output.member_parquet" in rules
+    assert "get().output.member_tsv" not in rules
 
 
 def test_extension_launchers_and_reviewed_cluster_configuration(
