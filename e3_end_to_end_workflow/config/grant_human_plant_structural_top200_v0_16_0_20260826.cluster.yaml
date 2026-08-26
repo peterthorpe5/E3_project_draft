@@ -17,7 +17,7 @@ human_plant_extension:
     preparation_runtime_minutes: 30
     ligandability_threads: 4
     ligandability_memory_mb: 16000
-   ligandability_runtime_minutes: 240
+    ligandability_runtime_minutes: 240
     ligandability_aggregate_threads: 4
     ligandability_aggregate_memory_mb: 16000
     ligandability_aggregate_runtime_minutes: 120
