@@ -113,6 +113,14 @@ from e3app.seed_catalogue import (
     filter_seed_catalogue,
     seed_catalogue_capability,
 )
+from e3app.structural_help import (
+    annotate_pair_evidence_html,
+    human_extension_rank_help_markdown,
+    pair_evidence_help_markdown,
+    pocket_choice_help_markdown,
+    reference_selection_help_markdown,
+    structural_column_help,
+)
 from e3app.thresholds import (
     LOGICAL_THRESHOLD_FIELDS,
     NUMERIC_THRESHOLD_FIELDS,
@@ -226,14 +234,17 @@ def _display_dataframe(
     column_config: dict[str, object] = {}
     for column in table.columns:
         column_name = str(column)
+        help_text = structural_column_help(column_name=column_name)
         if column_name in number_formats:
             column_config[column_name] = st.column_config.NumberColumn(
                 format=number_formats[column_name],
                 width=column_widths[column_name],
+                help=help_text,
             )
         else:
             column_config[column_name] = st.column_config.Column(
-                width=column_widths[column_name]
+                width=column_widths[column_name],
+                help=help_text,
             )
     arguments: dict[str, object] = {
         "data": table,
@@ -1458,7 +1469,17 @@ def _render_structural_superposition(
         f"— {mobile_species}  \n"
         f"**Recorded aligner:** {comparison['alignment_tool']}"
     )
-    viewer_document = read_review_html(bundle, viewer_path)
+    with st.expander("❓ Why was this structural reference selected?"):
+        st.markdown(
+            reference_selection_help_markdown(
+                reference_accession=comparison["reference_accession"],
+                reference_species=comparison["reference_species"],
+                preserved_from_parent=key_prefix.startswith("human_plant"),
+            )
+        )
+    viewer_document = annotate_pair_evidence_html(
+        document=read_review_html(bundle, viewer_path)
+    )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
         "the mapped pocket residues, and select a residue for its chain and "
@@ -1466,6 +1487,12 @@ def _render_structural_superposition(
         "recorded alignment matrix."
     )
     components.html(viewer_document, height=850, scrolling=True)
+    with st.expander("❓ Define the pair-evidence terms"):
+        st.markdown(pair_evidence_help_markdown())
+        st.caption(
+            "The small question marks beside the same terms in the embedded viewer "
+            "provide the concise definitions on hover or keyboard focus."
+        )
     evidence = selected.drop(
         columns=["interactive_view_html", "viewer_source_sha256"],
         errors="ignore",
@@ -2814,13 +2841,15 @@ def _render_human_plant_structural_review(
     labels = group_choice_labels(bundle)
     st.markdown("#### Select one human-and-plant evolutionary group")
     st.caption(
-        f"This menu contains {len(ranks)} qualifying groups, not every group "
-        "within the configured parent review limit. A group is included only "
-        "when it has parent structural-analysis evidence, contains an exact "
-        "Homo sapiens member in the same OrthoFinder group, and has one preserved "
-        "plant reference. Original parent ranks are kept, so the rank numbers "
-        "are intentionally non-contiguous."
+        f"This is a filtered set of {len(ranks)} qualifying groups. Original parent "
+        "ranks are retained and are therefore intentionally non-contiguous."
     )
+    with st.expander("❓ Why are only some parent ranks listed?"):
+        st.markdown(
+            human_extension_rank_help_markdown(
+                qualifying_group_count=len(ranks),
+            )
+        )
     group_page = st.selectbox(
         "Human-and-plant evolutionary group",
         options=list(labels),
@@ -2886,6 +2915,8 @@ def _render_human_plant_structural_review(
             "Use the member and pocket-rank controls inside the report to choose "
             "which protein and which retained P2Rank pocket are displayed."
         )
+        with st.expander("❓ What do the protein and pocket choices mean?"):
+            st.markdown(pocket_choice_help_markdown())
         _render_selected_pocket_review(
             bundle=bundle,
             focus="structure",

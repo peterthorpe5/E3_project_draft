@@ -50,6 +50,9 @@ def test_structural_annotation_records_thresholds_and_reference() -> None:
     assert "chemical-group conservation at least 0.60" in markdown
     assert "group support at least 0.75" in markdown
     assert "not a threshold invented for this project" in markdown
+    assert "Species identity was not an ordering field" in markdown
+    assert "Medicago truncatula reference" in markdown
+    assert "does not identify an ancestral" in markdown
     assert TM_SCORE_REFERENCE_URL in markdown
     assert "Xu and Zhang (2010)" in markdown
 
@@ -75,6 +78,8 @@ def test_human_extension_annotation_explains_member_and_reference_selection() ->
     assert "inherited unchanged" in markdown
     assert "never chose a new reference" in markdown
     assert "pocket mapping fraction" in markdown
+    assert "Species identity was not part of that ordering" in markdown
+    assert "not an ancestral or preferred-species claim" in markdown
 
 
 def test_mapping_annotation_distinguishes_integrated_and_component_qc() -> None:

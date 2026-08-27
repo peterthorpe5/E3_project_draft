@@ -351,6 +351,11 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     assert "Pairwise 3D comparison" in nested_labels
     assert "Choose structures & pockets" in nested_labels
     assert "Pocket-aligned FASTA" in nested_labels
+    expander_labels = [expander.label for expander in app.expander]
+    assert expander_labels.count("❓ Why was this structural reference selected?") == 2
+    assert expander_labels.count("❓ Define the pair-evidence terms") == 2
+    assert "❓ Why are only some parent ranks listed?" in expander_labels
+    assert "❓ What do the protein and pocket choices mean?" in expander_labels
     assert any(
         tab.label == "Human & plant 3D alignment" for tab in app.tabs
     )

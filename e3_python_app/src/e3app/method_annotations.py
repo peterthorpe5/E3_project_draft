@@ -412,6 +412,22 @@ METHOD_ANNOTATIONS = {
         ),
         sections=(
             MethodSection(
+                heading="Fixed reference model",
+                bullets=(
+                    "After one representative was retained per target plant species, the "
+                    "eligible reference ordering preferred high-confidence structural status, "
+                    "pocket-predictor agreement, pocket mapping, pocket-local pLDDT and predicted "
+                    "druggability, followed by accession as the final tie-break.",
+                    "Species identity was not an ordering field. A Medicago truncatula reference, "
+                    "for example, means that its representative led this evidence hierarchy; it "
+                    "does not identify an ancestral, universally closest or biologically superior "
+                    "protein.",
+                    "Every other eligible model was transformed onto this one fixed coordinate "
+                    "frame so centroid and pocket-overlap comparisons remained directly "
+                    "comparable within the group.",
+                ),
+            ),
+            MethodSection(
                 heading="Global fold threshold",
                 bullets=(
                     "Each aligner reports TM-scores normalised by both structure lengths; the "
@@ -488,6 +504,9 @@ METHOD_ANNOTATIONS = {
                     "structural-evidence status, predictor agreement, pocket mapping "
                     "fraction, pocket pLDDT fraction and druggability, followed by accession "
                     "as the deterministic final tie-break.",
+                    "Species identity was not part of that ordering. A Medicago truncatula "
+                    "reference, for example, records which eligible representative ranked first "
+                    "on the evidence fields; it is not an ancestral or preferred-species claim.",
                 ),
             ),
             MethodSection(

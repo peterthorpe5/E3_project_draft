@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.2
+
+- Adds accessible question-mark definitions beside every metric in the
+  embedded pair-evidence table, with a complete readable definition panel.
+- Explains why the displayed plant model is the fixed structural reference,
+  including the evidence ordering that can select a Medicago representative
+  and the absence of any preferred-species rule.
+- Adds focused help for filtered human-extension ranks, alternative protein and
+  pocket controls, and recognised structural-evidence table columns.
+- Changes presentation and documentation only; no scientific result, threshold,
+  ranking, stored review bundle or reference choice is recalculated.
+
 ## v0.16.1
 
 - Synchronises the human-and-plant pairwise 3D, structure/pocket and

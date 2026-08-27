@@ -1,9 +1,16 @@
 # ARIA plant E3 Python reporter
 
-Version 0.16.1 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
+Version 0.16.2 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
+
+Focused question-mark help now defines every pair-evidence metric in place,
+explains the deterministic fixed-reference choice and clarifies filtered
+human-extension ranks and alternative-pocket sensitivity controls. Structural
+table headers receive the same maintained definitions where the source column
+is recognised. These additions are presentation-only and do not modify the
+completed portable review bundles or their scientific decisions.
 
 The human-and-plant 3D tab now uses one synchronised evolutionary-group
 selection for its explicit reference/mobile protein comparison, selectable
