@@ -21,6 +21,7 @@ isolated output directories and checksum-bound manifests.
 | 1 | `e3_discovery_engine` | E3-seeded DIAMOND/DeepClust discovery | discovery DuckDB and cluster evidence |
 | 2 | `e3_source_to_parquet_seed` | Candidate-evidence and curated Parquet resources | candidate-evidence Parquet and provenance |
 | 3 | OrthoFinder 2.5.5 | Complete-proteome grouping | OrthoFinder result directory/archive |
+| — | `orthofinder_results` | Generic OrthoFinder 2/3 result interrogation | all-level memberships, trees, distance statistics, Parquet, DuckDB and offline HTML |
 | 4 | `e3_orthology_integration` | Identifier reconciliation and group membership | orthology Parquet tables and validation |
 | 5 | `expression_downloader` | Expression Atlas acquisition/import | expression Parquet resources and DuckDB views |
 | 6 | `e3_ligandability_pipeline` | AlphaFold confidence, FPocket, P2Rank and residue mapping | ligandability Parquet tables |
@@ -256,6 +257,27 @@ relationships.
 | `stages.py`, `pipeline.py` | Restartable stage orchestration, including candidate-group member sequence publication. |
 | `io_utils.py`, `logging_utils.py`, `errors.py` | Defensive operations. |
 | `tests/` | Function, CLI, stage, integration and release tests. |
+
+## `orthofinder_results`
+
+This generic standalone package turns any completed OrthoFinder 2 or 3 result
+directory into a versioned analytical resource. It is not E3-specific and does
+not replace the candidate-reconciliation responsibilities of
+`e3_orthology_integration`.
+
+| File or module | Role |
+|---|---|
+| `README.md`, `CHANGELOG.md` | Data contract, version compatibility, run instructions, limitations and history. |
+| `environment.yml`, `pyproject.toml`, `requirements*.txt` | Independent environment, package metadata and dependencies. |
+| `run_orthofinder_results.sh` | Foreground named-option wrapper. |
+| `submit_orthofinder_results_slurm.sh` | Slurm submitter with explicit persistent output/error logs. |
+| `slurm/orthofinder_results.sbatch` | Batch job body. |
+| `layout.py`, `parsers.py` | OrthoFinder 2/3 adapters, identifier parsing and all-level HOG/legacy membership normalisation. |
+| `trees.py`, `distances.py`, `statistics.py` | Queryable trees, exact/sampled distance semantics and cluster-size/copy-number statistics. |
+| `pipeline.py`, `io_utils.py` | Checksum-bound atomic publication to TSV, Parquet and physical DuckDB. |
+| `report.py` | Self-contained offline interactive cluster network and statistical report. |
+| `cli.py`, `__main__.py` | All-named-option command interface. |
+| `tests/`, `run_tests.sh` | OrthoFinder 2/3 unit/integration tests and 95% branch-aware quality gate. |
 
 ## `e3_ligandability_pipeline`
 
