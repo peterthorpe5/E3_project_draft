@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="orthofinder-results",
         description=(
             "Version-aware interrogation of OrthoFinder 2 and 3 results with "
-            "TSV, Parquet, DuckDB and offline HTML publication."
+            "compressed TSV, Parquet, DuckDB and offline HTML publication."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -48,7 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--work-dir",
         type=Path,
-        help="Explicit persistent staging root; defaults beside --output-dir.",
+        help=(
+            "Optional staging root; Slurm uses node-local temporary storage by "
+            "default, while direct runs default beside --output-dir."
+        ),
     )
     parser.add_argument(
         "--alignment-dir",
@@ -71,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--distance-max-groups",
         type=int,
         default=0,
-        help="Maximum aligned groups; zero means all supplied alignments.",
+        help="Maximum groups for distance computation; zero means all eligible groups.",
     )
     parser.add_argument("--distance-max-members", type=int, default=250)
     parser.add_argument("--parse-gene-trees", action="store_true")
@@ -86,6 +89,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--report-nearest-neighbours", type=int, default=3)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--keep-failed-work",
+        action="store_true",
+        help=(
+            "Retain failed staging/copy directories for diagnosis; by default "
+            "tracebacks are logged and partial data are removed."
+        ),
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser
 
@@ -132,6 +143,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             report_nearest_neighbours=args.report_nearest_neighbours,
             resume=args.resume,
             force=args.force,
+            keep_failed_work=args.keep_failed_work,
             verbose=args.verbose,
         )
         _LOGGER.info("Completed run %s with status %s", manifest["run_id"], manifest["status"])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 import logging
@@ -11,8 +12,9 @@ import re
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
+from . import __schema_version__
 from .errors import InputValidationError, PublicationError
 
 _LOGGER = logging.getLogger("orthofinder_results.io")
@@ -152,6 +154,34 @@ def atomic_write_json(*, path: Path, record: Mapping[str, Any]) -> None:
     atomic_write_text(path=path, text=json.dumps(record, indent=2, sort_keys=True) + "\n")
 
 
+def open_text(*, path: Path, mode: str) -> TextIO:
+    """Open UTF-8 text, transparently handling a ``.gz`` suffix.
+
+    Args:
+        path: Plain-text or gzip-compressed file path.
+        mode: Text operation: ``r``, ``w`` or ``a``.
+
+    Returns:
+        Open text handle. The caller owns the context lifetime.
+
+    Raises:
+        ValueError: If the requested mode is unsupported.
+    """
+
+    if mode not in {"r", "w", "a"}:
+        raise ValueError("mode must be 'r', 'w' or 'a'.")
+    resolved = Path(path).expanduser().resolve()
+    if resolved.suffix == ".gz":
+        return gzip.open(
+            resolved,
+            mode=f"{mode}t",
+            compresslevel=6,
+            encoding="utf-8",
+            newline="",
+        )
+    return resolved.open(mode=mode, encoding="utf-8", newline="")
+
+
 def write_tsv(
     *,
     path: Path,
@@ -177,7 +207,7 @@ def write_tsv(
     destination = Path(path).expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     row_count = 0
-    with destination.open(mode="w", encoding="utf-8", newline="") as handle:
+    with open_text(path=destination, mode="w") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=fieldnames,
@@ -208,7 +238,7 @@ def read_tsv(*, path: Path) -> Iterable[dict[str, str]]:
     source = Path(path).expanduser().resolve()
     if not source.is_file():
         raise InputValidationError(f"TSV file does not exist: {source}")
-    with source.open(mode="r", encoding="utf-8", newline="") as handle:
+    with open_text(path=source, mode="r") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         if reader.fieldnames is None:
             raise InputValidationError(f"TSV file has no header: {source}")
@@ -227,7 +257,8 @@ def tsv_to_parquet(
     Args:
         tsv_path: Source TSV path.
         parquet_path: Destination Parquet path.
-        column_types: Optional Arrow scalar type names by column.
+        column_types: Optional Arrow scalar type overrides. Unlisted columns
+            are explicitly stored as strings.
         block_size: Streaming input block size in bytes.
 
     Returns:
@@ -248,23 +279,43 @@ def tsv_to_parquet(
     destination.parent.mkdir(parents=True, exist_ok=True)
     if not source.is_file():
         raise PublicationError(f"TSV file does not exist: {source}")
-    with source.open(mode="r", encoding="utf-8", newline="") as handle:
+    with open_text(path=source, mode="r") as handle:
         headings = next(csv.reader(handle, delimiter="\t"), None)
     if headings is None:
         raise PublicationError(f"TSV file has no header: {source}")
-    arrow_types = {
-        name: _arrow_type(type_name=type_name, pa_module=pa)
-        for name, type_name in (column_types or {}).items()
-    }
-    reader = pacsv.open_csv(
-        source,
-        read_options=pacsv.ReadOptions(block_size=block_size, use_threads=False),
-        parse_options=pacsv.ParseOptions(delimiter="\t", quote_char=False),
-        convert_options=pacsv.ConvertOptions(
-            column_types=arrow_types,
-            strings_can_be_null=False,
-        ),
+    if not headings or any(not heading for heading in headings):
+        raise PublicationError(f"TSV file has an empty column heading: {source}")
+    duplicate_headings = sorted(
+        heading for heading in set(headings) if headings.count(heading) > 1
     )
+    if duplicate_headings:
+        raise PublicationError(
+            f"TSV file has duplicate column headings {duplicate_headings}: {source}"
+        )
+    declared_types = dict(column_types or {})
+    unknown_columns = sorted(set(declared_types) - set(headings))
+    if unknown_columns:
+        raise PublicationError(
+            f"Arrow types were declared for absent TSV columns {unknown_columns}: {source}"
+        )
+    arrow_types = {
+        name: _arrow_type(type_name=declared_types.get(name, "string"), pa_module=pa)
+        for name in headings
+    }
+    input_stream = pa.input_stream(str(source), compression="detect")
+    try:
+        reader = pacsv.open_csv(
+            input_stream,
+            read_options=pacsv.ReadOptions(block_size=block_size, use_threads=False),
+            parse_options=pacsv.ParseOptions(delimiter="\t", quote_char=False),
+            convert_options=pacsv.ConvertOptions(
+                column_types=arrow_types,
+                strings_can_be_null=False,
+            ),
+        )
+    except Exception:
+        input_stream.close()
+        raise
     writer: pq.ParquetWriter | None = None
     row_count = 0
     try:
@@ -276,6 +327,7 @@ def tsv_to_parquet(
     finally:
         if writer is not None:
             writer.close()
+        input_stream.close()
     if writer is None:
         schema = pa.schema(
             [pa.field(name, arrow_types.get(name, pa.string())) for name in headings]
@@ -317,7 +369,7 @@ def create_duckdb(*, database_path: Path, parquet_tables: Mapping[str, Path]) ->
         connection.execute(
             "CREATE TABLE resource_metadata AS "
             "SELECT ?::VARCHAR AS created_at_utc, ?::INTEGER AS schema_version",
-            [utc_now_iso(), 1],
+            [utc_now_iso(), __schema_version__],
         )
         connection.execute("CHECKPOINT")
     finally:

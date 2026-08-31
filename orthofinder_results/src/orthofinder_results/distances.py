@@ -32,6 +32,7 @@ DISTANCE_STATISTIC_FIELDS = (
     "group_id",
     "distance_method",
     "computation_status",
+    "member_identifier_resolution",
     "total_member_count",
     "sampled_member_count",
     "distance_pair_count",
@@ -182,6 +183,7 @@ def calculate_alignment_distances(
         status=status,
         total_member_count=len(sequences),
         sampled_member_count=len(selected),
+        member_identifier_resolution="ALIGNMENT_HEADER_EXACT",
         source_file=source_file,
     )
     return rows, summary
@@ -196,6 +198,7 @@ def calculate_patristic_distances(
     group_id: str,
     max_members: int,
     member_ids: Sequence[str] | None = None,
+    member_aliases: Mapping[str, Mapping[str, str]] | None = None,
     source_file: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Calculate pairwise branch-length distances from one Newick gene tree.
@@ -207,7 +210,9 @@ def calculate_patristic_distances(
         hierarchy_node: Optional HOG node.
         group_id: Run-scoped group identifier.
         max_members: Maximum leaves in the distance matrix.
-        member_ids: Optional subset of leaf names, for example one HOG within a tree.
+        member_ids: Optional canonical member subset, for example one HOG within a tree.
+        member_aliases: Optional canonical-member mapping whose inner keys are
+            alternative tree labels and values describe the resolution method.
         source_file: Exact tree path for provenance; defaults to ``tree_path``.
 
     Returns:
@@ -236,11 +241,52 @@ def calculate_patristic_distances(
         raise DistanceCalculationError(f"Tree contains duplicate leaf names: {source}")
     available = set(names)
     requested = tuple(names) if member_ids is None else tuple(member_ids)
-    missing = sorted(set(requested) - available)
+    if len(set(requested)) != len(requested):
+        raise DistanceCalculationError(
+            f"Group {group_id} contains duplicate canonical member identifiers."
+        )
+    resolved_leaves: dict[str, str] = {}
+    resolution_methods: set[str] = set()
+    missing: list[str] = []
+    for member_id in requested:
+        candidates = {member_id: "EXACT_MEMBER_ID"}
+        if member_aliases is not None:
+            candidates.update(member_aliases.get(member_id, {}))
+        matches = [
+            (candidate, method)
+            for candidate, method in candidates.items()
+            if candidate in available
+        ]
+        if not matches:
+            missing.append(member_id)
+            continue
+        if len(matches) > 1:
+            labels = ";".join(sorted(candidate for candidate, _ in matches))
+            raise DistanceCalculationError(
+                f"Tree {source} has ambiguous labels for canonical member "
+                f"{member_id!r}: {labels}"
+            )
+        tree_label, resolution_method = matches[0]
+        resolved_leaves[member_id] = tree_label
+        resolution_methods.add(resolution_method)
     if missing:
-        preview = ";".join(missing[:10])
+        preview = ";".join(sorted(missing)[:10])
         raise DistanceCalculationError(
             f"Tree {source} lacks {len(missing)} requested members: {preview}"
+        )
+    reverse: dict[str, list[str]] = {}
+    for member_id, tree_label in resolved_leaves.items():
+        reverse.setdefault(tree_label, []).append(member_id)
+    collisions = {
+        tree_label: canonical_ids
+        for tree_label, canonical_ids in reverse.items()
+        if len(canonical_ids) > 1
+    }
+    if collisions:
+        tree_label, canonical_ids = sorted(collisions.items())[0]
+        raise DistanceCalculationError(
+            f"Tree label {tree_label!r} resolves from multiple canonical members: "
+            f"{';'.join(sorted(canonical_ids))}"
         )
     selected, status = deterministic_member_sample(
         member_ids=requested,
@@ -254,7 +300,10 @@ def calculate_patristic_distances(
     rows: list[dict[str, Any]] = []
     for left_index, member_a in enumerate(selected):
         for member_b in selected[left_index + 1 :]:
-            distance = tree.distance(leaves[member_a], leaves[member_b])
+            distance = tree.distance(
+                leaves[resolved_leaves[member_a]],
+                leaves[resolved_leaves[member_b]],
+            )
             if distance is None or not math.isfinite(float(distance)):
                 raise DistanceCalculationError(
                     f"Tree distance is not finite for {member_a!r} and {member_b!r}."
@@ -275,6 +324,11 @@ def calculate_patristic_distances(
                     "source_file": provenance_source,
                 }
             )
+    identifier_resolution = (
+        next(iter(resolution_methods))
+        if len(resolution_methods) == 1
+        else "MIXED_TREE_ALIASES"
+    )
     summary = summarise_distances(
         rows=rows,
         run_id=run_id,
@@ -285,6 +339,7 @@ def calculate_patristic_distances(
         status=status,
         total_member_count=len(requested),
         sampled_member_count=len(selected),
+        member_identifier_resolution=identifier_resolution,
         source_file=provenance_source,
     )
     return rows, summary
@@ -362,6 +417,7 @@ def summarise_distances(
     status: str,
     total_member_count: int,
     sampled_member_count: int,
+    member_identifier_resolution: str = "",
     source_file: str = "",
     failure_reason: str = "",
 ) -> dict[str, Any]:
@@ -377,6 +433,7 @@ def summarise_distances(
         status: Exact or sampled status.
         total_member_count: Members in the source group.
         sampled_member_count: Members used for the distance matrix.
+        member_identifier_resolution: Exact identifier mapping used for the calculation.
         source_file: Exact source alignment or tree path.
         failure_reason: Explicit reason when a calculation is unavailable.
 
@@ -398,6 +455,7 @@ def summarise_distances(
         "group_id": group_id,
         "distance_method": method,
         "computation_status": status,
+        "member_identifier_resolution": member_identifier_resolution,
         "total_member_count": total_member_count,
         "sampled_member_count": sampled_member_count,
         "distance_pair_count": len(values),

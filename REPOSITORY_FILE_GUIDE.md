@@ -270,11 +270,11 @@ not replace the candidate-reconciliation responsibilities of
 | `README.md`, `CHANGELOG.md` | Data contract, version compatibility, run instructions, limitations and history. |
 | `environment.yml`, `pyproject.toml`, `requirements*.txt` | Independent environment, package metadata and dependencies. |
 | `run_orthofinder_results.sh` | Foreground named-option wrapper. |
-| `submit_orthofinder_results_slurm.sh` | Slurm submitter with explicit persistent output/error logs. |
-| `slurm/orthofinder_results.sbatch` | Batch job body. |
+| `submit_orthofinder_results_slurm.sh` | Slurm submitter with persistent logs and Dundee `barton` defaults. |
+| `slurm/orthofinder_results.sbatch` | Batch job body with job-specific node-local scratch selection. |
 | `layout.py`, `parsers.py` | OrthoFinder 2/3 adapters, identifier parsing and all-level HOG/legacy membership normalisation. |
 | `trees.py`, `distances.py`, `statistics.py` | Queryable trees, exact/sampled distance semantics and cluster-size/copy-number statistics. |
-| `pipeline.py`, `io_utils.py` | Checksum-bound atomic publication to TSV, Parquet and physical DuckDB. |
+| `pipeline.py`, `io_utils.py` | Node-local computation and checksum-verified atomic publication to TSV, Parquet and physical DuckDB. |
 | `report.py` | Self-contained offline interactive cluster network and statistical report. |
 | `cli.py`, `__main__.py` | All-named-option command interface. |
 | `tests/`, `run_tests.sh` | OrthoFinder 2/3 unit/integration tests and 95% branch-aware quality gate. |

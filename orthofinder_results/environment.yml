@@ -10,5 +10,7 @@ dependencies:
   - pyvis>=0.3.2,<0.4
   - pytest>=8,<9
   - coverage>=7.6,<8
+  - pycodestyle>=2.12,<3
+  - pydocstyle>=6.3,<7
   - ruff>=0.15,<1
   - pip

@@ -18,23 +18,27 @@ authors. Cite OrthoFinder itself when using its results.
 Each successful run creates one immutable output directory containing:
 
 - long-form legacy orthogroup and all-level HOG memberships;
-- per-group member, species, copy-number and single-copy statistics;
+- per-group and per-group/per-species copy-number statistics;
 - species and sequence identifier mappings when OrthoFinder retained them;
 - a checksum inventory of every discovered input, gene tree and resolved tree;
 - a normalised species tree, and optionally every gene tree, as node/edge tables;
 - optional aligned-sequence pairwise distances and per-cluster distributions;
-- matching TSV and typed Parquet tables;
+- matching gzip-compressed TSV and typed Parquet tables;
 - a physical, portable DuckDB containing the same analytical relations;
 - explicit QC checks, a complete run manifest and a persistent run log; and
-- a self-contained offline HTML report with an interactive cluster network.
+- a self-contained offline HTML report with an interactive cluster network and
+  comparative visual summaries.
 
 The HTML is the final publication stage. It embeds the JavaScript and CSS it
 needs, so the report opens without internet access. The user can select a
 cluster, pan, zoom, search and click members, inspect species labels, view a
-distance histogram, and filter or page through cluster statistics.
+distance histogram, and filter or page through cluster statistics. Additional
+run-wide views show log-binned cluster sizes, species breadth, copy-number
+complexity, cluster size versus breadth, mean distance versus sampled size, and
+an authoritative group-by-species copy-count heatmap for rendered groups.
 
 Browser visualisation is deliberately bounded. Large groups are selected and
-sampled deterministically for rendering, while the full TSV, Parquet and
+sampled deterministically for rendering, while the full compressed TSV, Parquet and
 DuckDB tables remain the analytical authorities. The report states these
 limits rather than pretending that a browser can safely render millions of
 nodes.
@@ -55,6 +59,7 @@ can then map member sets across runs without overwriting either source.
 The schema preserves:
 
 - the exact source species label and member identifier;
+- one authoritative copy-count row per represented group/species pair;
 - HOG node, parent clade and legacy orthogroup link when supplied;
 - source filename and row number;
 - tree type, tree identifier, branch lengths and node relationships;
@@ -107,7 +112,7 @@ All CLI controls are named. No source file beneath `--results-dir` is modified.
 orthofinder-results \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_0 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
   --run-id results_feb26 \
   --work-dir /persistent/project/orthofinder_results/work \
   --report-max-groups 25 \
@@ -152,6 +157,11 @@ zero requests every eligible group; choose an explicit bound for a first
 cluster pilot. Missing trees or member-name mismatches produce a per-cluster
 `UNAVAILABLE` summary with `failure_reason`, not a fabricated zero distance.
 Pair and summary records carry the exact alignment or tree `source_file`.
+Tree calculations preserve canonical membership identifiers in outputs while
+explicitly resolving exact, species-prefixed and OrthoFinder-internal tree-leaf
+aliases. The recorded `member_identifier_resolution` reports which mapping was
+used. Missing, duplicate and ambiguous mappings fail that cluster explicitly;
+the package never strips prefixes heuristically.
 
 Use `--parse-gene-trees` only when normalised nodes and edges for every gene
 tree are required. Tree files are checksum-inventoried even when their nodes
@@ -164,9 +174,23 @@ package version and full source digest match. `--force` never deletes an old
 result: it moves it to a timestamped `.superseded.*` path before publication.
 The two options are mutually exclusive.
 
-Staging occurs on the same filesystem as the formal output and publication is
-an atomic rename. Paths under `/tmp` and `/private/tmp` are rejected. Use a
-named project, scratch or home-directory path instead.
+The formal `--output-dir` must be persistent and paths beneath `/tmp` or
+`/private/tmp` are rejected for that role. `--work-dir` may use node-local
+temporary storage. Same-filesystem staging is published by atomic rename.
+Cross-filesystem staging is copied into a hidden incoming directory beside the
+formal output; every manifested file size and SHA-256 checksum is verified
+before that directory is atomically renamed into place. A formal output is
+therefore never exposed as complete while copying is still in progress.
+
+Analytical table authorities are streamed directly to `.tsv.gz`; a multi-GB
+uncompressed intermediate is not created. The gzip tables remain stream-readable
+and are converted to typed, Zstandard-compressed Parquet before DuckDB is built.
+
+On failure, the full traceback is written to the persistent Slurm error log and
+partial staging/copy directories are removed by default. Use
+`--keep-failed-work` only for a diagnostic rerun when the partial files themselves
+are needed. Completed formal outputs and superseded outputs are never removed by
+this cleanup policy.
 
 ## Slurm wrapper
 
@@ -179,14 +203,18 @@ files, which is suitable for `mosh` sessions:
   -- \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_0 \
-  --run-id results_feb26 \
-  --work-dir /persistent/project/orthofinder_results/work
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
+  --run-id results_feb26
 ```
 
 The wrapper prints the job identifier, exact output/error log paths and the
-`squeue` command. The bundled job requests ordinary resources by default; it
-does not select a long-duration QoS.
+`squeue` command. Unless `--work-dir` is explicitly supplied, each Slurm job
+uses a private directory below `${TMPDIR}`, falling back to node-local `/tmp`
+when that variable is unavailable. Only a completed, checksum-verified result
+is copied to `--output-dir`. The Dundee launcher defaults to the `barton`
+account and partition, requests ordinary resources, and does not select a
+long-duration QoS. An explicit `--work-dir` remains available for clusters
+with a different scratch policy.
 
 ## Query examples
 
@@ -223,13 +251,14 @@ Open the database with:
 duckdb /path/to/output/duckdb/orthofinder_results.duckdb
 ```
 
-## Scope of version 0.1.0
+## Scope of version 0.1.2
 
-Version 0.1.0 establishes loss-aware, version-aware ingestion and portable
-publication. Cross-run cluster lineage (stable overlap scores, split/merge
-classification and taxon-aware comparisons) belongs in a later, separately
-tested comparison layer. Keeping source runs immutable is what makes that layer
-possible and auditable.
+Version 0.1.2 establishes loss-aware, version-aware ingestion, node-local
+computation, compressed analytical authorities, explicit tree-leaf identity
+resolution and verified portable publication. Cross-run cluster lineage
+(stable overlap scores, split/merge classification and taxon-aware
+comparisons) belongs in a later, separately tested comparison layer. Keeping
+source runs immutable is what makes that layer possible and auditable.
 
 ## Development quality gate
 

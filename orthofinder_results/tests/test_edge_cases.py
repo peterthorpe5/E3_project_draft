@@ -29,6 +29,7 @@ from orthofinder_results.io_utils import (
     atomic_write_json,
     create_duckdb,
     file_record,
+    open_text,
     read_tsv,
     sha256_file,
     tsv_to_parquet,
@@ -45,12 +46,14 @@ from orthofinder_results.pipeline import (
     _group_id_from_alignment,
     _HashRowSampler,
     _inventory_digest,
+    _load_report_group_species_data,
     _load_report_group_statistics,
     _qc,
     _qc_rows,
     _resolve_alignment_dir,
     _resolve_distance_source,
     _resolve_pipeline_alignment_dir,
+    _table_path,
     _validate_controls,
     run_pipeline,
 )
@@ -199,6 +202,14 @@ def test_io_failure_branches_and_scalar_types(tmp_path: Path) -> None:
         tsv_to_parquet(tsv_path=no_header, parquet_path=tmp_path / "x.parquet", block_size=0)
     with pytest.raises(PublicationError, match="no header"):
         tsv_to_parquet(tsv_path=no_header, parquet_path=tmp_path / "x.parquet")
+    empty_heading = tmp_path / "empty_heading.tsv"
+    empty_heading.write_text("name\t\nvalue\tx\n", encoding="utf-8")
+    with pytest.raises(PublicationError, match="empty column heading"):
+        tsv_to_parquet(tsv_path=empty_heading, parquet_path=tmp_path / "empty.parquet")
+    duplicate_heading = tmp_path / "duplicate_heading.tsv"
+    duplicate_heading.write_text("name\tname\na\tb\n", encoding="utf-8")
+    with pytest.raises(PublicationError, match="duplicate column headings"):
+        tsv_to_parquet(tsv_path=duplicate_heading, parquet_path=tmp_path / "duplicate.parquet")
     table = tmp_path / "values.tsv"
     write_tsv(
         path=table,
@@ -206,6 +217,12 @@ def test_io_failure_branches_and_scalar_types(tmp_path: Path) -> None:
         records=({"name": "a", "active": True, "note": None},),
     )
     assert list(read_tsv(path=table))[0]["active"] == "true"
+    with pytest.raises(PublicationError, match="absent TSV columns"):
+        tsv_to_parquet(
+            tsv_path=table,
+            parquet_path=tmp_path / "unknown.parquet",
+            column_types={"missing": "int64"},
+        )
     with pytest.raises(ValueError, match="Unsupported Arrow"):
         _arrow_type(type_name="decimal", pa_module=pa)
     with pytest.raises(PublicationError, match="Missing Parquet source"):
@@ -267,32 +284,52 @@ def test_pipeline_without_optional_identifiers_alignments_or_gene_expansion(
     results = make_results(tmp_path, include_alignments=False)
     (results / "WorkingDirectory/SpeciesIDs.txt").unlink()
     (results / "WorkingDirectory/SequenceIDs.txt").unlink()
+    (results / "Resolved_Gene_Trees/OG0000001_tree.txt").write_text(
+        "((Species_A_protA:0.1,Species_A_protA2:0.2):0.1,"
+        "Species_B_protB:0.3)N0:0.0;\n",
+        encoding="utf-8",
+    )
     output = persistent_test_root / "minimal"
     arguments = pipeline_arguments(results, output)
     manifest = run_pipeline(**{**arguments, "parse_gene_trees": False})
     assert manifest["counts"]["sequence_count"] == 0
     assert manifest["counts"]["distance_pair_count"] == 3
     assert manifest["counts"]["tree_node_count"] == 3
-    summaries = list(read_tsv(path=output / "tables/distance_statistics.tsv"))
+    summaries = list(read_tsv(path=output / "tables/distance_statistics.tsv.gz"))
     assert summaries[0]["distance_method"] == "patristic_branch_length"
     assert summaries[0]["computation_status"] == "EXACT"
-    assert list(read_tsv(path=output / "tables/species.tsv"))[0]["source_file"] == (
+    assert summaries[0]["member_identifier_resolution"] == (
+        "SPECIES_PREFIXED_MEMBER_ID"
+    )
+    assert list(read_tsv(path=output / "tables/species.tsv.gz"))[0]["source_file"] == (
         "derived_from_group_table_headings"
     )
 
 
-def test_pipeline_failed_staging_is_retained(tmp_path: Path, persistent_test_root: Path) -> None:
-    """A scientific input failure keeps a diagnostic directory and run log."""
+@pytest.mark.parametrize("keep_failed_work", [False, True])
+def test_pipeline_failed_staging_cleanup_is_configurable(
+    tmp_path: Path,
+    persistent_test_root: Path,
+    keep_failed_work: bool,
+) -> None:
+    """Failures clean partial data by default with an explicit diagnostic opt-in."""
 
     results = make_results(tmp_path)
     alignment = results / "MultipleSequenceAlignments/N0.HOG0000001.fa"
     alignment.write_text(">only\nAAAA\n", encoding="utf-8")
     output = persistent_test_root / "failed"
     with pytest.raises(DistanceCalculationError, match="fewer than two"):
-        run_pipeline(**pipeline_arguments(results, output))
+        run_pipeline(
+            **{
+                **pipeline_arguments(results, output),
+                "keep_failed_work": keep_failed_work,
+            }
+        )
     failed = list((persistent_test_root / "work").glob("failed.failed.*"))
-    assert len(failed) == 1
-    assert (failed[0] / "logs/run.log").is_file()
+    assert len(failed) == int(keep_failed_work)
+    if keep_failed_work:
+        assert (failed[0] / "logs/run.log").is_file()
+    assert not list((persistent_test_root / "work").glob("failed.staging.*"))
 
 
 def test_pipeline_control_and_alignment_validation(tmp_path: Path) -> None:
@@ -376,6 +413,16 @@ def test_pipeline_helpers_cover_sampling_digest_qc_and_bounds(tmp_path: Path) ->
         records=({"group_id": "g1"}, {"group_id": "g2"}),
     )
     assert len(_load_report_group_statistics(path=statistics, maximum=1)) == 1
+    assert _load_report_group_species_data(tables_dir=tmp_path, memberships=()) == []
+    with pytest.raises(ValueError, match="Unsafe analytical relation"):
+        _table_path(tables_dir=tmp_path, relation="bad-name")
+    with pytest.raises(ValueError, match="mode must"):
+        open_text(path=tmp_path / "unused.tsv", mode="x")
+    with pytest.raises(PublicationError, match="does not exist"):
+        tsv_to_parquet(
+            tsv_path=tmp_path / "missing.tsv.gz",
+            parquet_path=tmp_path / "missing.parquet",
+        )
 
 
 def test_qc_failure_states_and_report_limit_errors(
@@ -400,7 +447,9 @@ def test_qc_failure_states_and_report_limit_errors(
         "output_path": tmp_path / "report.html",
         "run_metadata": {},
         "group_statistics": (),
+        "network_group_statistics": (),
         "memberships": (),
+        "group_species_statistics": (),
         "distances": (),
         "distance_statistics": (),
         "total_group_statistic_count": 0,
