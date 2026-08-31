@@ -5,6 +5,13 @@ integration and reporting software for the PT_E3_6 / ARIA plant E3 project. The 
 independently testable, but `e3_end_to_end_workflow` joins them into one restartable Snakemake
 workflow.
 
+The repository also includes `orthofinder_results`, a generic standalone
+package for interrogating completed OrthoFinder 2 or 3 runs from any protein
+collection. It publishes all-level HOG/orthogroup memberships, tree resources,
+cluster and distance statistics, Parquet, DuckDB and a self-contained offline
+interactive network report. It is deliberately separate from the E3-specific
+`e3_orthology_integration` adapter.
+
 The main user entry point is at the top of the repository:
 
 ```text

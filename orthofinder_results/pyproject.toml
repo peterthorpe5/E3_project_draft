@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orthofinder-results"
+version = "0.1.0"
+description = "Version-aware, queryable interrogation of OrthoFinder result sets"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = [
+  "biopython>=1.84,<2",
+  "duckdb>=1.4,<2",
+  "pyarrow>=18,<26",
+  "pyvis>=0.3.2,<0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7.6,<8",
+  "pycodestyle>=2.12,<3",
+  "pydocstyle>=6.3,<7",
+  "pytest>=8,<9",
+  "ruff>=0.15,<1",
+]
+
+[project.scripts]
+orthofinder-results = "orthofinder_results.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["orthofinder_results"]
+omit = ["*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+precision = 2
+
+[tool.pycodestyle]
+max-line-length = 100
+exclude = ".git,__pycache__,build,dist"
+
+[tool.pydocstyle]
+convention = "google"
+add-ignore = ["D105", "D107", "D202"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/orthofinder_results/report.py" = ["E501"]

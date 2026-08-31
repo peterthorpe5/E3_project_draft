@@ -16,5 +16,8 @@ bash -n \
     "${REPOSITORY_ROOT}/expression_downloader/run_python_first_then_R.sh" \
     "${REPOSITORY_ROOT}/e3_structure_guided_chemistry/run_e3_structure_guided_chemistry.sh" \
     "${REPOSITORY_ROOT}/e3_structure_guided_chemistry/run_tests.sh" \
+    "${REPOSITORY_ROOT}/orthofinder_results/run_orthofinder_results.sh" \
+    "${REPOSITORY_ROOT}/orthofinder_results/submit_orthofinder_results_slurm.sh" \
+    "${REPOSITORY_ROOT}/orthofinder_results/slurm/orthofinder_results.sbatch" \
     "${REPOSITORY_ROOT}/e3_end_to_end_workflow/submit_e3_controller_slurm.sh" \
     "${REPOSITORY_ROOT}/e3_end_to_end_workflow/scripts/slurm_e3_controller_job.sh"
