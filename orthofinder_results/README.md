@@ -30,12 +30,25 @@ Each successful run creates one immutable output directory containing:
   comparative visual summaries.
 
 The HTML is the final publication stage. It embeds the JavaScript and CSS it
-needs, so the report opens without internet access. The user can select a
-cluster, pan, zoom, search and click members, inspect species labels, view a
-distance histogram, and filter or page through cluster statistics. Additional
-run-wide views show log-binned cluster sizes, species breadth, copy-number
-complexity, cluster size versus breadth, mean distance versus sampled size, and
-an authoritative group-by-species copy-count heatmap for rendered groups.
+needs, so the report opens without internet access. Every network selector entry
+is one HOG. Node fill colour denotes species by default, a searchable legend can
+select all displayed members from one species, and the sampled medoid is marked
+with a gold star. The raw nearest-neighbour component count remains explicit;
+dashed minimum-distance component connectors can be shown for a unified layout
+or hidden to recover the raw graph. By default, node positions are a
+two-dimensional classical-MDS/PCoA projection of every displayed pairwise
+distance. The report gives the two-axis positive inertia, correlation between
+projected and input distances, and normalised stress, because no 2D map can
+preserve every high-dimensional distance exactly. A separate force-directed
+neighbour-topology view follows the PCoA map and is explicitly labelled
+non-quantitative. Both views share the same HOG and interaction controls. The user
+can pan, zoom, search and click members, view a distance histogram, and filter or
+page through cluster statistics. Additional run-wide views show log-binned
+cluster sizes, species breadth, copy-number complexity, cluster size versus
+breadth, mean distance versus sampled size, and exact group-by-species copy
+counts for rendered groups.
+Every quantitative chart has explicit axis titles; the heatmap states its row,
+column and cell semantics.
 
 Browser visualisation is deliberately bounded. Large groups are selected and
 sampled deterministically for rendering, while the full compressed TSV, Parquet and
@@ -116,7 +129,7 @@ All CLI controls are named. No source file beneath `--results-dir` is modified.
 orthofinder-results \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_3 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_4 \
   --run-id results_feb26 \
   --work-dir /persistent/project/orthofinder_results/work \
   --report-max-groups 25 \
@@ -198,7 +211,7 @@ this cleanup policy.
 
 ## Regenerate only the standalone HTML
 
-Version 0.1.3 can build a new compact report from an existing completed resource.
+Version 0.1.4 can build a new compact report from an existing completed resource.
 It does not mutate that resource or repeat OrthoFinder parsing, distance
 calculation, Parquet conversion or DuckDB construction. The HTML and log must be
 outside the immutable resource directory:
@@ -207,8 +220,8 @@ outside the immutable resource directory:
 orthofinder-results \
   --action report \
   --resource-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
-  --report-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_3.html \
-  --log-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_3.log \
+  --report-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_4.html \
+  --log-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_4.log \
   --report-max-statistic-rows 20000 \
   --report-max-groups 25 \
   --report-max-members 250 \
@@ -231,7 +244,7 @@ files, which is suitable for `mosh` sessions:
   -- \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_3 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_4 \
   --run-id results_feb26
 ```
 
@@ -286,9 +299,9 @@ Open the database with:
 duckdb /path/to/output/duckdb/orthofinder_results.duckdb
 ```
 
-## Scope of version 0.1.3
+## Scope of version 0.1.4
 
-Version 0.1.3 establishes loss-aware, version-aware ingestion, node-local
+Version 0.1.4 establishes loss-aware, version-aware ingestion, node-local
 computation and report regeneration, compressed analytical authorities,
 explicit tree-leaf identity resolution, reliable bounded visualisation and
 verified portable publication. Cross-run cluster lineage

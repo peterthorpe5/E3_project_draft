@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.4 - 2026-09-01
+
+- Clarify that every selectable protein network represents one HOG and expose
+  the displayed, supplied and analytical group sizes separately.
+- Make node fill colour species-specific by default, with deterministic colours
+  that remain stable across expanded runs, exact collision avoidance and a
+  searchable, clickable species legend.
+- Identify the sampled medoid only from a complete displayed pairwise-distance
+  matrix; retain its species fill while marking it with a gold star and border.
+- Report the raw nearest-neighbour component and isolate counts, and add the
+  minimum number of explicitly dashed, toggleable component connectors needed
+  to keep a disconnected HOG visible as one layout.
+- Use a two-dimensional classical-MDS/PCoA projection of the complete displayed
+  distance matrix as the default node geometry, with positive inertia,
+  pairwise-distance correlation and normalised stress reported per HOG.
+- Present the PCoA map first and retain the force-directed neighbour topology as
+  a separate, simultaneously available, explicitly non-quantitative view; both
+  share HOG, species, search, medoid, label and connector controls.
+- Declare NumPy as a direct numerical dependency.
+- Log report-network progress and, per HOG, the displayed size, species count,
+  raw components, connectors, projection status and projection stress.
+- Hide dense member labels by default while retaining label, member and species
+  search and selection controls.
+- Add explicit x- and y-axis titles to every summary histogram and scatter plot,
+  and state the row, column and cell semantics of the copy-count heatmap.
+- State that force-directed positions are exploratory and that edge tooltips and
+  distance summaries, rather than geometric spacing, are the quantitative
+  authorities.
+
 ## 0.1.3 - 2026-09-01
 
 - Fix the JavaScript function-name collision that stopped every run-wide chart

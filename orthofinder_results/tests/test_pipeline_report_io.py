@@ -29,7 +29,13 @@ from orthofinder_results.pipeline import (
     regenerate_report,
     run_pipeline,
 )
-from orthofinder_results.report import build_interactive_report
+from orthofinder_results.report import (
+    _connected_network_edges,
+    _distance_projection,
+    _sample_medoid,
+    _species_palette,
+    build_interactive_report,
+)
 from orthofinder_results.trees import normalise_newick_tree, tree_id_from_path
 
 
@@ -80,12 +86,22 @@ def test_pipeline_publishes_queryable_offline_resource(
 
     report = output / "report/orthofinder_results_summary.html"
     html = report.read_text(encoding="utf-8")
-    assert "Interactive cluster view" in html
+    assert "Within-HOG protein distance network" in html
     assert "Run-wide visual summary" in html
     assert "Cluster-size distribution" in html
     assert "Species-breadth distribution" in html
     assert "Copy-number complexity" in html
-    assert "Authoritative group-by-species copy heatmap" in html
+    assert "Exact copy counts for displayed network groups" in html
+    assert "Show component connectors" in html
+    assert "Quantitative distance map (PCoA)" in html
+    assert "Force-directed neighbour topology" in html
+    assert "projection quality is reported" in html
+    assert "Species colours" in html
+    assert "Sample medoid" in html
+    assert "Members per HOG (log₂ bins)" in html
+    assert "Species represented per HOG" in html
+    assert "Mean pairwise distance" in html
+    assert "Rows: HOGs · columns: species" in html
     assert "vis.Network" in html
     assert "function renderOverviewHistogram" in html
     assert "function renderDistanceHistogram" in html
@@ -142,8 +158,8 @@ def test_report_only_regeneration_preserves_completed_resource(
     assert record["size_bytes"] == standalone.stat().st_size
     assert sha256_file(path=manifest) == manifest_digest
     html = standalone.read_text(encoding="utf-8")
-    assert '"package_version":"0.1.3"' in html
-    assert '"resource_package_version":"0.1.3"' in html
+    assert '"package_version":"0.1.4"' in html
+    assert '"resource_package_version":"0.1.4"' in html
     with pytest.raises(PublicationError, match="already exists"):
         regenerate_report(
             resource_dir=resource,
@@ -279,6 +295,73 @@ def test_network_report_members_follow_distance_sample(tmp_path: Path) -> None:
     )
     assert len(statistics) == 1 and len(distances) == 1
     assert {row["member_id"] for row in memberships} == {"distance_a", "distance_b"}
+
+
+def test_network_components_medoid_and_species_colours_are_explicit() -> None:
+    """Disconnected kNN structure remains distinct from layout connectors."""
+
+    distances = (
+        {"member_a": "a", "member_b": "b", "distance": 0.1},
+        {"member_a": "a", "member_b": "c", "distance": 2.0},
+        {"member_a": "a", "member_b": "d", "distance": 2.1},
+        {"member_a": "b", "member_b": "c", "distance": 1.9},
+        {"member_a": "b", "member_b": "d", "distance": 2.0},
+        {"member_a": "c", "member_b": "d", "distance": 0.1},
+    )
+    edges, metrics = _connected_network_edges(
+        distance_rows=distances,
+        member_ids={"a", "b", "c", "d"},
+        nearest_neighbours=1,
+    )
+    assert metrics == {
+        "rawComponentCount": 2,
+        "rawIsolateCount": 0,
+        "nearestNeighbourEdgeCount": 2,
+        "connectorCount": 1,
+    }
+    connector = [
+        edge for edge in edges if edge["edgeType"] == "COMPONENT_CONNECTOR"
+    ]
+    assert len(connector) == 1
+    assert {connector[0]["from"], connector[0]["to"]} == {"b", "c"}
+    assert connector[0]["dashes"] is True
+
+    medoid = _sample_medoid(
+        distance_rows=distances,
+        member_ids={"a", "b", "c", "d"},
+    )
+    assert medoid["status"] == "EXACT_WITHIN_RENDERED_SAMPLE"
+    assert medoid["member_id"] == "b"
+    assert medoid["mean_distance"] == pytest.approx(4.0 / 3.0)
+    incomplete = _sample_medoid(
+        distance_rows=distances[:-1],
+        member_ids={"a", "b", "c", "d"},
+    )
+    assert incomplete["status"] == "UNAVAILABLE_INCOMPLETE_MATRIX"
+
+    line_distances = (
+        {"member_a": "left", "member_b": "middle", "distance": 1.0},
+        {"member_a": "middle", "member_b": "right", "distance": 1.0},
+        {"member_a": "left", "member_b": "right", "distance": 2.0},
+    )
+    positions, projection = _distance_projection(
+        distance_rows=line_distances,
+        member_ids={"left", "middle", "right"},
+    )
+    assert set(positions) == {"left", "middle", "right"}
+    assert projection["status"] == "COMPLETE_DISTANCE_PCOA_2D"
+    assert projection["normalised_stress"] == pytest.approx(0.0, abs=1e-12)
+    assert projection["distance_correlation"] == pytest.approx(1.0)
+    _, unavailable_projection = _distance_projection(
+        distance_rows=line_distances[:-1],
+        member_ids={"left", "middle", "right"},
+    )
+    assert unavailable_projection["status"] == "UNAVAILABLE_INCOMPLETE_MATRIX"
+
+    labels = ("Rattus_norvegicus", "Schizosaccharomyces_pombe", "Glycine_max")
+    palette = _species_palette(species_labels=reversed(labels))
+    assert palette == _species_palette(species_labels=labels)
+    assert len(set(palette.values())) == len(labels)
 
 
 def test_resume_and_recoverable_force_behaviour(
