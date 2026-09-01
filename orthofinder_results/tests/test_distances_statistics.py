@@ -36,6 +36,9 @@ def test_group_statistics_capture_size_copy_number_and_species() -> None:
     assert record["max_copies_per_species"] == 2
     assert record["mean_copies_per_species"] == 1.5
     assert record["species_labels"] == "A;B"
+    species_records = accumulator.to_species_records()
+    assert species_records[0]["species_member_count"] == 2
+    assert species_records[0]["member_fraction"] == pytest.approx(2 / 3)
     with pytest.raises(ValueError, match="empty"):
         accumulator.add_member(species_label="")
 
@@ -136,6 +139,7 @@ def test_patristic_distances_and_failure_modes(tmp_path: Path) -> None:
     assert len(rows) == 3
     assert rows[0]["distance_method"] == "patristic_branch_length"
     assert summary["maximum_distance"] == pytest.approx(0.9)
+    assert summary["member_identifier_resolution"] == "EXACT_MEMBER_ID"
     with pytest.raises(DistanceCalculationError, match="lacks 1 requested"):
         calculate_patristic_distances(
             tree_path=tree,
@@ -145,6 +149,72 @@ def test_patristic_distances_and_failure_modes(tmp_path: Path) -> None:
             group_id="H1",
             max_members=3,
             member_ids=("a", "missing"),
+        )
+
+
+def test_patristic_aliases_preserve_canonical_ids_and_reject_ambiguity(
+    tmp_path: Path,
+) -> None:
+    """Species-prefixed/internal tree labels map without changing output IDs."""
+
+    tree = tmp_path / "aliased_tree.txt"
+    tree.write_text("(Species_A_protA:0.1,1_0:0.2);\n", encoding="utf-8")
+    aliases = {
+        "protA": {"Species_A_protA": "SPECIES_PREFIXED_MEMBER_ID"},
+        "protB": {"1_0": "ORTHOFINDER_INTERNAL_ID"},
+    }
+    rows, summary = calculate_patristic_distances(
+        tree_path=tree,
+        run_id="r",
+        group_type="HOG",
+        hierarchy_node="N0",
+        group_id="H1",
+        max_members=2,
+        member_ids=("protA", "protB"),
+        member_aliases=aliases,
+    )
+    assert (rows[0]["member_a"], rows[0]["member_b"]) == ("protA", "protB")
+    assert summary["member_identifier_resolution"] == "MIXED_TREE_ALIASES"
+
+    ambiguous_tree = tmp_path / "ambiguous_tree.txt"
+    ambiguous_tree.write_text("(protA:0.1,Species_A_protA:0.2);\n", encoding="utf-8")
+    with pytest.raises(DistanceCalculationError, match="ambiguous labels"):
+        calculate_patristic_distances(
+            tree_path=ambiguous_tree,
+            run_id="r",
+            group_type="HOG",
+            hierarchy_node="N0",
+            group_id="H1",
+            max_members=2,
+            member_ids=("protA", "protB"),
+            member_aliases=aliases,
+        )
+    with pytest.raises(DistanceCalculationError, match="duplicate canonical"):
+        calculate_patristic_distances(
+            tree_path=tree,
+            run_id="r",
+            group_type="HOG",
+            hierarchy_node="N0",
+            group_id="H1",
+            max_members=2,
+            member_ids=("protA", "protA"),
+            member_aliases=aliases,
+        )
+    collision_tree = tmp_path / "collision_tree.txt"
+    collision_tree.write_text("(shared:0.1,other:0.2);\n", encoding="utf-8")
+    with pytest.raises(DistanceCalculationError, match="multiple canonical members"):
+        calculate_patristic_distances(
+            tree_path=collision_tree,
+            run_id="r",
+            group_type="HOG",
+            hierarchy_node="N0",
+            group_id="H1",
+            max_members=2,
+            member_ids=("protA", "protB"),
+            member_aliases={
+                "protA": {"shared": "TEST_ALIAS"},
+                "protB": {"shared": "TEST_ALIAS"},
+            },
         )
 
 

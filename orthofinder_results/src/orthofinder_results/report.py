@@ -19,7 +19,9 @@ def build_interactive_report(
     output_path: Path,
     run_metadata: Mapping[str, Any],
     group_statistics: Sequence[Mapping[str, Any]],
+    network_group_statistics: Sequence[Mapping[str, Any]],
     memberships: Sequence[Mapping[str, Any]],
+    group_species_statistics: Sequence[Mapping[str, Any]],
     distances: Sequence[Mapping[str, Any]],
     distance_statistics: Sequence[Mapping[str, Any]],
     total_group_statistic_count: int,
@@ -34,7 +36,9 @@ def build_interactive_report(
         output_path: Final HTML path.
         run_metadata: Run version, adapter and capability metadata.
         group_statistics: Group rows embedded in the searchable summary table.
+        network_group_statistics: Complete summaries for network-selected groups.
         memberships: Bounded member rows for network-rendered groups.
+        group_species_statistics: Full per-species counts for rendered groups.
         distances: Bounded pairwise distances for network-rendered groups.
         distance_statistics: Per-group distance summaries.
         total_group_statistic_count: Complete analytical group count.
@@ -54,12 +58,18 @@ def build_interactive_report(
         raise ValueError("max_network_members must be at least two.")
     if nearest_neighbours <= 0:
         raise ValueError("nearest_neighbours must be positive.")
+    embedded_group_keys = {
+        _group_key(row) for row in (*group_statistics, *network_group_statistics)
+    }
+    embedded_distance_statistics = [
+        row for row in distance_statistics if _group_key(row) in embedded_group_keys
+    ]
     vis_javascript, vis_stylesheet = _load_vis_network_assets()
     networks = _build_network_payload(
-        group_statistics=group_statistics,
+        group_statistics=network_group_statistics,
         memberships=memberships,
         distances=distances,
-        distance_statistics=distance_statistics,
+        distance_statistics=embedded_distance_statistics,
         max_groups=max_network_groups,
         max_members=max_network_members,
         nearest_neighbours=nearest_neighbours,
@@ -67,6 +77,9 @@ def build_interactive_report(
     payload = {
         "run": dict(run_metadata),
         "groupStatistics": [dict(row) for row in group_statistics],
+        "networkGroupStatistics": [dict(row) for row in network_group_statistics],
+        "groupSpeciesStatistics": [dict(row) for row in group_species_statistics],
+        "distanceStatistics": [dict(row) for row in embedded_distance_statistics],
         "networks": networks,
         "limits": {
             "embeddedGroupStatisticCount": len(group_statistics),
@@ -107,6 +120,7 @@ def build_interactive_report(
     .card .value {{ font-size:1.25rem; font-weight:700; overflow-wrap:anywhere; }}
     .panel {{ padding:1rem; margin-bottom:1rem; }}
     .panel h2 {{ margin:.1rem 0 .8rem; font-size:1.15rem; }}
+    .panel h3 {{ margin:.1rem 0 .35rem; font-size:.95rem; }}
     .controls {{ display:flex; flex-wrap:wrap; gap:.65rem; align-items:end; }}
     label {{ display:flex; flex-direction:column; gap:.25rem; color:var(--muted);
       font-size:.8rem; }}
@@ -125,6 +139,19 @@ def build_interactive_report(
     .histogram {{ display:flex; align-items:flex-end; gap:3px; height:130px;
       border-bottom:1px solid #9aa4b7; padding-top:.5rem; }}
     .bar {{ flex:1; min-width:4px; background:#5577d5; border-radius:3px 3px 0 0; }}
+    .chart-grid {{ display:grid; grid-template-columns:repeat(2,minmax(300px,1fr)); gap:.8rem; }}
+    .chart-card {{ border:1px solid var(--line); border-radius:8px; padding:.75rem; min-width:0; }}
+    .chart {{ min-height:230px; }}
+    .chart svg {{ width:100%; height:230px; display:block; overflow:visible; }}
+    .chart .axis {{ stroke:#8993a8; stroke-width:1; }}
+    .chart .grid {{ stroke:#e5e8ef; stroke-width:1; }}
+    .chart text {{ fill:var(--muted); font-size:11px; }}
+    .chart .plot-bar {{ fill:#5577d5; }}
+    .chart .plot-point {{ fill:#d7633c; fill-opacity:.65; stroke:#8b3219; stroke-width:.45; }}
+    .heatmap th.rotate {{ height:145px; vertical-align:bottom; padding:0 .2rem .35rem; }}
+    .heatmap th.rotate > span {{ display:inline-block; writing-mode:vertical-rl;
+      transform:rotate(180deg); max-height:135px; overflow:hidden; text-overflow:ellipsis; }}
+    .heatmap td.copy {{ text-align:center; min-width:28px; font-variant-numeric:tabular-nums; }}
     .scroll {{ overflow:auto; max-height:500px; border:1px solid var(--line); }}
     table {{ width:100%; border-collapse:collapse; font-size:.82rem; }}
     th,td {{ padding:.42rem .5rem; text-align:left; border-bottom:1px solid #e6e9f1;
@@ -133,7 +160,7 @@ def build_interactive_report(
     tr:hover td {{ background:#f5f7fd; }}
     .pager {{ display:flex; gap:.5rem; align-items:center; margin-top:.6rem; }}
     .small {{ color:var(--muted); font-size:.78rem; }}
-    @media (max-width:900px) {{ .network-grid {{ grid-template-columns:1fr; }}
+    @media (max-width:900px) {{ .network-grid,.chart-grid {{ grid-template-columns:1fr; }}
       .detail {{ border-left:0; padding-left:0; }} #network {{ height:480px; }} }}
   </style>
   <script>{vis_javascript}</script>
@@ -142,6 +169,31 @@ def build_interactive_report(
 <header><h1>OrthoFinder results interrogation</h1><p>Run {title} · offline interactive report</p></header>
 <main>
   <section class="cards" id="run-cards"></section>
+  <section class="panel">
+    <h2>Run-wide visual summary</h2>
+    <div class="controls"><label>Group level<select id="overview-level"></select></label></div>
+    <div id="overview-notice" class="notice"></div>
+    <div class="chart-grid">
+      <article class="chart-card"><h3>Cluster-size distribution</h3>
+        <div id="cluster-size-chart" class="chart" role="img" aria-label="Cluster-size histogram"></div>
+        <p class="small">Log₂-sized bins retain the long tail of large clusters.</p></article>
+      <article class="chart-card"><h3>Species-breadth distribution</h3>
+        <div id="species-breadth-chart" class="chart" role="img" aria-label="Species-breadth histogram"></div>
+        <p class="small">Number of represented species per cluster.</p></article>
+      <article class="chart-card"><h3>Copy-number complexity</h3>
+        <div id="copy-complexity-chart" class="chart" role="img" aria-label="Maximum copies per species histogram"></div>
+        <p class="small">Maximum paralogue count observed in any one species.</p></article>
+      <article class="chart-card"><h3>Cluster size versus species breadth</h3>
+        <div id="size-breadth-chart" class="chart" role="img" aria-label="Cluster size versus species breadth scatter plot"></div>
+        <p class="small">Up to 2,000 deterministic points; y-axis is log-scaled.</p></article>
+      <article class="chart-card"><h3>Mean distance versus sampled cluster size</h3>
+        <div id="distance-coverage-chart" class="chart" role="img" aria-label="Mean distance versus sampled cluster size scatter plot"></div>
+        <p class="small">Available distance summaries only; hover points for exact status and method.</p></article>
+      <article class="chart-card"><h3>Authoritative group-by-species copy heatmap</h3>
+        <div id="species-heatmap" class="scroll heatmap"></div>
+        <p class="small">Full copy counts for the bounded network groups, not sampled node counts.</p></article>
+    </div>
+  </section>
   <section class="panel">
     <h2>Interactive cluster view</h2>
     <div class="controls">
@@ -173,8 +225,8 @@ def build_interactive_report(
     <div class="pager"><button id="previous-page" type="button">Previous</button>
       <span id="page-status" class="small"></span><button id="next-page" type="button">Next</button></div>
   </section>
-  <p class="small">This report is an exploratory, bounded visualisation. The checksum-bound TSV,
-    Parquet and DuckDB resources are the complete analytical authorities.</p>
+  <p class="small">This report is an exploratory, bounded visualisation. The checksum-bound
+    compressed TSV, Parquet and DuckDB resources are the complete analytical authorities.</p>
 </main>
 <script id="orthofinder-results-data" type="application/json">{payload_json}</script>
 <script>
@@ -193,6 +245,77 @@ document.getElementById("run-cards").innerHTML=cards.map(([label,value])=>
 document.getElementById("statistics-notice").textContent=
   `Embedded ${{number(DATA.limits.embeddedGroupStatisticCount)}} of ${{number(DATA.limits.totalGroupStatisticCount)}} group summaries. `+
   `Complete rows remain in the analytical outputs.`;
+const overviewLevel=document.getElementById("overview-level");
+const levelRows=[...DATA.groupStatistics,...DATA.networkGroupStatistics];
+const levelRecords=[...new Map(levelRows.map(row=>{{const key=`${{row.group_type}}|${{row.hierarchy_node}}`;
+  return [key,{{key,type:row.group_type,node:row.hierarchy_node}}];}})).values()].sort((a,b)=>a.key.localeCompare(b.key));
+levelRecords.forEach(level=>{{const option=document.createElement("option");option.value=level.key;
+  option.textContent=level.node?`${{level.type}} · ${{level.node}}`:level.type;overviewLevel.appendChild(option);}});
+const preferredLevel=levelRecords.find(level=>level.type===DATA.run.primary_group_authority&&level.node==="N0")||
+  levelRecords.find(level=>level.type===DATA.run.primary_group_authority)||levelRecords[0];
+if(preferredLevel)overviewLevel.value=preferredLevel.key;
+function selectedOverviewRows(){{return DATA.groupStatistics.filter(row=>
+  `${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value);}}
+function plotMessage(target,message){{document.getElementById(target).innerHTML=`<p class="small">${{escapeHtml(message)}}</p>`;}}
+function renderHistogram(targetId,rawValues,logBins){{const values=rawValues.map(Number).filter(value=>Number.isFinite(value)&&value>=0);
+  if(!values.length){{plotMessage(targetId,"No values are available for this group level.");return;}}
+  let counts=[],labels=[];
+  if(logBins){{const maximum=Math.max(...values,1),last=Math.floor(Math.log2(maximum));counts=Array(last+1).fill(0);
+    values.forEach(value=>counts[Math.floor(Math.log2(Math.max(1,value)))]++);
+    labels=counts.map((_,index)=>index===0?"1":`${{2**index}}–${{2**(index+1)-1}}`);
+  }}else{{const maximum=Math.max(...values,1),binCount=Math.min(20,Math.max(1,Math.ceil(Math.sqrt(values.length)))),width=Math.max(1,Math.ceil(maximum/binCount));
+    counts=Array(Math.ceil(maximum/width)).fill(0);values.forEach(value=>counts[Math.min(counts.length-1,Math.floor(value/width))]++);
+    labels=counts.map((_,index)=>`${{index*width}}–${{(index+1)*width-1}}`);}}
+  const width=640,height=230,left=46,right=10,top=10,bottom=42,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const peak=Math.max(...counts,1),barWidth=plotWidth/counts.length;
+  const bars=counts.map((count,index)=>{{const h=plotHeight*count/peak,x=left+index*barWidth,y=top+plotHeight-h;
+    return `<rect class="plot-bar" x="${{x+1}}" y="${{y}}" width="${{Math.max(1,barWidth-2)}}" height="${{h}}"><title>${{escapeHtml(labels[index])}}: ${{number(count)}} groups</title></rect>`;}}).join("");
+  const ticks=[0,.25,.5,.75,1].map(fraction=>{{const y=top+plotHeight*(1-fraction),value=Math.round(peak*fraction);
+    return `<line class="grid" x1="${{left}}" y1="${{y}}" x2="${{width-right}}" y2="${{y}}"/><text x="${{left-5}}" y="${{y+4}}" text-anchor="end">${{number(value)}}</text>`;}}).join("");
+  const step=Math.max(1,Math.ceil(labels.length/7)),xlabels=labels.map((label,index)=>index%step?"":
+    `<text x="${{left+(index+.5)*barWidth}}" y="${{height-20}}" text-anchor="middle">${{escapeHtml(label)}}</text>`).join("");
+  document.getElementById(targetId).innerHTML=`<svg viewBox="0 0 ${{width}} ${{height}}" aria-hidden="true">${{ticks}}${{bars}}`+
+    `<line class="axis" x1="${{left}}" y1="${{top+plotHeight}}" x2="${{width-right}}" y2="${{top+plotHeight}}"/>${{xlabels}}</svg>`;}}
+function sampledRows(rows,maximum){{if(rows.length<=maximum)return rows.slice();const ordered=rows.slice().sort((a,b)=>
+  `${{a.group_type}}|${{a.hierarchy_node}}|${{a.group_id}}`.localeCompare(`${{b.group_type}}|${{b.hierarchy_node}}|${{b.group_id}}`));
+  const stride=ordered.length/maximum;return Array.from({{length:maximum}},(_,index)=>ordered[Math.floor(index*stride)]);}}
+function renderScatter(targetId,rows,xField,yField,logY,titleFields){{const plotted=sampledRows(rows,2000).map(row=>
+  ({{row,x:Number(row[xField]),y:Number(row[yField])}})).filter(point=>Number.isFinite(point.x)&&Number.isFinite(point.y));
+  if(!plotted.length){{plotMessage(targetId,"No plottable values are available for this group level.");return;}}
+  const width=640,height=230,left=52,right=12,top=12,bottom=36,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const maxX=Math.max(...plotted.map(point=>point.x),1),transformY=value=>logY?Math.log2(Math.max(1,value)):value;
+  const maxY=Math.max(...plotted.map(point=>transformY(point.y)),1);
+  const points=plotted.map(point=>{{const x=left+plotWidth*point.x/maxX,y=top+plotHeight*(1-transformY(point.y)/maxY);
+    const title=titleFields.map(field=>`${{field}}=${{point.row[field]??""}}`).join(" · ");
+    return `<circle class="plot-point" cx="${{x}}" cy="${{y}}" r="3"><title>${{escapeHtml(title)}}</title></circle>`;}}).join("");
+  const grid=[0,.25,.5,.75,1].map(fraction=>{{const y=top+plotHeight*(1-fraction),value=logY?Math.round(2**(maxY*fraction)):fixed(maxY*fraction);
+    return `<line class="grid" x1="${{left}}" y1="${{y}}" x2="${{width-right}}" y2="${{y}}"/><text x="${{left-5}}" y="${{y+4}}" text-anchor="end">${{value}}</text>`;}}).join("");
+  document.getElementById(targetId).innerHTML=`<svg viewBox="0 0 ${{width}} ${{height}}" aria-hidden="true">${{grid}}${{points}}`+
+    `<line class="axis" x1="${{left}}" y1="${{top+plotHeight}}" x2="${{width-right}}" y2="${{top+plotHeight}}"/>`+
+    `<text x="${{left}}" y="${{height-8}}">0</text><text x="${{width-right}}" y="${{height-8}}" text-anchor="end">${{number(maxX)}}</text></svg>`;}}
+function renderHeatmap(rows){{const target=document.getElementById("species-heatmap"),level=overviewLevel.value;
+  const selected=DATA.groupSpeciesStatistics.filter(row=>`${{row.group_type}}|${{row.hierarchy_node}}`===level);
+  if(!selected.length){{target.innerHTML='<p class="small">No network-selected groups are available at this level.</p>';return;}}
+  const species=[...new Set(selected.map(row=>row.species_label))].sort(),groups=[...new Set(selected.map(row=>row.group_id))].sort();
+  const counts=new Map(selected.map(row=>[`${{row.group_id}}\u0000${{row.species_label}}`,Number(row.species_member_count)]));
+  const peak=Math.max(...counts.values(),1),head=species.map(label=>`<th class="rotate" title="${{escapeHtml(label)}}"><span>${{escapeHtml(label)}}</span></th>`).join("");
+  const body=groups.map(group=>`<tr><th>${{escapeHtml(group)}}</th>`+species.map(label=>{{const value=counts.get(`${{group}}\u0000${{label}}`)||0;
+    const alpha=value?(.16+.74*value/peak):0;return `<td class="copy" style="background:rgba(53,88,200,${{alpha}})" title="${{escapeHtml(group)}} · ${{escapeHtml(label)}} · copies=${{value}}">${{value||""}}</td>`;}}).join("")+"</tr>").join("");
+  target.innerHTML=`<table><thead><tr><th>Group</th>${{head}}</tr></thead><tbody>${{body}}</tbody></table>`;}}
+function renderOverview(){{const rows=selectedOverviewRows();document.getElementById("overview-notice").textContent=
+  `Visualising ${{number(rows.length)}} embedded summaries for ${{overviewLevel.options[overviewLevel.selectedIndex]?.text||"this level"}}. `+
+  `The analytical tables contain ${{number(DATA.limits.totalGroupStatisticCount)}} summaries across all levels.`;
+  renderHistogram("cluster-size-chart",rows.map(row=>row.member_count),true);
+  renderHistogram("species-breadth-chart",rows.map(row=>row.species_count),false);
+  renderHistogram("copy-complexity-chart",rows.map(row=>row.max_copies_per_species),true);
+  renderScatter("size-breadth-chart",rows,"species_count","member_count",true,
+    ["group_id","species_count","member_count","max_copies_per_species"]);
+  const distanceRows=DATA.distanceStatistics.filter(row=>`${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value&&
+    row.computation_status!=="UNAVAILABLE"&&Number(row.distance_pair_count)>0);
+  renderScatter("distance-coverage-chart",distanceRows,"sampled_member_count","mean_distance",false,
+    ["group_id","distance_method","computation_status","member_identifier_resolution","mean_distance"]);
+  renderHeatmap(rows);}}
+overviewLevel.addEventListener("change",renderOverview);
 const groupSelect=document.getElementById("group-select");
 Object.keys(DATA.networks).sort().forEach(key=>{{const option=document.createElement("option");
   option.value=key;option.textContent=DATA.networks[key].label;groupSelect.appendChild(option);}});
@@ -243,7 +366,7 @@ document.getElementById("group-filter").addEventListener("input",event=>{{const 
 document.getElementById("previous-page").addEventListener("click",()=>{{if(page>0)page--;renderStats();}});
 document.getElementById("next-page").addEventListener("click",()=>{{if((page+1)*pageSize<filtered.length)page++;renderStats();}});
 function escapeHtml(value){{return String(value??"").replace(/[&<>"']/g,char=>({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}}[char]));}}
-renderStats();renderNetwork();
+renderStats();renderOverview();renderNetwork();
 </script>
 </body></html>
 """

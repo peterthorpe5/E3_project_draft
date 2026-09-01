@@ -10,6 +10,7 @@ import duckdb
 import pyarrow.parquet as pq
 import pytest
 
+import orthofinder_results.pipeline as pipeline_module
 from orthofinder_results.cli import main
 from orthofinder_results.errors import InputValidationError, PublicationError
 from orthofinder_results.io_utils import (
@@ -20,7 +21,7 @@ from orthofinder_results.io_utils import (
     validate_persistent_path,
     write_tsv,
 )
-from orthofinder_results.pipeline import inspect_results, run_pipeline
+from orthofinder_results.pipeline import _validate_published_copy, inspect_results, run_pipeline
 from orthofinder_results.report import build_interactive_report
 from orthofinder_results.trees import normalise_newick_tree, tree_id_from_path
 
@@ -63,22 +64,39 @@ def test_pipeline_publishes_queryable_offline_resource(
     manifest = run_pipeline(**pipeline_arguments(results, output))
     assert manifest["status"] == "complete"
     assert manifest["counts"]["hog_membership_count"] == 6
+    expected_group_species_rows = 6 if fixture_name == "orthofinder2_results" else 4
+    assert manifest["counts"]["group_species_statistic_count"] == (
+        expected_group_species_rows
+    )
     assert manifest["counts"]["distance_pair_count"] == 3
     assert not any(path.name.startswith(".") for path in output.parent.iterdir())
 
     report = output / "report/orthofinder_results_summary.html"
     html = report.read_text(encoding="utf-8")
     assert "Interactive cluster view" in html
+    assert "Run-wide visual summary" in html
+    assert "Cluster-size distribution" in html
+    assert "Species-breadth distribution" in html
+    assert "Copy-number complexity" in html
+    assert "Authoritative group-by-species copy heatmap" in html
     assert "vis.Network" in html
     assert re.search(r'(?:src|href)=["\']https?://', html, re.IGNORECASE) is None
     assert "amino_acid_p_distance_pairwise_deletion" in html
     assert (output / "tables/hog_memberships.parquet").is_file()
+    assert (output / "tables/hog_memberships.tsv.gz").is_file()
+    assert not (output / "tables/hog_memberships.tsv").exists()
     assert pq.read_table(output / "tables/group_statistics.parquet").num_rows > 0
 
     connection = duckdb.connect(str(output / "duckdb/orthofinder_results.duckdb"))
     try:
         assert connection.execute("SELECT count(*) FROM hog_memberships").fetchone()[0] == 6
         assert connection.execute("SELECT count(*) FROM tree_nodes").fetchone()[0] > 0
+        assert connection.execute(
+            "SELECT count(*) FROM group_species_statistics"
+        ).fetchone()[0] > 0
+        assert connection.execute(
+            "SELECT schema_version FROM resource_metadata"
+        ).fetchone()[0] == 2
     finally:
         connection.close()
     checks = list(read_tsv(path=output / "qc/validation_checks.tsv"))
@@ -100,6 +118,84 @@ def test_resume_and_recoverable_force_behaviour(
     replacement = run_pipeline(**{**arguments, "force": True})
     assert replacement["status"] == "complete"
     assert list(persistent_test_root.glob("published.superseded.*"))
+
+
+def test_cross_filesystem_publication_is_verified_before_atomic_rename(
+    orthofinder2_results: Path,
+    persistent_test_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Node-local staging is copied, checksum-verified and then published."""
+
+    output = persistent_test_root / "published_from_scratch"
+    arguments = pipeline_arguments(orthofinder2_results, output)
+    monkeypatch.setattr(pipeline_module, "_same_filesystem", lambda **_: False)
+    manifest = run_pipeline(**arguments)
+    assert manifest["publication"]["method"] == "VERIFIED_COPY_THEN_ATOMIC_RENAME"
+    assert manifest["publication"]["copy_verified"] is True
+    assert output.is_dir()
+    assert not list((persistent_test_root / "work").glob("*.staging.*"))
+    assert not list(persistent_test_root.glob(".*.incoming.*"))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing_manifest", "missing run_manifest"),
+        ("manifest_mismatch", "checksum does not match"),
+        ("unreadable_manifest", "unreadable"),
+        ("incomplete_manifest", "not marked complete"),
+        ("unsafe_path", "Unsafe output path"),
+        ("missing_file", "missing manifested file"),
+        ("wrong_size", "size differs"),
+        ("wrong_checksum", "checksum differs"),
+        ("unexpected_file", "file set differs"),
+    ],
+)
+def test_cross_filesystem_copy_validation_rejects_corruption(
+    tmp_path: Path, mutation: str, message: str
+) -> None:
+    """Every corruption class blocks publication of an incoming copy."""
+
+    source = tmp_path / mutation / "source"
+    destination = tmp_path / mutation / "destination"
+    for root in (source, destination):
+        (root / "tables").mkdir(parents=True)
+        (root / "tables/value.tsv").write_text("x\n", encoding="utf-8")
+    record = {
+        "path": "tables/value.tsv",
+        "size_bytes": 2,
+        "sha256": sha256_file(path=source / "tables/value.tsv"),
+    }
+    manifest: dict[str, object] = {"status": "complete", "outputs": [record]}
+
+    if mutation == "unreadable_manifest":
+        manifest_text = "{\n"
+    else:
+        if mutation == "incomplete_manifest":
+            manifest["status"] = "running"
+        elif mutation == "unsafe_path":
+            record["path"] = "../outside.tsv"
+        elif mutation == "wrong_size":
+            record["size_bytes"] = 99
+        elif mutation == "wrong_checksum":
+            record["sha256"] = "0" * 64
+        manifest_text = json.dumps(manifest, sort_keys=True)
+    for root in (source, destination):
+        (root / "run_manifest.json").write_text(manifest_text, encoding="utf-8")
+
+    if mutation == "missing_manifest":
+        (destination / "run_manifest.json").unlink()
+    elif mutation == "manifest_mismatch":
+        with (destination / "run_manifest.json").open(mode="a", encoding="utf-8") as handle:
+            handle.write("\n")
+    elif mutation == "missing_file":
+        (destination / "tables/value.tsv").unlink()
+    elif mutation == "unexpected_file":
+        (destination / "tables/unexpected.tsv").write_text("x\n", encoding="utf-8")
+
+    with pytest.raises(PublicationError, match=message):
+        _validate_published_copy(source=source, destination=destination)
 
 
 def test_cli_inspection_and_run_validation(orthofinder3_results: Path, tmp_path: Path) -> None:
@@ -125,14 +221,17 @@ def test_cli_inspection_and_run_validation(orthofinder3_results: Path, tmp_path:
         main(["--action", "run", "--results-dir", str(orthofinder3_results)])
 
 
-def test_io_round_trip_and_path_policy(tmp_path: Path) -> None:
-    """TSV, typed Parquet, DuckDB and checksum helpers preserve a small table."""
+@pytest.mark.parametrize("suffix", [".tsv", ".tsv.gz"])
+def test_io_round_trip_and_path_policy(tmp_path: Path, suffix: str) -> None:
+    """Plain/compressed TSV, Parquet, DuckDB and checksums preserve a table."""
 
-    tsv = tmp_path / "values.tsv"
+    tsv = tmp_path / f"values{suffix}"
     assert (
         write_tsv(path=tsv, fieldnames=("name", "count"), records=[{"name": "a", "count": 2}]) == 1
     )
     assert list(read_tsv(path=tsv))[0] == {"name": "a", "count": "2"}
+    if suffix == ".tsv.gz":
+        assert tsv.read_bytes()[:2] == b"\x1f\x8b"
     assert len(sha256_file(path=tsv)) == 64
     parquet = tmp_path / "values.parquet"
     assert tsv_to_parquet(tsv_path=tsv, parquet_path=parquet, column_types={"count": "int64"}) == 1
@@ -159,6 +258,51 @@ def test_empty_tsv_and_invalid_duckdb_relation(tmp_path: Path) -> None:
     assert pq.read_table(parquet).num_rows == 0
     with pytest.raises(PublicationError, match="Unsafe"):
         create_duckdb(database_path=tmp_path / "bad.duckdb", parquet_tables={"bad-name": parquet})
+
+
+@pytest.mark.parametrize("suffix", [".tsv", ".tsv.gz"])
+def test_tsv_to_parquet_keeps_late_text_after_empty_inference_blocks(
+    tmp_path: Path, suffix: str
+) -> None:
+    """A text value after many blanks cannot be inferred as Arrow null."""
+
+    tsv = tmp_path / f"late_hierarchy{suffix}"
+    records = [
+        {
+            "run_id": "run",
+            "group_type": "LEGACY_ORTHOGROUP",
+            "hierarchy_node": "",
+            "member_count": 1,
+        }
+        for _ in range(100)
+    ]
+    records.append(
+        {
+            "run_id": "run",
+            "group_type": "HOG",
+            "hierarchy_node": "N0",
+            "member_count": 2,
+        }
+    )
+    write_tsv(
+        path=tsv,
+        fieldnames=("run_id", "group_type", "hierarchy_node", "member_count"),
+        records=records,
+    )
+    parquet = tmp_path / "late_hierarchy.parquet"
+    assert (
+        tsv_to_parquet(
+            tsv_path=tsv,
+            parquet_path=parquet,
+            column_types={"member_count": "int64"},
+            block_size=256,
+        )
+        == 101
+    )
+    table = pq.read_table(parquet)
+    assert str(table.schema.field("hierarchy_node").type) == "string"
+    assert table.column("hierarchy_node").to_pylist()[-1] == "N0"
+    assert table.column("hierarchy_node").to_pylist()[0] == ""
 
 
 def test_tree_normalisation_and_identifier_rules(tmp_path: Path) -> None:
@@ -192,7 +336,9 @@ def test_report_bounds_and_script_escape(tmp_path: Path) -> None:
             output_path=output,
             run_metadata=metadata,
             group_statistics=(),
+            network_group_statistics=(),
             memberships=(),
+            group_species_statistics=(),
             distances=(),
             distance_statistics=(),
             total_group_statistic_count=0,

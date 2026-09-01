@@ -9,13 +9,14 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import __version__
+from . import __schema_version__, __version__
 from .distances import (
     DISTANCE_FIELDS,
     DISTANCE_STATISTIC_FIELDS,
@@ -30,7 +31,9 @@ from .io_utils import (
     configure_logging,
     create_duckdb,
     file_record,
+    open_text,
     read_tsv,
+    sha256_file,
     tsv_to_parquet,
     utc_now_iso,
     validate_persistent_path,
@@ -47,7 +50,11 @@ from .parsers import (
     read_species_ids,
 )
 from .report import build_interactive_report
-from .statistics import GROUP_STATISTIC_FIELDS, GroupAccumulator
+from .statistics import (
+    GROUP_SPECIES_STATISTIC_FIELDS,
+    GROUP_STATISTIC_FIELDS,
+    GroupAccumulator,
+)
 from .trees import (
     TREE_EDGE_FIELDS,
     TREE_INVENTORY_FIELDS,
@@ -69,6 +76,10 @@ GROUP_TYPES = {
         "max_copies_per_species": "int64",
         "mean_copies_per_species": "float64",
         "is_singleton": "bool",
+    },
+    "group_species_statistics": {
+        "species_member_count": "int64",
+        "member_fraction": "float64",
     },
     "species": {"source_line": "int64"},
     "sequences": {"source_line": "int64"},
@@ -126,6 +137,7 @@ def run_pipeline(
     resume: bool,
     force: bool,
     verbose: bool,
+    keep_failed_work: bool = False,
 ) -> dict[str, Any]:
     """Build a complete versioned result resource without mutating its authority.
 
@@ -133,7 +145,8 @@ def run_pipeline(
         results_dir: Read-only completed OrthoFinder result directory.
         output_dir: New formal run directory.
         run_id: Stable identifier unique to this OrthoFinder run.
-        work_dir: Explicit persistent staging root; defaults beside ``output_dir``.
+        work_dir: Optional staging root. Slurm jobs should use node-local scratch;
+            other runs default beside ``output_dir``.
         alignment_dir: Optional aligned FASTA directory for distance calculation.
         distance_source: ``AUTO``, aligned sequence, resolved tree or disabled.
         distance_group_type: ``AUTO``, ``HOG`` or ``LEGACY_ORTHOGROUP``.
@@ -148,13 +161,14 @@ def run_pipeline(
         resume: Reuse an exactly matching completed formal output.
         force: Supersede an existing non-matching output.
         verbose: Enable debug logging.
+        keep_failed_work: Retain partial staging/copy directories after a failure.
 
     Returns:
         Completed run manifest.
 
     Raises:
         InputValidationError: If inputs or named controls are invalid.
-        PublicationError: If publication cannot be completed atomically.
+        PublicationError: If verified publication cannot be completed.
     """
 
     _validate_controls(
@@ -173,15 +187,17 @@ def run_pipeline(
     layout = discover_layout(results_dir=results_dir)
     output = validate_persistent_path(path=output_dir, role="output_dir")
     output.parent.mkdir(parents=True, exist_ok=True)
-    staging_root = validate_persistent_path(
-        path=(work_dir if work_dir is not None else output.parent / ".orthofinder_results_work"),
-        role="work_dir",
-    )
+    staging_root = Path(
+        work_dir if work_dir is not None else output.parent / ".orthofinder_results_work"
+    ).expanduser().resolve()
+    if staging_root == output:
+        raise InputValidationError("work_dir must not be the formal output directory.")
     staging_root.mkdir(parents=True, exist_ok=True)
-    if output.parent.stat().st_dev != staging_root.stat().st_dev:
-        raise PublicationError(
-            "work_dir and output_dir must be on the same filesystem for atomic publication."
-        )
+    publication_method = (
+        "ATOMIC_RENAME"
+        if _same_filesystem(first=staging_root, second=output.parent)
+        else "VERIFIED_COPY_THEN_ATOMIC_RENAME"
+    )
     resolved_alignment_dir = _resolve_pipeline_alignment_dir(
         requested=alignment_dir,
         discovered=layout.alignments_dir,
@@ -208,6 +224,8 @@ def run_pipeline(
     _LOGGER.info("Starting orthofinder-results %s for run %s", __version__, run_id)
     _LOGGER.info("Read-only authority: %s", layout.results_dir)
     _LOGGER.info("Formal output: %s", output)
+    _LOGGER.info("Staging root: %s", staging_root)
+    _LOGGER.info("Publication method: %s", publication_method)
     started_at = utc_now_iso()
     try:
         manifest = _build_resource(
@@ -228,16 +246,155 @@ def run_pipeline(
             report_max_members=report_max_members,
             report_nearest_neighbours=report_nearest_neighbours,
             started_at=started_at,
+            staging_root=staging_root,
+            publication_method=publication_method,
         )
-        os.replace(staging, output)
+        # Close the staging file handler before checksums are verified or files
+        # cross filesystems. Subsequent CLI messages remain console-only.
+        configure_logging(verbose=verbose)
+        _publish_completed_resource(
+            staging=staging,
+            output=output,
+            keep_failed_work=keep_failed_work,
+        )
         _LOGGER.info("Published completed resource: %s", output)
         return manifest
     except Exception:
-        failed = staging.with_name(staging.name.replace(".staging.", ".failed."))
+        _LOGGER.exception("Run failed before formal publication.")
+        configure_logging(verbose=verbose)
         if staging.exists():
-            os.replace(staging, failed)
-            _LOGGER.exception("Run failed; retained diagnostic staging directory: %s", failed)
+            if keep_failed_work:
+                failed = staging.with_name(staging.name.replace(".staging.", ".failed."))
+                os.replace(staging, failed)
+                _LOGGER.error("Retained diagnostic staging directory: %s", failed)
+            else:
+                shutil.rmtree(staging)
+                _LOGGER.info("Removed partial staging directory: %s", staging)
         raise
+
+
+def _same_filesystem(*, first: Path, second: Path) -> bool:
+    """Return whether two existing paths use the same filesystem.
+
+    Args:
+        first: First existing path.
+        second: Second existing path.
+
+    Returns:
+        ``True`` when both device identifiers match.
+    """
+
+    return first.stat().st_dev == second.stat().st_dev
+
+
+def _publish_completed_resource(
+    *, staging: Path, output: Path, keep_failed_work: bool
+) -> None:
+    """Publish a validated staging tree to persistent storage.
+
+    Same-filesystem runs use a direct atomic rename. Cross-filesystem runs copy
+    into a hidden directory beside the formal output, verify every manifested
+    file, and then atomically rename that verified copy.
+
+    Args:
+        staging: Completed resource staging directory.
+        output: Formal persistent output directory.
+        keep_failed_work: Retain an incomplete cross-filesystem copy for diagnosis.
+
+    Raises:
+        PublicationError: If copying, validation or final publication fails.
+    """
+
+    if _same_filesystem(first=staging, second=output.parent):
+        os.replace(staging, output)
+        return
+
+    token = uuid.uuid4().hex
+    incoming = output.parent / f".{output.name}.incoming.{token}"
+    try:
+        shutil.copytree(staging, incoming, copy_function=shutil.copy2)
+        _validate_published_copy(source=staging, destination=incoming)
+        os.replace(incoming, output)
+    except Exception as error:
+        if incoming.exists():
+            if keep_failed_work:
+                failed_copy = output.parent / f".{output.name}.copy_failed.{token}"
+                os.replace(incoming, failed_copy)
+                _LOGGER.error("Retained incomplete persistent copy for diagnosis: %s", failed_copy)
+            else:
+                shutil.rmtree(incoming)
+                _LOGGER.info("Removed incomplete persistent copy: %s", incoming)
+        if isinstance(error, PublicationError):
+            raise
+        raise PublicationError(
+            f"Could not publish verified resource to {output}: {error}"
+        ) from error
+
+    try:
+        shutil.rmtree(staging)
+    except OSError as error:
+        _LOGGER.warning(
+            "Published output but could not remove scratch staging %s: %s", staging, error
+        )
+
+
+def _validate_published_copy(*, source: Path, destination: Path) -> None:
+    """Verify a cross-filesystem copy against its completed manifest.
+
+    Args:
+        source: Completed scratch resource.
+        destination: Persistent incoming copy.
+
+    Raises:
+        PublicationError: If manifests, file sets, sizes or checksums differ.
+    """
+
+    source_manifest = source / "run_manifest.json"
+    destination_manifest = destination / "run_manifest.json"
+    if not source_manifest.is_file() or not destination_manifest.is_file():
+        raise PublicationError("Completed resource copy is missing run_manifest.json.")
+    if sha256_file(path=source_manifest) != sha256_file(path=destination_manifest):
+        raise PublicationError(
+            "Copied run_manifest.json checksum does not match scratch authority."
+        )
+
+    try:
+        manifest = json.loads(destination_manifest.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as error:
+        raise PublicationError(f"Copied run manifest is unreadable: {error}") from error
+    if manifest.get("status") != "complete":
+        raise PublicationError("Copied run manifest is not marked complete.")
+
+    expected_paths: set[Path] = set()
+    for record in manifest.get("outputs", []):
+        relative_path = Path(str(record.get("path", "")))
+        if (
+            not relative_path.parts
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+        ):
+            raise PublicationError(f"Unsafe output path in run manifest: {relative_path}")
+        expected_paths.add(relative_path)
+        copied_path = destination / relative_path
+        if not copied_path.is_file():
+            raise PublicationError(f"Copied resource is missing manifested file: {relative_path}")
+        if copied_path.stat().st_size != int(record["size_bytes"]):
+            raise PublicationError(f"Copied file size differs for: {relative_path}")
+        if sha256_file(path=copied_path) != record["sha256"]:
+            raise PublicationError(f"Copied file checksum differs for: {relative_path}")
+
+    actual_paths = {
+        path.relative_to(destination)
+        for path in destination.rglob("*")
+        if path.is_file() and path.name != "run_manifest.json"
+    }
+    if actual_paths != expected_paths:
+        missing = sorted(str(path) for path in expected_paths - actual_paths)
+        unexpected = sorted(str(path) for path in actual_paths - expected_paths)
+        raise PublicationError(
+            "Copied resource file set differs from its manifest; "
+            f"missing={missing}, unexpected={unexpected}."
+        )
 
 
 def inspect_results(*, results_dir: Path) -> dict[str, Any]:
@@ -272,6 +429,8 @@ def _build_resource(
     report_max_members: int,
     report_nearest_neighbours: int,
     started_at: str,
+    staging_root: Path,
+    publication_method: str,
 ) -> dict[str, Any]:
     """Populate one staging directory and return its complete manifest."""
 
@@ -289,7 +448,12 @@ def _build_resource(
         records=source_inventory,
     )
 
-    membership_counts, group_count, species_from_groups = _publish_memberships(
+    (
+        membership_counts,
+        group_count,
+        group_species_statistic_count,
+        species_from_groups,
+    ) = _publish_memberships(
         tables_dir=tables,
         layout=layout,
         run_id=run_id,
@@ -324,15 +488,22 @@ def _build_resource(
         parquet_tables=parquet_tables,
     )
     group_rows = _load_report_group_statistics(
-        path=tables / "group_statistics.tsv",
+        path=_table_path(tables_dir=tables, relation="group_statistics"),
         maximum=report_max_statistic_rows,
     )
-    report_memberships, report_distances = _load_report_network_data(
+    network_group_rows, report_memberships, report_distances = _load_report_network_data(
         tables_dir=tables,
-        group_statistics=group_rows,
+        group_statistics_path=_table_path(
+            tables_dir=tables,
+            relation="group_statistics",
+        ),
         distance_summaries=distance_summaries,
         maximum_groups=report_max_groups,
         maximum_members=report_max_members,
+    )
+    report_group_species = _load_report_group_species_data(
+        tables_dir=tables,
+        memberships=report_memberships,
     )
     run_metadata = {
         "run_id": run_id,
@@ -340,15 +511,22 @@ def _build_resource(
         "adapter_name": layout.adapter_name,
         "primary_group_authority": layout.primary_group_authority,
         "package_version": __version__,
-        "schema_version": 1,
+        "schema_version": __schema_version__,
         "distance_source_requested": distance_source,
         "capabilities": layout.capabilities.to_record(),
+        "publication": {
+            "method": publication_method,
+            "staging_root": str(staging_root),
+            "copy_verified": publication_method == "VERIFIED_COPY_THEN_ATOMIC_RENAME",
+        },
     }
     build_interactive_report(
         output_path=report_dir / "orthofinder_results_summary.html",
         run_metadata=run_metadata,
         group_statistics=group_rows,
+        network_group_statistics=network_group_rows,
         memberships=report_memberships,
+        group_species_statistics=report_group_species,
         distances=report_distances,
         distance_statistics=distance_summaries,
         total_group_statistic_count=group_count,
@@ -393,6 +571,7 @@ def _build_resource(
         "counts": {
             **membership_counts,
             "group_count": group_count,
+            "group_species_statistic_count": group_species_statistic_count,
             "species_count": species_count,
             "sequence_count": sequence_count,
             "tree_file_count": len(tree_inventory),
@@ -427,14 +606,22 @@ def _build_resource(
 
 def _publish_memberships(
     *, tables_dir: Path, layout: ResultLayout, run_id: str
-) -> tuple[dict[str, int], int, set[str]]:
+) -> tuple[dict[str, int], int, int, set[str]]:
     """Publish long-form membership tables and streaming group statistics."""
 
-    statistics_path = tables_dir / "group_statistics.tsv"
+    statistics_path = _table_path(tables_dir=tables_dir, relation="group_statistics")
     counts = {"legacy_orthogroup_membership_count": 0, "hog_membership_count": 0}
     group_count = 0
+    group_species_count = 0
     species: set[str] = set()
-    with statistics_path.open(mode="w", encoding="utf-8", newline="") as stats_handle:
+    species_statistics_path = _table_path(
+        tables_dir=tables_dir,
+        relation="group_species_statistics",
+    )
+    with (
+        open_text(path=statistics_path, mode="w") as stats_handle,
+        open_text(path=species_statistics_path, mode="w") as species_stats_handle,
+    ):
         stats_writer = csv.DictWriter(
             stats_handle,
             fieldnames=GROUP_STATISTIC_FIELDS,
@@ -442,36 +629,50 @@ def _publish_memberships(
             lineterminator="\n",
         )
         stats_writer.writeheader()
+        species_stats_writer = csv.DictWriter(
+            species_stats_handle,
+            fieldnames=GROUP_SPECIES_STATISTIC_FIELDS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        species_stats_writer.writeheader()
         legacy_sources = (
             []
             if layout.orthogroups_path is None
             else [(layout.orthogroups_path, "LEGACY_ORTHOGROUP", "")]
         )
-        count, groups = _write_membership_authority(
-            path=tables_dir / "legacy_orthogroup_memberships.tsv",
+        count, groups, group_species_rows = _write_membership_authority(
+            path=_table_path(
+                tables_dir=tables_dir,
+                relation="legacy_orthogroup_memberships",
+            ),
             sources=legacy_sources,
             run_id=run_id,
             statistics_writer=stats_writer,
+            species_statistics_writer=species_stats_writer,
             species=species,
         )
         counts["legacy_orthogroup_membership_count"] = count
         group_count += groups
+        group_species_count += group_species_rows
         hog_sources = [(path, "HOG", path.stem) for path in layout.hog_paths]
-        count, groups = _write_membership_authority(
-            path=tables_dir / "hog_memberships.tsv",
+        count, groups, group_species_rows = _write_membership_authority(
+            path=_table_path(tables_dir=tables_dir, relation="hog_memberships"),
             sources=hog_sources,
             run_id=run_id,
             statistics_writer=stats_writer,
+            species_statistics_writer=species_stats_writer,
             species=species,
         )
         counts["hog_membership_count"] = count
         group_count += groups
+        group_species_count += group_species_rows
     _LOGGER.info(
         "Published %s memberships across %s run-scoped groups.",
         f"{sum(counts.values()):,}",
         f"{group_count:,}",
     )
-    return counts, group_count, species
+    return counts, group_count, group_species_count, species
 
 
 def _write_membership_authority(
@@ -480,13 +681,15 @@ def _write_membership_authority(
     sources: Sequence[tuple[Path, str, str]],
     run_id: str,
     statistics_writer: csv.DictWriter,
+    species_statistics_writer: csv.DictWriter,
     species: set[str],
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     """Stream related source tables to one membership authority and statistics sink."""
 
     member_count = 0
     group_count = 0
-    with path.open(mode="w", encoding="utf-8", newline="") as handle:
+    group_species_count = 0
+    with open_text(path=path, mode="w") as handle:
         writer = csv.DictWriter(
             handle,
             fieldnames=MEMBERSHIP_FIELDS,
@@ -506,8 +709,13 @@ def _write_membership_authority(
                 key = (group_type, hierarchy_node, str(row["group_id"]))
                 if key != current_key:
                     if accumulator is not None:
-                        statistics_writer.writerow(accumulator.to_record())
+                        _write_accumulator_statistics(
+                            accumulator=accumulator,
+                            statistics_writer=statistics_writer,
+                            species_statistics_writer=species_statistics_writer,
+                        )
                         group_count += 1
+                        group_species_count += len(accumulator.species_counts)
                     accumulator = GroupAccumulator(
                         run_id=run_id,
                         group_type=group_type,
@@ -525,9 +733,26 @@ def _write_membership_authority(
                 writer.writerow(row)
                 member_count += 1
             if accumulator is not None:
-                statistics_writer.writerow(accumulator.to_record())
+                _write_accumulator_statistics(
+                    accumulator=accumulator,
+                    statistics_writer=statistics_writer,
+                    species_statistics_writer=species_statistics_writer,
+                )
                 group_count += 1
-    return member_count, group_count
+                group_species_count += len(accumulator.species_counts)
+    return member_count, group_count, group_species_count
+
+
+def _write_accumulator_statistics(
+    *,
+    accumulator: GroupAccumulator,
+    statistics_writer: csv.DictWriter,
+    species_statistics_writer: csv.DictWriter,
+) -> None:
+    """Write group-wide and per-species statistics for one completed group."""
+
+    statistics_writer.writerow(accumulator.to_record())
+    species_statistics_writer.writerows(accumulator.to_species_records())
 
 
 def _publish_identifiers(
@@ -554,10 +779,14 @@ def _publish_identifiers(
             }
             for index, label in enumerate(sorted(species_from_groups), start=1)
         ]
-    write_tsv(path=tables_dir / "species.tsv", fieldnames=SPECIES_FIELDS, records=species_rows)
+    write_tsv(
+        path=_table_path(tables_dir=tables_dir, relation="species"),
+        fieldnames=SPECIES_FIELDS,
+        records=species_rows,
+    )
     if layout.sequence_ids_path is not None and species_lookup:
         sequence_count = write_tsv(
-            path=tables_dir / "sequences.tsv",
+            path=_table_path(tables_dir=tables_dir, relation="sequences"),
             fieldnames=SEQUENCE_FIELDS,
             records=iter_sequence_ids(
                 path=layout.sequence_ids_path,
@@ -567,7 +796,7 @@ def _publish_identifiers(
         )
     else:
         sequence_count = write_tsv(
-            path=tables_dir / "sequences.tsv",
+            path=_table_path(tables_dir=tables_dir, relation="sequences"),
             fieldnames=SEQUENCE_FIELDS,
             records=(),
         )
@@ -581,15 +810,21 @@ def _publish_trees(
 
     inventory = list(iter_tree_inventory(layout=layout, run_id=run_id))
     write_tsv(
-        path=tables_dir / "tree_inventory.tsv",
+        path=_table_path(tables_dir=tables_dir, relation="tree_inventory"),
         fieldnames=TREE_INVENTORY_FIELDS,
         records=inventory,
     )
     node_count = 0
     edge_count = 0
     with (
-        (tables_dir / "tree_nodes.tsv").open(mode="w", encoding="utf-8", newline="") as node_handle,
-        (tables_dir / "tree_edges.tsv").open(mode="w", encoding="utf-8", newline="") as edge_handle,
+        open_text(
+            path=_table_path(tables_dir=tables_dir, relation="tree_nodes"),
+            mode="w",
+        ) as node_handle,
+        open_text(
+            path=_table_path(tables_dir=tables_dir, relation="tree_edges"),
+            mode="w",
+        ) as edge_handle,
     ):
         node_writer = csv.DictWriter(
             node_handle, fieldnames=TREE_NODE_FIELDS, delimiter="\t", lineterminator="\n"
@@ -642,8 +877,9 @@ def _publish_distances(
     )
     summaries: list[dict[str, Any]] = []
     pair_count = 0
-    with (tables_dir / "pairwise_distances.tsv").open(
-        mode="w", encoding="utf-8", newline=""
+    with open_text(
+        path=_table_path(tables_dir=tables_dir, relation="pairwise_distances"),
+        mode="w",
     ) as distance_handle:
         writer = csv.DictWriter(
             distance_handle,
@@ -676,7 +912,7 @@ def _publish_distances(
                 maximum_members=distance_max_members,
             )
     write_tsv(
-        path=tables_dir / "distance_statistics.tsv",
+        path=_table_path(tables_dir=tables_dir, relation="distance_statistics"),
         fieldnames=DISTANCE_STATISTIC_FIELDS,
         records=summaries,
     )
@@ -740,7 +976,9 @@ def _write_tree_distances(
         raise AssertionError("Resolved-tree distance source lacks a tree directory.")
     statistics = [
         row
-        for row in read_tsv(path=tables_dir / "group_statistics.tsv")
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="group_statistics")
+        )
         if row["group_type"] == group_type
         and (group_type != "HOG" or row["hierarchy_node"] == hierarchy_node)
         and int(row["member_count"]) >= 2
@@ -749,14 +987,30 @@ def _write_tree_distances(
     if maximum_groups:
         statistics = statistics[:maximum_groups]
     selected_keys = {_group_key(row) for row in statistics}
-    membership_path = tables_dir / (
-        "hog_memberships.tsv" if group_type == "HOG" else "legacy_orthogroup_memberships.tsv"
+    membership_path = _table_path(
+        tables_dir=tables_dir,
+        relation=(
+            "hog_memberships" if group_type == "HOG" else "legacy_orthogroup_memberships"
+        ),
     )
-    members_by_key: dict[str, set[str]] = defaultdict(set)
+    species_by_member_by_key: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
     for row in read_tsv(path=membership_path):
         key = _group_key(row)
         if key in selected_keys:
-            members_by_key[key].add(row["member_id"])
+            species_by_member_by_key[key][row["member_id"]].add(row["species_label"])
+    selected_member_species = {
+        (member_id, species)
+        for by_member in species_by_member_by_key.values()
+        for member_id, species_labels in by_member.items()
+        for species in species_labels
+    }
+    internal_ids_by_member_species: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for row in read_tsv(path=_table_path(tables_dir=tables_dir, relation="sequences")):
+        member_species = (row["member_id"], row["species_label"])
+        if member_species in selected_member_species:
+            internal_ids_by_member_species[member_species].add(row["internal_id"])
     tree_paths = {
         tree_id_from_path(path=path, tree_type="RESOLVED_GENE_TREE"): path.resolve()
         for path in sorted(tree_dir.iterdir())
@@ -766,7 +1020,8 @@ def _write_tree_distances(
     for index, statistic in enumerate(statistics, start=1):
         key = _group_key(statistic)
         group_id = statistic["group_id"]
-        members = tuple(sorted(members_by_key.get(key, set())))
+        species_by_member = species_by_member_by_key.get(key, {})
+        members = tuple(sorted(species_by_member))
         tree_candidates = (
             statistic.get("legacy_orthogroup_id", ""),
             group_id,
@@ -787,6 +1042,43 @@ def _write_tree_distances(
                 )
             )
             continue
+        ambiguous_members = {
+            member_id: species_labels
+            for member_id, species_labels in species_by_member.items()
+            if len(species_labels) != 1
+        }
+        if ambiguous_members:
+            member_id, species_labels = sorted(ambiguous_members.items())[0]
+            summaries.append(
+                _unavailable_distance_summary(
+                    run_id=run_id,
+                    group_type=group_type,
+                    hierarchy_node=hierarchy_node if group_type == "HOG" else "",
+                    group_id=group_id,
+                    member_count=len(members),
+                    reason=(
+                        f"Canonical member {member_id!r} occurs under multiple species: "
+                        f"{';'.join(sorted(species_labels))}"
+                    ),
+                    source_file=str(tree_path),
+                )
+            )
+            continue
+        member_aliases: dict[str, dict[str, str]] = {}
+        for member_id, species_labels in species_by_member.items():
+            species_label = next(iter(species_labels))
+            aliases = {
+                f"{species_label}_{member_id}": "SPECIES_PREFIXED_MEMBER_ID",
+            }
+            aliases.update(
+                {
+                    internal_id: "ORTHOFINDER_INTERNAL_ID"
+                    for internal_id in internal_ids_by_member_species.get(
+                        (member_id, species_label), set()
+                    )
+                }
+            )
+            member_aliases[member_id] = aliases
         try:
             rows, summary = calculate_patristic_distances(
                 tree_path=tree_path,
@@ -796,6 +1088,7 @@ def _write_tree_distances(
                 group_id=group_id,
                 max_members=maximum_members,
                 member_ids=members,
+                member_aliases=member_aliases,
                 source_file=str(tree_path),
             )
         except DistanceCalculationError as error:
@@ -851,9 +1144,9 @@ def _publish_parquet(*, tables_dir: Path) -> dict[str, Path]:
     """Convert every TSV analytical authority into typed Parquet."""
 
     parquet_tables: dict[str, Path] = {}
-    for tsv_path in sorted(tables_dir.glob("*.tsv")):
-        relation = tsv_path.stem
-        parquet_path = tsv_path.with_suffix(".parquet")
+    for tsv_path in sorted(tables_dir.glob("*.tsv.gz")):
+        relation = tsv_path.name.removesuffix(".tsv.gz")
+        parquet_path = tables_dir / f"{relation}.parquet"
         row_count = tsv_to_parquet(
             tsv_path=tsv_path,
             parquet_path=parquet_path,
@@ -862,6 +1155,25 @@ def _publish_parquet(*, tables_dir: Path) -> dict[str, Path]:
         _LOGGER.info("Published %s Parquet rows for %s.", f"{row_count:,}", relation)
         parquet_tables[relation] = parquet_path
     return parquet_tables
+
+
+def _table_path(*, tables_dir: Path, relation: str) -> Path:
+    """Return the compressed TSV authority path for an analytical relation.
+
+    Args:
+        tables_dir: Analytical table directory.
+        relation: Safe relation/file stem.
+
+    Returns:
+        Path ending in ``.tsv.gz``.
+
+    Raises:
+        ValueError: If the relation cannot be used as a safe table name.
+    """
+
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", relation) is None:
+        raise ValueError(f"Unsafe analytical relation name: {relation!r}")
+    return tables_dir / f"{relation}.tsv.gz"
 
 
 def _load_report_group_statistics(*, path: Path, maximum: int) -> list[dict[str, str]]:
@@ -878,17 +1190,21 @@ def _load_report_group_statistics(*, path: Path, maximum: int) -> list[dict[str,
 def _load_report_network_data(
     *,
     tables_dir: Path,
-    group_statistics: Sequence[Mapping[str, Any]],
+    group_statistics_path: Path,
     distance_summaries: Sequence[Mapping[str, Any]],
     maximum_groups: int,
     maximum_members: int,
-) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+) -> tuple[
+    list[dict[str, str]],
+    list[dict[str, str]],
+    list[dict[str, str]],
+]:
     """Load bounded network members and pair distances for the interactive report."""
 
     distance_keys = {_group_key(row) for row in distance_summaries}
     selected_statistics = heapq.nlargest(
         maximum_groups,
-        group_statistics,
+        read_tsv(path=group_statistics_path),
         key=lambda row: (
             _group_key(row) in distance_keys,
             int(row.get("member_count", 0)),
@@ -898,7 +1214,9 @@ def _load_report_network_data(
     selected_keys = {_group_key(row) for row in selected_statistics}
     report_distances = [
         row
-        for row in read_tsv(path=tables_dir / "pairwise_distances.tsv")
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="pairwise_distances")
+        )
         if _group_key(row) in selected_keys
     ]
     distance_members: dict[str, set[str]] = defaultdict(set)
@@ -909,8 +1227,8 @@ def _load_report_network_data(
     samplers = {key: _HashRowSampler(maximum=maximum_members, salt=key) for key in selected_keys}
     found_ids: dict[str, set[str]] = defaultdict(set)
     for membership_path in (
-        tables_dir / "legacy_orthogroup_memberships.tsv",
-        tables_dir / "hog_memberships.tsv",
+        _table_path(tables_dir=tables_dir, relation="legacy_orthogroup_memberships"),
+        _table_path(tables_dir=tables_dir, relation="hog_memberships"),
     ):
         for row in read_tsv(path=membership_path):
             key = _group_key(row)
@@ -944,7 +1262,34 @@ def _load_report_network_data(
                     },
                 )
         report_members.extend(selected.values())
-    return report_members, report_distances
+    return selected_statistics, report_members, report_distances
+
+
+def _load_report_group_species_data(
+    *,
+    tables_dir: Path,
+    memberships: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """Load full species copy counts for the bounded network groups.
+
+    Args:
+        tables_dir: Analytical table directory.
+        memberships: Bounded report memberships identifying selected groups.
+
+    Returns:
+        Species-level rows for the selected group keys.
+    """
+
+    selected_keys = {_group_key(row) for row in memberships}
+    if not selected_keys:
+        return []
+    return [
+        row
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="group_species_statistics")
+        )
+        if _group_key(row) in selected_keys
+    ]
 
 
 class _HashRowSampler:

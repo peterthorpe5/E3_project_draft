@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ACCOUNT="barton"
-PARTITION="general"
+PARTITION="barton"
 QOS=""
 CPUS="8"
 MEMORY="64G"

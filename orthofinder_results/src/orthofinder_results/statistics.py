@@ -22,6 +22,18 @@ GROUP_STATISTIC_FIELDS = (
     "species_labels",
     "source_file",
 )
+GROUP_SPECIES_STATISTIC_FIELDS = (
+    "run_id",
+    "group_type",
+    "hierarchy_node",
+    "group_id",
+    "legacy_orthogroup_id",
+    "gene_tree_parent_clade",
+    "species_label",
+    "species_member_count",
+    "member_fraction",
+    "source_file",
+)
 
 
 @dataclass
@@ -78,6 +90,31 @@ class GroupAccumulator:
             "species_labels": ";".join(sorted(self.species_counts)),
             "source_file": self.source_file,
         }
+
+    def to_species_records(self) -> list[dict[str, Any]]:
+        """Return one copy-number record per represented species.
+
+        Returns:
+            Deterministically ordered species-level group records.
+        """
+
+        return [
+            {
+                "run_id": self.run_id,
+                "group_type": self.group_type,
+                "hierarchy_node": self.hierarchy_node,
+                "group_id": self.group_id,
+                "legacy_orthogroup_id": self.legacy_orthogroup_id,
+                "gene_tree_parent_clade": self.gene_tree_parent_clade,
+                "species_label": species_label,
+                "species_member_count": member_count,
+                "member_fraction": (
+                    member_count / self.member_count if self.member_count else 0.0
+                ),
+                "source_file": self.source_file,
+            }
+            for species_label, member_count in sorted(self.species_counts.items())
+        ]
 
 
 def update_accumulators(
