@@ -53,6 +53,7 @@ from orthofinder_results.pipeline import (
     _resolve_alignment_dir,
     _resolve_distance_source,
     _resolve_pipeline_alignment_dir,
+    _stratified_quotas,
     _table_path,
     _validate_controls,
     run_pipeline,
@@ -341,7 +342,7 @@ def test_pipeline_control_and_alignment_validation(tmp_path: Path) -> None:
         "distance_group_type": "AUTO",
         "distance_max_groups": 0,
         "distance_max_members": 2,
-        "report_max_statistic_rows": 0,
+        "report_max_statistic_rows": 100,
         "report_max_groups": 1,
         "report_max_members": 2,
         "report_nearest_neighbours": 1,
@@ -353,6 +354,8 @@ def test_pipeline_control_and_alignment_validation(tmp_path: Path) -> None:
         ({"distance_source": "BAD"}, "Unsupported distance_source"),
         ({"distance_group_type": "BAD"}, "Unsupported"),
         ({"distance_max_groups": -1}, "must not be negative"),
+        ({"report_max_statistic_rows": 0}, "browser safety"),
+        ({"report_max_statistic_rows": 50001}, "browser safety"),
         ({"report_max_groups": 0}, "must be positive"),
         ({"distance_max_members": 1}, "at least two"),
         ({"resume": True, "force": True}, "mutually exclusive"),
@@ -413,6 +416,26 @@ def test_pipeline_helpers_cover_sampling_digest_qc_and_bounds(tmp_path: Path) ->
         records=({"group_id": "g1"}, {"group_id": "g2"}),
     )
     assert len(_load_report_group_statistics(path=statistics, maximum=1)) == 1
+    stratified = tmp_path / "stratified.tsv"
+    write_tsv(
+        path=stratified,
+        fieldnames=("group_type", "hierarchy_node", "group_id"),
+        records=(
+            {"group_type": "LEGACY_ORTHOGROUP", "hierarchy_node": "", "group_id": "og1"},
+            {"group_type": "LEGACY_ORTHOGROUP", "hierarchy_node": "", "group_id": "og2"},
+            {"group_type": "HOG", "hierarchy_node": "N0", "group_id": "hog1"},
+            {"group_type": "HOG", "hierarchy_node": "N0", "group_id": "hog2"},
+        ),
+    )
+    stratified_rows = _load_report_group_statistics(path=stratified, maximum=2)
+    assert {
+        (row["group_type"], row["hierarchy_node"]) for row in stratified_rows
+    } == {("LEGACY_ORTHOGROUP", ""), ("HOG", "N0")}
+    proportional = _stratified_quotas(counts={"legacy": 10, "n0": 20}, maximum=10)
+    assert sum(proportional.values()) == 10
+    assert proportional["n0"] > proportional["legacy"] > 0
+    truncated = _stratified_quotas(counts={"a": 1, "b": 3, "c": 2}, maximum=2)
+    assert truncated == {"a": 0, "b": 1, "c": 1}
     assert _load_report_group_species_data(tables_dir=tmp_path, memberships=()) == []
     with pytest.raises(ValueError, match="Unsafe analytical relation"):
         _table_path(tables_dir=tmp_path, relation="bad-name")
@@ -489,6 +512,28 @@ def test_cli_complete_run_errors_and_action_conflicts(
         )
         == 0
     )
+    standalone = persistent_test_root / "cli_report.html"
+    assert (
+        main(
+            [
+                "--action",
+                "report",
+                "--resource-dir",
+                str(output),
+                "--report-output",
+                str(standalone),
+                "--report-max-statistic-rows",
+                "2",
+                "--report-max-groups",
+                "1",
+                "--report-max-members",
+                "2",
+            ]
+        )
+        == 0
+    )
+    assert standalone.is_file()
+    assert standalone.with_suffix(".log").is_file()
     assert (
         main(
             [
@@ -504,6 +549,12 @@ def test_cli_complete_run_errors_and_action_conflicts(
     )
     conflicts = (
         ["--action", "inspect", "--results-dir", str(orthofinder2_results)],
+        [
+            "--action",
+            "inspect",
+            "--inspection-output",
+            str(persistent_test_root / "missing_results.json"),
+        ],
         [
             "--action",
             "inspect",
@@ -525,6 +576,39 @@ def test_cli_complete_run_errors_and_action_conflicts(
             "x",
             "--inspection-output",
             str(persistent_test_root / "i.json"),
+        ],
+        [
+            "--action",
+            "run",
+            "--results-dir",
+            str(orthofinder2_results),
+            "--output-dir",
+            str(persistent_test_root / "run_conflict"),
+            "--run-id",
+            "x",
+            "--resource-dir",
+            str(output),
+        ],
+        ["--action", "report", "--resource-dir", str(output)],
+        [
+            "--action",
+            "report",
+            "--resource-dir",
+            str(output),
+            "--report-output",
+            str(persistent_test_root / "conflict.html"),
+            "--results-dir",
+            str(orthofinder2_results),
+        ],
+        [
+            "--action",
+            "report",
+            "--resource-dir",
+            str(output),
+            "--report-output",
+            str(persistent_test_root / "safe.html"),
+            "--log-output",
+            str(output / "report.log"),
         ],
     )
     for arguments in conflicts:

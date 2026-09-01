@@ -21,7 +21,14 @@ from orthofinder_results.io_utils import (
     validate_persistent_path,
     write_tsv,
 )
-from orthofinder_results.pipeline import _validate_published_copy, inspect_results, run_pipeline
+from orthofinder_results.pipeline import (
+    _load_report_network_data,
+    _table_path,
+    _validate_published_copy,
+    inspect_results,
+    regenerate_report,
+    run_pipeline,
+)
 from orthofinder_results.report import build_interactive_report
 from orthofinder_results.trees import normalise_newick_tree, tree_id_from_path
 
@@ -80,6 +87,11 @@ def test_pipeline_publishes_queryable_offline_resource(
     assert "Copy-number complexity" in html
     assert "Authoritative group-by-species copy heatmap" in html
     assert "vis.Network" in html
+    assert "function renderOverviewHistogram" in html
+    assert "function renderDistanceHistogram" in html
+    assert "function renderHistogram(" not in html
+    assert '"distanceHistogram"' in html
+    assert '"distanceValues"' not in html
     assert re.search(r'(?:src|href)=["\']https?://', html, re.IGNORECASE) is None
     assert "amino_acid_p_distance_pairwise_deletion" in html
     assert (output / "tables/hog_memberships.parquet").is_file()
@@ -101,6 +113,172 @@ def test_pipeline_publishes_queryable_offline_resource(
         connection.close()
     checks = list(read_tsv(path=output / "qc/validation_checks.tsv"))
     assert checks and {row["status"] for row in checks} == {"PASS"}
+    stages = list(read_tsv(path=output / "logs/stage_metrics.tsv"))
+    assert stages and {row["status"] for row in stages} == {"PASS"}
+    assert "offline_html_report" in {row["stage"] for row in stages}
+
+
+def test_report_only_regeneration_preserves_completed_resource(
+    orthofinder2_results: Path, persistent_test_root: Path
+) -> None:
+    """A compact standalone report can be rebuilt without changing its resource."""
+
+    resource = persistent_test_root / "resource"
+    run_pipeline(**pipeline_arguments(orthofinder2_results, resource))
+    manifest = resource / "run_manifest.json"
+    manifest_digest = sha256_file(path=manifest)
+    standalone = persistent_test_root / "standalone.html"
+    record = regenerate_report(
+        resource_dir=resource,
+        output_path=standalone,
+        work_dir=persistent_test_root / "report_work",
+        report_max_statistic_rows=2,
+        report_max_groups=1,
+        report_max_members=2,
+        report_nearest_neighbours=1,
+        force=False,
+    )
+    assert record["path"] == str(standalone.resolve())
+    assert record["size_bytes"] == standalone.stat().st_size
+    assert sha256_file(path=manifest) == manifest_digest
+    html = standalone.read_text(encoding="utf-8")
+    assert '"package_version":"0.1.3"' in html
+    assert '"resource_package_version":"0.1.3"' in html
+    with pytest.raises(PublicationError, match="already exists"):
+        regenerate_report(
+            resource_dir=resource,
+            output_path=standalone,
+            work_dir=None,
+            report_max_statistic_rows=2,
+            report_max_groups=1,
+            report_max_members=2,
+            report_nearest_neighbours=1,
+            force=False,
+        )
+    replaced = regenerate_report(
+        resource_dir=resource,
+        output_path=standalone,
+        work_dir=None,
+        report_max_statistic_rows=2,
+        report_max_groups=1,
+        report_max_members=2,
+        report_nearest_neighbours=1,
+        force=True,
+    )
+    assert replaced["size_bytes"] == standalone.stat().st_size
+
+
+def test_report_only_rejects_incomplete_or_mutating_inputs(
+    persistent_test_root: Path,
+) -> None:
+    """Report-only validation protects the source resource and diagnoses damage."""
+
+    controls = {
+        "output_path": persistent_test_root / "outside.html",
+        "work_dir": None,
+        "report_max_statistic_rows": 2,
+        "report_max_groups": 1,
+        "report_max_members": 2,
+        "report_nearest_neighbours": 1,
+        "force": False,
+    }
+    missing = persistent_test_root / "missing"
+    with pytest.raises(InputValidationError, match="does not exist"):
+        regenerate_report(resource_dir=missing, **controls)
+
+    resource = persistent_test_root / "resource_validation"
+    resource.mkdir()
+    with pytest.raises(InputValidationError, match="lacks run_manifest"):
+        regenerate_report(resource_dir=resource, **controls)
+    with pytest.raises(InputValidationError, match="outside the immutable"):
+        regenerate_report(
+            resource_dir=resource,
+            **{**controls, "output_path": resource / "report.html"},
+        )
+    with pytest.raises(InputValidationError, match="work directory"):
+        regenerate_report(
+            resource_dir=resource,
+            **{**controls, "work_dir": resource / "work"},
+        )
+
+    manifest = resource / "run_manifest.json"
+    manifest.write_text("{\n", encoding="utf-8")
+    with pytest.raises(InputValidationError, match="unreadable"):
+        regenerate_report(resource_dir=resource, **controls)
+    manifest.write_text(json.dumps({"status": "running"}), encoding="utf-8")
+    with pytest.raises(PublicationError, match="complete resource"):
+        regenerate_report(resource_dir=resource, **controls)
+    manifest.write_text(json.dumps({"status": "complete"}), encoding="utf-8")
+    with pytest.raises(InputValidationError, match="required compressed TSV"):
+        regenerate_report(resource_dir=resource, **controls)
+
+
+def test_network_report_members_follow_distance_sample(tmp_path: Path) -> None:
+    """Distance-backed networks retain sampled endpoints, not unrelated members."""
+
+    tables = tmp_path / "tables"
+    tables.mkdir()
+    key_fields = {
+        "run_id": "run",
+        "group_type": "HOG",
+        "hierarchy_node": "N0",
+        "group_id": "N0.HOG1",
+    }
+    write_tsv(
+        path=_table_path(tables_dir=tables, relation="group_statistics"),
+        fieldnames=("run_id", "group_type", "hierarchy_node", "group_id", "member_count"),
+        records=({**key_fields, "member_count": 4},),
+    )
+    membership_fields = (
+        "run_id",
+        "group_type",
+        "hierarchy_node",
+        "group_id",
+        "member_id",
+        "species_label",
+    )
+    write_tsv(
+        path=_table_path(tables_dir=tables, relation="hog_memberships"),
+        fieldnames=membership_fields,
+        records=(
+            {**key_fields, "member_id": member, "species_label": f"species_{member}"}
+            for member in ("unrelated_a", "distance_a", "unrelated_b", "distance_b")
+        ),
+    )
+    write_tsv(
+        path=_table_path(tables_dir=tables, relation="legacy_orthogroup_memberships"),
+        fieldnames=membership_fields,
+        records=(),
+    )
+    write_tsv(
+        path=_table_path(tables_dir=tables, relation="pairwise_distances"),
+        fieldnames=(
+            "run_id",
+            "group_type",
+            "hierarchy_node",
+            "group_id",
+            "member_a",
+            "member_b",
+            "distance",
+        ),
+        records=(
+            {
+                **key_fields,
+                "member_a": "distance_a",
+                "member_b": "distance_b",
+                "distance": 0.25,
+            },
+        ),
+    )
+    statistics, memberships, distances = _load_report_network_data(
+        tables_dir=tables,
+        group_statistics_path=_table_path(tables_dir=tables, relation="group_statistics"),
+        distance_summaries=({**key_fields, "distance_pair_count": 1},),
+        maximum_groups=1,
+        maximum_members=2,
+    )
+    assert len(statistics) == 1 and len(distances) == 1
+    assert {row["member_id"] for row in memberships} == {"distance_a", "distance_b"}
 
 
 def test_resume_and_recoverable_force_behaviour(

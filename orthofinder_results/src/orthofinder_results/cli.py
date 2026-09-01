@@ -10,8 +10,8 @@ from typing import Sequence
 
 from . import __version__
 from .errors import OrthoFinderResultsError
-from .io_utils import atomic_write_text, configure_logging
-from .pipeline import inspect_results, run_pipeline
+from .io_utils import atomic_write_text, configure_logging, validate_persistent_path
+from .pipeline import inspect_results, regenerate_report, run_pipeline
 
 _LOGGER = logging.getLogger("orthofinder_results.cli")
 
@@ -34,10 +34,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--action",
         required=True,
-        choices=("inspect", "run"),
-        help="Read-only layout inspection or complete resource publication.",
+        choices=("inspect", "run", "report"),
+        help=(
+            "Read-only layout inspection, complete resource publication, or "
+            "report-only regeneration from a completed resource."
+        ),
     )
-    parser.add_argument("--results-dir", required=True, type=Path)
+    parser.add_argument("--results-dir", type=Path)
     parser.add_argument(
         "--inspection-output",
         type=Path,
@@ -45,6 +48,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", type=Path, help="Formal output for --action run.")
     parser.add_argument("--run-id", help="Immutable run identifier for --action run.")
+    parser.add_argument(
+        "--resource-dir",
+        type=Path,
+        help="Completed orthofinder-results resource for --action report.",
+    )
+    parser.add_argument(
+        "--report-output",
+        type=Path,
+        help="New standalone HTML file for --action report.",
+    )
+    parser.add_argument(
+        "--log-output",
+        type=Path,
+        help="Persistent log file for --action report; defaults beside the HTML.",
+    )
     parser.add_argument(
         "--work-dir",
         type=Path,
@@ -81,8 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--report-max-statistic-rows",
         type=int,
-        default=100000,
-        help="Maximum embedded group rows; zero means all rows.",
+        default=20000,
+        help="Maximum embedded group rows (1-50,000; default 20,000).",
     )
     parser.add_argument("--report-max-groups", type=int, default=25)
     parser.add_argument("--report-max-members", type=int, default=250)
@@ -123,6 +141,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 text=json.dumps(record, indent=2, sort_keys=True) + "\n",
             )
             _LOGGER.info("Inspection written to %s", args.inspection_output.resolve())
+            return 0
+        if args.action == "report":
+            _validate_report_arguments(parser=parser, args=args)
+            log_output = validate_persistent_path(
+                path=args.log_output or args.report_output.with_suffix(".log"),
+                role="log_output",
+            )
+            configure_logging(log_path=log_output, verbose=args.verbose)
+            record = regenerate_report(
+                resource_dir=args.resource_dir,
+                output_path=args.report_output,
+                work_dir=args.work_dir,
+                report_max_statistic_rows=args.report_max_statistic_rows,
+                report_max_groups=args.report_max_groups,
+                report_max_members=args.report_max_members,
+                report_nearest_neighbours=args.report_nearest_neighbours,
+                force=args.force,
+            )
+            _LOGGER.info(
+                "Report regenerated: %s bytes at %s",
+                f"{record['size_bytes']:,}",
+                record["path"],
+            )
             return 0
         _validate_run_arguments(parser=parser, args=args)
         manifest = run_pipeline(
@@ -165,8 +206,13 @@ def _validate_inspect_arguments(
 
     if args.inspection_output is None:
         parser.error("--inspection-output is required for --action inspect.")
-    if args.output_dir is not None or args.run_id is not None:
-        parser.error("--output-dir and --run-id are not valid for --action inspect.")
+    if args.results_dir is None:
+        parser.error("--results-dir is required for --action inspect.")
+    if any(
+        value is not None
+        for value in (args.output_dir, args.run_id, args.resource_dir, args.report_output)
+    ):
+        parser.error("Run and report output arguments are not valid for --action inspect.")
 
 
 def _validate_run_arguments(*, parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -179,10 +225,55 @@ def _validate_run_arguments(*, parser: argparse.ArgumentParser, args: argparse.N
 
     missing = [
         name
-        for name, value in (("--output-dir", args.output_dir), ("--run-id", args.run_id))
+        for name, value in (
+            ("--results-dir", args.results_dir),
+            ("--output-dir", args.output_dir),
+            ("--run-id", args.run_id),
+        )
         if value is None
     ]
     if missing:
         parser.error(f"{' and '.join(missing)} required for --action run.")
     if args.inspection_output is not None:
         parser.error("--inspection-output is not valid for --action run.")
+    if any(value is not None for value in (args.resource_dir, args.report_output, args.log_output)):
+        parser.error("Report-only arguments are not valid for --action run.")
+
+
+def _validate_report_arguments(
+    *, parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> None:
+    """Validate arguments specific to standalone report regeneration.
+
+    Args:
+        parser: Parser used for a controlled error.
+        args: Parsed arguments.
+    """
+
+    missing = [
+        name
+        for name, value in (
+            ("--resource-dir", args.resource_dir),
+            ("--report-output", args.report_output),
+        )
+        if value is None
+    ]
+    if missing:
+        parser.error(f"{' and '.join(missing)} required for --action report.")
+    if any(
+        value is not None
+        for value in (args.results_dir, args.inspection_output, args.output_dir, args.run_id)
+    ):
+        parser.error("Inspection and run arguments are not valid for --action report.")
+    resource = args.resource_dir.expanduser().resolve()
+    report_paths = [args.report_output]
+    if args.log_output is not None:
+        report_paths.append(args.log_output)
+    if any(
+        resource == path.expanduser().resolve()
+        or resource in path.expanduser().resolve().parents
+        for path in report_paths
+    ):
+        parser.error(
+            "--report-output and --log-output must be outside the immutable --resource-dir."
+        )

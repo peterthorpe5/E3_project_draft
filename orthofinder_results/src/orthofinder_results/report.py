@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import logging
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -12,6 +14,53 @@ from typing import Any
 
 from .errors import PublicationError
 from .io_utils import atomic_write_text
+
+_LOGGER = logging.getLogger("orthofinder_results.report")
+
+_REPORT_GROUP_FIELDS = (
+    "group_type",
+    "hierarchy_node",
+    "group_id",
+    "legacy_orthogroup_id",
+    "gene_tree_parent_clade",
+    "member_count",
+    "species_count",
+    "single_copy_species_count",
+    "max_copies_per_species",
+    "mean_copies_per_species",
+    "is_singleton",
+)
+_REPORT_GROUP_SPECIES_FIELDS = (
+    "group_type",
+    "hierarchy_node",
+    "group_id",
+    "species_label",
+    "species_member_count",
+    "member_fraction",
+)
+_REPORT_DISTANCE_STATISTIC_FIELDS = (
+    "group_type",
+    "hierarchy_node",
+    "group_id",
+    "distance_method",
+    "computation_status",
+    "member_identifier_resolution",
+    "total_member_count",
+    "sampled_member_count",
+    "distance_pair_count",
+    "unresolved_pair_count",
+    "minimum_distance",
+    "q05_distance",
+    "q25_distance",
+    "median_distance",
+    "mean_distance",
+    "q75_distance",
+    "q95_distance",
+    "maximum_distance",
+    "population_stddev_distance",
+    "mean_comparable_sites",
+    "failure_reason",
+)
 
 
 def build_interactive_report(
@@ -76,10 +125,22 @@ def build_interactive_report(
     )
     payload = {
         "run": dict(run_metadata),
-        "groupStatistics": [dict(row) for row in group_statistics],
-        "networkGroupStatistics": [dict(row) for row in network_group_statistics],
-        "groupSpeciesStatistics": [dict(row) for row in group_species_statistics],
-        "distanceStatistics": [dict(row) for row in embedded_distance_statistics],
+        "groupStatistics": [
+            _compact_record(row=row, fields=_REPORT_GROUP_FIELDS)
+            for row in group_statistics
+        ],
+        "networkGroupStatistics": [
+            _compact_record(row=row, fields=_REPORT_GROUP_FIELDS)
+            for row in network_group_statistics
+        ],
+        "groupSpeciesStatistics": [
+            _compact_record(row=row, fields=_REPORT_GROUP_SPECIES_FIELDS)
+            for row in group_species_statistics
+        ],
+        "distanceStatistics": [
+            _compact_record(row=row, fields=_REPORT_DISTANCE_STATISTIC_FIELDS)
+            for row in embedded_distance_statistics
+        ],
         "networks": networks,
         "limits": {
             "embeddedGroupStatisticCount": len(group_statistics),
@@ -93,6 +154,16 @@ def build_interactive_report(
     }
     title = html.escape(str(run_metadata.get("run_id", "OrthoFinder results")))
     payload_json = _safe_script_json(payload)
+    payload_size = len(payload_json.encode("utf-8"))
+    _LOGGER.info(
+        "HTML payload prepared: groups=%s, network_groups=%s, memberships=%s, "
+        "distance_rows=%s, payload_bytes=%s.",
+        f"{len(group_statistics):,}",
+        f"{len(networks):,}",
+        f"{len(memberships):,}",
+        f"{len(distances):,}",
+        f"{payload_size:,}",
+    )
     document = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -136,6 +207,8 @@ def build_interactive_report(
     .detail dt {{ font-weight:700; }} .detail dd {{ margin:0; }}
     .notice {{ color:var(--warn); background:#fff7e8; border:1px solid #eed09e;
       padding:.65rem; border-radius:7px; margin:.7rem 0; }}
+    .fatal {{ color:#7b1420; background:#fff0f2; border:1px solid #e8a8b0;
+      padding:.8rem; border-radius:7px; margin-bottom:1rem; white-space:pre-wrap; }}
     .histogram {{ display:flex; align-items:flex-end; gap:3px; height:130px;
       border-bottom:1px solid #9aa4b7; padding-top:.5rem; }}
     .bar {{ flex:1; min-width:4px; background:#5577d5; border-radius:3px 3px 0 0; }}
@@ -168,6 +241,7 @@ def build_interactive_report(
 <body>
 <header><h1>OrthoFinder results interrogation</h1><p>Run {title} · offline interactive report</p></header>
 <main>
+  <div id="render-error" class="fatal" hidden></div>
   <section class="cards" id="run-cards"></section>
   <section class="panel">
     <h2>Run-wide visual summary</h2>
@@ -231,7 +305,13 @@ def build_interactive_report(
 <script id="orthofinder-results-data" type="application/json">{payload_json}</script>
 <script>
 "use strict";
-const DATA=JSON.parse(document.getElementById("orthofinder-results-data").textContent);
+const reportError=document.getElementById("render-error");
+function showRenderError(error){{reportError.hidden=false;reportError.textContent=
+  "The interactive report could not finish rendering. Details: "+String(error&&error.message||error);}}
+window.addEventListener("error",event=>showRenderError(event.error||event.message));
+let DATA;
+try{{DATA=JSON.parse(document.getElementById("orthofinder-results-data").textContent);}}
+catch(error){{showRenderError(error);throw error;}}
 const number=v=>Number(v||0).toLocaleString();
 const fixed=v=>Number(v||0).toFixed(4);
 const cards=[
@@ -257,7 +337,7 @@ if(preferredLevel)overviewLevel.value=preferredLevel.key;
 function selectedOverviewRows(){{return DATA.groupStatistics.filter(row=>
   `${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value);}}
 function plotMessage(target,message){{document.getElementById(target).innerHTML=`<p class="small">${{escapeHtml(message)}}</p>`;}}
-function renderHistogram(targetId,rawValues,logBins){{const values=rawValues.map(Number).filter(value=>Number.isFinite(value)&&value>=0);
+function renderOverviewHistogram(targetId,rawValues,logBins){{const values=rawValues.map(Number).filter(value=>Number.isFinite(value)&&value>=0);
   if(!values.length){{plotMessage(targetId,"No values are available for this group level.");return;}}
   let counts=[],labels=[];
   if(logBins){{const maximum=Math.max(...values,1),last=Math.floor(Math.log2(maximum));counts=Array(last+1).fill(0);
@@ -305,9 +385,9 @@ function renderHeatmap(rows){{const target=document.getElementById("species-heat
 function renderOverview(){{const rows=selectedOverviewRows();document.getElementById("overview-notice").textContent=
   `Visualising ${{number(rows.length)}} embedded summaries for ${{overviewLevel.options[overviewLevel.selectedIndex]?.text||"this level"}}. `+
   `The analytical tables contain ${{number(DATA.limits.totalGroupStatisticCount)}} summaries across all levels.`;
-  renderHistogram("cluster-size-chart",rows.map(row=>row.member_count),true);
-  renderHistogram("species-breadth-chart",rows.map(row=>row.species_count),false);
-  renderHistogram("copy-complexity-chart",rows.map(row=>row.max_copies_per_species),true);
+  renderOverviewHistogram("cluster-size-chart",rows.map(row=>row.member_count),true);
+  renderOverviewHistogram("species-breadth-chart",rows.map(row=>row.species_count),false);
+  renderOverviewHistogram("copy-complexity-chart",rows.map(row=>row.max_copies_per_species),true);
   renderScatter("size-breadth-chart",rows,"species_count","member_count",true,
     ["group_id","species_count","member_count","max_copies_per_species"]);
   const distanceRows=DATA.distanceStatistics.filter(row=>`${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value&&
@@ -334,18 +414,17 @@ function renderNetwork(){{
     document.getElementById("node-detail").innerHTML=`<dl><dt>ID</dt><dd>${{escapeHtml(node.label)}}</dd>`+
       `<dt>Species</dt><dd>${{escapeHtml(node.species||"")}}</dd><dt>Group</dt><dd>${{escapeHtml(entry.label)}}</dd></dl>`;}});
   document.getElementById("network-notice").textContent=entry.notice;
-  renderMembers(entry);renderHistogram(entry);
+  renderMembers(entry);renderDistanceHistogram(entry);
 }}
 function renderMembers(entry){{document.getElementById("member-table").innerHTML=entry.members.map(row=>
   `<tr><td>${{escapeHtml(row.member_id)}}</td><td>${{escapeHtml(row.species_label)}}</td><td>${{escapeHtml(entry.label)}}</td></tr>`).join("");}}
-function renderHistogram(entry){{const values=entry.distanceValues.map(Number).filter(Number.isFinite);
+function renderDistanceHistogram(entry){{const histogram=entry.distanceHistogram||{{}},counts=(histogram.counts||[]).map(Number);
   const target=document.getElementById("histogram"),summary=document.getElementById("distance-summary");
-  target.innerHTML="";if(!values.length){{summary.textContent="No pairwise distances were available for this rendered group.";return;}}
-  const min=Math.min(...values),max=Math.max(...values),bins=20,counts=Array(bins).fill(0),width=(max-min)||1;
-  values.forEach(value=>{{const index=Math.min(bins-1,Math.floor((value-min)/width*bins));counts[index]++;}});
+  target.innerHTML="";if(!counts.length){{summary.textContent="No pairwise distances were available for this rendered group.";return;}}
+  const min=Number(histogram.minimum),max=Number(histogram.maximum);
   const peak=Math.max(...counts,1);counts.forEach((count,index)=>{{const bar=document.createElement("div");bar.className="bar";
     bar.style.height=`${{100*count/peak}}%`;bar.title=`Bin ${{index+1}}: ${{count}} pairs`;target.appendChild(bar);}});
-  const s=entry.distanceSummary||{{}};summary.textContent=`${{s.distance_method||"Distance"}} · n=${{number(values.length)}} pairs · `+
+  const s=entry.distanceSummary||{{}};summary.textContent=`${{s.distance_method||"Distance"}} · n=${{number(histogram.pairCount)}} pairs · `+
     `mean=${{fixed(s.mean_distance)}} · median=${{fixed(s.median_distance)}} · range=${{fixed(min)}}–${{fixed(max)}} · ${{s.computation_status||""}}`;}}
 groupSelect.addEventListener("change",renderNetwork);
 document.getElementById("fit-network").addEventListener("click",()=>network&&network.fit());
@@ -366,7 +445,7 @@ document.getElementById("group-filter").addEventListener("input",event=>{{const 
 document.getElementById("previous-page").addEventListener("click",()=>{{if(page>0)page--;renderStats();}});
 document.getElementById("next-page").addEventListener("click",()=>{{if((page+1)*pageSize<filtered.length)page++;renderStats();}});
 function escapeHtml(value){{return String(value??"").replace(/[&<>"']/g,char=>({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}}[char]));}}
-renderStats();renderOverview();renderNetwork();
+try{{renderStats();renderOverview();renderNetwork();}}catch(error){{showRenderError(error);throw error;}}
 </script>
 </body></html>
 """
@@ -474,12 +553,70 @@ def _build_network_payload(
             "label": _group_label(statistic),
             "nodes": nodes,
             "edges": edges,
-            "members": [dict(row) for row in rendered_members],
-            "distanceValues": [float(row["distance"]) for row in group_distances],
-            "distanceSummary": summary_by_key.get(key),
+            "members": [
+                _compact_record(row=row, fields=("member_id", "species_label"))
+                for row in rendered_members
+            ],
+            "distanceHistogram": _distance_histogram(distance_rows=group_distances),
+            "distanceSummary": _compact_record(
+                row=summary_by_key.get(key, {}),
+                fields=_REPORT_DISTANCE_STATISTIC_FIELDS,
+            ),
             "notice": notice,
         }
     return payload
+
+
+def _distance_histogram(
+    *, distance_rows: Sequence[Mapping[str, Any]], bin_count: int = 20
+) -> dict[str, Any]:
+    """Return compact fixed-width bins for finite pairwise distances.
+
+    Args:
+        distance_rows: Candidate records containing a distance field.
+        bin_count: Number of fixed-width bins.
+
+    Returns:
+        JSON-safe minimum, maximum, pair count and bin counts, or an empty mapping.
+    """
+
+    values = [
+        float(row["distance"])
+        for row in distance_rows
+        if row.get("distance") not in {"", None}
+        and math.isfinite(float(row["distance"]))
+    ]
+    if not values:
+        return {}
+    minimum = min(values)
+    maximum = max(values)
+    width = maximum - minimum
+    counts = [0] * bin_count
+    for value in values:
+        index = 0 if width == 0 else min(bin_count - 1, int((value - minimum) / width * bin_count))
+        counts[index] += 1
+    return {
+        "minimum": minimum,
+        "maximum": maximum,
+        "pairCount": len(values),
+        "counts": counts,
+    }
+
+
+def _compact_record(
+    *, row: Mapping[str, Any], fields: Sequence[str]
+) -> dict[str, Any]:
+    """Return only browser-required fields from one analytical record.
+
+    Args:
+        row: Full analytical record.
+        fields: Ordered fields retained in the report.
+
+    Returns:
+        Compact field mapping.
+    """
+
+    return {field: row.get(field, "") for field in fields}
 
 
 def _nearest_neighbour_edges(

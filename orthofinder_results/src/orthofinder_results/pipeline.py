@@ -10,11 +10,13 @@ import logging
 import os
 import re
 import shutil
+import time
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import __schema_version__, __version__
 from .distances import (
@@ -67,6 +69,15 @@ from .trees import (
 _LOGGER = logging.getLogger("orthofinder_results.pipeline")
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _ALIGNMENT_SUFFIXES = (".fa", ".faa", ".fasta", ".fas", ".aln")
+_MAX_REPORT_STATISTIC_ROWS = 50_000
+_STAGE_FIELDS = (
+    "stage",
+    "status",
+    "started_at_utc",
+    "finished_at_utc",
+    "elapsed_seconds",
+    "details",
+)
 
 GROUP_TYPES = {
     "group_statistics": {
@@ -117,6 +128,62 @@ GROUP_TYPES = {
 }
 
 
+class _StageRecorder:
+    """Persist machine-readable stage timing while also logging progress."""
+
+    def __init__(self, *, path: Path) -> None:
+        """Initialise an empty stage recorder.
+
+        Args:
+            path: Persistent TSV destination within the staging resource.
+        """
+
+        self.path = path
+        self.rows: list[dict[str, Any]] = []
+
+    @contextmanager
+    def record(self, *, stage: str) -> Iterator[dict[str, Any]]:
+        """Time one stage and persist its completion or failure.
+
+        Args:
+            stage: Stable machine-readable stage name.
+
+        Yields:
+            Mutable row whose ``details`` value may be populated by the caller.
+        """
+
+        started_at = utc_now_iso()
+        started = time.perf_counter()
+        row: dict[str, Any] = {
+            "stage": stage,
+            "status": "RUNNING",
+            "started_at_utc": started_at,
+            "finished_at_utc": "",
+            "elapsed_seconds": "",
+            "details": "",
+        }
+        _LOGGER.info("Stage started: %s", stage)
+        try:
+            yield row
+        except Exception:
+            row["status"] = "FAILED"
+            raise
+        else:
+            row["status"] = "PASS"
+        finally:
+            row["finished_at_utc"] = utc_now_iso()
+            row["elapsed_seconds"] = f"{time.perf_counter() - started:.3f}"
+            self.rows.append(row)
+            write_tsv(path=self.path, fieldnames=_STAGE_FIELDS, records=self.rows)
+            _LOGGER.info(
+                "Stage finished: %s | status=%s | elapsed_seconds=%s | %s",
+                stage,
+                row["status"],
+                row["elapsed_seconds"],
+                row["details"],
+            )
+
+
 def run_pipeline(
     *,
     results_dir: Path,
@@ -154,7 +221,7 @@ def run_pipeline(
         distance_max_groups: Maximum alignment groups; zero means unlimited.
         distance_max_members: Exact/sample distance member limit per group.
         parse_gene_trees: Normalise all available gene-tree nodes and edges.
-        report_max_statistic_rows: Maximum embedded summary rows; zero means unlimited.
+        report_max_statistic_rows: Browser-safe maximum embedded summary rows.
         report_max_groups: Maximum interactive report networks.
         report_max_members: Maximum rendered protein nodes per network.
         report_nearest_neighbours: Nearest-neighbour edges retained per node.
@@ -203,9 +270,16 @@ def run_pipeline(
         discovered=layout.alignments_dir,
         distance_source=distance_source,
     )
+    _LOGGER.info("Source inventory started: %s", layout.results_dir)
+    inventory_started = time.perf_counter()
     source_inventory = _build_source_inventory(
         layout=layout,
         alignment_dir=resolved_alignment_dir,
+    )
+    _LOGGER.info(
+        "Source inventory finished: files=%s, elapsed_seconds=%.3f",
+        f"{len(source_inventory):,}",
+        time.perf_counter() - inventory_started,
     )
     input_digest = _inventory_digest(records=source_inventory)
     reusable = _resolve_existing_output(
@@ -305,16 +379,31 @@ def _publish_completed_resource(
         PublicationError: If copying, validation or final publication fails.
     """
 
+    publication_started = time.perf_counter()
     if _same_filesystem(first=staging, second=output.parent):
+        _LOGGER.info("Atomic same-filesystem publication started: %s", output)
         os.replace(staging, output)
+        _LOGGER.info(
+            "Atomic publication finished in %.3f seconds.",
+            time.perf_counter() - publication_started,
+        )
         return
 
     token = uuid.uuid4().hex
     incoming = output.parent / f".{output.name}.incoming.{token}"
     try:
+        _LOGGER.info("Cross-filesystem copy started: %s", incoming)
         shutil.copytree(staging, incoming, copy_function=shutil.copy2)
+        _LOGGER.info(
+            "Cross-filesystem copy finished in %.3f seconds; checksum validation started.",
+            time.perf_counter() - publication_started,
+        )
         _validate_published_copy(source=staging, destination=incoming)
         os.replace(incoming, output)
+        _LOGGER.info(
+            "Verified publication finished in %.3f seconds.",
+            time.perf_counter() - publication_started,
+        )
     except Exception as error:
         if incoming.exists():
             if keep_failed_work:
@@ -410,6 +499,245 @@ def inspect_results(*, results_dir: Path) -> dict[str, Any]:
     return discover_layout(results_dir=results_dir).to_record()
 
 
+def regenerate_report(
+    *,
+    resource_dir: Path,
+    output_path: Path,
+    work_dir: Path | None,
+    report_max_statistic_rows: int,
+    report_max_groups: int,
+    report_max_members: int,
+    report_nearest_neighbours: int,
+    force: bool,
+) -> dict[str, Any]:
+    """Regenerate only the HTML from a completed analytical resource.
+
+    The completed resource is read-only. The new report is written to a separate
+    persistent path, avoiding membership parsing, distance calculation, Parquet
+    conversion and DuckDB rebuilding.
+
+    Args:
+        resource_dir: Completed orthofinder-results resource directory.
+        output_path: New standalone HTML output.
+        work_dir: Optional temporary root for node-local copies of report inputs.
+        report_max_statistic_rows: Maximum embedded group summaries.
+        report_max_groups: Maximum interactive networks.
+        report_max_members: Maximum members per network.
+        report_nearest_neighbours: Nearest-neighbour edges retained per node.
+        force: Permit atomic replacement of an existing standalone report.
+
+    Returns:
+        Output path, size and SHA-256 record.
+
+    Raises:
+        InputValidationError: If the resource or controls are invalid.
+        PublicationError: If the resource is incomplete or the output exists.
+    """
+
+    _validate_report_controls(
+        report_max_statistic_rows=report_max_statistic_rows,
+        report_max_groups=report_max_groups,
+        report_max_members=report_max_members,
+        report_nearest_neighbours=report_nearest_neighbours,
+    )
+    resource = validate_persistent_path(path=resource_dir, role="resource_dir")
+    destination = validate_persistent_path(path=output_path, role="report_output")
+    if not resource.is_dir():
+        raise InputValidationError(f"Resource directory does not exist: {resource}")
+    if resource == destination or resource in destination.parents:
+        raise InputValidationError(
+            "Standalone report output must be outside the immutable completed resource."
+        )
+    if work_dir is not None:
+        resolved_work = Path(work_dir).expanduser().resolve()
+        if resource == resolved_work or resource in resolved_work.parents:
+            raise InputValidationError(
+                "Report work directory must be outside the immutable completed resource."
+            )
+    manifest_path = resource / "run_manifest.json"
+    if not manifest_path.is_file():
+        raise InputValidationError(
+            f"Completed resource lacks run_manifest.json: {resource}"
+        )
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as error:
+        raise InputValidationError(f"Resource manifest is unreadable: {error}") from error
+    if manifest.get("status") != "complete":
+        raise PublicationError("Report regeneration requires a complete resource manifest.")
+    if destination.exists() and not force:
+        raise PublicationError(
+            f"Report output already exists: {destination}. Use --force to replace it atomically."
+        )
+    tables = resource / "tables"
+    required_relations = (
+        "distance_statistics",
+        "group_species_statistics",
+        "group_statistics",
+        "hog_memberships",
+        "legacy_orthogroup_memberships",
+        "pairwise_distances",
+    )
+    missing = [
+        relation
+        for relation in required_relations
+        if not _table_path(tables_dir=tables, relation=relation).is_file()
+    ]
+    if missing:
+        raise InputValidationError(
+            f"Resource lacks required compressed TSV relations: {', '.join(missing)}"
+        )
+
+    _LOGGER.info("Starting report-only regeneration with orthofinder-results %s.", __version__)
+    _LOGGER.info("Read-only completed resource: %s", resource)
+    _LOGGER.info("Standalone report output: %s", destination)
+    with _report_table_source(
+        source_tables=tables,
+        work_dir=work_dir,
+        relations=required_relations,
+    ) as report_tables:
+        return _build_standalone_report(
+            tables=report_tables,
+            destination=destination,
+            manifest=manifest,
+            report_max_statistic_rows=report_max_statistic_rows,
+            report_max_groups=report_max_groups,
+            report_max_members=report_max_members,
+            report_nearest_neighbours=report_nearest_neighbours,
+        )
+
+
+@contextmanager
+def _report_table_source(
+    *, source_tables: Path, work_dir: Path | None, relations: Sequence[str]
+) -> Iterator[Path]:
+    """Yield source tables or node-local copies and always clean temporary data.
+
+    Args:
+        source_tables: Persistent completed-resource table directory.
+        work_dir: Optional scheduler-provided temporary root.
+        relations: Compressed relations required for report construction.
+
+    Yields:
+        Directory containing report input tables.
+    """
+
+    if work_dir is None:
+        _LOGGER.info("Report input mode: direct persistent reads.")
+        yield source_tables
+        return
+    root = Path(work_dir).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    staging = root / f"report_inputs_{uuid.uuid4().hex}"
+    staging.mkdir(parents=False, exist_ok=False)
+    started = time.perf_counter()
+    copied_bytes = 0
+    try:
+        _LOGGER.info("Node-local report input staging started: %s", staging)
+        for relation in relations:
+            source = _table_path(tables_dir=source_tables, relation=relation)
+            destination = _table_path(tables_dir=staging, relation=relation)
+            shutil.copy2(source, destination)
+            copied_bytes += destination.stat().st_size
+            _LOGGER.info(
+                "Node-local report input copied: relation=%s, size_bytes=%s",
+                relation,
+                f"{destination.stat().st_size:,}",
+            )
+        _LOGGER.info(
+            "Node-local report input staging finished: files=%s, bytes=%s, "
+            "elapsed_seconds=%.3f",
+            len(relations),
+            f"{copied_bytes:,}",
+            time.perf_counter() - started,
+        )
+        yield staging
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+            _LOGGER.info("Removed node-local report inputs: %s", staging)
+
+
+def _build_standalone_report(
+    *,
+    tables: Path,
+    destination: Path,
+    manifest: Mapping[str, Any],
+    report_max_statistic_rows: int,
+    report_max_groups: int,
+    report_max_members: int,
+    report_nearest_neighbours: int,
+) -> dict[str, Any]:
+    """Build a standalone report from validated compressed analytical tables."""
+
+    started = time.perf_counter()
+    distance_summaries = list(
+        read_tsv(path=_table_path(tables_dir=tables, relation="distance_statistics"))
+    )
+    group_rows = _load_report_group_statistics(
+        path=_table_path(tables_dir=tables, relation="group_statistics"),
+        maximum=report_max_statistic_rows,
+    )
+    _LOGGER.info("Loaded %s bounded group summaries.", f"{len(group_rows):,}")
+    network_rows, memberships, distances = _load_report_network_data(
+        tables_dir=tables,
+        group_statistics_path=_table_path(tables_dir=tables, relation="group_statistics"),
+        distance_summaries=distance_summaries,
+        maximum_groups=report_max_groups,
+        maximum_members=report_max_members,
+    )
+    group_species = _load_report_group_species_data(
+        tables_dir=tables,
+        memberships=memberships,
+    )
+    counts = dict(manifest.get("counts", {}))
+    run_metadata = {
+        key: manifest.get(key)
+        for key in (
+            "run_id",
+            "orthofinder_version",
+            "adapter_name",
+            "primary_group_authority",
+            "schema_version",
+            "distance_source_requested",
+            "capabilities",
+            "publication",
+        )
+    }
+    run_metadata["resource_package_version"] = manifest.get("package_version", "")
+    run_metadata["package_version"] = __version__
+    build_interactive_report(
+        output_path=destination,
+        run_metadata=run_metadata,
+        group_statistics=group_rows,
+        network_group_statistics=network_rows,
+        memberships=memberships,
+        group_species_statistics=group_species,
+        distances=distances,
+        distance_statistics=distance_summaries,
+        total_group_statistic_count=int(counts.get("group_count", 0)),
+        total_membership_count=(
+            int(counts.get("hog_membership_count", 0))
+            + int(counts.get("legacy_orthogroup_membership_count", 0))
+        ),
+        max_network_groups=report_max_groups,
+        max_network_members=report_max_members,
+        nearest_neighbours=report_nearest_neighbours,
+    )
+    elapsed = time.perf_counter() - started
+    record = file_record(path=destination)
+    _LOGGER.info(
+        "Finished report-only regeneration in %.2f seconds: networks=%s, "
+        "memberships=%s, distance_rows=%s, size_bytes=%s.",
+        elapsed,
+        f"{len(network_rows):,}",
+        f"{len(memberships):,}",
+        f"{len(distances):,}",
+        f"{record['size_bytes']:,}",
+    )
+    return record
+
+
 def _build_resource(
     *,
     staging: Path,
@@ -441,52 +769,75 @@ def _build_resource(
     database_dir = staging / "duckdb"
     for directory in (tables, provenance, qc_dir, report_dir, database_dir):
         directory.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(path=provenance / "resolved_layout.json", record=layout.to_record())
-    write_tsv(
-        path=provenance / "input_inventory.tsv",
-        fieldnames=("role", "path", "size_bytes", "sha256"),
-        records=source_inventory,
-    )
+    stages = _StageRecorder(path=staging / "logs" / "stage_metrics.tsv")
+    with stages.record(stage="provenance") as stage:
+        atomic_write_json(path=provenance / "resolved_layout.json", record=layout.to_record())
+        write_tsv(
+            path=provenance / "input_inventory.tsv",
+            fieldnames=("role", "path", "size_bytes", "sha256"),
+            records=source_inventory,
+        )
+        stage["details"] = f"input_files={len(source_inventory)}"
 
-    (
-        membership_counts,
-        group_count,
-        group_species_statistic_count,
-        species_from_groups,
-    ) = _publish_memberships(
-        tables_dir=tables,
-        layout=layout,
-        run_id=run_id,
-    )
-    species_count, sequence_count = _publish_identifiers(
-        tables_dir=tables,
-        layout=layout,
-        run_id=run_id,
-        species_from_groups=species_from_groups,
-    )
-    tree_inventory, tree_node_count, tree_edge_count = _publish_trees(
-        tables_dir=tables,
-        layout=layout,
-        run_id=run_id,
-        parse_gene_trees=parse_gene_trees,
-    )
-    distance_count, distance_summaries = _publish_distances(
-        tables_dir=tables,
-        layout=layout,
-        run_id=run_id,
-        alignment_dir=alignment_dir,
-        distance_source=distance_source,
-        distance_group_type=distance_group_type,
-        distance_hierarchy_node=distance_hierarchy_node,
-        distance_max_groups=distance_max_groups,
-        distance_max_members=distance_max_members,
-    )
+    with stages.record(stage="memberships_and_group_statistics") as stage:
+        (
+            membership_counts,
+            group_count,
+            group_species_statistic_count,
+            species_from_groups,
+        ) = _publish_memberships(
+            tables_dir=tables,
+            layout=layout,
+            run_id=run_id,
+        )
+        stage["details"] = (
+            f"memberships={sum(membership_counts.values())};groups={group_count};"
+            f"group_species_rows={group_species_statistic_count}"
+        )
+    with stages.record(stage="species_and_sequence_identifiers") as stage:
+        species_count, sequence_count = _publish_identifiers(
+            tables_dir=tables,
+            layout=layout,
+            run_id=run_id,
+            species_from_groups=species_from_groups,
+        )
+        stage["details"] = f"species={species_count};sequences={sequence_count}"
+    with stages.record(stage="tree_inventory_and_normalisation") as stage:
+        tree_inventory, tree_node_count, tree_edge_count = _publish_trees(
+            tables_dir=tables,
+            layout=layout,
+            run_id=run_id,
+            parse_gene_trees=parse_gene_trees,
+        )
+        stage["details"] = (
+            f"tree_files={len(tree_inventory)};nodes={tree_node_count};edges={tree_edge_count}"
+        )
+    with stages.record(stage="pairwise_distances") as stage:
+        distance_count, distance_summaries = _publish_distances(
+            tables_dir=tables,
+            layout=layout,
+            run_id=run_id,
+            alignment_dir=alignment_dir,
+            distance_source=distance_source,
+            distance_group_type=distance_group_type,
+            distance_hierarchy_node=distance_hierarchy_node,
+            distance_max_groups=distance_max_groups,
+            distance_max_members=distance_max_members,
+        )
+        stage["details"] = (
+            f"groups={len(distance_summaries)};pairs={distance_count};requested={distance_source}"
+        )
 
-    parquet_tables = _publish_parquet(tables_dir=tables)
-    create_duckdb(
-        database_path=database_dir / "orthofinder_results.duckdb",
-        parquet_tables=parquet_tables,
-    )
+    with stages.record(stage="parquet_publication") as stage:
+        parquet_tables = _publish_parquet(tables_dir=tables)
+        stage["details"] = f"relations={len(parquet_tables)}"
+    with stages.record(stage="duckdb_publication") as stage:
+        database_path = database_dir / "orthofinder_results.duckdb"
+        create_duckdb(
+            database_path=database_path,
+            parquet_tables=parquet_tables,
+        )
+        stage["details"] = f"size_bytes={database_path.stat().st_size}"
     group_rows = _load_report_group_statistics(
         path=_table_path(tables_dir=tables, relation="group_statistics"),
         maximum=report_max_statistic_rows,
@@ -520,22 +871,29 @@ def _build_resource(
             "copy_verified": publication_method == "VERIFIED_COPY_THEN_ATOMIC_RENAME",
         },
     }
-    build_interactive_report(
-        output_path=report_dir / "orthofinder_results_summary.html",
-        run_metadata=run_metadata,
-        group_statistics=group_rows,
-        network_group_statistics=network_group_rows,
-        memberships=report_memberships,
-        group_species_statistics=report_group_species,
-        distances=report_distances,
-        distance_statistics=distance_summaries,
-        total_group_statistic_count=group_count,
-        total_membership_count=sum(membership_counts.values()),
-        max_network_groups=report_max_groups,
-        max_network_members=report_max_members,
-        nearest_neighbours=report_nearest_neighbours,
-    )
-    report_text = (report_dir / "orthofinder_results_summary.html").read_text(encoding="utf-8")
+    report_path = report_dir / "orthofinder_results_summary.html"
+    with stages.record(stage="offline_html_report") as stage:
+        build_interactive_report(
+            output_path=report_path,
+            run_metadata=run_metadata,
+            group_statistics=group_rows,
+            network_group_statistics=network_group_rows,
+            memberships=report_memberships,
+            group_species_statistics=report_group_species,
+            distances=report_distances,
+            distance_statistics=distance_summaries,
+            total_group_statistic_count=group_count,
+            total_membership_count=sum(membership_counts.values()),
+            max_network_groups=report_max_groups,
+            max_network_members=report_max_members,
+            nearest_neighbours=report_nearest_neighbours,
+        )
+        stage["details"] = (
+            f"group_rows={len(group_rows)};network_groups={len(network_group_rows)};"
+            f"members={len(report_memberships)};distance_rows={len(report_distances)};"
+            f"size_bytes={report_path.stat().st_size}"
+        )
+    report_text = report_path.read_text(encoding="utf-8")
     offline_report = not re.search(r"(?:src|href)=[\"']https?://", report_text, re.IGNORECASE)
     qc_rows = _qc_rows(
         layout=layout,
@@ -548,13 +906,18 @@ def _build_resource(
         distance_count=distance_count,
         offline_report=offline_report,
     )
-    write_tsv(
-        path=qc_dir / "validation_checks.tsv",
-        fieldnames=("check_name", "status", "observed_value", "expected_value", "details"),
-        records=qc_rows,
-    )
-    if any(row["status"] == "FAIL" for row in qc_rows):
-        raise PublicationError("One or more required validation checks failed.")
+    with stages.record(stage="quality_control") as stage:
+        write_tsv(
+            path=qc_dir / "validation_checks.tsv",
+            fieldnames=("check_name", "status", "observed_value", "expected_value", "details"),
+            records=qc_rows,
+        )
+        failed_checks = [row["check_name"] for row in qc_rows if row["status"] == "FAIL"]
+        stage["details"] = (
+            f"checks={len(qc_rows)};failed={';'.join(failed_checks) if failed_checks else 'none'}"
+        )
+        if failed_checks:
+            raise PublicationError("One or more required validation checks failed.")
 
     output_inventory = [
         file_record(path=path, relative_to=staging)
@@ -698,6 +1061,14 @@ def _write_membership_authority(
         )
         writer.writeheader()
         for source, group_type, hierarchy_node in sources:
+            source_started = time.perf_counter()
+            source_member_start = member_count
+            _LOGGER.info(
+                "Membership source started: type=%s, node=%s, file=%s",
+                group_type,
+                hierarchy_node or "ROOT",
+                source,
+            )
             current_key: tuple[str, str, str] | None = None
             accumulator: GroupAccumulator | None = None
             for row in iter_memberships(
@@ -732,6 +1103,17 @@ def _write_membership_authority(
                 species.add(str(row["species_label"]))
                 writer.writerow(row)
                 member_count += 1
+                source_members = member_count - source_member_start
+                if source_members % 1_000_000 == 0:
+                    elapsed = max(time.perf_counter() - source_started, 0.001)
+                    _LOGGER.info(
+                        "Membership source progress: type=%s, node=%s, rows=%s, "
+                        "rows_per_second=%.1f",
+                        group_type,
+                        hierarchy_node or "ROOT",
+                        f"{source_members:,}",
+                        source_members / elapsed,
+                    )
             if accumulator is not None:
                 _write_accumulator_statistics(
                     accumulator=accumulator,
@@ -740,6 +1122,15 @@ def _write_membership_authority(
                 )
                 group_count += 1
                 group_species_count += len(accumulator.species_counts)
+            source_members = member_count - source_member_start
+            _LOGGER.info(
+                "Membership source finished: type=%s, node=%s, rows=%s, "
+                "elapsed_seconds=%.3f",
+                group_type,
+                hierarchy_node or "ROOT",
+                f"{source_members:,}",
+                time.perf_counter() - source_started,
+            )
     return member_count, group_count, group_species_count
 
 
@@ -808,7 +1199,14 @@ def _publish_trees(
 ) -> tuple[list[dict[str, Any]], int, int]:
     """Publish tree file provenance and optional normalised nodes and edges."""
 
+    _LOGGER.info("Tree checksum inventory started.")
+    inventory_started = time.perf_counter()
     inventory = list(iter_tree_inventory(layout=layout, run_id=run_id))
+    _LOGGER.info(
+        "Tree checksum inventory finished: files=%s, elapsed_seconds=%.3f",
+        f"{len(inventory):,}",
+        time.perf_counter() - inventory_started,
+    )
     write_tsv(
         path=_table_path(tables_dir=tables_dir, relation="tree_inventory"),
         fieldnames=TREE_INVENTORY_FIELDS,
@@ -940,6 +1338,13 @@ def _write_alignment_distances(
     pair_count = 0
     for index, path in enumerate(paths, start=1):
         group_id = _group_id_from_alignment(path=path)
+        group_started = time.perf_counter()
+        _LOGGER.info(
+            "Distance group started: %s/%s, group=%s, source=alignment",
+            index,
+            len(paths),
+            group_id,
+        )
         rows, summary = calculate_alignment_distances(
             sequences=read_fasta(path=path),
             run_id=run_id,
@@ -952,8 +1357,18 @@ def _write_alignment_distances(
         writer.writerows(rows)
         summaries.append(summary)
         pair_count += len(rows)
-        if index % 100 == 0:
-            _LOGGER.info("Calculated distances for %s alignment groups.", f"{index:,}")
+        _LOGGER.info(
+            "Distance group finished: %s/%s, group=%s, status=%s, total_members=%s, "
+            "sampled_members=%s, pairs=%s, elapsed_seconds=%.3f",
+            index,
+            len(paths),
+            group_id,
+            summary["computation_status"],
+            summary["total_member_count"],
+            summary["sampled_member_count"],
+            f"{len(rows):,}",
+            time.perf_counter() - group_started,
+        )
     return pair_count
 
 
@@ -1020,6 +1435,15 @@ def _write_tree_distances(
     for index, statistic in enumerate(statistics, start=1):
         key = _group_key(statistic)
         group_id = statistic["group_id"]
+        group_started = time.perf_counter()
+        _LOGGER.info(
+            "Distance group started: %s/%s, group=%s, total_members=%s, "
+            "source=resolved_gene_tree",
+            index,
+            len(statistics),
+            group_id,
+            statistic["member_count"],
+        )
         species_by_member = species_by_member_by_key.get(key, {})
         members = tuple(sorted(species_by_member))
         tree_candidates = (
@@ -1040,6 +1464,14 @@ def _write_tree_distances(
                     member_count=len(members),
                     reason="No resolved gene tree matched the group or legacy orthogroup ID.",
                 )
+            )
+            _LOGGER.info(
+                "Distance group finished: %s/%s, group=%s, status=UNAVAILABLE, "
+                "reason=no_matching_tree, elapsed_seconds=%.3f",
+                index,
+                len(statistics),
+                group_id,
+                time.perf_counter() - group_started,
             )
             continue
         ambiguous_members = {
@@ -1062,6 +1494,14 @@ def _write_tree_distances(
                     ),
                     source_file=str(tree_path),
                 )
+            )
+            _LOGGER.info(
+                "Distance group finished: %s/%s, group=%s, status=UNAVAILABLE, "
+                "reason=ambiguous_membership, elapsed_seconds=%.3f",
+                index,
+                len(statistics),
+                group_id,
+                time.perf_counter() - group_started,
             )
             continue
         member_aliases: dict[str, dict[str, str]] = {}
@@ -1104,12 +1544,31 @@ def _write_tree_distances(
                     source_file=str(tree_path),
                 )
             )
+            _LOGGER.info(
+                "Distance group finished: %s/%s, group=%s, status=UNAVAILABLE, "
+                "reason=calculation_error, elapsed_seconds=%.3f",
+                index,
+                len(statistics),
+                group_id,
+                time.perf_counter() - group_started,
+            )
             continue
         writer.writerows(rows)
         summaries.append(summary)
         pair_count += len(rows)
-        if index % 100 == 0:
-            _LOGGER.info("Calculated distances for %s tree-backed groups.", f"{index:,}")
+        _LOGGER.info(
+            "Distance group finished: %s/%s, group=%s, status=%s, "
+            "identifier_resolution=%s, sampled_members=%s, pairs=%s, "
+            "elapsed_seconds=%.3f",
+            index,
+            len(statistics),
+            group_id,
+            summary["computation_status"],
+            summary["member_identifier_resolution"],
+            summary["sampled_member_count"],
+            f"{len(rows):,}",
+            time.perf_counter() - group_started,
+        )
     return pair_count
 
 
@@ -1147,12 +1606,25 @@ def _publish_parquet(*, tables_dir: Path) -> dict[str, Path]:
     for tsv_path in sorted(tables_dir.glob("*.tsv.gz")):
         relation = tsv_path.name.removesuffix(".tsv.gz")
         parquet_path = tables_dir / f"{relation}.parquet"
+        started = time.perf_counter()
+        _LOGGER.info(
+            "Parquet conversion started: relation=%s, compressed_tsv_bytes=%s",
+            relation,
+            f"{tsv_path.stat().st_size:,}",
+        )
         row_count = tsv_to_parquet(
             tsv_path=tsv_path,
             parquet_path=parquet_path,
             column_types=GROUP_TYPES.get(relation),
         )
-        _LOGGER.info("Published %s Parquet rows for %s.", f"{row_count:,}", relation)
+        _LOGGER.info(
+            "Parquet conversion finished: relation=%s, rows=%s, parquet_bytes=%s, "
+            "elapsed_seconds=%.3f",
+            relation,
+            f"{row_count:,}",
+            f"{parquet_path.stat().st_size:,}",
+            time.perf_counter() - started,
+        )
         parquet_tables[relation] = parquet_path
     return parquet_tables
 
@@ -1177,14 +1649,82 @@ def _table_path(*, tables_dir: Path, relation: str) -> Path:
 
 
 def _load_report_group_statistics(*, path: Path, maximum: int) -> list[dict[str, str]]:
-    """Load an explicitly bounded group-summary subset for HTML embedding."""
+    """Load a deterministic hierarchy-stratified subset for HTML embedding."""
 
-    rows: list[dict[str, str]] = []
+    counts: dict[str, int] = defaultdict(int)
     for row in read_tsv(path=path):
-        if maximum and len(rows) >= maximum:
-            break
-        rows.append(row)
+        counts[_group_level_key(row)] += 1
+    total = sum(counts.values())
+    if maximum == 0 or total <= maximum:
+        return list(read_tsv(path=path))
+    quotas = _stratified_quotas(counts=counts, maximum=maximum)
+    samplers = {
+        key: _HashRowSampler(
+            maximum=quota,
+            salt=f"report_group_statistics\0{key}",
+            identifier_field="group_id",
+        )
+        for key, quota in quotas.items()
+        if quota
+    }
+    for row in read_tsv(path=path):
+        sampler = samplers.get(_group_level_key(row))
+        if sampler is not None:
+            sampler.add(row=row)
+    rows = [row for key in sorted(samplers) for row in samplers[key].rows()]
+    _LOGGER.info(
+        "Stratified report group summaries: embedded=%s, total=%s, levels=%s.",
+        f"{len(rows):,}",
+        f"{total:,}",
+        f"{len(samplers):,}",
+    )
     return rows
+
+
+def _stratified_quotas(*, counts: Mapping[str, int], maximum: int) -> dict[str, int]:
+    """Allocate a bounded row budget across hierarchy levels proportionally.
+
+    Args:
+        counts: Available rows keyed by group type and hierarchy node.
+        maximum: Total row budget.
+
+    Returns:
+        Per-level quotas summing to at most the requested maximum.
+    """
+
+    ordered = sorted(counts)
+    if maximum < len(ordered):
+        retained = sorted(ordered, key=lambda key: (-counts[key], key))[:maximum]
+        return {key: int(key in retained) for key in ordered}
+    quotas = {key: min(1, counts[key]) for key in ordered}
+    remaining = maximum - sum(quotas.values())
+    capacity = {key: max(0, counts[key] - quotas[key]) for key in ordered}
+    total_capacity = sum(capacity.values())
+    if not remaining or not total_capacity:
+        return quotas
+    targets = {key: remaining * capacity[key] / total_capacity for key in ordered}
+    for key in ordered:
+        addition = min(capacity[key], int(targets[key]))
+        quotas[key] += addition
+        remaining -= addition
+    for key in sorted(
+        ordered,
+        key=lambda item: (-(targets[item] - int(targets[item])), item),
+    ):
+        if not remaining:
+            break
+        if quotas[key] < counts[key]:
+            quotas[key] += 1
+            remaining -= 1
+    return quotas
+
+
+def _group_level_key(row: Mapping[str, Any]) -> str:
+    """Return the group type and hierarchy node used for report stratification."""
+
+    return "|".join(
+        (str(row.get("group_type", "")), str(row.get("hierarchy_node", "")))
+    )
 
 
 def _load_report_network_data(
@@ -1224,8 +1764,16 @@ def _load_report_network_data(
         key = _group_key(row)
         distance_members[key].update((row["member_a"], row["member_b"]))
 
-    samplers = {key: _HashRowSampler(maximum=maximum_members, salt=key) for key in selected_keys}
-    found_ids: dict[str, set[str]] = defaultdict(set)
+    required_ids = {
+        key: set(_sample_member_ids(member_ids=member_ids, maximum=maximum_members, salt=key))
+        for key, member_ids in distance_members.items()
+    }
+    samplers = {
+        key: _HashRowSampler(maximum=maximum_members, salt=key)
+        for key in selected_keys
+        if key not in required_ids
+    }
+    required_rows: dict[str, dict[str, dict[str, str]]] = defaultdict(dict)
     for membership_path in (
         _table_path(tables_dir=tables_dir, relation="legacy_orthogroup_memberships"),
         _table_path(tables_dir=tables_dir, relation="hog_memberships"),
@@ -1234,19 +1782,23 @@ def _load_report_network_data(
             key = _group_key(row)
             if key not in selected_keys:
                 continue
-            if row["member_id"] in distance_members.get(key, set()):
-                found_ids[key].add(row["member_id"])
-            samplers[key].add(row=row)
+            if key in required_ids:
+                if row["member_id"] in required_ids[key]:
+                    required_rows[key].setdefault(row["member_id"], row)
+            else:
+                samplers[key].add(row=row)
     report_members = []
-    for key, sampler in samplers.items():
-        selected = {row["member_id"]: row for row in sampler.rows()}
-        required = distance_members.get(key, set())
-        if required:
-            # Distance member IDs may use an internal-ID naming scheme not present
-            # in the published membership table. Preserve them visibly rather than
-            # silently dropping network endpoints.
-            for member_id in sorted(required - found_ids[key]):
-                selected.setdefault(
+    for key in sorted(selected_keys):
+        if key not in required_ids:
+            report_members.extend(samplers[key].rows())
+            continue
+        selected = required_rows[key]
+        # Distance identifiers should be canonical membership identifiers. If a
+        # future adapter supplies a different scheme, retain every endpoint as an
+        # explicit unresolved node rather than silently constructing another sample.
+        for member_id in sorted(required_ids[key]):
+            report_members.append(
+                selected.get(
                     member_id,
                     {
                         "run_id": "",
@@ -1255,14 +1807,37 @@ def _load_report_network_data(
                         "group_id": key.split("|", maxsplit=2)[2],
                         "legacy_orthogroup_id": "",
                         "gene_tree_parent_clade": "",
-                        "species_label": "unresolved_from_alignment_identifier",
+                        "species_label": "unresolved_distance_identifier",
                         "member_id": member_id,
                         "source_file": "distance_table",
                         "source_row": "",
                     },
                 )
-        report_members.extend(selected.values())
+            )
     return selected_statistics, report_members, report_distances
+
+
+def _sample_member_ids(
+    *, member_ids: set[str], maximum: int, salt: str
+) -> list[str]:
+    """Select a deterministic bounded identifier subset.
+
+    Args:
+        member_ids: Unique candidate member identifiers.
+        maximum: Maximum identifiers retained.
+        salt: Stable group-specific hash salt.
+
+    Returns:
+        Selected member identifiers in lexical order.
+    """
+
+    ranked = sorted(
+        member_ids,
+        key=lambda member_id: hashlib.sha256(
+            f"{salt}\0{member_id}".encode("utf-8")
+        ).hexdigest(),
+    )
+    return sorted(ranked[:maximum])
 
 
 def _load_report_group_species_data(
@@ -1295,30 +1870,34 @@ def _load_report_group_species_data(
 class _HashRowSampler:
     """Deterministic bounded row sampler independent of input order."""
 
-    def __init__(self, *, maximum: int, salt: str) -> None:
+    def __init__(
+        self, *, maximum: int, salt: str, identifier_field: str = "member_id"
+    ) -> None:
         """Initialise a sampler.
 
         Args:
-            maximum: Maximum retained unique member rows.
+            maximum: Maximum retained unique rows.
             salt: Stable group-specific hash salt.
+            identifier_field: Row field defining uniqueness and stable order.
         """
 
         self.maximum = maximum
         self.salt = salt
+        self.identifier_field = identifier_field
         self._rows: dict[str, tuple[str, dict[str, str]]] = {}
 
     def add(self, *, row: Mapping[str, str]) -> None:
         """Consider one membership row for retention.
 
         Args:
-            row: Membership row containing ``member_id``.
+            row: Record containing the configured identifier field.
         """
 
-        member_id = row["member_id"]
-        if member_id in self._rows:
+        identifier = row[self.identifier_field]
+        if identifier in self._rows:
             return
-        rank = hashlib.sha256(f"{self.salt}\0{member_id}".encode("utf-8")).hexdigest()
-        self._rows[member_id] = (rank, dict(row))
+        rank = hashlib.sha256(f"{self.salt}\0{identifier}".encode("utf-8")).hexdigest()
+        self._rows[identifier] = (rank, dict(row))
         if len(self._rows) > self.maximum:
             worst = max(self._rows, key=lambda key: self._rows[key][0])
             del self._rows[worst]
@@ -1626,15 +2205,43 @@ def _validate_controls(
         raise InputValidationError(f"Unsupported distance_source: {distance_source}")
     if distance_group_type not in {"AUTO", "HOG", "LEGACY_ORTHOGROUP"}:
         raise InputValidationError(f"Unsupported distance_group_type: {distance_group_type}")
+    _validate_report_controls(
+        report_max_statistic_rows=report_max_statistic_rows,
+        report_max_groups=report_max_groups,
+        report_max_members=report_max_members,
+        report_nearest_neighbours=report_nearest_neighbours,
+    )
     non_negative = {
         "distance_max_groups": distance_max_groups,
-        "report_max_statistic_rows": report_max_statistic_rows,
     }
     for name, value in non_negative.items():
         if value < 0:
             raise InputValidationError(f"{name} must not be negative.")
+    positive = {"distance_max_members": distance_max_members}
+    for name, value in positive.items():
+        if value <= 0:
+            raise InputValidationError(f"{name} must be positive.")
+    if distance_max_members < 2:
+        raise InputValidationError("Distance member limit must be at least two.")
+    if resume and force:
+        raise InputValidationError("--resume and --force are mutually exclusive.")
+
+
+def _validate_report_controls(
+    *,
+    report_max_statistic_rows: int,
+    report_max_groups: int,
+    report_max_members: int,
+    report_nearest_neighbours: int,
+) -> None:
+    """Validate controls shared by full runs and report-only regeneration."""
+
+    if not 1 <= report_max_statistic_rows <= _MAX_REPORT_STATISTIC_ROWS:
+        raise InputValidationError(
+            "report_max_statistic_rows must be between 1 and "
+            f"{_MAX_REPORT_STATISTIC_ROWS:,} for browser safety."
+        )
     positive = {
-        "distance_max_members": distance_max_members,
         "report_max_groups": report_max_groups,
         "report_max_members": report_max_members,
         "report_nearest_neighbours": report_nearest_neighbours,
@@ -1642,7 +2249,5 @@ def _validate_controls(
     for name, value in positive.items():
         if value <= 0:
             raise InputValidationError(f"{name} must be positive.")
-    if distance_max_members < 2 or report_max_members < 2:
-        raise InputValidationError("Distance and report member limits must be at least two.")
-    if resume and force:
-        raise InputValidationError("--resume and --force are mutually exclusive.")
+    if report_max_members < 2:
+        raise InputValidationError("Report member limit must be at least two.")

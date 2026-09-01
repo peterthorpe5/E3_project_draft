@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.3 - 2026-09-01
+
+- Fix the JavaScript function-name collision that stopped every run-wide chart
+  after the static HTML headings appeared.
+- Add a visible in-page rendering error so browser failures cannot remain silent.
+- Reduce standalone report size by retaining only browser-used fields and by
+  embedding fixed-width distance histogram bins instead of every pair value.
+- Lower the default embedded group-summary bound to 20,000 and enforce a
+  browser-safety ceiling of 50,000 rows; deterministic stratified sampling retains
+  representation across group types and hierarchy levels.
+- Ensure distance-backed networks use the exact distance-sampled member identifiers
+  (or a deterministic subset when the report member bound is smaller).
+- Add `--action report` to regenerate a separate HTML from a completed resource
+  without repeating source parsing, distance calculations, Parquet or DuckDB work.
+- Use scheduler-supplied node-local work storage for report input scans and remove
+  temporary copies after success or failure.
+- Add start, finish, elapsed-time and row/size logging for major stages, membership
+  sources, every distance group, Parquet conversion and verified publication.
+- Publish machine-readable `logs/stage_metrics.tsv` with every completed resource.
+
 ## 0.1.2 - 2026-08-31
 
 - Declare every TSV column type during Parquet streaming so a late text value,

@@ -39,9 +39,13 @@ an authoritative group-by-species copy-count heatmap for rendered groups.
 
 Browser visualisation is deliberately bounded. Large groups are selected and
 sampled deterministically for rendering, while the full compressed TSV, Parquet and
-DuckDB tables remain the analytical authorities. The report states these
-limits rather than pretending that a browser can safely render millions of
-nodes.
+DuckDB tables remain the analytical authorities. Only fields used by the browser
+are embedded, and pairwise distances are reduced to fixed histogram bins after
+nearest-neighbour edges are selected. The default is 20,000 group summaries and
+the enforced ceiling is 50,000. Those summaries are deterministically stratified
+across group type and hierarchy node, rather than taking only the first rows from
+one level. The report states these limits rather than
+pretending that a browser can safely render millions of nodes.
 
 ## Data contract designed for later questions
 
@@ -112,7 +116,7 @@ All CLI controls are named. No source file beneath `--results-dir` is modified.
 orthofinder-results \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_3 \
   --run-id results_feb26 \
   --work-dir /persistent/project/orthofinder_results/work \
   --report-max-groups 25 \
@@ -192,6 +196,30 @@ partial staging/copy directories are removed by default. Use
 are needed. Completed formal outputs and superseded outputs are never removed by
 this cleanup policy.
 
+## Regenerate only the standalone HTML
+
+Version 0.1.3 can build a new compact report from an existing completed resource.
+It does not mutate that resource or repeat OrthoFinder parsing, distance
+calculation, Parquet conversion or DuckDB construction. The HTML and log must be
+outside the immutable resource directory:
+
+```bash
+orthofinder-results \
+  --action report \
+  --resource-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
+  --report-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_3.html \
+  --log-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_3.log \
+  --report-max-statistic-rows 20000 \
+  --report-max-groups 25 \
+  --report-max-members 250 \
+  --report-nearest-neighbours 3
+```
+
+When the Slurm wrapper supplies its job-specific `--work-dir`, the compressed
+relations needed by this action are copied to node-local storage, scanned there,
+and removed after success or failure. This avoids high-volume repeated reads from
+shared project storage while preserving the completed resource.
+
 ## Slurm wrapper
 
 The submission wrapper writes both standard output and error to persistent log
@@ -203,7 +231,7 @@ files, which is suitable for `mosh` sessions:
   -- \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_3 \
   --run-id results_feb26
 ```
 
@@ -215,6 +243,13 @@ is copied to `--output-dir`. The Dundee launcher defaults to the `barton`
 account and partition, requests ordinary resources, and does not select a
 long-duration QoS. An explicit `--work-dir` remains available for clusters
 with a different scratch policy.
+
+The persistent `logs/run.log` now records stage boundaries and elapsed times,
+million-row membership progress, every selected distance group, compressed TSV
+and Parquet sizes, and report payload size. Scheduler stdout/stderr additionally
+records cross-filesystem copy and checksum-validation timing. The resource's
+`logs/stage_metrics.tsv` provides major computation-stage timings in a queryable
+tab-separated form.
 
 ## Query examples
 
@@ -251,11 +286,12 @@ Open the database with:
 duckdb /path/to/output/duckdb/orthofinder_results.duckdb
 ```
 
-## Scope of version 0.1.2
+## Scope of version 0.1.3
 
-Version 0.1.2 establishes loss-aware, version-aware ingestion, node-local
-computation, compressed analytical authorities, explicit tree-leaf identity
-resolution and verified portable publication. Cross-run cluster lineage
+Version 0.1.3 establishes loss-aware, version-aware ingestion, node-local
+computation and report regeneration, compressed analytical authorities,
+explicit tree-leaf identity resolution, reliable bounded visualisation and
+verified portable publication. Cross-run cluster lineage
 (stable overlap scores, split/merge classification and taxon-aware
 comparisons) belongs in a later, separately tested comparison layer. Keeping
 source runs immutable is what makes that layer possible and auditable.
