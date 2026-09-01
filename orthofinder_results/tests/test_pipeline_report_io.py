@@ -22,6 +22,7 @@ from orthofinder_results.io_utils import (
     write_tsv,
 )
 from orthofinder_results.pipeline import (
+    _load_report_group_statistics_and_aggregates,
     _load_report_network_data,
     _table_path,
     _validate_published_copy,
@@ -31,7 +32,12 @@ from orthofinder_results.pipeline import (
 )
 from orthofinder_results.report import (
     _connected_network_edges,
+    _distance_matrix_payload,
     _distance_projection,
+    _phylogram_payload,
+    _projection_quality,
+    _report_bool,
+    _report_float,
     _sample_medoid,
     _species_palette,
     build_interactive_report,
@@ -86,27 +92,35 @@ def test_pipeline_publishes_queryable_offline_resource(
 
     report = output / "report/orthofinder_results_summary.html"
     html = report.read_text(encoding="utf-8")
-    assert "Within-HOG protein distance network" in html
+    assert "Within-group evolutionary and protein-distance views" in html
     assert "Run-wide visual summary" in html
-    assert "Cluster-size distribution" in html
-    assert "Species-breadth distribution" in html
-    assert "Copy-number complexity" in html
+    assert "Complete cluster-size distribution" in html
+    assert "Complete species-breadth distribution" in html
+    assert "Complete copy-number complexity" in html
     assert "Exact copy counts for displayed network groups" in html
     assert "Show component connectors" in html
-    assert "Quantitative distance map (PCoA)" in html
+    assert "Diagnostic distance map (PCoA)" in html
+    assert "Branch-length phylogram" in html
+    assert "Exact displayed distance matrix" in html
     assert "Force-directed neighbour topology" in html
-    assert "projection quality is reported" in html
+    assert "PCoA edges are hidden by default" in html
     assert "Species colours" in html
     assert "Sample medoid" in html
-    assert "Members per HOG (log₂ bins)" in html
-    assert "Species represented per HOG" in html
-    assert "Mean pairwise distance" in html
-    assert "Rows: HOGs · columns: species" in html
+    assert "Members per group (complete log₂ bins)" in html
+    assert "Species represented per group" in html
+    assert "Mean pairwise distance in displayed sample" in html
+    assert "Rows: groups · columns: species" in html
     assert "vis.Network" in html
-    assert "function renderOverviewHistogram" in html
+    assert "function renderAggregateHistogram" in html
+    assert "function renderPcoa" in html
+    assert "function renderPhylogram" in html
+    assert "function renderDistanceMatrix" in html
     assert "function renderDistanceHistogram" in html
     assert "function renderHistogram(" not in html
     assert '"distanceHistogram"' in html
+    assert '"distanceMatrix"' in html
+    assert '"phylogram"' in html
+    assert '"overviewStatistics"' in html
     assert '"distanceValues"' not in html
     assert re.search(r'(?:src|href)=["\']https?://', html, re.IGNORECASE) is None
     assert "amino_acid_p_distance_pairwise_deletion" in html
@@ -158,8 +172,8 @@ def test_report_only_regeneration_preserves_completed_resource(
     assert record["size_bytes"] == standalone.stat().st_size
     assert sha256_file(path=manifest) == manifest_digest
     html = standalone.read_text(encoding="utf-8")
-    assert '"package_version":"0.1.4"' in html
-    assert '"resource_package_version":"0.1.4"' in html
+    assert '"package_version":"0.1.5"' in html
+    assert '"resource_package_version":"0.1.5"' in html
     with pytest.raises(PublicationError, match="already exists"):
         regenerate_report(
             resource_dir=resource,
@@ -182,6 +196,29 @@ def test_report_only_regeneration_preserves_completed_resource(
         force=True,
     )
     assert replaced["size_bytes"] == standalone.stat().st_size
+
+
+def test_phylogram_uses_checksum_verified_tree_fallback(
+    orthofinder2_results: Path,
+    persistent_test_root: Path,
+) -> None:
+    """Report rendering may expand an inventoried source tree without reanalysis."""
+
+    resource = persistent_test_root / "tree_fallback_resource"
+    arguments = pipeline_arguments(orthofinder2_results, resource)
+    arguments.update(
+        {
+            "distance_source": "RESOLVED_GENE_TREE",
+            "parse_gene_trees": False,
+        }
+    )
+    manifest = run_pipeline(**arguments)
+    assert manifest["counts"]["tree_node_count"] == 3
+    html = (resource / "report/orthofinder_results_summary.html").read_text(
+        encoding="utf-8"
+    )
+    assert '"status":"COMPLETE_PRUNED_PHYLOGRAM"' in html
+    assert '"method":"RESOLVED_GENE_TREE_BRANCH_LENGTH"' in html
 
 
 def test_report_only_rejects_incomplete_or_mutating_inputs(
@@ -352,6 +389,8 @@ def test_network_components_medoid_and_species_colours_are_explicit() -> None:
     assert projection["status"] == "COMPLETE_DISTANCE_PCOA_2D"
     assert projection["normalised_stress"] == pytest.approx(0.0, abs=1e-12)
     assert projection["distance_correlation"] == pytest.approx(1.0)
+    assert projection["quality_category"] == "BETTER"
+    assert projection["shepard_point_count"] == 3
     _, unavailable_projection = _distance_projection(
         distance_rows=line_distances[:-1],
         member_ids={"left", "middle", "right"},
@@ -362,6 +401,176 @@ def test_network_components_medoid_and_species_colours_are_explicit() -> None:
     palette = _species_palette(species_labels=reversed(labels))
     assert palette == _species_palette(species_labels=labels)
     assert len(set(palette.values())) == len(labels)
+
+
+def test_projection_matrix_phylogram_and_full_overview_contracts(
+    tmp_path: Path,
+) -> None:
+    """Quantitative report views retain exact values and explicit fit guidance."""
+
+    assert _projection_quality(
+        retained_inertia=0.20,
+        distance_correlation=0.90,
+        normalised_stress=0.20,
+    )[0] == "POOR"
+    assert _projection_quality(
+        retained_inertia=0.35,
+        distance_correlation=0.75,
+        normalised_stress=0.40,
+    )[0] == "MODERATE"
+    assert _projection_quality(
+        retained_inertia=0.60,
+        distance_correlation=0.90,
+        normalised_stress=0.30,
+    )[0] == "BETTER"
+    assert _report_bool(True) is True
+    assert _report_bool("yes") is True
+    assert _report_float("bad") == 0.0
+    assert _report_float(float("nan")) == 0.0
+
+    distances = (
+        {"member_a": "a", "member_b": "b", "distance": 1.0},
+        {"member_a": "a", "member_b": "c", "distance": 2.0},
+        {"member_a": "b", "member_b": "c", "distance": 1.5},
+    )
+    matrix = _distance_matrix_payload(
+        distance_rows=distances,
+        member_ids={"a", "b", "c"},
+        preferred_order=("c", "a", "b"),
+    )
+    assert matrix["status"] == "EXACT_COMPLETE_DISPLAYED_MATRIX"
+    assert matrix["memberOrder"] == ["c", "a", "b"]
+    assert matrix["upperTriangle"] == [2.0, 1.5, 1.0]
+    partial_order = _distance_matrix_payload(
+        distance_rows=distances,
+        member_ids={"a", "b", "c"},
+        preferred_order=("c",),
+    )
+    assert partial_order["orderMethod"] == "PARTIAL_PHYLOGRAM_THEN_LEXICAL_MEMBER_ID"
+    incomplete = _distance_matrix_payload(
+        distance_rows=distances[:-1],
+        member_ids={"a", "b", "c"},
+    )
+    assert incomplete["status"] == "UNAVAILABLE_INCOMPLETE_MATRIX"
+    assert _distance_matrix_payload(distance_rows=(), member_ids={"a"})[
+        "status"
+    ] == "UNAVAILABLE"
+    assert _sample_medoid(distance_rows=(), member_ids={"a"})["status"] == "UNAVAILABLE"
+    assert _distance_projection(distance_rows=(), member_ids={"a"})[1][
+        "status"
+    ] == "UNAVAILABLE"
+    many_ids = [f"m{index:02d}" for index in range(65)]
+    many_distances = [
+        {
+            "member_a": left,
+            "member_b": right,
+            "distance": float(right_index - left_index),
+        }
+        for left_index, left in enumerate(many_ids)
+        for right_index, right in enumerate(many_ids[left_index + 1 :], start=left_index + 1)
+    ]
+    _, bounded_projection = _distance_projection(
+        distance_rows=many_distances,
+        member_ids=set(many_ids),
+    )
+    assert bounded_projection["shepard_point_count"] == 2_000
+
+    tree_path = tmp_path / "OG0001_tree.txt"
+    tree_path.write_text(
+        "(Species_a:0.1,(Species_b:0.2,Species_c:0.3):0.4)R:0.0;\n",
+        encoding="utf-8",
+    )
+    tree_nodes, tree_edges = normalise_newick_tree(
+        path=tree_path,
+        run_id="r",
+        tree_type="RESOLVED_GENE_TREE",
+        tree_id="OG0001",
+    )
+    members = tuple(
+        {"member_id": member_id, "species_label": "Species"}
+        for member_id in ("a", "b", "c")
+    )
+    phylogram = _phylogram_payload(
+        statistic={"group_id": "N0.HOG1", "legacy_orthogroup_id": "OG0001"},
+        rendered_members=members,
+        medoid={"member_id": "b"},
+        nodes_by_tree_id={"OG0001": tree_nodes},
+        edges_by_tree_id={"OG0001": tree_edges},
+        aliases_by_member_species={},
+        species_palette={"Species": "#123456"},
+    )
+    assert phylogram["status"] == "COMPLETE_PRUNED_PHYLOGRAM"
+    assert phylogram["memberOrder"] == ["a", "b", "c"]
+    assert phylogram["maximumRootDistance"] == pytest.approx(0.7)
+    medoid_nodes = [node for node in phylogram["nodes"] if node["isMedoid"]]
+    assert [node["memberId"] for node in medoid_nodes] == ["b"]
+    unavailable_tree = _phylogram_payload(
+        statistic={"group_id": "N0.HOG1"},
+        rendered_members=members,
+        medoid={},
+        nodes_by_tree_id={},
+        edges_by_tree_id={},
+        aliases_by_member_species={},
+        species_palette={"Species": "#123456"},
+    )
+    assert unavailable_tree["status"] == "UNAVAILABLE_NO_NORMALISED_RESOLVED_TREE"
+    partial_tree = _phylogram_payload(
+        statistic={"group_id": "N0.HOG1", "legacy_orthogroup_id": "OG0001"},
+        rendered_members=(*members, {"member_id": "missing", "species_label": "Species"}),
+        medoid={},
+        nodes_by_tree_id={"OG0001": tree_nodes},
+        edges_by_tree_id={},
+        aliases_by_member_species={},
+        species_palette={"Species": "#123456"},
+    )
+    assert partial_tree["status"] == "PARTIAL_PRUNED_PHYLOGRAM"
+    assert partial_tree["unresolvedMembers"] == ["missing"]
+    one_resolved = _phylogram_payload(
+        statistic={"group_id": "N0.HOG1", "legacy_orthogroup_id": "OG0001"},
+        rendered_members=(
+            {"member_id": "a", "species_label": "Species"},
+            {"member_id": "missing", "species_label": "Species"},
+        ),
+        medoid={},
+        nodes_by_tree_id={"OG0001": tree_nodes},
+        edges_by_tree_id={"OG0001": tree_edges},
+        aliases_by_member_species={},
+        species_palette={"Species": "#123456"},
+    )
+    assert one_resolved["status"] == "UNAVAILABLE_INSUFFICIENT_RESOLVED_LEAVES"
+
+    statistics_path = tmp_path / "group_statistics.tsv"
+    fields = (
+        "group_type",
+        "hierarchy_node",
+        "group_id",
+        "member_count",
+        "species_count",
+        "max_copies_per_species",
+    )
+    write_tsv(
+        path=statistics_path,
+        fieldnames=fields,
+        records=(
+            dict(zip(fields, ("HOG", "N0", "g1", 1, 1, 1), strict=True)),
+            dict(zip(fields, ("HOG", "N0", "g2", 4, 2, 2), strict=True)),
+            dict(zip(fields, ("HOG", "N0", "g3", 8, 3, 4), strict=True)),
+            dict(zip(fields, ("HOG", "N1", "g4", 2, 1, 2), strict=True)),
+        ),
+    )
+    sampled, aggregates = _load_report_group_statistics_and_aggregates(
+        path=statistics_path,
+        maximum=2,
+    )
+    assert len(sampled) == 2
+    assert aggregates["HOG|N0"]["groupCount"] == 3
+    assert aggregates["HOG|N0"]["memberCount"]["labels"] == [
+        "1",
+        "2–3",
+        "4–7",
+        "8–15",
+    ]
+    assert aggregates["HOG|N0"]["memberCount"]["counts"] == [1, 0, 1, 1]
 
 
 def test_resume_and_recoverable_force_behaviour(

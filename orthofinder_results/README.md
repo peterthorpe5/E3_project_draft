@@ -5,10 +5,11 @@ versioned, queryable and portable analytical resource. It is intentionally a
 generic package: no E3-ligase assumptions are built into its parsers or schema.
 
 The package supports completed OrthoFinder 2 and OrthoFinder 3 layouts. For
-OrthoFinder 3, hierarchical orthogroups (HOGs) are the primary authority and a
-legacy `Orthogroups.tsv` file is optional. Every HOG level (`N*.tsv`) is kept,
-so later analyses can work at the root, at an internal species-tree node, or
-across several levels without rebuilding the package.
+OrthoFinder 3, hierarchical orthogroups are the primary authority (recorded as
+`HOG` in the data contract) and a legacy `Orthogroups.tsv` file is optional.
+Every hierarchy level (`N*.tsv`) is kept, so later analyses can work at the
+root, at an internal species-tree node, or across several levels without
+rebuilding the package.
 
 This project is independent of, and is not endorsed by, the OrthoFinder
 authors. Cite OrthoFinder itself when using its results.
@@ -17,7 +18,7 @@ authors. Cite OrthoFinder itself when using its results.
 
 Each successful run creates one immutable output directory containing:
 
-- long-form legacy orthogroup and all-level HOG memberships;
+- long-form legacy orthogroup and all-level hierarchical-orthogroup memberships;
 - per-group and per-group/per-species copy-number statistics;
 - species and sequence identifier mappings when OrthoFinder retained them;
 - a checksum inventory of every discovered input, gene tree and resolved tree;
@@ -26,38 +27,59 @@ Each successful run creates one immutable output directory containing:
 - matching gzip-compressed TSV and typed Parquet tables;
 - a physical, portable DuckDB containing the same analytical relations;
 - explicit QC checks, a complete run manifest and a persistent run log; and
-- a self-contained offline HTML report with an interactive cluster network and
-  comparative visual summaries.
+- a self-contained offline HTML report with linked distance, phylogeny,
+  sparse-topology and comparative visual summaries.
 
 The HTML is the final publication stage. It embeds the JavaScript and CSS it
 needs, so the report opens without internet access. Every network selector entry
-is one HOG. Node fill colour denotes species by default, a searchable legend can
-select all displayed members from one species, and the sampled medoid is marked
-with a gold star. The raw nearest-neighbour component count remains explicit;
+is one OrthoFinder group at the stated authority and hierarchy level. Node fill
+colour denotes species by default, a searchable legend can select all displayed
+members from one species, and the sampled medoid is marked with a gold star. The
+raw nearest-neighbour component count remains explicit;
 dashed minimum-distance component connectors can be shown for a unified layout
-or hidden to recover the raw graph. By default, node positions are a
+or hidden to recover the raw graph. The first detailed view is a points-only
 two-dimensional classical-MDS/PCoA projection of every displayed pairwise
-distance. The report gives the two-axis positive inertia, correlation between
-projected and input distances, and normalised stress, because no 2D map can
-preserve every high-dimensional distance exactly. A separate force-directed
-neighbour-topology view follows the PCoA map and is explicitly labelled
-non-quantitative. Both views share the same HOG and interaction controls. The user
-can pan, zoom, search and click members, view a distance histogram, and filter or
-page through cluster statistics. Additional run-wide views show log-binned
-cluster sizes, species breadth, copy-number complexity, cluster size versus
-breadth, mean distance versus sampled size, and exact group-by-species copy
-counts for rendered groups.
-Every quantitative chart has explicit axis titles; the heatmap states its row,
-column and cell semantics.
+distance. It has equal geometric axis scaling, explicit ticks, per-axis positive
+inertia, a conservative fit-guidance badge and a bounded Shepard plot. Edges are
+hidden by default. Correlation between projected and input distances, normalised
+stress and retained inertia remain visible because no 2D map can preserve every
+high-dimensional distance exactly.
+
+Fit guidance is deliberately conservative. `POOR` is shown when axes 1+2 retain
+less than 25% of positive inertia, distance correlation is below 0.60 or
+undefined, or normalised stress exceeds 0.60. `MODERATE` is shown when the fit is
+not poor but retained inertia is below 40%, correlation is below 0.80 or stress
+exceeds 0.45. Other projections are labelled `BETTER`, not “validated”. These
+thresholds guide display interpretation and do not define biological clusters.
+
+A branch-length phylogram follows the PCoA. It prunes the checksum-verified
+resolved gene tree to the displayed proteins while retaining horizontal branch
+lengths. An exact displayed distance-matrix heatmap retains every supplied pair
+distance and uses the phylogram leaf order when every displayed member resolves.
+The separate force-directed nearest-neighbour topology remains explicitly
+non-quantitative. Member, species, sampled-medoid and label interactions are
+linked across the views.
+
+Opening histograms use compact exact bins calculated from the complete group
+authority, rather than the bounded embedded rows. The size-versus-breadth panel
+is still identified as a deterministic sample, while distance and projection
+panels are labelled as the selected network pilot. Mean distance is plotted
+against analytical group size, not the fixed displayed sample size. The exact
+group-by-species copy heatmap offers raw, `log1p` and presence/absence display
+scales while retaining raw counts on hover. Every quantitative chart has
+explicit axes, population and denominator wording.
 
 Browser visualisation is deliberately bounded. Large groups are selected and
-sampled deterministically for rendering, while the full compressed TSV, Parquet and
-DuckDB tables remain the analytical authorities. Only fields used by the browser
-are embedded, and pairwise distances are reduced to fixed histogram bins after
-nearest-neighbour edges are selected. The default is 20,000 group summaries and
-the enforced ceiling is 50,000. Those summaries are deterministically stratified
-across group type and hierarchy node, rather than taking only the first rows from
-one level. The report states these limits rather than
+sampled deterministically for rendering, while the full compressed TSV, Parquet
+and DuckDB tables remain the analytical authorities. Only fields used by the
+browser are embedded. Exact pairwise distances are retained only for the bounded
+displayed matrices, alongside compact histograms and sparse neighbour edges. The
+default is 20,000 group summaries and the enforced ceiling is 50,000. Those
+summaries are deterministically stratified across group type and hierarchy node,
+rather than taking only the first rows from one level. The requested
+network-group/member bounds must also remain within a
+one-million-pair browser payload budget; the default 25 groups by 250 displayed
+members is below that ceiling. The report states these limits rather than
 pretending that a browser can safely render millions of nodes.
 
 ## Data contract designed for later questions
@@ -77,7 +99,8 @@ The schema preserves:
 
 - the exact source species label and member identifier;
 - one authoritative copy-count row per represented group/species pair;
-- HOG node, parent clade and legacy orthogroup link when supplied;
+- hierarchical-orthogroup node, parent clade and legacy orthogroup link when
+  supplied;
 - source filename and row number;
 - tree type, tree identifier, branch lengths and node relationships;
 - the exact distance method and `EXACT` or sampled status; and
@@ -129,7 +152,7 @@ All CLI controls are named. No source file beneath `--results-dir` is modified.
 orthofinder-results \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_4 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_5 \
   --run-id results_feb26 \
   --work-dir /persistent/project/orthofinder_results/work \
   --report-max-groups 25 \
@@ -155,9 +178,10 @@ orthofinder-results \
 
 `--distance-source AUTO` is the default. It prefers aligned-sequence distances
 when recognised alignments exist and otherwise uses resolved gene-tree branch
-lengths. Tree-backed HOG calculations match the HOG's legacy orthogroup link
-when available and restrict the tree to that HOG's members. OrthoFinder 3
-layouts without a legacy link can match a tree by the HOG identifier itself.
+lengths. Tree-backed hierarchical-orthogroup calculations match the group's
+legacy orthogroup link when available and restrict the tree to that group's
+members. OrthoFinder 3 layouts without a legacy link can match a tree by the
+hierarchical-orthogroup identifier itself.
 Use `--distance-source NONE` to disable distances, or name
 `ALIGNED_SEQUENCE`/`RESOLVED_GENE_TREE` to require one authority and fail when
 it is unavailable.
@@ -211,7 +235,7 @@ this cleanup policy.
 
 ## Regenerate only the standalone HTML
 
-Version 0.1.4 can build a new compact report from an existing completed resource.
+Version 0.1.5 can build a new compact report from an existing completed resource.
 It does not mutate that resource or repeat OrthoFinder parsing, distance
 calculation, Parquet conversion or DuckDB construction. The HTML and log must be
 outside the immutable resource directory:
@@ -220,8 +244,8 @@ outside the immutable resource directory:
 orthofinder-results \
   --action report \
   --resource-dir /persistent/project/orthofinder_results/results_feb26_v0_1_2 \
-  --report-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_4.html \
-  --log-output /persistent/project/orthofinder_results/reports/results_feb26_v0_1_4.log \
+  --report-output /persistent/project/orthofinder_results/reports/results_feb26_report_v0_1_5.html \
+  --log-output /persistent/project/orthofinder_results/reports/results_feb26_report_v0_1_5.log \
   --report-max-statistic-rows 20000 \
   --report-max-groups 25 \
   --report-max-members 250 \
@@ -232,6 +256,12 @@ When the Slurm wrapper supplies its job-specific `--work-dir`, the compressed
 relations needed by this action are copied to node-local storage, scanned there,
 and removed after success or failure. This avoids high-volume repeated reads from
 shared project storage while preserving the completed resource.
+
+Normalised resolved-tree nodes and edges are preferred for phylograms. If an
+older resource checksum-inventoried the tree but did not expand its nodes, the
+report action may parse the exact distance-summary source only after its
+SHA-256 matches the immutable inventory. Missing or changed sources produce an
+explicit unavailable phylogram; they are never accepted silently.
 
 ## Slurm wrapper
 
@@ -244,7 +274,7 @@ files, which is suitable for `mosh` sessions:
   -- \
   --action run \
   --results-dir /path/to/OrthoFinder/Results_Feb26 \
-  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_4 \
+  --output-dir /persistent/project/orthofinder_results/results_feb26_v0_1_5 \
   --run-id results_feb26
 ```
 
@@ -267,7 +297,7 @@ tab-separated form.
 ## Query examples
 
 ```sql
--- Largest root-level HOGs.
+-- Largest root-level hierarchical orthogroups (HOG rows).
 SELECT group_id, member_count, species_count, max_copies_per_species
 FROM group_statistics
 WHERE group_type = 'HOG' AND hierarchy_node = 'N0'
@@ -283,7 +313,7 @@ WHERE run_id = 'results_feb26'
   AND hierarchy_node = 'N0'
   AND group_id = 'N0.HOG0002084';
 
--- Candidate splits: root HOGs represented by several child-level HOGs.
+-- Candidate splits: root hierarchical orthogroups represented at child levels.
 SELECT legacy_orthogroup_id, hierarchy_node,
        count(DISTINCT group_id) AS child_hog_count
 FROM hog_memberships
@@ -299,12 +329,12 @@ Open the database with:
 duckdb /path/to/output/duckdb/orthofinder_results.duckdb
 ```
 
-## Scope of version 0.1.4
+## Scope of version 0.1.5
 
-Version 0.1.4 establishes loss-aware, version-aware ingestion, node-local
-computation and report regeneration, compressed analytical authorities,
-explicit tree-leaf identity resolution, reliable bounded visualisation and
-verified portable publication. Cross-run cluster lineage
+Version 0.1.5 adds projection-quality-forward PCoA, checksum-bound phylograms,
+exact bounded distance matrices and complete-authority opening aggregates to
+the loss-aware, version-aware ingestion and report-only regeneration foundation.
+Cross-run cluster lineage
 (stable overlap scores, split/merge classification and taxon-aware
 comparisons) belongs in a later, separately tested comparison layer. Keeping
 source runs immutable is what makes that layer possible and auditable.

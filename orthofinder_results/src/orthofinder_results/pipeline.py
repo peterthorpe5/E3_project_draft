@@ -7,6 +7,7 @@ import hashlib
 import heapq
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -70,6 +71,7 @@ _LOGGER = logging.getLogger("orthofinder_results.pipeline")
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _ALIGNMENT_SUFFIXES = (".fa", ".faa", ".fasta", ".fas", ".aln")
 _MAX_REPORT_STATISTIC_ROWS = 50_000
+_MAX_REPORT_DISTANCE_PAIRS = 1_000_000
 _STAGE_FIELDS = (
     "stage",
     "status",
@@ -577,6 +579,10 @@ def regenerate_report(
         "hog_memberships",
         "legacy_orthogroup_memberships",
         "pairwise_distances",
+        "sequences",
+        "tree_edges",
+        "tree_inventory",
+        "tree_nodes",
     )
     missing = [
         relation
@@ -674,7 +680,7 @@ def _build_standalone_report(
     distance_summaries = list(
         read_tsv(path=_table_path(tables_dir=tables, relation="distance_statistics"))
     )
-    group_rows = _load_report_group_statistics(
+    group_rows, overview_statistics = _load_report_group_statistics_and_aggregates(
         path=_table_path(tables_dir=tables, relation="group_statistics"),
         maximum=report_max_statistic_rows,
     )
@@ -689,6 +695,12 @@ def _build_standalone_report(
     group_species = _load_report_group_species_data(
         tables_dir=tables,
         memberships=memberships,
+    )
+    tree_nodes, tree_edges, sequence_identifiers = _load_report_tree_data(
+        tables_dir=tables,
+        group_statistics=network_rows,
+        memberships=memberships,
+        distance_summaries=distance_summaries,
     )
     counts = dict(manifest.get("counts", {}))
     run_metadata = {
@@ -706,6 +718,7 @@ def _build_standalone_report(
     }
     run_metadata["resource_package_version"] = manifest.get("package_version", "")
     run_metadata["package_version"] = __version__
+    run_metadata["counts"] = counts
     build_interactive_report(
         output_path=destination,
         run_metadata=run_metadata,
@@ -723,6 +736,10 @@ def _build_standalone_report(
         max_network_groups=report_max_groups,
         max_network_members=report_max_members,
         nearest_neighbours=report_nearest_neighbours,
+        overview_statistics=overview_statistics,
+        tree_nodes=tree_nodes,
+        tree_edges=tree_edges,
+        sequence_identifiers=sequence_identifiers,
     )
     elapsed = time.perf_counter() - started
     record = file_record(path=destination)
@@ -838,7 +855,7 @@ def _build_resource(
             parquet_tables=parquet_tables,
         )
         stage["details"] = f"size_bytes={database_path.stat().st_size}"
-    group_rows = _load_report_group_statistics(
+    group_rows, overview_statistics = _load_report_group_statistics_and_aggregates(
         path=_table_path(tables_dir=tables, relation="group_statistics"),
         maximum=report_max_statistic_rows,
     )
@@ -856,6 +873,14 @@ def _build_resource(
         tables_dir=tables,
         memberships=report_memberships,
     )
+    report_tree_nodes, report_tree_edges, report_sequence_identifiers = (
+        _load_report_tree_data(
+            tables_dir=tables,
+            group_statistics=network_group_rows,
+            memberships=report_memberships,
+            distance_summaries=distance_summaries,
+        )
+    )
     run_metadata = {
         "run_id": run_id,
         "orthofinder_version": layout.orthofinder_version,
@@ -869,6 +894,14 @@ def _build_resource(
             "method": publication_method,
             "staging_root": str(staging_root),
             "copy_verified": publication_method == "VERIFIED_COPY_THEN_ATOMIC_RENAME",
+        },
+        "counts": {
+            "group_count": group_count,
+            "species_count": species_count,
+            "tree_inventory_count": len(tree_inventory),
+            "tree_node_count": tree_node_count,
+            "distance_group_count": len(distance_summaries),
+            "distance_pair_count": distance_count,
         },
     }
     report_path = report_dir / "orthofinder_results_summary.html"
@@ -887,6 +920,10 @@ def _build_resource(
             max_network_groups=report_max_groups,
             max_network_members=report_max_members,
             nearest_neighbours=report_nearest_neighbours,
+            overview_statistics=overview_statistics,
+            tree_nodes=report_tree_nodes,
+            tree_edges=report_tree_edges,
+            sequence_identifiers=report_sequence_identifiers,
         )
         stage["details"] = (
             f"group_rows={len(group_rows)};network_groups={len(network_group_rows)};"
@@ -1648,37 +1685,180 @@ def _table_path(*, tables_dir: Path, relation: str) -> Path:
     return tables_dir / f"{relation}.tsv.gz"
 
 
+def _load_report_group_statistics_and_aggregates(
+    *, path: Path, maximum: int
+) -> tuple[list[dict[str, str]], dict[str, Any]]:
+    """Load bounded rows and exact compact aggregates for every group level.
+
+    Args:
+        path: Complete compressed group-statistics authority.
+        maximum: Maximum individual rows embedded in the report.
+
+    Returns:
+        Deterministically sampled rows and full-authority histogram aggregates.
+    """
+
+    counts: dict[str, int] = defaultdict(int)
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in read_tsv(path=path):
+        key = _group_level_key(row)
+        counts[key] += 1
+        accumulator = aggregates.setdefault(
+            key,
+            {
+                "groupType": str(row.get("group_type", "")),
+                "hierarchyNode": str(row.get("hierarchy_node", "")),
+                "groupCount": 0,
+                "singleCopyGroupCount": 0,
+                "multicopyGroupCount": 0,
+                "memberCount": _new_report_metric(logarithmic=True),
+                "speciesCount": _new_report_metric(logarithmic=False),
+                "maximumCopiesPerSpecies": _new_report_metric(logarithmic=True),
+            },
+        )
+        accumulator["groupCount"] += 1
+        _update_report_metric(
+            metric=accumulator["memberCount"], value=row.get("member_count")
+        )
+        _update_report_metric(
+            metric=accumulator["speciesCount"], value=row.get("species_count")
+        )
+        maximum_copies = _optional_report_int(row.get("max_copies_per_species"))
+        _update_report_metric(
+            metric=accumulator["maximumCopiesPerSpecies"], value=maximum_copies
+        )
+        if maximum_copies is not None:
+            classification = (
+                "singleCopyGroupCount" if maximum_copies <= 1 else "multicopyGroupCount"
+            )
+            accumulator[classification] += 1
+    total = sum(counts.values())
+    if maximum == 0 or total <= maximum:
+        rows = list(read_tsv(path=path))
+    else:
+        quotas = _stratified_quotas(counts=counts, maximum=maximum)
+        samplers = {
+            key: _HashRowSampler(
+                maximum=quota,
+                salt=f"report_group_statistics\0{key}",
+                identifier_field="group_id",
+            )
+            for key, quota in quotas.items()
+            if quota
+        }
+        for row in read_tsv(path=path):
+            sampler = samplers.get(_group_level_key(row))
+            if sampler is not None:
+                sampler.add(row=row)
+        rows = [row for key in sorted(samplers) for row in samplers[key].rows()]
+    final_aggregates = {
+        key: {
+            **{
+                field: value
+                for field, value in record.items()
+                if field
+                not in {"memberCount", "speciesCount", "maximumCopiesPerSpecies"}
+            },
+            "memberCount": _finalise_report_metric(metric=record["memberCount"]),
+            "speciesCount": _finalise_report_metric(metric=record["speciesCount"]),
+            "maximumCopiesPerSpecies": _finalise_report_metric(
+                metric=record["maximumCopiesPerSpecies"]
+            ),
+        }
+        for key, record in sorted(aggregates.items())
+    }
+    _LOGGER.info(
+        "Report group summaries prepared: embedded=%s, complete=%s, levels=%s.",
+        f"{len(rows):,}",
+        f"{total:,}",
+        f"{len(final_aggregates):,}",
+    )
+    return rows, final_aggregates
+
+
 def _load_report_group_statistics(*, path: Path, maximum: int) -> list[dict[str, str]]:
     """Load a deterministic hierarchy-stratified subset for HTML embedding."""
 
-    counts: dict[str, int] = defaultdict(int)
-    for row in read_tsv(path=path):
-        counts[_group_level_key(row)] += 1
-    total = sum(counts.values())
-    if maximum == 0 or total <= maximum:
-        return list(read_tsv(path=path))
-    quotas = _stratified_quotas(counts=counts, maximum=maximum)
-    samplers = {
-        key: _HashRowSampler(
-            maximum=quota,
-            salt=f"report_group_statistics\0{key}",
-            identifier_field="group_id",
-        )
-        for key, quota in quotas.items()
-        if quota
-    }
-    for row in read_tsv(path=path):
-        sampler = samplers.get(_group_level_key(row))
-        if sampler is not None:
-            sampler.add(row=row)
-    rows = [row for key in sorted(samplers) for row in samplers[key].rows()]
-    _LOGGER.info(
-        "Stratified report group summaries: embedded=%s, total=%s, levels=%s.",
-        f"{len(rows):,}",
-        f"{total:,}",
-        f"{len(samplers):,}",
+    rows, _ = _load_report_group_statistics_and_aggregates(
+        path=path,
+        maximum=maximum,
     )
     return rows
+
+
+def _new_report_metric(*, logarithmic: bool) -> dict[str, Any]:
+    """Return an empty streaming accumulator for a report overview metric."""
+
+    return {
+        "binning": "LOG2_INTEGER" if logarithmic else "INTEGER",
+        "count": 0,
+        "sum": 0,
+        "minimum": None,
+        "maximum": None,
+        "bins": defaultdict(int),
+    }
+
+
+def _optional_report_int(value: Any) -> int | None:
+    """Return a non-negative integer or ``None`` for an unavailable value."""
+
+    if value in {None, ""}:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _update_report_metric(*, metric: dict[str, Any], value: Any) -> None:
+    """Update an exact streaming report aggregate when a value is available."""
+
+    parsed = _optional_report_int(value)
+    if parsed is None:
+        return
+    metric["count"] += 1
+    metric["sum"] += parsed
+    metric["minimum"] = parsed if metric["minimum"] is None else min(metric["minimum"], parsed)
+    metric["maximum"] = parsed if metric["maximum"] is None else max(metric["maximum"], parsed)
+    bin_index = (
+        int(math.log2(max(1, parsed)))
+        if metric["binning"] == "LOG2_INTEGER"
+        else parsed
+    )
+    metric["bins"][bin_index] += 1
+
+
+def _finalise_report_metric(*, metric: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert one streaming metric accumulator into a compact JSON record."""
+
+    binning = str(metric["binning"])
+    bins = dict(metric["bins"])
+    ordered_indices = (
+        list(range(min(bins), max(bins) + 1)) if bins else []
+    )
+    labels = [
+        (
+            "1"
+            if index == 0 and binning == "LOG2_INTEGER"
+            else (
+                f"{2**index}–{2 ** (index + 1) - 1}"
+                if binning == "LOG2_INTEGER"
+                else str(index)
+            )
+        )
+        for index in ordered_indices
+    ]
+    count = int(metric["count"])
+    return {
+        "binning": binning,
+        "count": count,
+        "minimum": metric["minimum"],
+        "maximum": metric["maximum"],
+        "mean": (float(metric["sum"]) / count) if count else None,
+        "labels": labels,
+        "counts": [int(bins.get(index, 0)) for index in ordered_indices],
+    }
 
 
 def _stratified_quotas(*, counts: Mapping[str, int], maximum: int) -> dict[str, int]:
@@ -1865,6 +2045,142 @@ def _load_report_group_species_data(
         )
         if _group_key(row) in selected_keys
     ]
+
+
+def _load_report_tree_data(
+    *,
+    tables_dir: Path,
+    group_statistics: Sequence[Mapping[str, Any]],
+    memberships: Sequence[Mapping[str, Any]],
+    distance_summaries: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    """Load only tree and identifier records needed by report-selected groups.
+
+    Normalised resource tables are preferred. When an older completed resource
+    checksum-inventoried trees but did not expand every gene tree, the exact
+    distance-summary source may be parsed only after its SHA-256 matches the
+    immutable tree inventory. This fallback changes no analytical authority.
+
+    Args:
+        tables_dir: Completed resource table directory or node-local copy.
+        group_statistics: Exact groups selected for interactive views.
+        memberships: Exact bounded members selected for those groups.
+        distance_summaries: Complete distance summaries with source provenance.
+
+    Returns:
+        Selected normalised tree nodes, edges and sequence-identifier aliases.
+    """
+
+    if not group_statistics or not memberships:
+        return [], [], []
+    candidate_ids: set[str] = set()
+    candidates_by_key: dict[str, list[str]] = {}
+    for row in group_statistics:
+        candidates = list(
+            dict.fromkeys(
+                str(value)
+                for value in (
+                    row.get("legacy_orthogroup_id", ""),
+                    row.get("group_id", ""),
+                )
+                if value
+            )
+        )
+        candidates_by_key[_group_key(row)] = candidates
+        candidate_ids.update(candidates)
+    selected_nodes = [
+        dict(row)
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="tree_nodes")
+        )
+        if row.get("tree_type") == "RESOLVED_GENE_TREE"
+        and row.get("tree_id") in candidate_ids
+    ]
+    selected_edges = [
+        dict(row)
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="tree_edges")
+        )
+        if row.get("tree_type") == "RESOLVED_GENE_TREE"
+        and row.get("tree_id") in candidate_ids
+    ]
+    available_tree_ids = {str(row.get("tree_id", "")) for row in selected_nodes}
+    summaries_by_key = {_group_key(row): row for row in distance_summaries}
+    inventory = [
+        row
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="tree_inventory")
+        )
+        if row.get("tree_type") == "RESOLVED_GENE_TREE"
+        and row.get("tree_id") in candidate_ids
+    ]
+    inventory_by_id = {str(row.get("tree_id", "")): row for row in inventory}
+    for group_key, candidates in candidates_by_key.items():
+        if any(candidate in available_tree_ids for candidate in candidates):
+            continue
+        summary = summaries_by_key.get(group_key, {})
+        source_text = str(summary.get("source_file", ""))
+        tree_id = next(
+            (candidate for candidate in candidates if candidate in inventory_by_id),
+            "",
+        )
+        if not source_text or not tree_id:
+            continue
+        source = Path(source_text).expanduser().resolve()
+        inventory_row = inventory_by_id[tree_id]
+        if not source.is_file():
+            _LOGGER.warning(
+                "Report phylogram unavailable: checksum-inventoried source is missing: %s",
+                source,
+            )
+            continue
+        observed_digest = sha256_file(path=source)
+        expected_digest = str(inventory_row.get("sha256", ""))
+        if not expected_digest or observed_digest != expected_digest:
+            _LOGGER.warning(
+                "Report phylogram source rejected after SHA-256 verification: %s",
+                source,
+            )
+            continue
+        nodes, edges = normalise_newick_tree(
+            path=source,
+            run_id=str(summary.get("run_id", "")),
+            tree_type="RESOLVED_GENE_TREE",
+            tree_id=tree_id,
+        )
+        selected_nodes.extend(nodes)
+        selected_edges.extend(edges)
+        available_tree_ids.add(tree_id)
+        _LOGGER.info(
+            "Report phylogram source expanded after checksum verification: "
+            "tree=%s, nodes=%s, edges=%s.",
+            tree_id,
+            f"{len(nodes):,}",
+            f"{len(edges):,}",
+        )
+
+    selected_member_species = {
+        (str(row.get("member_id", "")), str(row.get("species_label", "")))
+        for row in memberships
+    }
+    sequence_identifiers = [
+        row
+        for row in read_tsv(
+            path=_table_path(tables_dir=tables_dir, relation="sequences")
+        )
+        if (str(row.get("member_id", "")), str(row.get("species_label", "")))
+        in selected_member_species
+    ]
+    _LOGGER.info(
+        "Report tree data loaded: candidate_trees=%s, available_trees=%s, "
+        "nodes=%s, edges=%s, identifier_aliases=%s.",
+        f"{len(candidate_ids):,}",
+        f"{len(available_tree_ids):,}",
+        f"{len(selected_nodes):,}",
+        f"{len(selected_edges):,}",
+        f"{len(sequence_identifiers):,}",
+    )
+    return selected_nodes, selected_edges, sequence_identifiers
 
 
 class _HashRowSampler:
@@ -2251,3 +2567,13 @@ def _validate_report_controls(
             raise InputValidationError(f"{name} must be positive.")
     if report_max_members < 2:
         raise InputValidationError("Report member limit must be at least two.")
+    pair_budget = (
+        report_max_groups * report_max_members * (report_max_members - 1) // 2
+    )
+    if pair_budget > _MAX_REPORT_DISTANCE_PAIRS:
+        raise InputValidationError(
+            "The requested report network bounds could embed up to "
+            f"{pair_budget:,} pair distances; the browser-safety limit is "
+            f"{_MAX_REPORT_DISTANCE_PAIRS:,}. Reduce --report-max-groups or "
+            "--report-max-members."
+        )

@@ -48,6 +48,7 @@ from orthofinder_results.pipeline import (
     _inventory_digest,
     _load_report_group_species_data,
     _load_report_group_statistics,
+    _optional_report_int,
     _qc,
     _qc_rows,
     _resolve_alignment_dir,
@@ -56,6 +57,7 @@ from orthofinder_results.pipeline import (
     _stratified_quotas,
     _table_path,
     _validate_controls,
+    _validate_report_controls,
     run_pipeline,
 )
 from orthofinder_results.report import build_interactive_report
@@ -408,6 +410,9 @@ def test_pipeline_helpers_cover_sampling_digest_qc_and_bounds(tmp_path: Path) ->
     second = _inventory_digest(records=[{"sha256": "1", "path": "a", "role": "x"}])
     assert first == second
     assert _qc("x", False, 0, 1, "details")["status"] == "FAIL"
+    assert _optional_report_int(None) is None
+    assert _optional_report_int("bad") is None
+    assert _optional_report_int(-1) is None
 
     statistics = tmp_path / "statistics.tsv"
     write_tsv(
@@ -485,6 +490,21 @@ def test_qc_failure_states_and_report_limit_errors(
         build_interactive_report(**{**common, "max_network_members": 1})
     with pytest.raises(ValueError, match="positive"):
         build_interactive_report(**{**common, "nearest_neighbours": 0})
+    with pytest.raises(ValueError, match="pair-distance budget"):
+        build_interactive_report(
+            **{
+                **common,
+                "max_network_groups": 100,
+                "max_network_members": 1_000,
+            }
+        )
+    with pytest.raises(InputValidationError, match="browser-safety limit"):
+        _validate_report_controls(
+            report_max_statistic_rows=20_000,
+            report_max_groups=100,
+            report_max_members=1_000,
+            report_nearest_neighbours=3,
+        )
 
 
 def test_cli_complete_run_errors_and_action_conflicts(

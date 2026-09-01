@@ -102,8 +102,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=20000,
         help="Maximum embedded group rows (1-50,000; default 20,000).",
     )
-    parser.add_argument("--report-max-groups", type=int, default=25)
-    parser.add_argument("--report-max-members", type=int, default=250)
+    parser.add_argument(
+        "--report-max-groups",
+        type=int,
+        default=25,
+        help="Maximum interactive groups; combined distance-matrix budget is one million pairs.",
+    )
+    parser.add_argument(
+        "--report-max-members",
+        type=int,
+        default=250,
+        help="Maximum members per interactive group; default 250.",
+    )
     parser.add_argument("--report-nearest-neighbours", type=int, default=3)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--force", action="store_true")

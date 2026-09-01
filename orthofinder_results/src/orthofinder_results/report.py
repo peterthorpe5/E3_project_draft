@@ -18,6 +18,7 @@ from .errors import PublicationError
 from .io_utils import atomic_write_text
 
 _LOGGER = logging.getLogger("orthofinder_results.report")
+_MAX_BROWSER_DISTANCE_PAIRS = 1_000_000
 
 _REPORT_GROUP_FIELDS = (
     "group_type",
@@ -61,6 +62,7 @@ _REPORT_DISTANCE_STATISTIC_FIELDS = (
     "maximum_distance",
     "population_stddev_distance",
     "mean_comparable_sites",
+    "source_file",
     "failure_reason",
 )
 
@@ -80,6 +82,10 @@ def build_interactive_report(
     max_network_groups: int,
     max_network_members: int,
     nearest_neighbours: int,
+    overview_statistics: Mapping[str, Any] | None = None,
+    tree_nodes: Sequence[Mapping[str, Any]] = (),
+    tree_edges: Sequence[Mapping[str, Any]] = (),
+    sequence_identifiers: Sequence[Mapping[str, Any]] = (),
 ) -> None:
     """Write a self-contained Cytoscape-style results browser.
 
@@ -97,6 +103,10 @@ def build_interactive_report(
         max_network_groups: Declared maximum interactive networks.
         max_network_members: Declared maximum nodes per network.
         nearest_neighbours: Maximum nearest-neighbour edges retained per node.
+        overview_statistics: Complete-authority preaggregates by group level.
+        tree_nodes: Normalised nodes for report-selected resolved gene trees.
+        tree_edges: Normalised edges for report-selected resolved gene trees.
+        sequence_identifiers: Identifier aliases for report-selected members.
 
     Raises:
         ValueError: If browser-safety limits are invalid.
@@ -109,6 +119,13 @@ def build_interactive_report(
         raise ValueError("max_network_members must be at least two.")
     if nearest_neighbours <= 0:
         raise ValueError("nearest_neighbours must be positive.")
+    pair_budget = (
+        max_network_groups * max_network_members * (max_network_members - 1) // 2
+    )
+    if pair_budget > _MAX_BROWSER_DISTANCE_PAIRS:
+        raise ValueError(
+            "The requested network bounds exceed the browser pair-distance budget."
+        )
     embedded_group_keys = {
         _group_key(row) for row in (*group_statistics, *network_group_statistics)
     }
@@ -124,6 +141,9 @@ def build_interactive_report(
         max_groups=max_network_groups,
         max_members=max_network_members,
         nearest_neighbours=nearest_neighbours,
+        tree_nodes=tree_nodes,
+        tree_edges=tree_edges,
+        sequence_identifiers=sequence_identifiers,
     )
     payload = {
         "run": dict(run_metadata),
@@ -143,6 +163,7 @@ def build_interactive_report(
             _compact_record(row=row, fields=_REPORT_DISTANCE_STATISTIC_FIELDS)
             for row in embedded_distance_statistics
         ],
+        "overviewStatistics": dict(overview_statistics or {}),
         "networks": networks,
         "limits": {
             "embeddedGroupStatisticCount": len(group_statistics),
@@ -207,6 +228,12 @@ def build_interactive_report(
     .network-section h3 {{ font-size:1.05rem; }}
     .network-canvas {{ height:580px; border:1px solid var(--line); border-radius:8px;
       margin-top:.6rem; background:#fff; }}
+    .plot-canvas {{ min-height:500px; border:1px solid var(--line); border-radius:8px;
+      margin-top:.6rem; background:#fff; overflow:auto; }}
+    .plot-canvas svg {{ display:block; min-width:760px; width:100%; }}
+    .matrix-canvas {{ overflow:auto; margin-top:.6rem; }}
+    .matrix-canvas canvas {{ display:block; width:min(760px,100%); height:auto;
+      border:1px solid var(--line); background:#fff; }}
     .network-support-grid {{ display:grid; grid-template-columns:repeat(3,minmax(240px,1fr));
       gap:1rem; margin-top:1rem; }}
     .detail {{ border-left:1px solid var(--line); padding-left:1rem; overflow-wrap:anywhere; }}
@@ -214,6 +241,11 @@ def build_interactive_report(
     .detail dt {{ font-weight:700; }} .detail dd {{ margin:0; }}
     .notice {{ color:var(--warn); background:#fff7e8; border:1px solid #eed09e;
       padding:.65rem; border-radius:7px; margin:.7rem 0; }}
+    .quality-badge {{ display:inline-block; padding:.22rem .48rem; border-radius:999px;
+      font-size:.75rem; font-weight:700; letter-spacing:.03em; margin-right:.45rem; }}
+    .quality-badge.poor {{ color:#7b1420; background:#ffe8eb; border:1px solid #e8a8b0; }}
+    .quality-badge.moderate {{ color:#7a4e00; background:#fff2d2; border:1px solid #e8c66e; }}
+    .quality-badge.better {{ color:#155b3b; background:#e5f7ee; border:1px solid #8cc9aa; }}
     .network-key {{ display:flex; flex-wrap:wrap; gap:.45rem 1rem; margin:.65rem 0;
       color:var(--muted); font-size:.8rem; }}
     .key-item {{ display:flex; align-items:center; gap:.35rem; }}
@@ -236,6 +268,7 @@ def build_interactive_report(
     .bar {{ flex:1; min-width:4px; background:#5577d5; border-radius:3px 3px 0 0; }}
     .chart-grid {{ display:grid; grid-template-columns:repeat(2,minmax(300px,1fr)); gap:.8rem; }}
     .chart-card {{ border:1px solid var(--line); border-radius:8px; padding:.75rem; min-width:0; }}
+    .chart-card.wide {{ grid-column:1 / -1; }}
     .chart {{ min-height:250px; }}
     .chart svg {{ width:100%; height:250px; display:block; overflow:visible; }}
     .chart .axis {{ stroke:#8993a8; stroke-width:1; }}
@@ -243,6 +276,17 @@ def build_interactive_report(
     .chart text {{ fill:var(--muted); font-size:11px; }}
     .chart .plot-bar {{ fill:#5577d5; }}
     .chart .plot-point {{ fill:#d7633c; fill-opacity:.65; stroke:#8b3219; stroke-width:.45; }}
+    .pcoa-edge {{ stroke:#a7afbf; stroke-width:.8; }}
+    .pcoa-edge.connector {{ stroke:#b7791f; stroke-dasharray:5 4; }}
+    .protein-point {{ stroke:#4b5563; stroke-width:1; cursor:pointer; }}
+    .protein-point.medoid {{ stroke:#b8860b; stroke-width:3; }}
+    .protein-point.selected {{ stroke:#111827; stroke-width:4; }}
+    .tree-edge {{ fill:none; stroke:#68748b; stroke-width:1; }}
+    .tree-leaf {{ cursor:pointer; stroke:#4b5563; stroke-width:.8; }}
+    .tree-leaf.medoid {{ stroke:#b8860b; stroke-width:2.5; }}
+    .tree-leaf.selected {{ stroke:#111827; stroke-width:3.5; }}
+    .diagnostics-table tr[data-group-key] {{ cursor:pointer; }}
+    .selected-row td {{ background:#e8eefc; }}
     .heatmap th.rotate {{ height:145px; vertical-align:bottom; padding:0 .2rem .35rem; }}
     .heatmap th.rotate > span {{ display:inline-block; writing-mode:vertical-rl;
       transform:rotate(180deg); max-height:135px; overflow:hidden; text-overflow:ellipsis; }}
@@ -256,7 +300,8 @@ def build_interactive_report(
     .pager {{ display:flex; gap:.5rem; align-items:center; margin-top:.6rem; }}
     .small {{ color:var(--muted); font-size:.78rem; }}
     @media (max-width:900px) {{ .network-support-grid,.chart-grid {{ grid-template-columns:1fr; }}
-      .detail {{ border-left:0; padding-left:0; }} .network-canvas {{ height:480px; }} }}
+      .detail {{ border-left:0; padding-left:0; }} .network-canvas {{ height:480px; }}
+      .plot-canvas {{ min-height:420px; }} }}
   </style>
   <script>{vis_javascript}</script>
 </head>
@@ -270,38 +315,48 @@ def build_interactive_report(
     <div class="controls"><label>Group level<select id="overview-level"></select></label></div>
     <div id="overview-notice" class="notice"></div>
     <div class="chart-grid">
-      <article class="chart-card"><h3>Cluster-size distribution</h3>
+      <article class="chart-card"><h3>Complete cluster-size distribution</h3>
         <div id="cluster-size-chart" class="chart" role="img" aria-label="Cluster-size histogram"></div>
-        <p class="small">Log₂-sized bins retain the long tail of large clusters.</p></article>
-      <article class="chart-card"><h3>Species-breadth distribution</h3>
+        <p class="small">Exact full-authority log₂ bins; the level-specific denominator is shown above.</p></article>
+      <article class="chart-card"><h3>Complete species-breadth distribution</h3>
         <div id="species-breadth-chart" class="chart" role="img" aria-label="Species-breadth histogram"></div>
-        <p class="small">Number of represented species per cluster.</p></article>
-      <article class="chart-card"><h3>Copy-number complexity</h3>
+        <p class="small">Exact number of represented species per group in the complete authority.</p></article>
+      <article class="chart-card"><h3>Complete copy-number complexity</h3>
         <div id="copy-complexity-chart" class="chart" role="img" aria-label="Maximum copies per species histogram"></div>
-        <p class="small">Maximum paralogue count observed in any one species.</p></article>
-      <article class="chart-card"><h3>Cluster size versus species breadth</h3>
+        <p class="small">Exact maximum paralogue count in any one species; log₂ bins.</p></article>
+      <article class="chart-card"><h3>Cluster size versus species breadth — embedded sample</h3>
         <div id="size-breadth-chart" class="chart" role="img" aria-label="Cluster size versus species breadth scatter plot"></div>
-        <p class="small">Up to 2,000 deterministic points; y-axis is log-scaled.</p></article>
-      <article class="chart-card"><h3>Mean distance versus sampled cluster size</h3>
-        <div id="distance-coverage-chart" class="chart" role="img" aria-label="Mean distance versus sampled cluster size scatter plot"></div>
-        <p class="small">Available distance summaries only; hover points for exact status and method.</p></article>
+        <p class="small">Up to 2,000 deterministic embedded rows; this panel is sampled and the y-axis is log-scaled.</p></article>
+      <article class="chart-card"><h3>Mean distance versus analytical group size — selected pilot</h3>
+        <div id="distance-coverage-chart" class="chart" role="img" aria-label="Mean distance versus analytical group size scatter plot"></div>
+        <p class="small">Selected distance-pilot groups only. Distances use their explicit displayed sample; x uses the full analytical group size.</p></article>
       <article class="chart-card"><h3>Exact copy counts for displayed network groups</h3>
+        <label>Cell scale<select id="copy-heatmap-scale"><option value="raw">Raw count</option>
+          <option value="log1p">log1p(count)</option><option value="presence">Presence/absence</option></select></label>
         <div id="species-heatmap" class="scroll heatmap"></div>
-        <p class="small">Rows: HOGs · columns: species · cells: exact protein-copy counts.
-          These are full counts for the bounded network groups, not sampled node counts.</p></article>
+        <p class="small">Rows: groups · columns: species · cells: exact protein-copy counts.
+          White-to-red shading follows the selected display scale; hover retains raw counts.</p></article>
+      <article class="chart-card wide"><h3>Projection and sparse-topology diagnostics — displayed pilot</h3>
+        <div class="scroll diagnostics-table"><table><thead><tr><th>Group</th><th>Analytical members</th>
+          <th>Displayed members</th><th>PCoA 1+2 inertia</th><th>Distance correlation</th>
+          <th>Normalised stress</th><th>Fit guidance</th><th>Raw kNN components</th></tr></thead>
+          <tbody id="projection-diagnostics-table"></tbody></table></div>
+        <p class="small">Fit categories are conservative display guidance, not biological acceptance criteria.
+          Select a row to open the corresponding group below.</p></article>
     </div>
   </section>
   <section class="panel">
-    <h2>Within-HOG protein distance network</h2>
-    <p class="small">Each selector entry is one HOG. Node fill colour denotes species;
-      the gold star denotes the medoid of the displayed distance sample. The default
-      PCoA layout approximates all displayed pairwise distances in two dimensions.</p>
+    <h2>Within-group evolutionary and protein-distance views</h2>
+    <p class="small">Each selector entry is one OrthoFinder group at the stated authority and hierarchy level. Node fill colour denotes species;
+      the gold star denotes the medoid of the displayed distance sample. PCoA is a
+      diagnostic projection, the phylogram retains tree branch lengths, the matrix
+      retains exact supplied distances, and force-directed spacing is exploratory.</p>
     <div class="controls">
       <label>Group<select id="group-select"></select></label>
       <label>Find member<input id="member-search" type="search" placeholder="Exact or partial ID"></label>
       <label class="check"><input id="show-labels" type="checkbox">Show all labels</label>
+      <label class="check"><input id="show-distance-edges" type="checkbox">Show edges on PCoA</label>
       <label class="check"><input id="show-connectors" type="checkbox" checked>Show component connectors</label>
-      <button id="fit-distance-network" type="button">Fit distance map</button>
       <button id="fit-topology-network" type="button">Fit topology</button>
     </div>
     <div id="network-notice" class="notice"></div>
@@ -309,18 +364,42 @@ def build_interactive_report(
       <span class="key-item"><span class="line-key"></span>Nearest-neighbour edge</span>
       <span class="key-item"><span class="line-key connector"></span>Layout-only component connector</span>
       <span class="key-item"><span class="medoid-key">★</span>Sample medoid</span>
-      <span>PCoA spacing approximates all pairwise distances; projection quality is reported below.
+      <span>PCoA edges are hidden by default so they cannot obscure projection geometry.
         Force-directed spacing is exploratory only.</span>
     </div>
     <article class="network-section">
-      <h3>1. Quantitative distance map (PCoA)</h3>
-      <p class="small">Fixed node spacing is calculated from every displayed pairwise
-        distance. It is a two-dimensional approximation; its quality metrics are shown explicitly.</p>
+      <h3>1. Diagnostic distance map (PCoA)</h3>
+      <p class="small">Axes use one equal geometric scale and show their per-group retained
+        positive inertia. Screen spacing is an approximation, not the exact distance authority.</p>
       <div id="distance-network-notice" class="notice"></div>
-      <div id="distance-network" class="network-canvas"></div>
+      <div id="distance-network" class="plot-canvas"></div>
+      <details><summary>Projection-quality detail and Shepard plot</summary>
+        <p class="small">Display guidance: poor if axes 1+2 retain &lt;25% of positive inertia,
+          correlation is &lt;0.60 or undefined, or stress is &gt;0.60; moderate if not poor but
+          retained inertia is &lt;40%, correlation is &lt;0.80, or stress is &gt;0.45. Other maps
+          are labelled better, not validated. These are not biological gates.</p>
+        <div id="shepard-notice" class="small"></div>
+        <div id="shepard-chart" class="chart" role="img" aria-label="Input versus projected distance Shepard plot"></div>
+      </details>
     </article>
     <article class="network-section">
-      <h3>2. Force-directed neighbour topology</h3>
+      <h3>2. Branch-length phylogram</h3>
+      <p class="small">This is the resolved gene tree pruned to the displayed proteins.
+        Horizontal branch lengths retain the original patristic-distance authority;
+        vertical ordering represents topology only.</p>
+      <div id="phylogram-notice" class="notice"></div>
+      <div id="phylogram" class="plot-canvas"></div>
+    </article>
+    <article class="network-section">
+      <h3>3. Exact displayed distance matrix</h3>
+      <p class="small">Every cell retains one exact supplied pairwise distance. The order follows
+        the pruned tree when fully resolved and otherwise uses lexical member identifiers.</p>
+      <div id="distance-matrix-notice" class="notice"></div>
+      <div id="distance-matrix" class="matrix-canvas"></div>
+      <div id="distance-matrix-detail" class="small">Move over a cell to inspect its exact value.</div>
+    </article>
+    <article class="network-section">
+      <h3>4. Force-directed neighbour topology</h3>
       <p class="small">This Cytoscape-style view is useful for exploring local relationships
         and topology. Its screen spacing is not a quantitative distance scale.</p>
       <div id="topology-network-notice" class="notice"></div>
@@ -368,13 +447,18 @@ window.addEventListener("error",event=>showRenderError(event.error||event.messag
 let DATA;
 try{{DATA=JSON.parse(document.getElementById("orthofinder-results-data").textContent);}}
 catch(error){{showRenderError(error);throw error;}}
-const number=v=>Number(v||0).toLocaleString();
-const fixed=v=>Number(v||0).toFixed(4);
+const number=v=>v===null||v===undefined||v===""?"not available":Number(v).toLocaleString();
+const fixed=v=>v===null||v===undefined||v===""?"not available":Number(v).toFixed(4);
+const runCounts=DATA.run.counts||{{}};
 const cards=[
   ["Run",DATA.run.run_id],["OrthoFinder",DATA.run.orthofinder_version],
+  ["Report package",DATA.run.package_version||""],
+  ["Resource package",DATA.run.resource_package_version||DATA.run.package_version||""],
   ["Adapter",DATA.run.adapter_name],["Primary groups",DATA.run.primary_group_authority],
+  ["Species",number(runCounts.species_count)],
   ["Analytical groups",number(DATA.limits.totalGroupStatisticCount)],
-  ["Analytical memberships",number(DATA.limits.totalMembershipCount)]
+  ["Analytical memberships",number(DATA.limits.totalMembershipCount)],
+  ["Distance groups",number(runCounts.distance_group_count||DATA.distanceStatistics.length)]
 ];
 document.getElementById("run-cards").innerHTML=cards.map(([label,value])=>
   `<div class="card"><div class="label">${{escapeHtml(label)}}</div><div class="value">${{escapeHtml(value)}}</div></div>`).join("");
@@ -383,8 +467,10 @@ document.getElementById("statistics-notice").textContent=
   `Complete rows remain in the analytical outputs.`;
 const overviewLevel=document.getElementById("overview-level");
 const levelRows=[...DATA.groupStatistics,...DATA.networkGroupStatistics];
-const levelRecords=[...new Map(levelRows.map(row=>{{const key=`${{row.group_type}}|${{row.hierarchy_node}}`;
-  return [key,{{key,type:row.group_type,node:row.hierarchy_node}}];}})).values()].sort((a,b)=>a.key.localeCompare(b.key));
+const aggregateLevels=Object.entries(DATA.overviewStatistics||{{}}).map(([key,row])=>
+  ({{key,type:row.groupType,node:row.hierarchyNode}}));
+const levelRecords=[...new Map([...aggregateLevels,...levelRows.map(row=>{{const key=`${{row.group_type}}|${{row.hierarchy_node}}`;
+  return {{key,type:row.group_type,node:row.hierarchy_node}};}})].map(row=>[row.key,row])).values()].sort((a,b)=>a.key.localeCompare(b.key));
 levelRecords.forEach(level=>{{const option=document.createElement("option");option.value=level.key;
   option.textContent=level.node?`${{level.type}} · ${{level.node}}`:level.type;overviewLevel.appendChild(option);}});
 const preferredLevel=levelRecords.find(level=>level.type===DATA.run.primary_group_authority&&level.node==="N0")||
@@ -393,15 +479,8 @@ if(preferredLevel)overviewLevel.value=preferredLevel.key;
 function selectedOverviewRows(){{return DATA.groupStatistics.filter(row=>
   `${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value);}}
 function plotMessage(target,message){{document.getElementById(target).innerHTML=`<p class="small">${{escapeHtml(message)}}</p>`;}}
-function renderOverviewHistogram(targetId,rawValues,logBins,xTitle,yTitle){{const values=rawValues.map(Number).filter(value=>Number.isFinite(value)&&value>=0);
-  if(!values.length){{plotMessage(targetId,"No values are available for this group level.");return;}}
-  let counts=[],labels=[];
-  if(logBins){{const maximum=Math.max(...values,1),last=Math.floor(Math.log2(maximum));counts=Array(last+1).fill(0);
-    values.forEach(value=>counts[Math.floor(Math.log2(Math.max(1,value)))]++);
-    labels=counts.map((_,index)=>index===0?"1":`${{2**index}}–${{2**(index+1)-1}}`);
-  }}else{{const maximum=Math.max(...values,1),binCount=Math.min(20,Math.max(1,Math.ceil(Math.sqrt(values.length)))),width=Math.max(1,Math.ceil(maximum/binCount));
-    counts=Array(Math.ceil(maximum/width)).fill(0);values.forEach(value=>counts[Math.min(counts.length-1,Math.floor(value/width))]++);
-    labels=counts.map((_,index)=>`${{index*width}}–${{(index+1)*width-1}}`);}}
+function renderAggregateHistogram(targetId,metric,xTitle,yTitle){{const counts=(metric?.counts||[]).map(Number),labels=metric?.labels||[];
+  if(!counts.length){{plotMessage(targetId,"No complete-authority values are available for this group level.");return;}}
   const width=640,height=250,left=68,right=10,top=10,bottom=62,plotWidth=width-left-right,plotHeight=height-top-bottom;
   const peak=Math.max(...counts,1),barWidth=plotWidth/counts.length;
   const bars=counts.map((count,index)=>{{const h=plotHeight*count/peak,x=left+index*barWidth,y=top+plotHeight-h;
@@ -438,68 +517,164 @@ function renderHeatmap(rows){{const target=document.getElementById("species-heat
   if(!selected.length){{target.innerHTML='<p class="small">No network-selected groups are available at this level.</p>';return;}}
   const species=[...new Set(selected.map(row=>row.species_label))].sort(),groups=[...new Set(selected.map(row=>row.group_id))].sort();
   const counts=new Map(selected.map(row=>[`${{row.group_id}}\u0000${{row.species_label}}`,Number(row.species_member_count)]));
-  const peak=Math.max(...counts.values(),1),head=species.map(label=>`<th class="rotate" title="${{escapeHtml(label)}}"><span>${{escapeHtml(label)}}</span></th>`).join("");
+  const scaleMode=document.getElementById("copy-heatmap-scale").value;
+  const scaled=value=>scaleMode==="presence"?(value?1:0):(scaleMode==="log1p"?Math.log1p(value):value);
+  const peak=Math.max(...[...counts.values()].map(scaled),1),head=species.map(label=>`<th class="rotate" title="${{escapeHtml(label)}}"><span>${{escapeHtml(label)}}</span></th>`).join("");
   const body=groups.map(group=>`<tr><th>${{escapeHtml(group)}}</th>`+species.map(label=>{{const value=counts.get(`${{group}}\u0000${{label}}`)||0;
-    const alpha=value?(.16+.74*value/peak):0;return `<td class="copy" style="background:rgba(53,88,200,${{alpha}})" title="${{escapeHtml(group)}} · ${{escapeHtml(label)}} · copies=${{value}}">${{value||""}}</td>`;}}).join("")+"</tr>").join("");
+    const alpha=value?(.12+.82*scaled(value)/peak):0;return `<td class="copy" style="background:rgba(170,22,38,${{alpha}})" title="${{escapeHtml(group)}} · ${{escapeHtml(label)}} · raw copies=${{value}} · scale=${{scaleMode}}">${{value||""}}</td>`;}}).join("")+"</tr>").join("");
   target.innerHTML=`<table><thead><tr><th>Group</th>${{head}}</tr></thead><tbody>${{body}}</tbody></table>`;}}
-function renderOverview(){{const rows=selectedOverviewRows();document.getElementById("overview-notice").textContent=
-  `Visualising ${{number(rows.length)}} embedded summaries for ${{overviewLevel.options[overviewLevel.selectedIndex]?.text||"this level"}}. `+
-  `The analytical tables contain ${{number(DATA.limits.totalGroupStatisticCount)}} summaries across all levels.`;
-  renderOverviewHistogram("cluster-size-chart",rows.map(row=>row.member_count),true,
-    "Members per HOG (log₂ bins)","HOG count");
-  renderOverviewHistogram("species-breadth-chart",rows.map(row=>row.species_count),false,
-    "Species represented per HOG","HOG count");
-  renderOverviewHistogram("copy-complexity-chart",rows.map(row=>row.max_copies_per_species),true,
-    "Maximum copies in one species (log₂ bins)","HOG count");
+function renderProjectionDiagnostics(){{const rows=Object.entries(DATA.networks).filter(([,entry])=>
+  `${{entry.distanceSummary.group_type}}|${{entry.distanceSummary.hierarchy_node}}`===overviewLevel.value).sort((a,b)=>
+  Number(b[1].distanceProjection?.normalised_stress||-1)-Number(a[1].distanceProjection?.normalised_stress||-1));
+  const target=document.getElementById("projection-diagnostics-table");target.innerHTML=rows.map(([key,entry])=>{{const projection=entry.distanceProjection||{{}},metrics=entry.networkMetrics||{{}};
+    return `<tr data-group-key="${{escapeHtml(key)}}"><td>${{escapeHtml(entry.distanceSummary.group_id||entry.label)}}</td>`+
+      `<td>${{number(entry.analyticalMemberCount)}}</td><td>${{number(entry.displayedMemberCount)}}</td>`+
+      `<td>${{projection.two_axis_positive_inertia_fraction==null?"":(100*Number(projection.two_axis_positive_inertia_fraction)).toFixed(1)+"%"}}</td>`+
+      `<td>${{projection.distance_correlation==null?"":fixed(projection.distance_correlation)}}</td>`+
+      `<td>${{projection.normalised_stress==null?"":fixed(projection.normalised_stress)}}</td>`+
+      `<td>${{escapeHtml(projection.quality_category||projection.status||"")}}</td><td>${{number(metrics.rawComponentCount)}}</td></tr>`;}}).join("");
+  if(!rows.length)target.innerHTML='<tr><td colspan="8">No displayed distance-pilot groups are available at this level.</td></tr>';
+  target.querySelectorAll("tr[data-group-key]").forEach(row=>row.addEventListener("click",()=>{{groupSelect.value=row.dataset.groupKey;renderNetwork();
+    document.getElementById("distance-network").scrollIntoView({{behavior:"smooth",block:"center"}});}}));}}
+function renderOverview(){{const rows=selectedOverviewRows(),aggregate=(DATA.overviewStatistics||{{}})[overviewLevel.value];
+  document.getElementById("overview-notice").textContent=aggregate?
+    `Complete-authority histograms describe all ${{number(aggregate.groupCount)}} groups at ${{overviewLevel.options[overviewLevel.selectedIndex]?.text||"this level"}}. `+
+    `The two-dimensional size/breadth panel uses ${{number(rows.length)}} deterministic embedded rows; distance and projection panels use only the selected network pilot.`:
+    `No full-authority preaggregate is available; ${{number(rows.length)}} embedded summaries are available for this level.`;
+  renderAggregateHistogram("cluster-size-chart",aggregate?.memberCount,
+    "Members per group (complete log₂ bins)","Group count");
+  renderAggregateHistogram("species-breadth-chart",aggregate?.speciesCount,
+    "Species represented per group (complete)","Group count");
+  renderAggregateHistogram("copy-complexity-chart",aggregate?.maximumCopiesPerSpecies,
+    "Maximum copies in one species (complete log₂ bins)","Group count");
   renderScatter("size-breadth-chart",rows,"species_count","member_count",true,
     ["group_id","species_count","member_count","max_copies_per_species"],
-    "Species represented per HOG","Members per HOG (log₂ scale)");
+    "Species represented per group","Members per group (log₂ scale)");
   const distanceRows=DATA.distanceStatistics.filter(row=>`${{row.group_type}}|${{row.hierarchy_node}}`===overviewLevel.value&&
     row.computation_status!=="UNAVAILABLE"&&Number(row.distance_pair_count)>0);
-  renderScatter("distance-coverage-chart",distanceRows,"sampled_member_count","mean_distance",false,
-    ["group_id","distance_method","computation_status","member_identifier_resolution","mean_distance"],
-    "Sampled members per HOG","Mean pairwise distance");
-  renderHeatmap(rows);}}
+  renderScatter("distance-coverage-chart",distanceRows,"total_member_count","mean_distance",false,
+    ["group_id","distance_method","computation_status","total_member_count","sampled_member_count","mean_distance"],
+    "Analytical members per group","Mean pairwise distance in displayed sample");
+  renderHeatmap(rows);renderProjectionDiagnostics();}}
 overviewLevel.addEventListener("change",renderOverview);
+document.getElementById("copy-heatmap-scale").addEventListener("change",()=>renderHeatmap(selectedOverviewRows()));
 const groupSelect=document.getElementById("group-select");
 Object.keys(DATA.networks).sort().forEach(key=>{{const option=document.createElement("option");
   option.value=key;option.textContent=DATA.networks[key].label;groupSelect.appendChild(option);}});
 const showLabels=document.getElementById("show-labels");
+const showDistanceEdges=document.getElementById("show-distance-edges");
 const showConnectors=document.getElementById("show-connectors");
 const speciesFilter=document.getElementById("species-filter");
-let distanceNetwork=null;let distanceNodes=null;let distanceEdges=null;
 let topologyNetwork=null;let topologyNodes=null;let topologyEdges=null;
+let selectedMemberId="",selectedSpecies="",memberSearchTerm="";
 function hasDistanceProjection(entry){{return entry.distanceProjection?.status==="COMPLETE_DISTANCE_PCOA_2D";}}
-function visibleNodeRecords(entry,projected){{
+function visibleNodeRecords(entry){{
   return entry.nodes.map(node=>{{const record={{...node,label:node.isGroup?node.label:(showLabels.checked?node.memberLabel:"")}};
-    if(projected&&!node.isGroup){{record.x=node.projectionX;record.y=node.projectionY;record.fixed={{x:true,y:true}};}}
-    else record.fixed=false;return record;}});}}
+    record.fixed=false;return record;}});}}
 function visibleEdgeRecords(entry){{return entry.edges.filter(edge=>
   showConnectors.checked||edge.edgeType!=="COMPONENT_CONNECTOR").map(edge=>({{...edge}}));}}
 function bindNodeInspection(currentNetwork,currentNodes,entry){{currentNetwork.on("click",params=>{{
-  if(!params.nodes.length)return;const node=currentNodes.get(params.nodes[0]);
+  if(!params.nodes.length)return;const node=currentNodes.get(params.nodes[0]);if(!node.isGroup)selectMember(node.memberLabel,entry,true);
+}});}}
+function nodeByMember(entry,memberId){{return entry.nodes.find(node=>node.memberLabel===memberId);}}
+function inspectMember(memberId,entry){{const node=nodeByMember(entry,memberId);if(!node)return;
   const representative=node.isMedoid?`<dt>Representative</dt><dd>Sample medoid; mean distance `+
     `${{fixed(entry.medoid.mean_distance)}} to ${{number(entry.medoid.comparison_count)}} displayed proteins</dd>`:"";
-  document.getElementById("node-detail").innerHTML=`<dl><dt>ID</dt><dd>${{escapeHtml(node.memberLabel||node.label)}}</dd>`+
+  document.getElementById("node-detail").innerHTML=`<dl><dt>ID</dt><dd>${{escapeHtml(memberId)}}</dd>`+
     `<dt>Species</dt><dd>${{escapeHtml(node.species||"")}}</dd><dt>Group</dt><dd>${{escapeHtml(entry.label)}}</dd>`+
     representative+`</dl>`;
-}});}}
+}}
+function selectMember(memberId,entry,focusTopology=false){{selectedMemberId=memberId;selectedSpecies="";inspectMember(memberId,entry);
+  if(topologyNetwork&&topologyNodes){{const matches=topologyNodes.get().filter(node=>node.memberLabel===memberId).map(node=>node.id);
+    topologyNetwork.selectNodes(matches);if(focusTopology&&matches.length)topologyNetwork.focus(matches[0],{{scale:1.5,animation:true}});}}
+  renderPcoa(entry);renderPhylogram(entry);renderDistanceMatrix(entry);renderMembers(entry);}}
+function renderPcoa(entry){{const target=document.getElementById("distance-network"),projection=entry.distanceProjection||{{}};
+  if(!hasDistanceProjection(entry)){{target.innerHTML=`<p class="small">A diagnostic distance map is unavailable: ${{escapeHtml(projection.reason||"complete distances were not available")}}</p>`;return;}}
+  const nodes=entry.nodes.filter(node=>!node.isGroup),nodeMap=new Map(nodes.map(node=>[node.id,node]));
+  const xs=nodes.map(node=>Number(node.projectionX)),ys=nodes.map(node=>Number(node.projectionY));
+  const xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys),span=Math.max(xMax-xMin,yMax-yMin,1e-12);
+  const width=900,height=620,left=82,right=30,top=28,bottom=78,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const scale=Math.min(plotWidth/span,plotHeight/span),drawWidth=span*scale,drawHeight=span*scale;
+  const domainX=(xMin+xMax)/2-span/2,domainY=(yMin+yMax)/2-span/2,offsetX=left+(plotWidth-drawWidth)/2,offsetY=top+(plotHeight-drawHeight)/2;
+  const px=value=>offsetX+(Number(value)-domainX)*scale,py=value=>offsetY+drawHeight-(Number(value)-domainY)*scale;
+  const ticks=[0,.25,.5,.75,1],grid=ticks.map(fraction=>{{const x=offsetX+drawWidth*fraction,y=offsetY+drawHeight*(1-fraction);
+    const xValue=domainX+span*fraction,yValue=domainY+span*fraction;
+    return `<line class="grid" x1="${{x}}" y1="${{offsetY}}" x2="${{x}}" y2="${{offsetY+drawHeight}}"/>`+
+      `<line class="grid" x1="${{offsetX}}" y1="${{y}}" x2="${{offsetX+drawWidth}}" y2="${{y}}"/>`+
+      `<text x="${{x}}" y="${{offsetY+drawHeight+21}}" text-anchor="middle">${{xValue.toPrecision(3)}}</text>`+
+      `<text x="${{offsetX-8}}" y="${{y+4}}" text-anchor="end">${{yValue.toPrecision(3)}}</text>`;}}).join("");
+  const zeroLines=(domainX<=0&&domainX+span>=0?`<line class="axis" x1="${{px(0)}}" y1="${{offsetY}}" x2="${{px(0)}}" y2="${{offsetY+drawHeight}}"/>`:"")+
+    (domainY<=0&&domainY+span>=0?`<line class="axis" x1="${{offsetX}}" y1="${{py(0)}}" x2="${{offsetX+drawWidth}}" y2="${{py(0)}}"/>`:"");
+  const edges=showDistanceEdges.checked?visibleEdgeRecords(entry).filter(edge=>nodeMap.has(edge.from)&&nodeMap.has(edge.to)).map(edge=>{{const leftNode=nodeMap.get(edge.from),rightNode=nodeMap.get(edge.to);
+    return `<line class="pcoa-edge${{edge.edgeType==="COMPONENT_CONNECTOR"?" connector":""}}" x1="${{px(leftNode.projectionX)}}" y1="${{py(leftNode.projectionY)}}" x2="${{px(rightNode.projectionX)}}" y2="${{py(rightNode.projectionY)}}"><title>${{escapeHtml(edge.title||edge.edgeType)}}</title></line>`;}}).join(""):"";
+  const points=nodes.map(node=>{{const selected=selectedMemberId===node.memberLabel||(selectedSpecies&&selectedSpecies===node.species)||(memberSearchTerm&&node.memberLabel.toLowerCase().includes(memberSearchTerm));
+    const label=showLabels.checked?`<text x="${{px(node.projectionX)+9}}" y="${{py(node.projectionY)+4}}">${{escapeHtml(node.memberLabel)}}</text>`:"";
+    const star=node.isMedoid?`<text x="${{px(node.projectionX)}}" y="${{py(node.projectionY)-10}}" text-anchor="middle" fill="#9a6b00">★</text>`:"";
+    return `<g data-member="${{escapeHtml(node.memberLabel)}}"><circle class="protein-point${{node.isMedoid?" medoid":""}}${{selected?" selected":""}}" cx="${{px(node.projectionX)}}" cy="${{py(node.projectionY)}}" r="${{node.isMedoid?8:6}}" fill="${{node.speciesColour}}"><title>${{escapeHtml(node.memberLabel)}} · ${{escapeHtml(node.species)}} · PCoA (${{Number(node.projectionX).toPrecision(5)}}, ${{Number(node.projectionY).toPrecision(5)}})</title></circle>${{star}}${{label}}</g>`;}}).join("");
+  const axis1=(100*Number(projection.axis_1_positive_inertia_fraction||0)).toFixed(1),axis2=(100*Number(projection.axis_2_positive_inertia_fraction||0)).toFixed(1);
+  target.innerHTML=`<svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="PCoA distance map with equal axis scaling">${{grid}}${{zeroLines}}${{edges}}${{points}}`+
+    `<line class="axis" x1="${{offsetX}}" y1="${{offsetY+drawHeight}}" x2="${{offsetX+drawWidth}}" y2="${{offsetY+drawHeight}}"/>`+
+    `<line class="axis" x1="${{offsetX}}" y1="${{offsetY}}" x2="${{offsetX}}" y2="${{offsetY+drawHeight}}"/>`+
+    `<text x="${{offsetX+drawWidth/2}}" y="${{height-18}}" text-anchor="middle">PCoA 1 (${{axis1}}% of positive inertia)</text>`+
+    `<text transform="translate(20 ${{offsetY+drawHeight/2}}) rotate(-90)" text-anchor="middle">PCoA 2 (${{axis2}}% of positive inertia)</text></svg>`;
+  target.querySelectorAll("[data-member]").forEach(element=>element.addEventListener("click",()=>selectMember(element.dataset.member,entry)));}}
+function renderShepard(entry){{const projection=entry.distanceProjection||{{}},points=projection.shepard_points||[],target=document.getElementById("shepard-chart");
+  if(!points.length){{plotMessage("shepard-chart","No Shepard-plot points are available.");document.getElementById("shepard-notice").textContent="";return;}}
+  const width=640,height=250,left=72,right=18,top=14,bottom=58,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const maximum=Math.max(...points.flat().map(Number),1e-12),px=value=>left+plotWidth*Number(value)/maximum,py=value=>top+plotHeight*(1-Number(value)/maximum);
+  const marks=points.map(point=>`<circle class="plot-point" cx="${{px(point[0])}}" cy="${{py(point[1])}}" r="2"><title>Input=${{Number(point[0]).toPrecision(6)}} · projected=${{Number(point[1]).toPrecision(6)}}</title></circle>`).join("");
+  target.innerHTML=`<svg viewBox="0 0 ${{width}} ${{height}}"><line class="grid" x1="${{left}}" y1="${{py(0)}}" x2="${{px(maximum)}}" y2="${{py(maximum)}}"/>${{marks}}`+
+    `<line class="axis" x1="${{left}}" y1="${{top+plotHeight}}" x2="${{width-right}}" y2="${{top+plotHeight}}"/>`+
+    `<line class="axis" x1="${{left}}" y1="${{top}}" x2="${{left}}" y2="${{top+plotHeight}}"/>`+
+    `<text x="${{left+plotWidth/2}}" y="${{height-8}}" text-anchor="middle">Input pairwise distance</text>`+
+    `<text transform="translate(14 ${{top+plotHeight/2}}) rotate(-90)" text-anchor="middle">Projected 2D distance</text></svg>`;
+  document.getElementById("shepard-notice").textContent=`Deterministic ${{number(points.length)}}-point summary of ${{number(projection.shepard_total_pair_count)}} pairs, stratified across the input-distance range. The diagonal denotes perfect preservation.`;}}
+function renderPhylogram(entry){{const target=document.getElementById("phylogram"),notice=document.getElementById("phylogram-notice"),tree=entry.phylogram||{{}};
+  if(!String(tree.status||"").includes("PRUNED_PHYLOGRAM")){{target.innerHTML=`<p class="small">Phylogram unavailable: ${{escapeHtml(tree.reason||"no resolved tree was supplied")}}</p>`;notice.textContent=tree.reason||"No resolved tree was supplied.";return;}}
+  const nodes=tree.nodes||[],nodeMap=new Map(nodes.map(node=>[node.id,node])),width=1040,rowHeight=14,left=48,right=260,top=48,bottom=42;
+  const height=Math.max(420,top+bottom+Math.max(1,Number(tree.displayedLeafCount)-1)*rowHeight),plotWidth=width-left-right,maximum=Math.max(Number(tree.maximumRootDistance),1e-12);
+  const px=value=>left+plotWidth*Number(value)/maximum,py=node=>top+Number(node.y)*rowHeight;
+  const children=new Map();(tree.edges||[]).forEach(edge=>{{if(!children.has(edge.parentId))children.set(edge.parentId,[]);children.get(edge.parentId).push(edge.childId);}});
+  const vertical=[...children.entries()].map(([parentId,childIds])=>{{const parent=nodeMap.get(parentId),ys=childIds.map(id=>py(nodeMap.get(id)));
+    return `<line class="tree-edge" x1="${{px(parent.x)}}" y1="${{Math.min(...ys)}}" x2="${{px(parent.x)}}" y2="${{Math.max(...ys)}}"/>`;}}).join("");
+  const horizontal=(tree.edges||[]).map(edge=>{{const parent=nodeMap.get(edge.parentId),child=nodeMap.get(edge.childId);
+    return `<line class="tree-edge" x1="${{px(parent.x)}}" y1="${{py(child)}}" x2="${{px(child.x)}}" y2="${{py(child)}}"><title>Branch length=${{Number(edge.branchLength).toPrecision(6)}}</title></line>`;}}).join("");
+  const leaves=nodes.filter(node=>node.isLeaf).map(node=>{{const selected=selectedMemberId===node.memberId||(selectedSpecies&&selectedSpecies===node.species)||(memberSearchTerm&&node.memberId.toLowerCase().includes(memberSearchTerm));
+    const label=showLabels.checked||selected||node.isMedoid?`<text x="${{px(node.x)+7}}" y="${{py(node)+4}}">${{escapeHtml(node.memberId)}}</text>`:"";
+    const star=node.isMedoid?`<text x="${{px(node.x)}}" y="${{py(node)-7}}" text-anchor="middle" fill="#9a6b00">★</text>`:"";
+    return `<g data-member="${{escapeHtml(node.memberId)}}"><circle class="tree-leaf${{node.isMedoid?" medoid":""}}${{selected?" selected":""}}" cx="${{px(node.x)}}" cy="${{py(node)}}" r="${{node.isMedoid?5:3.5}}" fill="${{node.colour}}"><title>${{escapeHtml(node.memberId)}} · ${{escapeHtml(node.species)}} · root distance=${{Number(node.x).toPrecision(6)}}</title></circle>${{star}}${{label}}</g>`;}}).join("");
+  const ticks=[0,.25,.5,.75,1].map(fraction=>`<line class="axis" x1="${{left+plotWidth*fraction}}" y1="20" x2="${{left+plotWidth*fraction}}" y2="27"/><text x="${{left+plotWidth*fraction}}" y="15" text-anchor="middle">${{(maximum*fraction).toPrecision(3)}}</text>`).join("");
+  target.innerHTML=`<svg viewBox="0 0 ${{width}} ${{height}}" style="height:${{height}}px" role="img" aria-label="Branch-length-scaled resolved gene-tree phylogram">`+
+    `<line class="axis" x1="${{left}}" y1="23" x2="${{left+plotWidth}}" y2="23"/>${{ticks}}<text x="${{left+plotWidth/2}}" y="41" text-anchor="middle">Cumulative branch length from displayed root</text>`+
+    `${{vertical}}${{horizontal}}${{leaves}}</svg>`;
+  notice.textContent=`${{tree.status}} · resolved tree ${{tree.treeId}} · ${{number(tree.displayedLeafCount)}} of ${{number(tree.requestedMemberCount)}} displayed proteins · maximum displayed root distance=${{Number(tree.maximumRootDistance).toPrecision(6)}}. Horizontal lengths are quantitative; vertical spacing is not.`;
+  target.querySelectorAll("[data-member]").forEach(element=>element.addEventListener("click",()=>selectMember(element.dataset.member,entry)));}}
+function triangularDistance(matrix,left,right){{if(left===right)return 0;let i=Math.min(left,right),j=Math.max(left,right),n=matrix.memberOrder.length;
+  return matrix.upperTriangle[i*n-i*(i+1)/2+(j-i-1)];}}
+function matrixColour(value,maximum){{const fraction=maximum>0?Math.max(0,Math.min(1,Number(value)/maximum)):0;
+  return `rgb(${{Math.round(255-116*fraction)}},${{Math.round(255-247*fraction)}},${{Math.round(255-247*fraction)}})`;}}
+function renderDistanceMatrix(entry){{const target=document.getElementById("distance-matrix"),notice=document.getElementById("distance-matrix-notice"),detail=document.getElementById("distance-matrix-detail"),matrix=entry.distanceMatrix||{{}};
+  if(matrix.status!=="EXACT_COMPLETE_DISPLAYED_MATRIX"){{target.innerHTML=`<p class="small">Exact matrix unavailable: ${{escapeHtml(matrix.reason||"complete distances were not supplied")}}</p>`;notice.textContent=matrix.reason||"Complete distances were not supplied.";return;}}
+  target.innerHTML="";const canvas=document.createElement("canvas"),size=780,margin=104,matrixSize=size-margin-18,n=matrix.memberOrder.length,cell=matrixSize/n;
+  canvas.width=size;canvas.height=size;canvas.setAttribute("role","img");canvas.setAttribute("aria-label","Exact pairwise distance matrix");target.appendChild(canvas);
+  const context=canvas.getContext("2d"),maximum=Number(matrix.maximum)||0;context.fillStyle="#fff";context.fillRect(0,0,size,size);
+  for(let row=0;row<n;row++)for(let column=0;column<n;column++){{context.fillStyle=matrixColour(triangularDistance(matrix,row,column),maximum);context.fillRect(margin+column*cell,margin+row*cell,Math.ceil(cell+.2),Math.ceil(cell+.2));}}
+  const step=Math.max(1,Math.ceil(n/12));context.fillStyle="#586174";context.font="10px Arial";
+  matrix.memberOrder.forEach((member,index)=>{{if(index%step)return;const position=margin+(index+.5)*cell;context.save();context.translate(position,margin-6);context.rotate(-Math.PI/3);context.fillText(member.slice(0,22),0,0);context.restore();context.textAlign="right";context.fillText(member.slice(0,22),margin-6,position+3);context.textAlign="left";}});
+  const selectedIndex=matrix.memberOrder.indexOf(selectedMemberId);if(selectedIndex>=0){{context.strokeStyle="#111827";context.lineWidth=2;context.strokeRect(margin,margin+selectedIndex*cell,matrixSize,cell);context.strokeRect(margin+selectedIndex*cell,margin,cell,matrixSize);}}
+  notice.textContent=`${{matrix.status}} · n=${{number(n)}} displayed proteins · ${{number(matrix.pairCount)}} exact pairs · order=${{matrix.orderMethod}} · range=${{Number(matrix.minimum).toPrecision(6)}}–${{Number(matrix.maximum).toPrecision(6)}}.`;
+  function matrixCell(event){{const bounds=canvas.getBoundingClientRect(),x=(event.clientX-bounds.left)*canvas.width/bounds.width,y=(event.clientY-bounds.top)*canvas.height/bounds.height;
+    const column=Math.floor((x-margin)/cell),row=Math.floor((y-margin)/cell);return row>=0&&column>=0&&row<n&&column<n?[row,column]:null;}}
+  canvas.addEventListener("mousemove",event=>{{const indices=matrixCell(event);if(!indices){{detail.textContent="Move over a cell to inspect its exact value.";return;}}
+    const [row,column]=indices,value=triangularDistance(matrix,row,column);detail.textContent=`${{matrix.memberOrder[row]}} × ${{matrix.memberOrder[column]}} · exact supplied distance=${{String(value)}}`;}});
+  canvas.addEventListener("click",event=>{{const indices=matrixCell(event);if(indices)selectMember(matrix.memberOrder[indices[0]],entry);}});}}
 function renderNetwork(){{
   const entry=DATA.networks[groupSelect.value];
   if(!entry){{document.getElementById("network-notice").textContent="No network groups were embedded.";return;}}
-  if(distanceNetwork)distanceNetwork.destroy();if(topologyNetwork)topologyNetwork.destroy();
-  const distanceTarget=document.getElementById("distance-network");distanceTarget.textContent="";
+  selectedMemberId="";selectedSpecies="";memberSearchTerm="";document.getElementById("member-search").value="";
+  if(topologyNetwork)topologyNetwork.destroy();
   const edgeRecords=visibleEdgeRecords(entry);
-  if(hasDistanceProjection(entry)){{
-    distanceNodes=new vis.DataSet(visibleNodeRecords(entry,true));distanceEdges=new vis.DataSet(edgeRecords.map(edge=>({{...edge}})));
-    distanceNetwork=new vis.Network(distanceTarget,{{nodes:distanceNodes,edges:distanceEdges}},{{
-      autoResize:true,interaction:{{hover:true,navigationButtons:true,multiselect:true,dragNodes:false}},physics:false,
-      edges:{{smooth:false,color:{{inherit:false}},font:{{size:9,align:"middle"}}}},
-      nodes:{{shape:"dot",size:14,font:{{size:11}},borderWidthSelected:4}}
-    }});bindNodeInspection(distanceNetwork,distanceNodes,entry);
-  }}else{{distanceNetwork=null;distanceNodes=null;distanceEdges=null;
-    distanceTarget.textContent="A quantitative distance map is unavailable for this HOG.";}}
-  topologyNodes=new vis.DataSet(visibleNodeRecords(entry,false));topologyEdges=new vis.DataSet(edgeRecords.map(edge=>({{...edge}})));
+  topologyNodes=new vis.DataSet(visibleNodeRecords(entry));topologyEdges=new vis.DataSet(edgeRecords.map(edge=>({{...edge}})));
   topologyNetwork=new vis.Network(document.getElementById("topology-network"),{{nodes:topologyNodes,edges:topologyEdges}},{{
     autoResize:true,interaction:{{hover:true,navigationButtons:true,multiselect:true,dragNodes:true}},
     physics:{{solver:"forceAtlas2Based",stabilization:{{iterations:250}}}},
@@ -512,20 +687,24 @@ function renderNetwork(){{
   else if(entry.medoid&&entry.medoid.reason)notice+=` Sample medoid unavailable: ${{entry.medoid.reason}}`;
   document.getElementById("network-notice").textContent=notice;
   const projection=entry.distanceProjection||{{}};
-  document.getElementById("distance-network-notice").textContent=hasDistanceProjection(entry)?
+  document.getElementById("distance-network-notice").innerHTML=hasDistanceProjection(entry)?
+    `<span class="quality-badge ${{String(projection.quality_category||"").toLowerCase()}}">${{escapeHtml(projection.quality_category||"UNCLASSIFIED")}} 2D fit</span>`+
     `Uses all ${{number(projection.pair_count)}} pairwise distances. PCoA axis 1=${{(100*Number(projection.axis_1_positive_inertia_fraction||0)).toFixed(1)}}% `+
     `and axis 2=${{(100*Number(projection.axis_2_positive_inertia_fraction||0)).toFixed(1)}}% of positive inertia; `+
     `distance correlation=${{projection.distance_correlation==null?"not defined":fixed(projection.distance_correlation)}}; `+
-    `normalised stress=${{fixed(projection.normalised_stress)}}; negative inertia=${{(100*Number(projection.negative_inertia_fraction||0)).toFixed(1)}}%.`:
-    `Unavailable: ${{projection.reason||"complete distances were not available"}}`;
+    `normalised stress=${{fixed(projection.normalised_stress)}}; negative inertia=${{(100*Number(projection.negative_inertia_fraction||0)).toFixed(1)}}%. `+
+    `${{escapeHtml(projection.quality_explanation||"")}}`:
+    `Unavailable: ${{escapeHtml(projection.reason||"complete distances were not available")}}`;
   document.getElementById("topology-network-notice").textContent=
     `Solid edges retain up to ${{number(DATA.limits.nearestNeighbours)}} nearest neighbours per protein. `+
     `Dashed component connectors can be hidden. Screen spacing is not quantitative.`;
-  speciesFilter.value="";renderMembers(entry);renderDistanceHistogram(entry);renderSpeciesLegend(entry);
+  speciesFilter.value="";renderPcoa(entry);renderShepard(entry);renderPhylogram(entry);renderDistanceMatrix(entry);
+  renderMembers(entry);renderDistanceHistogram(entry);renderSpeciesLegend(entry);renderProjectionDiagnostics();
 }}
-function renderMembers(entry){{document.getElementById("member-table").innerHTML=entry.members.map(row=>
-  `<tr><td>${{row.member_id===entry.medoid?.member_id?"★ ":""}}${{escapeHtml(row.member_id)}}</td>`+
-  `<td>${{escapeHtml(row.species_label)}}</td><td>${{escapeHtml(entry.label)}}</td></tr>`).join("");}}
+function renderMembers(entry){{const target=document.getElementById("member-table");target.innerHTML=entry.members.map(row=>
+  `<tr class="${{row.member_id===selectedMemberId?"selected-row":""}}" data-member="${{escapeHtml(row.member_id)}}"><td>${{row.member_id===entry.medoid?.member_id?"★ ":""}}${{escapeHtml(row.member_id)}}</td>`+
+  `<td>${{escapeHtml(row.species_label)}}</td><td>${{escapeHtml(entry.label)}}</td></tr>`).join("");
+  target.querySelectorAll("tr[data-member]").forEach(row=>row.addEventListener("click",()=>selectMember(row.dataset.member,entry)));}}
 function renderSpeciesLegend(entry){{const term=speciesFilter.value.toLowerCase(),target=document.getElementById("species-legend");
   const records=(entry.speciesLegend||[]).filter(record=>record.species.toLowerCase().includes(term));
   target.innerHTML=records.map(record=>`<button type="button" class="legend-item" data-species="${{escapeHtml(record.species)}}" `+
@@ -533,11 +712,10 @@ function renderSpeciesLegend(entry){{const term=speciesFilter.value.toLowerCase(
     `style="background:${{record.colour}}"></span><span class="legend-label">${{escapeHtml(record.species)}} `+
     `(${{number(record.displayedMemberCount)}})</span></button>`).join("");
   target.querySelectorAll(".legend-item").forEach(item=>item.addEventListener("click",()=>{{
-    [[distanceNetwork,distanceNodes],[topologyNetwork,topologyNodes]].forEach(([currentNetwork,currentNodes])=>{{
-      if(!currentNetwork||!currentNodes)return;const matches=currentNodes.get().filter(node=>
-        node.species===item.dataset.species).map(node=>node.id);
-      if(matches.length){{currentNetwork.selectNodes(matches);currentNetwork.fit({{nodes:matches,animation:true}});}}
-    }});
+    selectedSpecies=item.dataset.species;selectedMemberId="";const matches=topologyNodes.get().filter(node=>
+      node.species===selectedSpecies).map(node=>node.id);
+    if(matches.length){{topologyNetwork.selectNodes(matches);topologyNetwork.fit({{nodes:matches,animation:true}});}}
+    renderPcoa(entry);renderPhylogram(entry);renderMembers(entry);
   }}));}}
 function renderDistanceHistogram(entry){{const histogram=entry.distanceHistogram||{{}},counts=(histogram.counts||[]).map(Number);
   const target=document.getElementById("histogram"),summary=document.getElementById("distance-summary");
@@ -548,22 +726,19 @@ function renderDistanceHistogram(entry){{const histogram=entry.distanceHistogram
   const s=entry.distanceSummary||{{}};summary.textContent=`${{s.distance_method||"Distance"}} · n=${{number(histogram.pairCount)}} pairs · `+
     `mean=${{fixed(s.mean_distance)}} · median=${{fixed(s.median_distance)}} · range=${{fixed(min)}}–${{fixed(max)}} · ${{s.computation_status||""}}`;}}
 groupSelect.addEventListener("change",renderNetwork);
-document.getElementById("fit-distance-network").addEventListener("click",()=>distanceNetwork&&distanceNetwork.fit());
 document.getElementById("fit-topology-network").addEventListener("click",()=>topologyNetwork&&topologyNetwork.fit());
 showLabels.addEventListener("change",()=>{{const entry=DATA.networks[groupSelect.value];
-  if(distanceNodes)distanceNodes.update(visibleNodeRecords(entry,true).map(node=>({{id:node.id,label:node.label}})));
-  if(topologyNodes)topologyNodes.update(visibleNodeRecords(entry,false).map(node=>({{id:node.id,label:node.label}})));}});
+  if(topologyNodes)topologyNodes.update(visibleNodeRecords(entry).map(node=>({{id:node.id,label:node.label}})));
+  renderPcoa(entry);renderPhylogram(entry);}});
+showDistanceEdges.addEventListener("change",()=>{{const entry=DATA.networks[groupSelect.value];if(entry)renderPcoa(entry);}});
 showConnectors.addEventListener("change",()=>{{const entry=DATA.networks[groupSelect.value];
-  [distanceEdges,topologyEdges].forEach(currentEdges=>{{if(!currentEdges)return;
-    currentEdges.clear();currentEdges.add(visibleEdgeRecords(entry));}});}});
+  if(topologyEdges){{topologyEdges.clear();topologyEdges.add(visibleEdgeRecords(entry));}}if(entry&&showDistanceEdges.checked)renderPcoa(entry);}});
 speciesFilter.addEventListener("input",()=>{{const entry=DATA.networks[groupSelect.value];if(entry)renderSpeciesLegend(entry);}});
-document.getElementById("member-search").addEventListener("input",event=>{{const term=event.target.value.toLowerCase();
-  [[distanceNetwork,distanceNodes],[topologyNetwork,topologyNodes]].forEach(([currentNetwork,currentNodes])=>{{
-    if(!currentNetwork||!currentNodes)return;if(!term){{currentNetwork.unselectAll();return;}}
-    const matches=currentNodes.get().filter(node=>String(node.memberLabel||node.label).toLowerCase().includes(term)&&
-      !node.isGroup).map(node=>node.id);
-    if(matches.length){{currentNetwork.selectNodes(matches);currentNetwork.focus(matches[0],{{scale:1.5}});}}
-  }});}});
+document.getElementById("member-search").addEventListener("input",event=>{{memberSearchTerm=event.target.value.toLowerCase();
+  const entry=DATA.networks[groupSelect.value];if(!entry)return;if(!memberSearchTerm)topologyNetwork.unselectAll();
+  else{{const matches=topologyNodes.get().filter(node=>String(node.memberLabel||node.label).toLowerCase().includes(memberSearchTerm)&&!node.isGroup).map(node=>node.id);
+    if(matches.length){{topologyNetwork.selectNodes(matches);topologyNetwork.focus(matches[0],{{scale:1.5}});}}}}
+  renderPcoa(entry);renderPhylogram(entry);}});
 let filtered=DATA.groupStatistics.slice(),page=0;const pageSize=50;
 function renderStats(){{const start=page*pageSize,rows=filtered.slice(start,start+pageSize);
   document.getElementById("statistics-table").innerHTML=rows.map(row=>`<tr><td>${{escapeHtml(row.group_type)}}</td>`+
@@ -594,6 +769,9 @@ def _build_network_payload(
     max_groups: int,
     max_members: int,
     nearest_neighbours: int,
+    tree_nodes: Sequence[Mapping[str, Any]],
+    tree_edges: Sequence[Mapping[str, Any]],
+    sequence_identifiers: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Build bounded network records for browser rendering.
 
@@ -605,6 +783,9 @@ def _build_network_payload(
         max_groups: Maximum rendered groups.
         max_members: Maximum rendered members per group.
         nearest_neighbours: Edges retained per node.
+        tree_nodes: Normalised resolved-gene-tree nodes for selected groups.
+        tree_edges: Normalised resolved-gene-tree edges for selected groups.
+        sequence_identifiers: Canonical-to-internal identifier mappings.
 
     Returns:
         JSON-safe network payload keyed by a collision-safe group key.
@@ -628,6 +809,19 @@ def _build_network_payload(
     species_palette = _species_palette(
         species_labels=(str(row.get("species_label", "")) for row in memberships)
     )
+    nodes_by_tree_id: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in tree_nodes:
+        if str(row.get("tree_type", "")) == "RESOLVED_GENE_TREE":
+            nodes_by_tree_id[str(row.get("tree_id", ""))].append(row)
+    edges_by_tree_id: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in tree_edges:
+        if str(row.get("tree_type", "")) == "RESOLVED_GENE_TREE":
+            edges_by_tree_id[str(row.get("tree_id", ""))].append(row)
+    aliases_by_member_species: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for row in sequence_identifiers:
+        aliases_by_member_species[
+            (str(row.get("member_id", "")), str(row.get("species_label", "")))
+        ].add(str(row.get("internal_id", "")))
     payload: dict[str, Any] = {}
     for network_index, statistic in enumerate(ordered_statistics, start=1):
         key = _group_key(statistic)
@@ -729,11 +923,26 @@ def _build_network_payload(
                 "nearestNeighbourEdgeCount": 0,
                 "connectorCount": 0,
             }
+        phylogram = _phylogram_payload(
+            statistic=statistic,
+            rendered_members=rendered_members,
+            medoid=medoid,
+            nodes_by_tree_id=nodes_by_tree_id,
+            edges_by_tree_id=edges_by_tree_id,
+            aliases_by_member_species=aliases_by_member_species,
+            species_palette=species_palette,
+        )
+        matrix_member_order = phylogram.get("memberOrder", ())
+        distance_matrix = _distance_matrix_payload(
+            distance_rows=group_distances,
+            member_ids=rendered_ids,
+            preferred_order=matrix_member_order,
+        )
         supplied_count = len(available_members)
         analytical_count = int(statistic.get("member_count", 0))
         notice = (
-            f"This is one within-HOG network. Displayed {len(rendered_members):,} "
-            f"of {supplied_count:,} supplied members; analytical HOG size is "
+            f"This is one within-group network. Displayed {len(rendered_members):,} "
+            f"of {supplied_count:,} supplied members; analytical group size is "
             f"{analytical_count:,}."
         )
         if group_distances:
@@ -758,6 +967,8 @@ def _build_network_payload(
             ],
             "medoid": medoid,
             "distanceProjection": projection,
+            "phylogram": phylogram,
+            "distanceMatrix": distance_matrix,
             "networkMetrics": network_metrics,
             "analyticalMemberCount": analytical_count,
             "suppliedMemberCount": supplied_count,
@@ -777,7 +988,7 @@ def _build_network_payload(
         _LOGGER.info(
             "HTML network prepared: %s/%s, group=%s, displayed_members=%s, "
             "species=%s, raw_components=%s, connectors=%s, projection=%s, "
-            "stress=%s.",
+            "stress=%s, phylogram=%s, distance_matrix=%s.",
             network_index,
             len(ordered_statistics),
             key,
@@ -787,6 +998,8 @@ def _build_network_payload(
             network_metrics["connectorCount"],
             projection.get("status", "UNAVAILABLE"),
             projection.get("normalised_stress", ""),
+            phylogram.get("status", "UNAVAILABLE"),
+            distance_matrix.get("status", "UNAVAILABLE"),
         )
     return payload
 
@@ -893,7 +1106,7 @@ def _connected_network_edges(
 
     The nearest-neighbour union is the scientific view. If it is disconnected,
     Kruskal-style minimum-distance edges join its components solely so the
-    browser lays out the whole HOG together. Connector records are explicitly
+    browser lays out the whole group together. Connector records are explicitly
     typed and can therefore be hidden without changing the raw graph.
 
     Args:
@@ -1163,15 +1376,30 @@ def _distance_projection(
         else 0.0
     )
 
-    display_span = max(float(np.ptp(coordinates[:, 0])), float(np.ptp(coordinates[:, 1])))
-    display_scale = 900.0 / display_span if display_span > 0 else 1.0
     positions = {
         member_id: (
-            float(coordinates[index, 0] * display_scale),
-            float(-coordinates[index, 1] * display_scale),
+            float(coordinates[index, 0]),
+            float(coordinates[index, 1]),
         )
         for index, member_id in enumerate(ordered_ids)
     }
+    shepard_limit = 2_000
+    pair_order = np.argsort(actual, kind="stable")
+    if actual.size > shepard_limit:
+        selected_pair_indices = pair_order[
+            np.linspace(0, actual.size - 1, shepard_limit, dtype=int)
+        ]
+    else:
+        selected_pair_indices = pair_order
+    shepard_points = [
+        [float(actual[index]), float(projected[index])]
+        for index in selected_pair_indices
+    ]
+    quality = _projection_quality(
+        retained_inertia=sum(axis_fractions),
+        distance_correlation=distance_correlation,
+        normalised_stress=normalised_stress,
+    )
     metadata = {
         "status": "COMPLETE_DISTANCE_PCOA_2D",
         "method": "CLASSICAL_MDS_PCOA",
@@ -1183,8 +1411,377 @@ def _distance_projection(
         "distance_correlation": distance_correlation,
         "normalised_stress": normalised_stress,
         "negative_inertia_fraction": negative_fraction,
+        "quality_category": quality[0],
+        "quality_explanation": quality[1],
+        "shepard_points": shepard_points,
+        "shepard_point_count": len(shepard_points),
+        "shepard_total_pair_count": expected_pairs,
     }
     return positions, metadata
+
+
+def _projection_quality(
+    *,
+    retained_inertia: float,
+    distance_correlation: float | None,
+    normalised_stress: float,
+) -> tuple[str, str]:
+    """Classify two-dimensional projection quality for display guidance.
+
+    The thresholds combine three complementary diagnostics. They are deliberately
+    conservative and are not biological acceptance criteria.
+
+    Args:
+        retained_inertia: Fraction of positive inertia retained by axes one and two.
+        distance_correlation: Correlation of input and projected pair distances.
+        normalised_stress: Normalised raw stress of the two-dimensional projection.
+
+    Returns:
+        Display category and plain-language interpretation.
+    """
+
+    if (
+        distance_correlation is None
+        or retained_inertia < 0.25
+        or distance_correlation < 0.60
+        or normalised_stress > 0.60
+    ):
+        return (
+            "POOR",
+            "Strong two-dimensional distortion: apparent arms, gaps or angles "
+            "require confirmation in the phylogram and exact distance matrix.",
+        )
+    if (
+        retained_inertia < 0.40
+        or distance_correlation < 0.80
+        or normalised_stress > 0.45
+    ):
+        return (
+            "MODERATE",
+            "The map is a partial summary: use the phylogram and exact matrix "
+            "before interpreting detailed geometry.",
+        )
+    return (
+        "BETTER",
+        "The two-dimensional fit is better for this pilot, but screen spacing "
+        "remains a projection rather than the exact distance authority.",
+    )
+
+
+def _distance_matrix_payload(
+    *,
+    distance_rows: Sequence[Mapping[str, Any]],
+    member_ids: set[str],
+    preferred_order: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Return an exact bounded triangular distance matrix for browser rendering.
+
+    Args:
+        distance_rows: Pairwise distance records for the rendered members.
+        member_ids: Exact rendered member identifiers.
+        preferred_order: Preferred tree-leaf order when a phylogram is available.
+
+    Returns:
+        JSON-safe upper-triangular matrix payload or an explicit unavailable state.
+    """
+
+    if len(member_ids) < 2:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "At least two rendered members are required.",
+        }
+    preferred = [member_id for member_id in preferred_order if member_id in member_ids]
+    ordered_ids = list(dict.fromkeys(preferred))
+    ordered_ids.extend(sorted(member_ids.difference(ordered_ids)))
+    lookup = {
+        pair: distance
+        for pair, distance in _pairwise_distance_lookup(
+            distance_rows=distance_rows
+        ).items()
+        if pair[0] in member_ids and pair[1] in member_ids
+    }
+    expected_pairs = len(ordered_ids) * (len(ordered_ids) - 1) // 2
+    if len(lookup) != expected_pairs:
+        return {
+            "status": "UNAVAILABLE_INCOMPLETE_MATRIX",
+            "reason": (
+                f"A complete rendered distance matrix requires {expected_pairs:,} "
+                f"pairs; {len(lookup):,} were available."
+            ),
+            "expected_pair_count": expected_pairs,
+            "available_pair_count": len(lookup),
+        }
+    values = [
+        lookup[tuple(sorted((left, right)))]
+        for left_index, left in enumerate(ordered_ids)
+        for right in ordered_ids[left_index + 1 :]
+    ]
+    return {
+        "status": "EXACT_COMPLETE_DISPLAYED_MATRIX",
+        "memberOrder": ordered_ids,
+        "orderMethod": (
+            "PRUNED_GENE_TREE_LEAF_ORDER"
+            if len(preferred) == len(member_ids)
+            else (
+                "PARTIAL_PHYLOGRAM_THEN_LEXICAL_MEMBER_ID"
+                if preferred
+                else "LEXICAL_MEMBER_ID"
+            )
+        ),
+        "pairCount": expected_pairs,
+        "minimum": min(values),
+        "maximum": max(values),
+        "upperTriangle": values,
+    }
+
+
+def _phylogram_payload(
+    *,
+    statistic: Mapping[str, Any],
+    rendered_members: Sequence[Mapping[str, Any]],
+    medoid: Mapping[str, Any],
+    nodes_by_tree_id: Mapping[str, Sequence[Mapping[str, Any]]],
+    edges_by_tree_id: Mapping[str, Sequence[Mapping[str, Any]]],
+    aliases_by_member_species: Mapping[tuple[str, str], set[str]],
+    species_palette: Mapping[str, str],
+) -> dict[str, Any]:
+    """Build a branch-length-scaled tree pruned to rendered members.
+
+    Args:
+        statistic: Group summary containing hierarchical and legacy tree identifiers.
+        rendered_members: Exact bounded members displayed in the report.
+        medoid: Sampled-medoid metadata for role annotation.
+        nodes_by_tree_id: Normalised resolved-tree nodes keyed by tree identifier.
+        edges_by_tree_id: Normalised resolved-tree edges keyed by tree identifier.
+        aliases_by_member_species: OrthoFinder internal aliases by member and species.
+        species_palette: Deterministic species colour mapping.
+
+    Returns:
+        JSON-safe rectangular phylogram payload or an explicit unavailable state.
+    """
+
+    candidate_tree_ids = list(
+        dict.fromkeys(
+            str(value)
+            for value in (
+                statistic.get("legacy_orthogroup_id", ""),
+                statistic.get("group_id", ""),
+            )
+            if value
+        )
+    )
+    tree_id = next(
+        (candidate for candidate in candidate_tree_ids if nodes_by_tree_id.get(candidate)),
+        "",
+    )
+    if not tree_id:
+        return {
+            "status": "UNAVAILABLE_NO_NORMALISED_RESOLVED_TREE",
+            "reason": "No checksum-verified resolved gene tree was available for this group.",
+            "candidateTreeIds": candidate_tree_ids,
+        }
+    tree_nodes = list(nodes_by_tree_id[tree_id])
+    tree_edges = list(edges_by_tree_id.get(tree_id, ()))
+    node_by_id = {str(row.get("node_id", "")): row for row in tree_nodes}
+
+    member_species = {
+        str(row.get("member_id", "")): str(row.get("species_label", ""))
+        for row in rendered_members
+    }
+    alias_members: dict[str, set[str]] = defaultdict(set)
+    for member_id, species in member_species.items():
+        alias_members[member_id].add(member_id)
+        alias_members[f"{species}_{member_id}"].add(member_id)
+        for alias in aliases_by_member_species.get((member_id, species), set()):
+            if alias:
+                alias_members[alias].add(member_id)
+    ambiguous_aliases = sorted(
+        alias for alias, members in alias_members.items() if len(members) > 1
+    )
+    leaf_member: dict[str, str] = {}
+    member_leaf: dict[str, str] = {}
+    duplicated_members: set[str] = set()
+    for node_id, row in node_by_id.items():
+        if not _report_bool(row.get("is_leaf", False)):
+            continue
+        alias = str(row.get("node_name", ""))
+        members = alias_members.get(alias, set())
+        if len(members) != 1:
+            continue
+        member_id = next(iter(members))
+        if member_id in member_leaf:
+            duplicated_members.add(member_id)
+            continue
+        leaf_member[node_id] = member_id
+        member_leaf[member_id] = node_id
+    if duplicated_members:
+        return {
+            "status": "UNAVAILABLE_AMBIGUOUS_TREE_LEAVES",
+            "reason": (
+                "Multiple tree leaves resolved to the same rendered member: "
+                + ", ".join(sorted(duplicated_members)[:10])
+            ),
+            "treeId": tree_id,
+        }
+    if len(leaf_member) < 2:
+        return {
+            "status": "UNAVAILABLE_INSUFFICIENT_RESOLVED_LEAVES",
+            "reason": (
+                f"Resolved {len(leaf_member):,} of {len(member_species):,} rendered "
+                "members to unique leaves; at least two are required."
+            ),
+            "treeId": tree_id,
+            "ambiguousAliases": ambiguous_aliases,
+        }
+
+    parent_by_node: dict[str, str] = {}
+    branch_by_child: dict[str, float] = {}
+    ordered_children: dict[str, list[str]] = defaultdict(list)
+    for edge in tree_edges:
+        parent = str(edge.get("parent_node_id", ""))
+        child = str(edge.get("child_node_id", ""))
+        if parent not in node_by_id or child not in node_by_id:
+            continue
+        parent_by_node[child] = parent
+        ordered_children[parent].append(child)
+        branch_by_child[child] = _report_float(edge.get("branch_length", ""))
+    if not parent_by_node:
+        for node_id, row in node_by_id.items():
+            parent = str(row.get("parent_node_id", ""))
+            if parent and parent in node_by_id:
+                parent_by_node[node_id] = parent
+                ordered_children[parent].append(node_id)
+                branch_by_child[node_id] = _report_float(row.get("branch_length", ""))
+
+    included = set(leaf_member)
+    for leaf_id in tuple(leaf_member):
+        current = leaf_id
+        seen = {current}
+        while current in parent_by_node:
+            current = parent_by_node[current]
+            if current in seen:
+                return {
+                    "status": "UNAVAILABLE_CYCLIC_TREE",
+                    "reason": f"Resolved gene tree {tree_id} contains a parent cycle.",
+                    "treeId": tree_id,
+                }
+            included.add(current)
+            seen.add(current)
+    roots = sorted(node_id for node_id in included if node_id not in parent_by_node)
+    if len(roots) != 1:
+        return {
+            "status": "UNAVAILABLE_DISCONNECTED_TREE",
+            "reason": (
+                f"The pruned tree requires one root; {len(roots):,} roots were found."
+            ),
+            "treeId": tree_id,
+        }
+    root = roots[0]
+    children = {
+        node_id: [child for child in ordered_children.get(node_id, ()) if child in included]
+        for node_id in included
+    }
+    traversal: list[str] = []
+
+    def visit(node_id: str) -> None:
+        traversal.append(node_id)
+        for child in children[node_id]:
+            visit(child)
+
+    visit(root)
+    if set(traversal) != included:
+        return {
+            "status": "UNAVAILABLE_DISCONNECTED_TREE",
+            "reason": "Not every pruned node was reachable from the resolved root.",
+            "treeId": tree_id,
+        }
+    cumulative = {root: 0.0}
+    for node_id in traversal:
+        for child in children[node_id]:
+            cumulative[child] = cumulative[node_id] + branch_by_child.get(child, 0.0)
+    member_order = [leaf_member[node_id] for node_id in traversal if node_id in leaf_member]
+    y_by_node = {
+        member_leaf[member_id]: float(index)
+        for index, member_id in enumerate(member_order)
+    }
+    for node_id in reversed(traversal):
+        child_values = [y_by_node[child] for child in children[node_id] if child in y_by_node]
+        if child_values:
+            y_by_node[node_id] = (min(child_values) + max(child_values)) / 2.0
+    maximum_root_distance = max(cumulative.values(), default=0.0)
+    if maximum_root_distance <= 0:
+        return {
+            "status": "UNAVAILABLE_NO_POSITIVE_BRANCH_LENGTHS",
+            "reason": "The pruned resolved tree contains no positive branch lengths.",
+            "treeId": tree_id,
+        }
+    medoid_id = str(medoid.get("member_id", ""))
+    unresolved = sorted(set(member_species).difference(member_order))
+    output_nodes = []
+    for node_id in traversal:
+        row = node_by_id[node_id]
+        member_id = leaf_member.get(node_id, "")
+        species = member_species.get(member_id, "")
+        output_nodes.append(
+            {
+                "id": node_id,
+                "parentId": parent_by_node.get(node_id, ""),
+                "x": cumulative[node_id],
+                "y": y_by_node[node_id],
+                "isLeaf": bool(member_id),
+                "memberId": member_id,
+                "label": member_id or str(row.get("node_name", "")),
+                "species": species,
+                "colour": species_palette.get(species, "#4b5563"),
+                "isMedoid": bool(member_id and member_id == medoid_id),
+                "branchLength": branch_by_child.get(node_id, 0.0),
+                "confidence": row.get("confidence", ""),
+            }
+        )
+    output_edges = [
+        {
+            "parentId": parent_by_node[node_id],
+            "childId": node_id,
+            "branchLength": branch_by_child.get(node_id, 0.0),
+        }
+        for node_id in traversal
+        if node_id in parent_by_node
+    ]
+    return {
+        "status": (
+            "COMPLETE_PRUNED_PHYLOGRAM"
+            if not unresolved
+            else "PARTIAL_PRUNED_PHYLOGRAM"
+        ),
+        "method": "RESOLVED_GENE_TREE_BRANCH_LENGTH",
+        "treeId": tree_id,
+        "requestedMemberCount": len(member_species),
+        "displayedLeafCount": len(member_order),
+        "maximumRootDistance": maximum_root_distance,
+        "unresolvedMembers": unresolved,
+        "ambiguousAliases": ambiguous_aliases,
+        "memberOrder": member_order,
+        "nodes": output_nodes,
+        "edges": output_edges,
+    }
+
+
+def _report_bool(value: Any) -> bool:
+    """Return a strict boolean interpretation of a report-table value."""
+
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def _report_float(value: Any) -> float:
+    """Return a finite float or zero for an unavailable branch length."""
+
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return result if math.isfinite(result) else 0.0
 
 
 def _select_members(

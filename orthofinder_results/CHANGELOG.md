@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.1.5 - 2026-09-01
+
+- Keep the PCoA view first but render points without edges by default, using
+  equal x/y scaling, real ticks and axis titles containing per-group retained
+  positive inertia.
+- Add conservative `POOR`, `MODERATE` and `BETTER` two-dimensional fit guidance
+  from retained inertia, input-versus-map distance correlation and normalised
+  stress; these categories are explicitly display guidance rather than
+  biological gates.
+- Add a deterministic bounded Shepard plot so input and projected distances can
+  be compared directly for every displayed group.
+- Add a branch-length-scaled rectangular phylogram pruned to the displayed
+  proteins while retaining the resolved gene tree's horizontal branch lengths,
+  species colours and sampled-medoid role.
+- Prefer normalised tree tables and permit a report-only compatibility fallback
+  to an original tree only after its SHA-256 matches the immutable tree
+  inventory; changed or missing sources remain explicitly unavailable.
+- Add an exact bounded distance-matrix heatmap containing every supplied
+  displayed pair distance and using complete phylogram leaf order when
+  available.
+- Retain the force-directed sparse nearest-neighbour topology as a separate,
+  explicitly non-quantitative fourth detailed view.
+- Replace the uninformative mean-distance-versus-fixed-sample-size plot with
+  mean distance versus analytical group size while retaining displayed-sample
+  provenance in point details.
+- Calculate compact exact cluster-size, species-breadth and copy-number bins
+  from the complete group-statistics authority; label size/breadth and distance
+  panels separately as embedded-sample and selected-pilot views.
+- Add a ranked projection/topology diagnostics table and raw, `log1p` and
+  presence/absence shading for exact group-by-species copy counts.
+- Preserve report-only regeneration from older immutable resources without
+  repeating OrthoFinder parsing, distance calculations, Parquet or DuckDB work.
+
 ## 0.1.4 - 2026-09-01
 
 - Clarify that every selectable protein network represents one HOG and expose
