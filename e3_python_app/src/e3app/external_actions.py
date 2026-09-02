@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import logging
 import re
 from typing import Sequence
@@ -15,8 +16,8 @@ from e3app.errors import AppError
 LOGGER = logging.getLogger(__name__)
 
 EMERALD_BASE_URL = "https://algbio.github.io/emerald-ui/"
-RCSB_MOLSTAR_URL = "https://www.rcsb.org/3d-view"
-RCSB_PAIRWISE_ALIGNMENT_URL = "https://www.rcsb.org/alignment"
+MOLSTAR_VIEWER_BASE_URL = "https://molstar.org/viewer/"
+RCSB_PAIRWISE_ALIGNMENT_BASE_URL = "https://www.rcsb.org/alignment"
 ALPHAFOLD_ENTRY_BASE_URL = "https://alphafold.ebi.ac.uk/entry/"
 
 _UNIPROT_ACCESSION_PATTERN = re.compile(
@@ -41,8 +42,9 @@ class ExternalPairActions:
         emerald_url: Pre-populated EMERALD URL, or ``None`` for non-UniProt IDs.
         reference_alphafold_url: AlphaFold record URL for a valid reference.
         comparison_alphafold_url: AlphaFold record URL for a valid comparison.
-        rcsb_molstar_url: RCSB standalone Mol* viewer.
-        rcsb_pairwise_alignment_url: RCSB pairwise structure-alignment tool.
+        reference_molstar_url: Exact AlphaFold model in the Mol* viewer.
+        comparison_molstar_url: Exact AlphaFold model in the Mol* viewer.
+        rcsb_pairwise_alignment_url: Pre-populated RCSB pairwise alignment.
     """
 
     reference_accession: str
@@ -50,8 +52,9 @@ class ExternalPairActions:
     emerald_url: str | None
     reference_alphafold_url: str | None
     comparison_alphafold_url: str | None
-    rcsb_molstar_url: str = RCSB_MOLSTAR_URL
-    rcsb_pairwise_alignment_url: str = RCSB_PAIRWISE_ALIGNMENT_URL
+    reference_molstar_url: str | None
+    comparison_molstar_url: str | None
+    rcsb_pairwise_alignment_url: str | None
 
 
 def normalise_uniprot_accession(*, value: object) -> str | None:
@@ -132,6 +135,78 @@ def build_alphafold_entry_url(*, accession: object) -> str | None:
     return None if canonical is None else f"{ALPHAFOLD_ENTRY_BASE_URL}{canonical}"
 
 
+def build_molstar_alphafold_url(*, accession: object) -> str | None:
+    """Return a Mol* viewer URL that loads one exact AlphaFold DB model.
+
+    Mol* documents the ``afdb`` query parameter for its viewer application.
+    Supplying only the generic viewer route produces the empty start screen,
+    so this helper fails closed for identifiers that are not canonical UniProt
+    accessions.
+
+    Args:
+        accession: Candidate canonical UniProt accession.
+
+    Returns:
+        Pre-populated Mol* URL, or ``None`` for another identifier type.
+    """
+    canonical = normalise_uniprot_accession(value=accession)
+    if canonical is None:
+        return None
+    return f"{MOLSTAR_VIEWER_BASE_URL}?{urlencode({'afdb': canonical})}"
+
+
+def alphafold_rcsb_model_id(*, accession: object) -> str | None:
+    """Return the RCSB Computed Structure Model ID for an AlphaFold entry.
+
+    Args:
+        accession: Candidate canonical UniProt accession.
+
+    Returns:
+        RCSB identifier in ``AF_AF<accession>F1`` form, or ``None``.
+    """
+    canonical = normalise_uniprot_accession(value=accession)
+    return None if canonical is None else f"AF_AF{canonical}F1"
+
+
+def build_rcsb_pairwise_alignment_url(
+    *, reference_accession: object, comparison_accession: object
+) -> str | None:
+    """Return an RCSB pairwise URL preloaded with both AlphaFold models.
+
+    The RCSB alignment application accepts a URL-encoded ``request-body``.
+    AlphaFold Computed Structure Models are monomers with asymmetry ID ``A``;
+    the reference is intentionally first in the request.
+
+    Args:
+        reference_accession: Fixed structural-reference UniProt accession.
+        comparison_accession: Mobile/comparison UniProt accession.
+
+    Returns:
+        Exact pairwise-alignment URL, or ``None`` if either identifier cannot
+        be represented without guessing.
+    """
+    reference_id = alphafold_rcsb_model_id(accession=reference_accession)
+    comparison_id = alphafold_rcsb_model_id(accession=comparison_accession)
+    if reference_id is None or comparison_id is None:
+        return None
+    request = {
+        "query": {
+            "context": {
+                "mode": "pairwise",
+                "method": {"name": "fatcat-rigid"},
+                "structures": [
+                    {"entry_id": reference_id, "selection": {"asym_id": "A"}},
+                    {"entry_id": comparison_id, "selection": {"asym_id": "A"}},
+                ],
+            }
+        }
+    }
+    query = urlencode(
+        {"request-body": json.dumps(request, separators=(",", ":"))}
+    )
+    return f"{RCSB_PAIRWISE_ALIGNMENT_BASE_URL}?{query}"
+
+
 def external_pair_actions(
     *, reference_accession: object, comparison_accession: object
 ) -> ExternalPairActions:
@@ -158,12 +233,22 @@ def external_pair_actions(
         ),
         reference_alphafold_url=build_alphafold_entry_url(accession=reference),
         comparison_alphafold_url=build_alphafold_entry_url(accession=comparison),
+        reference_molstar_url=build_molstar_alphafold_url(accession=reference),
+        comparison_molstar_url=build_molstar_alphafold_url(accession=comparison),
+        rcsb_pairwise_alignment_url=build_rcsb_pairwise_alignment_url(
+            reference_accession=reference,
+            comparison_accession=comparison,
+        ),
     )
     LOGGER.debug(
-        "Prepared external pair actions reference=%s comparison=%s emerald=%s",
+        "Prepared external pair actions reference=%s comparison=%s "
+        "emerald=%s molstar_pair=%s rcsb_alignment=%s",
         reference,
         comparison,
         actions.emerald_url is not None,
+        actions.reference_molstar_url is not None
+        and actions.comparison_molstar_url is not None,
+        actions.rcsb_pairwise_alignment_url is not None,
     )
     return actions
 

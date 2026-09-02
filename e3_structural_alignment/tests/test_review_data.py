@@ -46,6 +46,7 @@ def test_resolve_and_load_complete_review_payload(
     assert payloads[0]["reference_source"] == "STRUCTURAL_ALIGNMENT_SUMMARY"
     assert len(payloads[0]["proteins"]) == 2
     assert payloads[0]["proteins"][0]["mapped_pocket_atom_count"] == 2
+    assert payloads[0]["proteins"][0]["atoms"][0]["plddt"] is None
     assert payloads[0]["alignment"]["alignment_length"] == 2
     assert len(payloads[0]["alignment"]["records"][0]["pocket_annotations"]) == 2
 

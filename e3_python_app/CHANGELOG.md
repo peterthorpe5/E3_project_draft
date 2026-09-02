@@ -4,6 +4,25 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.0
+
+- Replaces the blank generic Mol* action with separate reference and comparison
+  links using Mol*'s documented AlphaFold Database accession parameter.
+- Replaces the blank generic RCSB alignment action with a URL-encoded pairwise
+  request containing both exact AlphaFold Computed Structure Model IDs, chain A
+  selections and the fixed E3 reference first. Unsafe/local identifiers do not
+  receive a misleading external action.
+- Adds reversible N- and C-terminal residue-count trimming to group and pairwise
+  3D views, with independent pair-member state, full-model reset and explicit
+  confirmation that the source evidence and rankings are unchanged.
+- Adds a configurable sustained-terminal pLDDT suggestion, residue-quality plot
+  and optional AlphaFold pLDDT colouring when explicit ModelCIF local confidence
+  is present. Group-report scores are joined into older copied pair viewers by
+  exact accession, chain and residue labels. Low pLDDT is labelled low model
+  confidence, not proven disorder.
+- Slightly enlarges scientific-stage tabs, nested page tabs and in-tab
+  subheadings without changing navigation order or content.
+
 ## v0.17.0
 
 - Groups the 25 existing pages into six colour-marked scientific stages while

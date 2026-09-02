@@ -15,9 +15,11 @@ from e3app.pocket_review import (
     PocketReviewBundle,
     _read_tsv,
     _safe_group_page,
+    add_terminal_trimming_controls,
     discover_pocket_review_dir,
     group_choice_labels,
     load_pocket_review,
+    merge_pair_viewer_plddt,
     pocket_review_available,
     prepare_pocket_review,
     repair_pocket_review_viewer_controls,
@@ -281,6 +283,123 @@ def test_legacy_group_page_gains_offline_pdf_controls() -> None:
     assert "downloadAlignmentPdf" in upgraded
     assert "application/pdf" in upgraded
     assert repair_pocket_review_viewer_controls(upgraded) == upgraded
+
+
+def test_pair_viewer_gains_idempotent_terminal_display_controls() -> None:
+    """Existing pair viewers gain manual and pLDDT-aware visual trimming."""
+    document = (
+        '<html><head></head><body><canvas id="viewer"></canvas><aside>'
+        '<h2>Selected residue</h2></aside>'
+        '<script id="alignmentData" type="application/json">'
+        '{"reference":[],"mobile":[],"metadata":{}}</script></body></html>'
+    )
+    upgraded = add_terminal_trimming_controls(document)
+    assert 'data-e3-terminal-trimming="true"' in upgraded
+    assert "N-terminal residues to hide" in upgraded
+    assert "C-terminal residues to hide" in upgraded
+    assert "Suggest from pLDDT" in upgraded
+    assert "Residue-level pLDDT is unavailable" in upgraded
+    assert "does not\nchange the saved model" in upgraded
+    assert add_terminal_trimming_controls(upgraded) == upgraded
+
+
+def test_group_viewer_compatibility_combines_pdf_and_terminal_controls() -> None:
+    """A recognised group viewer receives both independent compatibility layers."""
+    document = (
+        '<html><body><canvas id="viewer"></canvas>'
+        '<h2>Pocket-annotated MAFFT sequence alignment</h2>'
+        '<button id="fit" type="button">Fit structure</button>'
+        '<p id="proteinMeta"></p><script id="reviewData" '
+        'type="application/json">{"proteins":[]}</script><script>'
+        'document.getElementById("fit").onclick=()=>{zoom=1;draw();};'
+        '</script></body></html>'
+    )
+    upgraded = repair_pocket_review_viewer_controls(document)
+    assert 'data-e3-pdf-compatibility="true"' in upgraded
+    assert 'data-e3-terminal-trimming="true"' in upgraded
+    assert "terminalLowConfidenceRun" in upgraded
+    assert repair_pocket_review_viewer_controls(upgraded) == upgraded
+
+
+def test_terminal_controls_ignore_other_html_and_reject_non_text() -> None:
+    """The compatibility transform is bounded to recognised trusted viewers."""
+    document = "<html><body><p>Not a viewer</p></body></html>"
+    assert add_terminal_trimming_controls(document) == document
+    with pytest.raises(AppError, match="must be text"):
+        add_terminal_trimming_controls(None)  # type: ignore[arg-type]
+
+
+def test_group_plddt_is_joined_into_an_older_pair_viewer() -> None:
+    """Exact accession and structure locators enrich copied pair payloads."""
+    pair = (
+        '<html><script id="alignmentData" type="application/json">'
+        '{"reference":[{"chain":"A","resi":"1","plddt":null},'
+        '{"chain":"A","resi":"2","plddt":null}],'
+        '"mobile":[{"chain":"A","resi":"1"}],'
+        '"metadata":{"reference":"P1","mobile":"P2"}}'
+        '</script></html>'
+    )
+    group = (
+        '<html><script id="reviewData" type="application/json">'
+        '{"proteins":['
+        '{"accession":"P1","atoms":['
+        '{"chain":"A","resi":"1","plddt":42},'
+        '{"chain":"A","resi":"2","plddt":null}]},'
+        '{"accession":"P2","atoms":['
+        '{"chain":"A","resi":"1","plddt":90}]}]}'
+        '</script></html>'
+    )
+    merged = merge_pair_viewer_plddt(
+        pair_document=pair,
+        group_document=group,
+    )
+    assert '"chain":"A","resi":"1","plddt":42.0' in merged
+    assert '"chain":"A","resi":"2","plddt":null' in merged
+    assert '"mobile":[{"chain":"A","resi":"1","plddt":90.0}]' in merged
+    assert merge_pair_viewer_plddt(
+        pair_document=merged,
+        group_document=group,
+    ) == merged
+
+
+def test_pair_quality_merge_fails_softly_for_incompatible_payloads() -> None:
+    """Missing, malformed and ambiguous quality records preserve the viewer."""
+    pair = (
+        '<script id="alignmentData" type="application/json">'
+        '{"reference":[{"chain":"A","resi":"1"}],'
+        '"mobile":[],"metadata":{"reference":"P1","mobile":"P2"}}'
+        '</script>'
+    )
+    malformed = (
+        '<script id="reviewData" type="application/json">{bad}</script>'
+    )
+    assert merge_pair_viewer_plddt(
+        pair_document=pair,
+        group_document=malformed,
+    ) == pair
+    incompatible = (
+        '<script id="reviewData" type="application/json">'
+        '{"proteins":[{"accession":"P1","atoms":['
+        '{"chain":"A","resi":"1","plddt":42},'
+        '{"chain":"A","resi":"1","plddt":43},'
+        '{"chain":"","resi":"2","plddt":50},'
+        '{"chain":"A","resi":"3","plddt":true},'
+        '{"chain":"A","resi":"4","plddt":101},null]}]}'
+        '</script>'
+    )
+    assert merge_pair_viewer_plddt(
+        pair_document=pair,
+        group_document=incompatible,
+    ) == pair
+    assert merge_pair_viewer_plddt(
+        pair_document=pair,
+        group_document="<html></html>",
+    ) == pair
+    with pytest.raises(AppError, match="must be text"):
+        merge_pair_viewer_plddt(
+            pair_document=pair,
+            group_document=None,  # type: ignore[arg-type]
+        )
 
 
 def test_review_discovery_requires_one_unambiguous_bundle(tmp_path: Path) -> None:

@@ -10,6 +10,8 @@ from e3structalign.errors import InputValidationError
 from e3structalign.models import AtomCoordinate, ResidueLocator, Transform
 from e3structalign.structure_io import (
     _as_list,
+    _field_values,
+    _local_plddt_by_label,
     centroid,
     parse_ca_atoms,
     parse_mmcif_ca_atoms,
@@ -73,6 +75,87 @@ CA . A 1 A 10 ? 1 1.0 2.0 3.0
     assert atoms[0].label_seq_id == "1"
     assert atoms[0].auth_seq_id == "10"
     assert atoms[0].coordinate == (1.0, 2.0, 3.0)
+    assert atoms[0].plddt is None
+
+
+def test_modelcif_local_plddt_is_retained_without_using_b_factors(
+    tmp_path: Path,
+) -> None:
+    """An explicitly identified ModelCIF pLDDT score reaches the viewer atom."""
+    path = tmp_path / "alphafold_model.cif"
+    path.write_text(
+        """data_test
+loop_
+_ma_qa_metric.id
+_ma_qa_metric.name
+_ma_qa_metric.type
+1 pLDDT pLDDT
+loop_
+_ma_qa_metric_local.metric_id
+_ma_qa_metric_local.label_asym_id
+_ma_qa_metric_local.label_seq_id
+_ma_qa_metric_local.metric_value
+1 A 1 42.5
+loop_
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_asym_id
+_atom_site.label_seq_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.pdbx_PDB_ins_code
+_atom_site.pdbx_PDB_model_num
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.B_iso_or_equiv
+CA . A 1 A 1 ? 1 1.0 2.0 3.0 99.0
+""",
+        encoding="utf-8",
+    )
+    atoms = parse_mmcif_ca_atoms(path)
+    assert atoms[0].plddt == 42.5
+
+
+def test_local_plddt_validation_is_explicit() -> None:
+    """Malformed, contradictory or non-pLDDT local scores fail safely."""
+    assert _field_values(None) == []
+    assert _field_values("one") == ["one"]
+    assert _field_values([1, 2]) == ["1", "2"]
+    assert _local_plddt_by_label({}) == {}
+    non_plddt = {
+        "_ma_qa_metric.id": "1",
+        "_ma_qa_metric.name": "QMEAN",
+        "_ma_qa_metric.type": "QMEAN",
+        "_ma_qa_metric_local.metric_id": "1",
+        "_ma_qa_metric_local.label_asym_id": "A",
+        "_ma_qa_metric_local.label_seq_id": "1",
+        "_ma_qa_metric_local.metric_value": "0.8",
+    }
+    assert _local_plddt_by_label(non_plddt) == {}
+    base = {
+        **non_plddt,
+        "_ma_qa_metric.name": "pLDDT",
+        "_ma_qa_metric.type": "pLDDT",
+    }
+    for value, message in (("bad", "Non-numeric"), ("101", "outside 0-100")):
+        with pytest.raises(InputValidationError, match=message):
+            _local_plddt_by_label(
+                {**base, "_ma_qa_metric_local.metric_value": value}
+            )
+    with pytest.raises(InputValidationError, match="no label chain"):
+        _local_plddt_by_label(
+            {**base, "_ma_qa_metric_local.label_asym_id": "?"}
+        )
+    conflicting = {
+        **base,
+        "_ma_qa_metric_local.metric_id": ["1", "1"],
+        "_ma_qa_metric_local.label_asym_id": ["A", "A"],
+        "_ma_qa_metric_local.label_seq_id": ["1", "1"],
+        "_ma_qa_metric_local.metric_value": ["42", "43"],
+    }
+    with pytest.raises(InputValidationError, match="Conflicting"):
+        _local_plddt_by_label(conflicting)
 
 
 def test_structure_and_geometry_failures(tmp_path: Path) -> None:

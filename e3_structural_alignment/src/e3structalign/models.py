@@ -46,7 +46,7 @@ class ResidueLocator:
 
 @dataclass(frozen=True)
 class AtomCoordinate:
-    """One C-alpha coordinate with label and author residue identifiers."""
+    """One C-alpha coordinate with identifiers and optional local confidence."""
 
     label_chain: str
     label_seq_id: str
@@ -57,6 +57,7 @@ class AtomCoordinate:
     x: float
     y: float
     z: float
+    plddt: float | None = None
 
     @property
     def coordinate(self) -> tuple[float, float, float]:

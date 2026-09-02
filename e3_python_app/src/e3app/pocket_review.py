@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.resources import files
@@ -14,6 +17,8 @@ import pandas as pd
 
 from e3app.errors import AppError
 from e3app.exports import dataframe_to_fasta_bytes
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from e3app.config import AppConfig
@@ -644,7 +649,7 @@ def repair_pocket_review_viewer_controls(document: str) -> str:
         'id="viewer"' not in upgraded
         or "Pocket-annotated MAFFT sequence alignment" not in upgraded
     ):
-        return upgraded
+        return add_terminal_trimming_controls(upgraded)
     fit_markup = '<button id="fit" type="button">Fit and centre</button>'
     pdf_controls = (
         '<div class="button-row pdf-download-row">'
@@ -655,7 +660,7 @@ def repair_pocket_review_viewer_controls(document: str) -> str:
     )
     if 'id="downloadViewPdf"' not in upgraded:
         if fit_markup not in upgraded:
-            return upgraded
+            return add_terminal_trimming_controls(upgraded)
         complete_button_row = fit_markup + "</div>"
         if complete_button_row in upgraded:
             upgraded = upgraded.replace(
@@ -666,15 +671,194 @@ def repair_pocket_review_viewer_controls(document: str) -> str:
         else:
             upgraded = upgraded.replace(fit_markup, fit_markup + pdf_controls, 1)
     if 'data-e3-pdf-compatibility="true"' in upgraded:
-        return upgraded
+        return add_terminal_trimming_controls(upgraded)
     pdf_script = _pocket_review_pdf_compatibility_script()
     script_markup = (
         '<script data-e3-pdf-compatibility="true">'
         f"{pdf_script}</script>"
     )
     if "</body>" in upgraded:
-        return upgraded.replace("</body>", script_markup + "</body>", 1)
-    return upgraded + script_markup
+        upgraded = upgraded.replace("</body>", script_markup + "</body>", 1)
+    else:
+        upgraded += script_markup
+    return add_terminal_trimming_controls(upgraded)
+
+
+def add_terminal_trimming_controls(document: str) -> str:
+    """Add bounded N/C-terminal display controls to a trusted 3D viewer.
+
+    The compatibility layer works with both selected-group pages and pairwise
+    superposition pages. Existing review bundles gain manual residue-count
+    trimming immediately. Bundles regenerated with residue-level pLDDT also
+    gain a terminal low-confidence suggestion, a quality profile and optional
+    pLDDT trace colouring. The browser-only filter never changes source data,
+    model coordinates, evidence, scores or rankings.
+
+    Args:
+        document: Trusted self-contained structure-viewer HTML.
+
+    Returns:
+        Idempotently upgraded HTML, or the unchanged document when it is not a
+        recognised viewer.
+
+    Raises:
+        AppError: If the supplied document is not text or the packaged browser
+            compatibility asset is unavailable.
+    """
+    if not isinstance(document, str):
+        raise AppError("Structural viewer HTML must be text")
+    marker = 'data-e3-terminal-trimming="true"'
+    if marker in document:
+        return document
+    if 'id="viewer"' not in document and "id='viewer'" not in document:
+        return document
+    if 'id="alignmentData"' not in document and 'id="reviewData"' not in document:
+        return document
+    script_markup = (
+        f'<script {marker}>{_terminal_trimming_compatibility_script()}</script>'
+    )
+    LOGGER.debug("Adding browser-only terminal trimming to a 3D review page")
+    if "</body>" in document:
+        return document.replace("</body>", script_markup + "</body>", 1)
+    return document + script_markup
+
+
+def merge_pair_viewer_plddt(
+    *, pair_document: str, group_document: str
+) -> str:
+    """Merge group-report pLDDT into a copied pairwise viewer payload.
+
+    A newly regenerated portable group report can contain residue-level pLDDT
+    even when its checksum-copied pair viewer was produced by an older
+    structural run. This compatibility join uses exact accession, chain and
+    structure-residue labels. It changes only the in-memory/downloaded viewer
+    document and never the checksum-bound source page.
+
+    Args:
+        pair_document: Trusted pairwise viewer HTML containing ``alignmentData``.
+        group_document: Trusted group report HTML containing ``reviewData``.
+
+    Returns:
+        Pairwise HTML with available pLDDT values merged into atom records, or
+        the unchanged pair document when compatible payloads are unavailable.
+
+    Raises:
+        AppError: If either document is not text.
+    """
+    if not isinstance(pair_document, str) or not isinstance(group_document, str):
+        raise AppError("Pair and group structural viewer documents must be text")
+    pair_match = _embedded_json_script(
+        document=pair_document,
+        element_id="alignmentData",
+    )
+    group_match = _embedded_json_script(
+        document=group_document,
+        element_id="reviewData",
+    )
+    if pair_match is None or group_match is None:
+        return pair_document
+    try:
+        pair_payload = json.loads(pair_match.group("payload"))
+        group_payload = json.loads(group_match.group("payload"))
+    except (json.JSONDecodeError, TypeError) as exc:
+        LOGGER.warning("Could not merge viewer pLDDT from embedded JSON: %s", exc)
+        return pair_document
+    if not isinstance(pair_payload, dict) or not isinstance(group_payload, dict):
+        return pair_document
+    metadata = pair_payload.get("metadata")
+    proteins = group_payload.get("proteins")
+    if not isinstance(metadata, dict) or not isinstance(proteins, list):
+        return pair_document
+    protein_index = {
+        str(protein.get("accession")): protein
+        for protein in proteins
+        if isinstance(protein, dict) and protein.get("accession") is not None
+    }
+    merged_count = 0
+    for role, metadata_key in (("reference", "reference"), ("mobile", "mobile")):
+        pair_atoms = pair_payload.get(role)
+        protein = protein_index.get(str(metadata.get(metadata_key)))
+        if not isinstance(pair_atoms, list) or not isinstance(protein, dict):
+            continue
+        group_atoms = protein.get("atoms")
+        if not isinstance(group_atoms, list):
+            continue
+        quality_by_locator = _quality_by_structure_locator(group_atoms)
+        for atom in pair_atoms:
+            if not isinstance(atom, dict):
+                continue
+            locator = (str(atom.get("chain") or ""), str(atom.get("resi") or ""))
+            if locator not in quality_by_locator:
+                continue
+            atom["plddt"] = quality_by_locator[locator]
+            merged_count += 1
+    if not merged_count:
+        return pair_document
+    encoded = json.dumps(pair_payload, separators=(",", ":")).replace("</", "<\\/")
+    LOGGER.debug("Merged local pLDDT into %d pair-viewer atoms", merged_count)
+    return (
+        pair_document[: pair_match.start("payload")]
+        + encoded
+        + pair_document[pair_match.end("payload"):]
+    )
+
+
+def _embedded_json_script(
+    *, document: str, element_id: str
+) -> re.Match[str] | None:
+    """Return a bounded embedded-JSON script match.
+
+    Args:
+        document: Trusted self-contained HTML document.
+        element_id: Exact script element identifier.
+
+    Returns:
+        Regex match exposing the script body as ``payload``, or ``None``.
+    """
+    pattern = re.compile(
+        r"<script\b(?=[^>]*\bid=[\"']"
+        + re.escape(element_id)
+        + r"[\"'])[^>]*>(?P<payload>.*?)</script>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return pattern.search(document)
+
+
+def _quality_by_structure_locator(
+    atoms: list[object],
+) -> dict[tuple[str, str], float]:
+    """Return unambiguous pLDDT indexed by exact structure locator.
+
+    Args:
+        atoms: Group-viewer atom records.
+
+    Returns:
+        Chain/residue labels mapped to pLDDT values in the inclusive 0-100
+        range. Missing or malformed scores are ignored.
+    """
+    indexed: dict[tuple[str, str], float] = {}
+    conflicts: set[tuple[str, str]] = set()
+    for atom in atoms:
+        if not isinstance(atom, dict):
+            continue
+        raw_score = atom.get("plddt")
+        if raw_score is None or isinstance(raw_score, bool):
+            continue
+        try:
+            score = float(raw_score)
+        except (TypeError, ValueError):
+            continue
+        if not 0.0 <= score <= 100.0:
+            continue
+        locator = (str(atom.get("chain") or ""), str(atom.get("resi") or ""))
+        if not all(locator) or locator in conflicts:
+            continue
+        if locator in indexed and indexed[locator] != score:
+            indexed.pop(locator)
+            conflicts.add(locator)
+            continue
+        indexed[locator] = score
+    return indexed
 
 
 @lru_cache(maxsize=1)
@@ -689,6 +873,21 @@ def _pocket_review_pdf_compatibility_script() -> str:
     except (FileNotFoundError, OSError, UnicodeError) as exc:
         raise AppError(
             "The packaged pocket-review PDF compatibility asset is unavailable"
+        ) from exc
+
+
+@lru_cache(maxsize=1)
+def _terminal_trimming_compatibility_script() -> str:
+    """Return the packaged browser-side terminal display controller."""
+    try:
+        return (
+            files("e3app")
+            .joinpath("resources", "terminal_trim_compat.js")
+            .read_text(encoding="utf-8")
+        )
+    except (FileNotFoundError, OSError, UnicodeError) as exc:
+        raise AppError(
+            "The packaged terminal trimming compatibility asset is unavailable"
         ) from exc
 
 

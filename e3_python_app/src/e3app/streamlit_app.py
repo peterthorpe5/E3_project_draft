@@ -77,7 +77,9 @@ from e3app.method_annotations import method_annotation_markdown
 from e3app.navigation import NAVIGATION_STAGES, validate_navigation
 from e3app.pocket_review import (
     PocketReviewBundle,
+    add_terminal_trimming_controls,
     group_choice_labels,
+    merge_pair_viewer_plddt,
     prepare_human_plant_review,
     prepare_pocket_review,
     read_group_html,
@@ -204,8 +206,22 @@ div[data-testid="stTabs"] button[data-baseweb="tab"],
 div[data-testid="stTabs"] button[data-testid="stTab"] {
     border-bottom: 2px solid transparent;
     flex: 0 0 auto !important;
+    font-size: 1.02rem !important;
+    font-weight: 600 !important;
     min-height: 2.5rem;
     white-space: nowrap;
+}
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[role="tab"],
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"],
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-testid="stTab"] {
+    font-size: 0.96rem !important;
+    font-weight: 575 !important;
+}
+div[data-testid="stTabs"] div[role="tabpanel"] h3 {
+    font-size: 1.48rem !important;
+}
+div[data-testid="stTabs"] div[role="tabpanel"] h4 {
+    font-size: 1.22rem !important;
 }
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
 div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
@@ -1411,7 +1427,7 @@ def _render_external_pair_actions(
     comparison_accession: object,
     key_prefix: str,
 ) -> None:
-    """Render reproducible EMERALD, AlphaFold and RCSB hand-off actions.
+    """Render reproducible EMERALD, AlphaFold, Mol* and RCSB actions.
 
     Args:
         bundle: Validated portable review bundle containing pair sequences.
@@ -1459,18 +1475,45 @@ def _render_external_pair_actions(
         )
 
         structural_actions = st.columns(2)
-        structural_actions[0].link_button(
-            "Open RCSB Mol* 3D View",
-            actions.rcsb_molstar_url,
-        )
-        structural_actions[1].link_button(
-            "Open RCSB pairwise alignment",
-            actions.rcsb_pairwise_alignment_url,
-        )
+        if actions.reference_molstar_url is not None:
+            structural_actions[0].link_button(
+                "Open reference in Mol*",
+                actions.reference_molstar_url,
+            )
+        else:
+            structural_actions[0].caption(
+                "An exact Mol* link requires a canonical reference UniProt accession."
+            )
+        if actions.comparison_molstar_url is not None:
+            structural_actions[1].link_button(
+                "Open comparison in Mol*",
+                actions.comparison_molstar_url,
+            )
+        else:
+            structural_actions[1].caption(
+                "An exact Mol* link requires a canonical comparison UniProt accession."
+            )
+        if actions.rcsb_pairwise_alignment_url is not None:
+            st.link_button(
+                "Open exact pair in RCSB structural alignment",
+                actions.rcsb_pairwise_alignment_url,
+                help=(
+                    "Loads both AlphaFold Computed Structure Models, with the "
+                    "displayed E3 reference first and chain A selected."
+                ),
+            )
+        else:
+            st.caption(
+                "RCSB pair pre-population is unavailable because one or both "
+                "identifiers are not canonical UniProt accessions. The embedded "
+                "E3 superposition remains available above."
+            )
         st.caption(
-            "RCSB accepts PDB or Computed Structure Model entry IDs, local "
-            "coordinate files or coordinate-file URLs. The first structure is "
-            "the reference for pairwise superposition."
+            "Each Mol* action loads the selected AlphaFold model directly and "
+            "uses Mol*'s residue-level pLDDT colouring. The RCSB action carries "
+            "both exact Computed Structure Model IDs rather than opening an "
+            "empty generic tool. External alignments do not replace the recorded "
+            "E3 US-align/TM-align evidence."
         )
 
         alphafold_actions = st.columns(2)
@@ -1625,14 +1668,23 @@ def _render_structural_superposition(
         comparison_accession=comparison["mobile_accession"],
         key_prefix=key_prefix,
     )
-    viewer_document = annotate_pair_evidence_html(
-        document=read_review_html(bundle, viewer_path)
+    pair_document = merge_pair_viewer_plddt(
+        pair_document=read_review_html(bundle, viewer_path),
+        group_document=read_review_html(
+            bundle,
+            str(group_row["group_review_html"]),
+        ),
+    )
+    viewer_document = add_terminal_trimming_controls(
+        annotate_pair_evidence_html(
+            document=pair_document
+        )
     )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
-        "the mapped pocket residues, and select a residue for its chain and "
-        "structure position. The mobile model is shown after applying the "
-        "recorded alignment matrix."
+        "the mapped pocket residues, trim either terminal display independently, "
+        "and select a residue for its chain and structure position. The mobile "
+        "model is shown after applying the recorded alignment matrix."
     )
     components.html(viewer_document, height=850, scrolling=True)
     with st.expander("❓ Define the pair-evidence terms"):

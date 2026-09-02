@@ -183,11 +183,17 @@ contain no external JavaScript or network dependency, so the whole result direct
 from the cluster and opened locally. These views show C-alpha traces and selected residues; they do
 not claim to be an atomistic surface or docking viewer.
 
-Pocket-review publication in version 0.5.0 checksum-validates and copies these
+Pocket-review publication in version 0.6.0 checksum-validates and copies these
 exact pairwise superposition pages into the portable bundle, with a
 `tables/structural_alignment_viewers.tsv` index. The Python app therefore opens
 the analysis-derived transforms directly and does not reconstruct or
 cosmetically approximate an alignment in Streamlit.
+
+Version 0.6.0 also reads local pLDDT only when ModelCIF quality-metric metadata
+explicitly identifies the score as pLDDT. The value is retained in group and
+pairwise C-alpha payloads for the Python app's quality graph, trace colouring
+and terminal low-confidence suggestion. Generic crystallographic B-factors are
+not relabelled as AlphaFold confidence.
 
 ## Ranked top-50 pocket-review report
 

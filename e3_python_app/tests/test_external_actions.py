@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from urllib.parse import parse_qs, urlparse
+
 import pandas as pd
 import pytest
 
@@ -9,10 +12,13 @@ from e3app.errors import AppError
 from e3app.external_actions import (
     ALPHAFOLD_ENTRY_BASE_URL,
     EMERALD_BASE_URL,
-    RCSB_MOLSTAR_URL,
-    RCSB_PAIRWISE_ALIGNMENT_URL,
+    MOLSTAR_VIEWER_BASE_URL,
+    RCSB_PAIRWISE_ALIGNMENT_BASE_URL,
+    alphafold_rcsb_model_id,
     build_alphafold_entry_url,
     build_emerald_pair_url,
+    build_molstar_alphafold_url,
+    build_rcsb_pairwise_alignment_url,
     external_pair_actions,
     normalise_uniprot_accession,
     selected_pair_fasta_bytes,
@@ -60,12 +66,52 @@ def test_emerald_and_structure_urls_preserve_pair_roles() -> None:
     assert actions.comparison_alphafold_url == (
         f"{ALPHAFOLD_ENTRY_BASE_URL}Q9UDW1"
     )
-    assert actions.rcsb_molstar_url == RCSB_MOLSTAR_URL
-    assert actions.rcsb_pairwise_alignment_url == RCSB_PAIRWISE_ALIGNMENT_URL
+    assert actions.reference_molstar_url == (
+        f"{MOLSTAR_VIEWER_BASE_URL}?afdb=E0CX11"
+    )
+    assert actions.comparison_molstar_url == (
+        f"{MOLSTAR_VIEWER_BASE_URL}?afdb=Q9UDW1"
+    )
+    assert actions.rcsb_pairwise_alignment_url is not None
 
 
-def test_non_uniprot_pair_retains_generic_structure_actions() -> None:
-    """Local identifiers disable accession links but retain generic tools."""
+def test_rcsb_pairwise_url_contains_both_exact_computed_models() -> None:
+    """The RCSB hand-off carries both models instead of a blank tool route."""
+    url = build_rcsb_pairwise_alignment_url(
+        reference_accession="E0CX11",
+        comparison_accession="Q9UDW1",
+    )
+    assert url is not None
+    parsed = urlparse(url)
+    assert f"{parsed.scheme}://{parsed.netloc}{parsed.path}" == (
+        RCSB_PAIRWISE_ALIGNMENT_BASE_URL
+    )
+    request = json.loads(parse_qs(parsed.query)["request-body"][0])
+    context = request["query"]["context"]
+    assert context["mode"] == "pairwise"
+    assert context["method"] == {"name": "fatcat-rigid"}
+    assert context["structures"] == [
+        {"entry_id": "AF_AFE0CX11F1", "selection": {"asym_id": "A"}},
+        {"entry_id": "AF_AFQ9UDW1F1", "selection": {"asym_id": "A"}},
+    ]
+
+
+def test_structure_deep_links_fail_closed_for_local_identifiers() -> None:
+    """Deep links are emitted only when model identity is unambiguous."""
+    assert alphafold_rcsb_model_id(accession="P12345") == "AF_AFP12345F1"
+    assert alphafold_rcsb_model_id(accession="local") is None
+    assert build_molstar_alphafold_url(accession="Q9UDW1") == (
+        f"{MOLSTAR_VIEWER_BASE_URL}?afdb=Q9UDW1"
+    )
+    assert build_molstar_alphafold_url(accession="P12345-2") is None
+    assert build_rcsb_pairwise_alignment_url(
+        reference_accession="P12345",
+        comparison_accession="local",
+    ) is None
+
+
+def test_non_uniprot_pair_does_not_offer_blank_generic_structure_tools() -> None:
+    """Local identifiers disable links that cannot be safely pre-populated."""
     actions = external_pair_actions(
         reference_accession="plant_scaffold_1",
         comparison_accession="P12345-2",
@@ -73,7 +119,9 @@ def test_non_uniprot_pair_retains_generic_structure_actions() -> None:
     assert actions.emerald_url is None
     assert actions.reference_alphafold_url is None
     assert actions.comparison_alphafold_url is None
-    assert actions.rcsb_molstar_url == RCSB_MOLSTAR_URL
+    assert actions.reference_molstar_url is None
+    assert actions.comparison_molstar_url is None
+    assert actions.rcsb_pairwise_alignment_url is None
 
 
 @pytest.mark.parametrize(

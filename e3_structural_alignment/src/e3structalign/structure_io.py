@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -10,6 +11,8 @@ from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 from e3structalign.errors import InputValidationError
 from e3structalign.models import AtomCoordinate, ResidueLocator, Transform
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _normalise_identifier(value: Any) -> str:
@@ -30,6 +33,100 @@ def _as_list(value: Any, length: int, default: str = "") -> list[str]:
             f"mmCIF atom-site column length {len(values)} does not match {length}"
         )
     return values
+
+
+def _field_values(value: Any) -> list[str]:
+    """Return a scalar or repeated mmCIF field as a string list.
+
+    Args:
+        value: Scalar, list or missing parsed mmCIF value.
+
+    Returns:
+        Normalised list of string values.
+    """
+    if value is None:
+        return []
+    return [str(item) for item in value] if isinstance(value, list) else [str(value)]
+
+
+def _local_plddt_by_label(
+    payload: Mapping[str, Any],
+) -> dict[tuple[str, str], float]:
+    """Return validated local pLDDT indexed by label chain and residue.
+
+    The function uses the ModelCIF ``ma_qa_metric`` metadata to ensure a local
+    score is explicitly identified as pLDDT. It does not reinterpret a generic
+    crystallographic B-factor as AlphaFold confidence.
+
+    Args:
+        payload: Parsed mmCIF dictionary.
+
+    Returns:
+        Label-chain and label-sequence identifiers mapped to pLDDT values.
+
+    Raises:
+        InputValidationError: If declared pLDDT rows are malformed,
+            out-of-range or contradictory.
+    """
+    metric_values = _field_values(payload.get("_ma_qa_metric_local.metric_value"))
+    if not metric_values:
+        return {}
+    local_count = len(metric_values)
+    local_metric_ids = _as_list(
+        payload.get("_ma_qa_metric_local.metric_id"), local_count
+    )
+    local_chains = _as_list(
+        payload.get("_ma_qa_metric_local.label_asym_id"), local_count
+    )
+    local_sequences = _as_list(
+        payload.get("_ma_qa_metric_local.label_seq_id"), local_count
+    )
+
+    metric_ids = _field_values(payload.get("_ma_qa_metric.id"))
+    if not metric_ids:
+        return {}
+    metric_names = _as_list(payload.get("_ma_qa_metric.name"), len(metric_ids))
+    metric_types = _as_list(payload.get("_ma_qa_metric.type"), len(metric_ids))
+    plddt_metric_ids = {
+        _normalise_identifier(metric_id)
+        for metric_id, name, metric_type in zip(
+            metric_ids, metric_names, metric_types, strict=True
+        )
+        if "plddt" in f"{name} {metric_type}".casefold()
+    }
+    if not plddt_metric_ids:
+        return {}
+
+    indexed: dict[tuple[str, str], float] = {}
+    for index, value in enumerate(metric_values):
+        if _normalise_identifier(local_metric_ids[index]) not in plddt_metric_ids:
+            continue
+        key = (
+            _normalise_identifier(local_chains[index]),
+            _normalise_identifier(local_sequences[index]),
+        )
+        if not all(key):
+            raise InputValidationError(
+                "Declared local pLDDT row has no label chain or residue identifier"
+            )
+        try:
+            score = float(value)
+        except ValueError as exc:
+            raise InputValidationError(
+                f"Non-numeric local pLDDT at ModelCIF row {index + 1}"
+            ) from exc
+        if not math.isfinite(score) or not 0.0 <= score <= 100.0:
+            raise InputValidationError(
+                f"Local pLDDT outside 0-100 at ModelCIF row {index + 1}"
+            )
+        if key in indexed and not math.isclose(indexed[key], score, abs_tol=1e-6):
+            raise InputValidationError(
+                "Conflicting local pLDDT values for label residue "
+                f"{key[0]}:{key[1]}"
+            )
+        indexed[key] = score
+    LOGGER.debug("Parsed explicit local pLDDT for %d ModelCIF residues", len(indexed))
+    return indexed
 
 
 def parse_pdb_ca_atoms(path: Path) -> list[AtomCoordinate]:
@@ -104,6 +201,7 @@ def parse_mmcif_ca_atoms(path: Path) -> list[AtomCoordinate]:
     x_values = _as_list(payload.get("_atom_site.Cartn_x"), count)
     y_values = _as_list(payload.get("_atom_site.Cartn_y"), count)
     z_values = _as_list(payload.get("_atom_site.Cartn_z"), count)
+    local_plddt = _local_plddt_by_label(payload)
     atoms: list[AtomCoordinate] = []
     for index, atom_name in enumerate(atom_names):
         if atom_name.strip() != "CA":
@@ -124,6 +222,12 @@ def parse_mmcif_ca_atoms(path: Path) -> list[AtomCoordinate]:
                     x=float(x_values[index]),
                     y=float(y_values[index]),
                     z=float(z_values[index]),
+                    plddt=local_plddt.get(
+                        (
+                            _normalise_identifier(label_chains[index]),
+                            _normalise_identifier(label_sequences[index]),
+                        )
+                    ),
                 )
             )
         except ValueError as exc:
