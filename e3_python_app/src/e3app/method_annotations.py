@@ -148,8 +148,10 @@ METHOD_ANNOTATIONS = {
                 bullets=(
                     "The authoritative root-level HOG pre-structure rank uses discovery, "
                     "orthology/species, E3-associated domain and expression evidence.",
-                    "The default is the top 200 HOGs and the control can expand to 500. The "
-                    "recorded pre-structure-pass filter is optional.",
+                    "The default is the immutable top 200 production cohort. The control can "
+                    "export up to 1,000 pre-structure-ranked HOGs as a separate exploratory "
+                    "queue; ranks beyond 200 are not labelled structurally assessed.",
+                    "The recorded pre-structure-pass filter is optional.",
                 ),
             ),
             MethodSection(

@@ -127,3 +127,15 @@ def test_every_database_header_receives_a_searchable_definition() -> None:
     }
     accession = next(row for row in rows if row["Column"] == "candidate_accession")
     assert accession["Relations / exports"] == "first;second"
+
+
+def test_member_structural_readiness_rank_has_curated_caution() -> None:
+    """The new within-HOG rank cannot be mistaken for an E3-function score."""
+    definition = column_definition_row(
+        column_name="member_structural_readiness_rank"
+    )
+    assert definition["Type / unit"] == (
+        "Integer; blank without a HOG member record"
+    )
+    assert "not evidence" in definition["Interpretation / caution"]
+    assert "druggability" in definition["Recorded rule"]

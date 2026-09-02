@@ -43,6 +43,10 @@ from e3app.data import (
     select_candidate_landscape_relation,
 )
 from e3app.errors import AppError
+from e3app.external_actions import (
+    external_pair_actions,
+    selected_pair_fasta_bytes,
+)
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
     ENRICHED_HOG_MEMBERS,
@@ -70,6 +74,7 @@ from e3app.human_hogs import (
     human_hog_capability,
 )
 from e3app.method_annotations import method_annotation_markdown
+from e3app.navigation import NAVIGATION_STAGES, validate_navigation
 from e3app.pocket_review import (
     PocketReviewBundle,
     group_choice_labels,
@@ -961,7 +966,7 @@ def _render_prestructure_ranked_hogs(
             "authoritative pre-structure evolutionary-group rank."
         )
         return
-    maximum_allowed = min(config.max_rows, 500)
+    maximum_allowed = min(config.max_rows, 1000)
     controls = st.columns(spec=(1, 1, 2))
     with controls[0]:
         requested_hogs = int(
@@ -973,8 +978,9 @@ def _render_prestructure_ranked_hogs(
                 step=50,
                 key="prestructure_hog_top_n",
                 help=(
-                    "Choose the top 200 by default, or expand the independent "
-                    "structural-review shortlist up to the top 500."
+                    "Choose the immutable top 200 production cohort by default, "
+                    "or export an exploratory review queue up to the top 1,000. "
+                    "Rows beyond 200 are not presented as structurally assessed."
                 ),
             )
         )
@@ -1397,6 +1403,141 @@ def _render_seed_group_explorer(
                 )
 
 
+def _render_external_pair_actions(
+    *,
+    bundle: PocketReviewBundle,
+    review_rank: int,
+    reference_accession: object,
+    comparison_accession: object,
+    key_prefix: str,
+) -> None:
+    """Render reproducible EMERALD, AlphaFold and RCSB hand-off actions.
+
+    Args:
+        bundle: Validated portable review bundle containing pair sequences.
+        review_rank: Selected original review rank.
+        reference_accession: Fixed structural-reference identifier.
+        comparison_accession: Aligned/mobile protein identifier.
+        key_prefix: Unique Streamlit widget-key prefix.
+    """
+    actions = external_pair_actions(
+        reference_accession=reference_accession,
+        comparison_accession=comparison_accession,
+    )
+    with st.expander("↗ EMERALD and Mol* follow-up", expanded=False):
+        st.markdown(
+            "Use these actions to explore the selected pair without changing "
+            "the recorded E3 result. The reference and comparison identifiers "
+            "are shown in copy-ready form."
+        )
+        identifiers = st.columns(2)
+        identifiers[0].caption("Reference accession")
+        identifiers[0].code(actions.reference_accession)
+        identifiers[1].caption("Comparison accession")
+        identifiers[1].code(actions.comparison_accession)
+
+        if actions.emerald_url is None:
+            st.info(
+                "EMERALD URL pre-population requires two canonical UniProt "
+                "accessions. Use the exact pair FASTA below for OneKP, scaffold, "
+                "isoform or other local identifiers."
+            )
+        else:
+            st.link_button(
+                "Open pair in EMERALD",
+                actions.emerald_url,
+                help=(
+                    "Opens a new tab with the selected UniProt accessions, "
+                    "alpha 0.75 and delta 8."
+                ),
+            )
+        st.caption(
+            "EMERALD explores optimal and suboptimal sequence alignments and "
+            "alignment-safe windows. These are alignment-confidence intervals, "
+            "not direct biological-disorder calls. Its results remain external "
+            "and are not written back into this read-only release."
+        )
+
+        structural_actions = st.columns(2)
+        structural_actions[0].link_button(
+            "Open RCSB Mol* 3D View",
+            actions.rcsb_molstar_url,
+        )
+        structural_actions[1].link_button(
+            "Open RCSB pairwise alignment",
+            actions.rcsb_pairwise_alignment_url,
+        )
+        st.caption(
+            "RCSB accepts PDB or Computed Structure Model entry IDs, local "
+            "coordinate files or coordinate-file URLs. The first structure is "
+            "the reference for pairwise superposition."
+        )
+
+        alphafold_actions = st.columns(2)
+        if actions.reference_alphafold_url is not None:
+            alphafold_actions[0].link_button(
+                "Open reference in AlphaFold DB",
+                actions.reference_alphafold_url,
+            )
+        else:
+            alphafold_actions[0].caption(
+                "No canonical UniProt accession is available for the reference."
+            )
+        if actions.comparison_alphafold_url is not None:
+            alphafold_actions[1].link_button(
+                "Open comparison in AlphaFold DB",
+                actions.comparison_alphafold_url,
+            )
+        else:
+            alphafold_actions[1].caption(
+                "No canonical UniProt accession is available for the comparison."
+            )
+
+        sequence_sources = (
+            bundle.sequences[
+                bundle.sequences["review_rank"].astype(int) == int(review_rank)
+            ],
+            bundle.supplementary_sequences[
+                bundle.supplementary_sequences["review_rank"].astype(int)
+                == int(review_rank)
+            ]
+            if not bundle.supplementary_sequences.empty
+            else bundle.supplementary_sequences,
+        )
+        try:
+            pair_fasta = selected_pair_fasta_bytes(
+                sources=sequence_sources,
+                reference_accession=actions.reference_accession,
+                comparison_accession=actions.comparison_accession,
+            )
+        except AppError as exc:
+            st.caption(f"Exact two-sequence FASTA is unavailable: {exc}")
+        else:
+            safe_pair = "__".join(
+                "".join(
+                    character
+                    if character.isalnum() or character in "_.-"
+                    else "_"
+                    for character in accession
+                )
+                for accession in (
+                    actions.reference_accession,
+                    actions.comparison_accession,
+                )
+            )
+            st.download_button(
+                "Download exact pair FASTA",
+                data=pair_fasta,
+                file_name=f"{safe_pair}_emerald_pair.fasta",
+                mime="text/x-fasta",
+                key=f"{key_prefix}_external_pair_fasta",
+            )
+        st.warning(
+            "Low AlphaFold pLDDT indicates low model confidence; it is not, by "
+            "itself, proof that a region is biologically disordered."
+        )
+
+
 def _render_structural_superposition(
     *,
     bundle: PocketReviewBundle,
@@ -1477,6 +1618,13 @@ def _render_structural_superposition(
                 preserved_from_parent=key_prefix.startswith("human_plant"),
             )
         )
+    _render_external_pair_actions(
+        bundle=bundle,
+        review_rank=int(group_row["review_rank"]),
+        reference_accession=comparison["reference_accession"],
+        comparison_accession=comparison["mobile_accession"],
+        key_prefix=key_prefix,
+    )
     viewer_document = annotate_pair_evidence_html(
         document=read_review_html(bundle, viewer_path)
     )
@@ -3132,10 +3280,12 @@ def _render_all_results(
             st.info(
                 "One row represents one HOG member. HOG-level annotations and "
                 "rankings repeat so each exported member row remains interpretable. "
-                "When selected-pocket evidence is available, the member-level "
-                "druggability score and its assessment source are also selectable. "
-                "A member with no joined selected-pocket row is explicitly unassessed, "
-                "not a zero-scoring pocket."
+                "The structural-readiness rank is calculated separately within each "
+                "HOG: joined structure/pocket evidence comes first, followed in order "
+                "by druggability, mapping, pocket pLDDT, predictor agreement and stable "
+                "member identifiers. It is an auditable review order, not an E3-function "
+                "score. A member with no joined selected-pocket row is explicitly "
+                "unassessed, not a zero-scoring pocket."
             )
     else:
         available = relation_columns(connection=connection, relation=relation)
@@ -3151,7 +3301,29 @@ def _render_all_results(
         if column in available
     ]
     if not current_selection and selector_key not in st.session_state:
-        current_selection = list(available[: min(18, len(available))])
+        if relation == ENRICHED_HOG_MEMBERS:
+            member_defaults = (
+                "hog_id",
+                "hog_prestructure_rank",
+                "hog_poststructure_rank",
+                "member_structural_readiness_rank",
+                "member_structural_readiness_status",
+                "member_species",
+                "member_parsed_accession",
+                "member_parsed_entry",
+                "member_raw_identifier",
+                "member_structure_assessed",
+                "member_druggability_score",
+                "member_pocket_mapping_fraction",
+                "member_pocket_plddt_fraction",
+                "member_predictor_agreement",
+                "member_structural_evidence_status",
+            )
+            current_selection = [
+                column for column in member_defaults if column in available
+            ]
+        else:
+            current_selection = list(available[: min(18, len(available))])
     st.session_state[selector_key] = current_selection
     actions = st.columns(3)
     if actions[0].button(
@@ -4011,180 +4183,137 @@ def render_app() -> None:
     try:
         with open_resource(config) as connection:
             relations = list_relations(connection)
-            tabs = st.tabs(
-                [
-                    "Overview",
-                    "Workflow schematic",
-                    "Glossary",
-                    "Computational recommendations",
-                    "Threshold explorer",
-                    "Independent structural-review shortlist",
-                    "Visual explorer",
-                    "Candidates",
-                    "Orthology",
-                    "Human HOGs",
-                    "Plant & human HOGs",
-                    "Seed & HOG explorer",
-                    "E3 seed catalogue",
-                    "Domains",
-                    "Expression",
-                    "Ligandability",
-                    "Pocket conservation",
-                    "3D structures & pockets",
-                    "Pocket-aligned sequences",
-                    "3D alignment",
-                    "Human & plant 3D alignment",
-                    "Computational chemistry",
-                    "Search",
-                    "All results",
-                    "Provenance and QC",
-                ]
-            )
-            with tabs[0]:
-                _render_tab_help(tab_name="Overview")
-                _render_overview(connection=connection, config=config)
-            with tabs[1]:
-                _render_tab_help(tab_name="Workflow schematic")
-                _render_method_annotation(tab_name="Workflow schematic")
-                _render_workflow_schematic()
-            with tabs[2]:
-                _render_tab_help(tab_name="Glossary")
-                _render_glossary(connection=connection)
-            with tabs[3]:
-                _render_tab_help(tab_name="Computational recommendations")
-                _render_method_annotation(tab_name="Computational recommendations")
-                _render_computational_recommendations(
+            validate_navigation()
+            page_renderers = {
+                "Overview": lambda: _render_overview(
                     connection=connection,
                     config=config,
-                )
-            with tabs[4]:
-                _render_tab_help(tab_name="Threshold explorer")
-                _render_method_annotation(tab_name="Threshold explorer")
-                _render_threshold_explorer(connection=connection, config=config)
-            with tabs[5]:
-                _render_tab_help(
-                    tab_name="Independent structural-review shortlist"
-                )
-                _render_method_annotation(
-                    tab_name="Independent structural-review shortlist"
-                )
-                _render_prestructure_ranked_hogs(
-                    connection=connection,
-                    config=config,
-                )
-            with tabs[6]:
-                _render_tab_help(tab_name="Visual explorer")
-                _render_visual_explorer(connection=connection, config=config)
-            with tabs[7]:
-                _render_tab_help(tab_name="Candidates")
-                _render_section(
-                    connection=connection,
-                    config=config,
-                    section="candidates",
-                )
-            with tabs[8]:
-                _render_tab_help(tab_name="Orthology")
-                _render_method_annotation(tab_name="Orthology")
-                _render_orthology_explorer(
-                    connection=connection,
-                    config=config,
-                )
-            with tabs[9]:
-                _render_tab_help(tab_name="Human HOGs")
-                _render_human_hog_explorer(
-                    connection=connection,
-                    config=config,
-                    plant_required=False,
-                )
-            with tabs[10]:
-                _render_tab_help(tab_name="Plant & human HOGs")
-                _render_human_hog_explorer(
-                    connection=connection,
-                    config=config,
-                    plant_required=True,
-                )
-            with tabs[11]:
-                _render_tab_help(tab_name="Seed & HOG explorer")
-                _render_seed_group_explorer(
-                    connection=connection,
-                    config=config,
-                )
-            with tabs[12]:
-                _render_tab_help(tab_name="E3 seed catalogue")
-                _render_seed_catalogue(
-                    connection=connection,
-                    config=config,
-                )
-            for tab, section, tab_name in zip(
-                tabs[13:17],
-                ("domains", "expression", "ligandability", "pocket_conservation"),
-                ("Domains", "Expression", "Ligandability", "Pocket conservation"),
-                strict=True,
-            ):
-                with tab:
-                    _render_tab_help(tab_name=tab_name)
-                    _render_method_annotation(tab_name=tab_name)
-                    if section == "expression":
-                        _render_expression_section(
-                            connection=connection,
-                            config=config,
-                        )
-                    else:
-                        _render_section(
-                            connection=connection,
-                            config=config,
-                            section=section,
-                        )
-            with tabs[17]:
-                _render_tab_help(tab_name="3D structures & pockets")
-                _render_method_annotation(tab_name="3D structures & pockets")
-                _render_pocket_review(bundle=pocket_review, focus="structure")
-            with tabs[18]:
-                _render_tab_help(tab_name="Pocket-aligned sequences")
-                _render_method_annotation(tab_name="Pocket-aligned sequences")
-                _render_pocket_review(bundle=pocket_review, focus="alignment")
-            with tabs[19]:
-                _render_tab_help(tab_name="3D alignment")
-                _render_method_annotation(tab_name="3D alignment")
-                _render_structural_alignment_section(
-                    connection=connection,
-                    config=config,
-                    bundle=pocket_review,
-                )
-            with tabs[20]:
-                _render_tab_help(tab_name="Human & plant 3D alignment")
-                _render_method_annotation(
-                    tab_name="Human & plant 3D alignment"
-                )
-                _render_human_plant_structural_review(
-                    bundle=human_plant_review
-                )
-            with tabs[21]:
-                _render_tab_help(tab_name="Computational chemistry")
-                _render_method_annotation(tab_name="Computational chemistry")
-                _render_section(
-                    connection=connection,
-                    config=config,
-                    section="computational_chemistry",
-                )
-            with tabs[22]:
-                _render_tab_help(tab_name="Search")
-                _render_search(connection=connection, max_rows=config.max_rows)
-            with tabs[23]:
-                _render_tab_help(tab_name="All results")
-                _render_all_results(
-                    connection=connection,
-                    config=config,
-                    relations=relations,
-                )
-            with tabs[24]:
-                _render_tab_help(tab_name="Provenance and QC")
-                _render_method_annotation(tab_name="Provenance and QC")
-                _render_section(
+                ),
+                "Workflow schematic": _render_workflow_schematic,
+                "Glossary": lambda: _render_glossary(connection=connection),
+                "Provenance and QC": lambda: _render_section(
                     connection=connection,
                     config=config,
                     section="provenance",
-                )
+                ),
+                "Computational recommendations": lambda: (
+                    _render_computational_recommendations(
+                        connection=connection,
+                        config=config,
+                    )
+                ),
+                "Independent structural-review shortlist": lambda: (
+                    _render_prestructure_ranked_hogs(
+                        connection=connection,
+                        config=config,
+                    )
+                ),
+                "All results": lambda: _render_all_results(
+                    connection=connection,
+                    config=config,
+                    relations=relations,
+                ),
+                "Candidates": lambda: _render_section(
+                    connection=connection,
+                    config=config,
+                    section="candidates",
+                ),
+                "E3 seed catalogue": lambda: _render_seed_catalogue(
+                    connection=connection,
+                    config=config,
+                ),
+                "Domains": lambda: _render_section(
+                    connection=connection,
+                    config=config,
+                    section="domains",
+                ),
+                "Expression": lambda: _render_expression_section(
+                    connection=connection,
+                    config=config,
+                ),
+                "Threshold explorer": lambda: _render_threshold_explorer(
+                    connection=connection,
+                    config=config,
+                ),
+                "Visual explorer": lambda: _render_visual_explorer(
+                    connection=connection,
+                    config=config,
+                ),
+                "Orthology": lambda: _render_orthology_explorer(
+                    connection=connection,
+                    config=config,
+                ),
+                "Human HOGs": lambda: _render_human_hog_explorer(
+                    connection=connection,
+                    config=config,
+                    plant_required=False,
+                ),
+                "Plant & human HOGs": lambda: _render_human_hog_explorer(
+                    connection=connection,
+                    config=config,
+                    plant_required=True,
+                ),
+                "Seed & HOG explorer": lambda: _render_seed_group_explorer(
+                    connection=connection,
+                    config=config,
+                ),
+                "Ligandability": lambda: _render_section(
+                    connection=connection,
+                    config=config,
+                    section="ligandability",
+                ),
+                "Pocket conservation": lambda: _render_section(
+                    connection=connection,
+                    config=config,
+                    section="pocket_conservation",
+                ),
+                "3D structures & pockets": lambda: _render_pocket_review(
+                    bundle=pocket_review,
+                    focus="structure",
+                ),
+                "Pocket-aligned sequences": lambda: _render_pocket_review(
+                    bundle=pocket_review,
+                    focus="alignment",
+                ),
+                "3D alignment": lambda: _render_structural_alignment_section(
+                    connection=connection,
+                    config=config,
+                    bundle=pocket_review,
+                ),
+                "Human & plant 3D alignment": lambda: (
+                    _render_human_plant_structural_review(
+                        bundle=human_plant_review,
+                    )
+                ),
+                "Computational chemistry": lambda: _render_section(
+                    connection=connection,
+                    config=config,
+                    section="computational_chemistry",
+                ),
+                "Search": lambda: _render_search(
+                    connection=connection,
+                    max_rows=config.max_rows,
+                ),
+            }
+            stage_tabs = st.tabs([stage.label for stage in NAVIGATION_STAGES])
+            for stage_tab, stage in zip(
+                stage_tabs,
+                NAVIGATION_STAGES,
+                strict=True,
+            ):
+                with stage_tab:
+                    st.caption(stage.description)
+                    page_tabs = st.tabs([page.title for page in stage.pages])
+                    for page_tab, page in zip(
+                        page_tabs,
+                        stage.pages,
+                        strict=True,
+                    ):
+                        with page_tab:
+                            _render_tab_help(tab_name=page.title)
+                            if page.method_annotation:
+                                _render_method_annotation(tab_name=page.title)
+                            page_renderers[page.title]()
     except AppError as exc:
         LOGGER.exception("The E3 application could not render")
         st.error(str(exc))

@@ -4,6 +4,23 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.17.0
+
+- Groups the 25 existing pages into six colour-marked scientific stages while
+  preserving their help, methods, controls and read-only data behaviour.
+- Adds validated EMERALD hand-offs for canonical UniProt pairs, exact selected
+  pair FASTA downloads, AlphaFold Database links and RCSB Mol*/pairwise actions.
+- Expands the independent pre-structure export to an explicitly exploratory
+  top-1,000 queue without changing the immutable top-200 production cohort.
+- Adds a deterministic, evidence-visible structural-readiness rank for members
+  within each HOG; this review order is separate from HOG ranking and is not an
+  E3-function score.
+- Adds the scientific extension roadmap for terminal trimming, pinned Mol*,
+  taxonomic selectors, motif analysis, incremental processing, the standalone
+  OrthoFinder boundary and the 2026 UPS catalogue audit.
+- Does not recalculate a completed scientific result or retrieve an external
+  EMERALD result into the release.
+
 ## v0.16.2
 
 - Adds accessible question-mark definitions beside every metric in the

@@ -99,6 +99,8 @@ MEMBER_POCKET_RELATION_PREFERENCE = (
     "ranked_member_pockets",
 )
 MEMBER_STRUCTURAL_COLUMNS = (
+    "member_structural_readiness_rank",
+    "member_structural_readiness_status",
     "member_structure_assessed",
     "member_structural_source",
     "member_structural_accession",
@@ -809,6 +811,7 @@ def _build_enriched_hog_query(
         "hog_prestructure_rank NULLS LAST, hog_id"
     )
     if selected_result == ENRICHED_HOG_MEMBERS:
+        order += ", member_structural_readiness_rank NULLS LAST"
         member_species = next(
             (
                 output
@@ -821,12 +824,33 @@ def _build_enriched_hog_query(
         )
         if member_species is not None:
             order += f", {quote_identifier(member_species)} NULLS LAST"
-    query = (
+    enriched_cte = (
         f"WITH {membership_ctes}, {ranking_ctes}, {member_structural_ctes}, "
         f"{universe}, enriched AS ("
         "SELECT "
         + ", ".join(expressions)
-        + f" {from_sql}) SELECT {selected_sql} FROM enriched "
+        + f" {from_sql})"
+    )
+    source = "enriched"
+    if selected_result == ENRICHED_HOG_MEMBERS:
+        enriched_cte += (
+            ", member_ranked AS (SELECT *, CASE WHEN member_raw_identifier "
+            "IS NULL THEN CAST(NULL AS BIGINT) ELSE ROW_NUMBER() OVER ("
+            "PARTITION BY hog_id ORDER BY member_structure_assessed DESC, "
+            "member_druggability_score DESC NULLS LAST, "
+            "member_pocket_mapping_fraction DESC NULLS LAST, "
+            "member_pocket_plddt_fraction DESC NULLS LAST, "
+            "member_predictor_agreement DESC NULLS LAST, "
+            "member_species NULLS LAST, member_raw_identifier NULLS LAST) END "
+            "AS member_structural_readiness_rank, CASE "
+            "WHEN member_raw_identifier IS NULL THEN 'NO_MEMBER_RECORD' "
+            "WHEN member_structure_assessed THEN 'STRUCTURAL_POCKET_EVIDENCE' "
+            "ELSE 'NO_JOINED_STRUCTURAL_POCKET_EVIDENCE' END "
+            "AS member_structural_readiness_status FROM enriched)"
+        )
+        source = "member_ranked"
+    query = (
+        f"{enriched_cte} SELECT {selected_sql} FROM {source} "
         f"ORDER BY {order} LIMIT {int(maximum_rows)}"
     )
     return query, parameters

@@ -1,16 +1,21 @@
 # ARIA plant E3 Python reporter
 
-Version 0.16.2 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
+Version 0.17.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
 applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-Focused question-mark help now defines every pair-evidence metric in place,
-explains the deterministic fixed-reference choice and clarifies filtered
-human-extension ranks and alternative-pocket sensitivity controls. Structural
-table headers receive the same maintained definitions where the source column
-is recognised. These additions are presentation-only and do not modify the
-completed portable review bundles or their scientific decisions.
+The 25 pages are now organised into six colour-marked scientific stages:
+information, candidate discovery, E3 orthology context, structural
+prioritisation, structural comparison, and chemistry and outputs. Existing
+page names, help, methods and data queries are preserved.
+
+Recorded structure pairs now provide validated EMERALD hand-offs for canonical
+UniProt accessions, exact selected-pair FASTA export, AlphaFold Database links
+and RCSB Mol*/pairwise-alignment actions. External results are not scraped or
+written back into the read-only release. The enriched member result also adds a
+deterministic structural-readiness rank within each HOG without changing the
+authoritative HOG ranking.
 
 The human-and-plant 3D tab now uses one synchronised evolutionary-group
 selection for its explicit reference/mobile protein comparison, selectable
@@ -75,6 +80,9 @@ so it cannot be confused with the immutable plant-only baseline.
 
 The reporter provides:
 
+- six ordered, colour-marked navigation stages containing the 25 maintained
+  scientific pages, so the analysis can be followed from release information
+  through discovery, orthology, structure and outputs;
 - a responsive Workflow schematic tracing the complete method from validated
   inputs through sequence discovery, OrthoFinder reconciliation, biological
   evidence, structure and pocket analysis, 3D comparison, integrated ranking
@@ -135,7 +143,8 @@ The reporter provides:
   expression and missing-evidence fields, HOG composition, human and
   Arabidopsis representatives, plus separate TSV and formatted Excel exports;
 - a dedicated **Independent structural-review shortlist** returning the top
-  200 root-level `N0.HOG…` groups by default, expandable to 500. It uses the
+  200 root-level `N0.HOG…` groups by default, expandable to an explicitly
+  exploratory top-1,000 queue. It uses the
   authoritative ranking from all recorded discovery, orthology/species,
   E3-domain and expression evidence, with an optional pre-structure-pass filter.
   Existing AlphaFold models, pockets, druggability, mapping, alignment and 3D
@@ -157,6 +166,11 @@ The reporter provides:
   qualifying pocket remain visible in a separate exact-sequence inventory and
   are not mislabelled as pocket-aligned evidence. Current report pages download
   the rotated 3D canvas and complete alignment directly as PDFs;
+- a reproducible external follow-up panel for every selected structure pair,
+  with pair roles, validated EMERALD and AlphaFold links where canonical
+  UniProt accessions exist, exact two-sequence FASTA, and RCSB Mol* and pairwise
+  structure-alignment actions. EMERALD safety windows are labelled as alignment
+  robustness rather than disorder calls;
 - searchable HOG/orthogroup, DeepClust cluster, rank and accession choices,
   alongside downloadable OrthoFinder member sequence/model identifiers;
 - a separate column multiselect and row limit for every section;
@@ -170,6 +184,10 @@ The reporter provides:
   and post-structure ranks, complete source-ranking fields and membership
   summaries. A separate enriched member view repeats that context beside every
   HOG member; all unmodified raw relations remain selectable for exact audit;
+- a within-HOG structural-readiness rank in the enriched member result. Joined
+  structural evidence and its component values remain visible, missing evidence
+  is not converted to zero, and the rank is not presented as an E3-function
+  score;
 - provenance and QC views; and
 - a collapsed **❓ How to use this tab** panel on every primary tab, with
   tab-specific operating instructions followed by an explicit description of
@@ -198,6 +216,11 @@ stationary header. Numeric display is shortened to three
 decimal places (or three significant figures for P/E/FDR/Q values) without
 changing the exported data. The main navigation labels wrap across as many rows
 as the window requires, so sections are visible without tab-scroll arrows.
+
+The phased scientific and technical contract for top-1,000 processing,
+terminal-disorder sensitivity, pinned Mol*, taxonomy selectors, motif analysis,
+incremental updates and standalone OrthoFinder ownership is recorded in
+[`docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md`](docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md).
 
 The Computational recommendations view points readers from the top of the page
 to a detailed methodology below the authoritative table. The explanation

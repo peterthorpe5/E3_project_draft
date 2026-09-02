@@ -36,13 +36,22 @@ PRIMARY_TAB_LABELS = {
     "Provenance and QC",
 }
 
+STAGE_TAB_LABELS = [
+    "🔵 1 · Information",
+    "🟢 2 · Candidate discovery",
+    "🟣 3 · E3 orthology context",
+    "🟠 4 · Structural prioritisation",
+    "🟡 5 · Structural comparison",
+    "🔴 6 · Chemistry & outputs",
+]
+
 
 def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> None:
     """Removed Streamlit APIs and duplicate selectbox defaults do not regress."""
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     source = path.read_text(encoding="utf-8")
     assert "use_container_width" not in source
-    assert "maximum_allowed = min(config.max_rows, 500)" in source
+    assert "maximum_allowed = min(config.max_rows, 1000)" in source
     selector_start = source.index('selector_key = "recommendation_druggability_group"')
     selector_end = source.index("plot_rows, overview_truncated", selector_start)
     assert "index=" not in source[selector_start:selector_end]
@@ -58,6 +67,9 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
     assert PRIMARY_TAB_LABELS.issubset({tab.label for tab in app.tabs})
+    assert [
+        tab.label for tab in app.tabs if tab.label in STAGE_TAB_LABELS
+    ] == STAGE_TAB_LABELS
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
     glossary_selectors = [
@@ -356,6 +368,13 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     assert expander_labels.count("❓ Define the pair-evidence terms") == 2
     assert "❓ Why are only some parent ranks listed?" in expander_labels
     assert "❓ What do the protein and pocket choices mean?" in expander_labels
+    assert expander_labels.count("↗ EMERALD and Mol* follow-up") == 2
+    pair_downloads = [
+        button
+        for button in app.get("download_button")
+        if button.label == "Download exact pair FASTA"
+    ]
+    assert len(pair_downloads) == 2
     assert any(
         tab.label == "Human & plant 3D alignment" for tab in app.tabs
     )
