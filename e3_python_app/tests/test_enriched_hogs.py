@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import duckdb
+import pandas as pd
 import pytest
 
 from e3app.enriched_hogs import (
@@ -150,6 +151,8 @@ def test_enriched_hog_member_detail_repeats_complete_hog_context(
     )
     assert "member_species" in columns
     assert "member_raw_identifier" in columns
+    assert "member_structural_readiness_rank" in columns
+    assert "member_structural_readiness_status" in columns
     assert "member_druggability_score" in columns
     selected = [
         "hog_id",
@@ -161,6 +164,8 @@ def test_enriched_hog_member_detail_repeats_complete_hog_context(
         "barley_hog_representatives",
         "member_species",
         "member_raw_identifier",
+        "member_structural_readiness_rank",
+        "member_structural_readiness_status",
         "member_structure_assessed",
         "member_druggability_score",
     ]
@@ -172,17 +177,28 @@ def test_enriched_hog_member_detail_repeats_complete_hog_context(
     )
     hog1 = result[result["hog_id"] == "N0.HOG1"]
     assert hog1["member_species"].tolist() == [
-        "Arabidopsis_thaliana",
         "Homo_sapiens",
+        "Arabidopsis_thaliana",
         "Hordeum_vulgare",
         "Oryza_sativa",
     ]
     assert set(hog1["hog_poststructure_rank"]) == {1}
+    assert hog1["member_structural_readiness_rank"].astype(int).tolist() == [
+        1,
+        2,
+        3,
+        4,
+    ]
     human = hog1[hog1["member_species"] == "Homo_sapiens"].iloc[0]
     assert bool(human["member_structure_assessed"])
     assert float(human["member_druggability_score"]) == pytest.approx(0.72)
+    assert human["member_structural_readiness_status"] == (
+        "STRUCTURAL_POCKET_EVIDENCE"
+    )
     ranked_only = result[result["hog_id"] == "N0.HOG3"].iloc[0]
     assert ranked_only["member_species"] is None
+    assert pd.isna(ranked_only["member_structural_readiness_rank"])
+    assert ranked_only["member_structural_readiness_status"] == "NO_MEMBER_RECORD"
 
 
 def test_enriched_hog_validation_rejects_bad_requests() -> None:

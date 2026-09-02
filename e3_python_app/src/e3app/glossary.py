@@ -272,6 +272,35 @@ _CORE_GLOSSARY_ENTRIES = (
         "The candidate was outside the 200-group structural cohort or lacks the required "
         "structural result. It is not classified as a structural failure.",
     ),
+    GlossaryEntry(
+        "Member prioritisation",
+        "member_structural_readiness_rank",
+        "Deterministic review position of one member within its HOG; lower values are "
+        "reviewed first.",
+        recorded_rule=(
+            "Order joined structure/pocket evidence first, then descending druggability, "
+            "mapping fraction, pocket pLDDT fraction and predictor agreement, followed by "
+            "species and raw identifier tie-breaks."
+        ),
+        type_or_unit="Integer; blank without a HOG member record",
+        interpretation_or_caution=(
+            "This is a structural-review order, not evidence that the member is the best "
+            "E3 enzyme or that E3 function is conserved."
+        ),
+        source="Python app v0.17.0 virtual enriched-member view",
+    ),
+    GlossaryEntry(
+        "Member prioritisation",
+        "member_structural_readiness_status",
+        "Controlled state recording whether the within-HOG review rank has joined "
+        "structure/pocket evidence, lacks it, or has no member record.",
+        type_or_unit="Categorical status",
+        interpretation_or_caution=(
+            "No joined structural evidence is an unassessed state and is not converted "
+            "to a zero score or biological negative."
+        ),
+        source="Python app v0.17.0 virtual enriched-member view",
+    ),
 )
 
 

@@ -75,8 +75,8 @@ TOP_LEVEL_TAB_HELP = {
     ),
     "Independent structural-review shortlist": TabHelpEntry(
         instruction=(
-            "Choose the top 200 to 500 HOGs from the complete recorded pre-structure evidence "
-            "ranking; existing pocket and structural results are deliberately excluded."
+            "Choose the immutable top 200 cohort or export up to 1,000 HOGs from the complete "
+            "recorded pre-structure ranking; existing structural results remain excluded."
         ),
         yields=(
             "An independent root-HOG review queue with authoritative pre-structure rank, pass "
@@ -275,8 +275,9 @@ TOP_LEVEL_TAB_HELP = {
         ),
         yields=(
             "Joined HOG overview and member-detail views containing rankings, human and "
-            "Arabidopsis, rice and barley representatives, membership and species context, plus "
-            "every raw DuckDB relation under bounded preview and download controls."
+            "Arabidopsis, rice and barley representatives, membership, species context and an "
+            "auditable within-HOG structural-readiness order, plus every raw DuckDB relation "
+            "under bounded preview and download controls."
         ),
     ),
     "Provenance and QC": TabHelpEntry(
