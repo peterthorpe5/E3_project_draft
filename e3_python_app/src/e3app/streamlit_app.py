@@ -1656,7 +1656,7 @@ def _render_external_pair_actions(
         cache_key = f"{key_prefix}_alphafold_confidence_cache"
         cache = st.session_state.setdefault(cache_key, {})
         if st.button(
-            "Retrieve AlphaFold pLDDT for this pair",
+            "Load AlphaFold confidence for graph and trimming",
             key=f"{key_prefix}_retrieve_alphafold_confidence",
         ):
             loaded: list[str] = []
@@ -1695,13 +1695,14 @@ def _render_external_pair_actions(
         if confidence:
             st.success(
                 "Cached AlphaFold pLDDT is active in the viewer. Quality "
-                "colouring, the confidence graph and suggested terminal "
-                "trimming are enabled."
+                "colouring, the full-width confidence graph and guided "
+                "terminal recommendations are enabled."
             )
         else:
             st.info(
-                "Manual N/C-terminal trimming is available. Retrieve exact "
-                "AlphaFold confidence to enable pLDDT colouring and suggestions."
+                "Manual terminal display controls remain available. Load exact "
+                "AlphaFold confidence to enable quality colouring, the graph "
+                "and automatic recommendations."
             )
         return confidence
 
@@ -1811,11 +1812,12 @@ def _render_structural_superposition(
     )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
-        "the mapped pocket residues, trim either terminal display independently, "
+        "the mapped pocket residues, use a guided or manual terminal display, "
         "and select a residue for its chain and structure position. The mobile "
-        "model is shown after applying the recorded alignment matrix."
+        "model is shown after applying the recorded alignment matrix. Terminal "
+        "display choices are reversible and never alter the underlying evidence."
     )
-    components.html(viewer_document, height=1120, scrolling=True)
+    components.html(viewer_document, height=1480, scrolling=True)
     with st.expander("❓ Define the pair-evidence terms"):
         st.markdown(pair_evidence_help_markdown())
         st.caption(

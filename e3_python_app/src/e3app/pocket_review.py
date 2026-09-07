@@ -941,16 +941,27 @@ def _pocket_review_pdf_compatibility_script() -> str:
 
 @lru_cache(maxsize=1)
 def _terminal_trimming_compatibility_script() -> str:
-    """Return the packaged browser-side terminal display controller."""
+    """Return the packaged terminal logic and browser display controller.
+
+    Returns:
+        Self-contained JavaScript with the independently tested pure trimming
+        functions loaded before the browser integration layer.
+
+    Raises:
+        AppError: If either packaged JavaScript resource is unavailable.
+    """
     try:
-        return (
-            files("e3app")
-            .joinpath("resources", "terminal_trim_compat.js")
-            .read_text(encoding="utf-8")
+        resources = files("e3app").joinpath("resources")
+        return "\n".join(
+            resources.joinpath(file_name).read_text(encoding="utf-8")
+            for file_name in (
+                "terminal_trim_core.js",
+                "terminal_trim_compat.js",
+            )
         )
     except (FileNotFoundError, OSError, UnicodeError) as exc:
         raise AppError(
-            "The packaged terminal trimming compatibility asset is unavailable"
+            "A packaged terminal trimming browser asset is unavailable"
         ) from exc
 
 

@@ -10,6 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from e3app import __version__
 from e3app.errors import AppError
 from e3app.external_actions import normalise_uniprot_accession
 
@@ -49,7 +50,7 @@ def _read_https(url: str, maximum_bytes: int) -> bytes:
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != ALPHAFOLD_HOST:
         raise AppError("AlphaFold response supplied an unapproved model URL")
-    request = Request(url, headers={"User-Agent": "e3-python-app/0.18.2"})
+    request = Request(url, headers={"User-Agent": f"e3-python-app/{__version__}"})
     try:
         with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             payload = response.read(maximum_bytes + 1)

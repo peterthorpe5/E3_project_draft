@@ -1,7 +1,20 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.2
+Status: living implementation contract after Python app v0.18.3
 Last reviewed: 2026-09-07
+
+## Implemented in v0.18.3
+
+The confidence plot is now a 390-pixel full-width review graph for both group
+and pairwise pages. It includes confidence-zone shading, coverage and mean
+summaries, exact residue hover values, clear axes, visible-residue counts, and
+distinct applied versus proposed terminal regions. A missing confidence profile
+is an explicit recoverable state rather than an empty graph.
+
+Terminal display controls now lead with a calculated recommendation and one
+apply action. Sensitivity settings and manual fine-tuning are separated, and a
+pairwise reviewer can apply independent recommendations to both structures.
+The operation remains reversible browser-only presentation state.
 
 ## Implemented in v0.18.2
 
@@ -58,10 +71,9 @@ safety windows describe alignment robustness, not biological disorder.
 ## Delivered in v0.18.0
 
 - Separate Mol* links load the exact reference or comparison AlphaFold model
-  via the documented `afdb` parameter. The RCSB action serialises both exact
-  Computed Structure Model IDs and chain selections into its documented
-  pairwise request. Local/non-UniProt identifiers receive no misleading empty
-  external action.
+  via the documented `afdb` parameter. The initial RCSB computed-model pair
+  hand-off was removed in v0.18.1 after it proved unreliable; local/non-UniProt
+  identifiers receive no misleading empty external action.
 - Existing group and pair viewers gain reversible manual N- and C-terminal
   residue-count display trimming. Pair-member settings are independent and all
   views have explicit per-model and global reset actions.

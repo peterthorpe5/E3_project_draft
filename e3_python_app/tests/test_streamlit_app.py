@@ -56,6 +56,8 @@ def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> Non
     assert "font-size: 0.96rem !important" in source
     assert "font-size: 1.48rem !important" in source
     assert "font-size: 1.22rem !important" in source
+    assert "Load AlphaFold confidence for graph and trimming" in source
+    assert "components.html(viewer_document, height=1480, scrolling=True)" in source
     selector_start = source.index('selector_key = "recommendation_druggability_group"')
     selector_end = source.index("plot_rows, overview_truncated", selector_start)
     assert "index=" not in source[selector_start:selector_end]
