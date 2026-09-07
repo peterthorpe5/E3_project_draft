@@ -1,7 +1,11 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.0 is the Streamlit companion to `E3_shiny_app` 0.18.0. Both
-applications use the same release contract and answer the same grant-facing
+Version 0.18.2 is the Streamlit companion to `E3_shiny_app`. It adds composable
+exact-taxon and clade filters to the existing orthology explorer and enlarges
+the residue-level AlphaFold pLDDT trace. The taxonomy snapshot is local and
+versioned: unknown species remain explicitly unmapped.
+
+Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 

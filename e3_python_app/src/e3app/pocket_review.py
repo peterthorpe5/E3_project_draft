@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import pandas as pd
 
+from e3app.alphafold_confidence import AlphaFoldConfidence
 from e3app.errors import AppError
 from e3app.exports import dataframe_to_fasta_bytes
 
@@ -796,6 +797,68 @@ def merge_pair_viewer_plddt(
         return pair_document
     encoded = json.dumps(pair_payload, separators=(",", ":")).replace("</", "<\\/")
     LOGGER.debug("Merged local pLDDT into %d pair-viewer atoms", merged_count)
+    return (
+        pair_document[: pair_match.start("payload")]
+        + encoded
+        + pair_document[pair_match.end("payload"):]
+    )
+
+
+def merge_downloaded_pair_plddt(
+    *,
+    pair_document: str,
+    confidence_records: tuple[AlphaFoldConfidence, ...],
+) -> str:
+    """Merge retrieved AlphaFold pLDDT into an embedded pair viewer.
+
+    Args:
+        pair_document: Trusted pairwise HTML containing ``alignmentData``.
+        confidence_records: Exact accession-specific AlphaFold confidence.
+
+    Returns:
+        Enriched HTML, or the original document when no exact records match.
+
+    Raises:
+        AppError: If the supplied document is not text.
+    """
+    if not isinstance(pair_document, str):
+        raise AppError("Pair structural viewer document must be text")
+    pair_match = _embedded_json_script(
+        document=pair_document,
+        element_id="alignmentData",
+    )
+    if pair_match is None:
+        return pair_document
+    try:
+        payload = json.loads(pair_match.group("payload"))
+    except (json.JSONDecodeError, TypeError):
+        return pair_document
+    if not isinstance(payload, dict) or not isinstance(payload.get("metadata"), dict):
+        return pair_document
+    by_accession = {
+        record.accession: dict(record.quality_by_residue)
+        for record in confidence_records
+    }
+    merged_count = 0
+    metadata = payload["metadata"]
+    for role in ("reference", "mobile"):
+        atoms = payload.get(role)
+        accession = str(metadata.get(role, "")).upper()
+        quality = by_accession.get(accession)
+        if not isinstance(atoms, list) or quality is None:
+            continue
+        for atom in atoms:
+            if not isinstance(atom, dict):
+                continue
+            residue = str(atom.get("resi", "")).strip()
+            if residue not in quality:
+                continue
+            atom["plddt"] = quality[residue]
+            merged_count += 1
+    if not merged_count:
+        return pair_document
+    encoded = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
+    LOGGER.info("Merged downloaded pLDDT into %d pair-viewer atoms", merged_count)
     return (
         pair_document[: pair_match.start("payload")]
         + encoded

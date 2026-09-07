@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from e3app.alphafold_confidence import AlphaFoldConfidence
 from e3app.config import AppConfig
 from e3app.errors import AppError
 from e3app.pocket_review import (
@@ -19,6 +20,7 @@ from e3app.pocket_review import (
     discover_pocket_review_dir,
     group_choice_labels,
     load_pocket_review,
+    merge_downloaded_pair_plddt,
     merge_pair_viewer_plddt,
     pocket_review_available,
     prepare_pocket_review,
@@ -299,6 +301,9 @@ def test_pair_viewer_gains_idempotent_terminal_display_controls() -> None:
     assert "C-terminal residues to hide" in upgraded
     assert "Suggest from pLDDT" in upgraded
     assert "Residue-level pLDDT is unavailable" in upgraded
+    assert 'qualityPanel.id = "e3QualityPanel"' in upgraded
+    assert "height:260px" in upgraded
+    assert "plotBottom = 218" in upgraded
     assert "does not\nchange the saved model" in upgraded
     assert add_terminal_trimming_controls(upgraded) == upgraded
 
@@ -399,6 +404,44 @@ def test_pair_quality_merge_fails_softly_for_incompatible_payloads() -> None:
         merge_pair_viewer_plddt(
             pair_document=pair,
             group_document=None,  # type: ignore[arg-type]
+        )
+
+
+def test_downloaded_alphafold_quality_enriches_exact_pair_roles() -> None:
+    """Retrieved per-residue scores are attached by accession and residue."""
+    pair = (
+        '<script id="alignmentData" type="application/json">'
+        '{"reference":[{"resi":"1","plddt":null}],'
+        '"mobile":[{"resi":"2"}],'
+        '"metadata":{"reference":"P12345","mobile":"Q9UDW1"}}'
+        "</script>"
+    )
+    records = (
+        AlphaFoldConfidence(
+            accession="P12345",
+            model_url="https://alphafold.ebi.ac.uk/a.pdb",
+            quality_by_residue=(("1", 42.0),),
+        ),
+        AlphaFoldConfidence(
+            accession="Q9UDW1",
+            model_url="https://alphafold.ebi.ac.uk/b.pdb",
+            quality_by_residue=(("2", 91.0),),
+        ),
+    )
+    enriched = merge_downloaded_pair_plddt(
+        pair_document=pair,
+        confidence_records=records,
+    )
+    assert '"reference":[{"resi":"1","plddt":42.0}]' in enriched
+    assert '"mobile":[{"resi":"2","plddt":91.0}]' in enriched
+    assert merge_downloaded_pair_plddt(
+        pair_document="<html></html>",
+        confidence_records=records,
+    ) == "<html></html>"
+    with pytest.raises(AppError, match="must be text"):
+        merge_downloaded_pair_plddt(
+            pair_document=None,  # type: ignore[arg-type]
+            confidence_records=records,
         )
 
 

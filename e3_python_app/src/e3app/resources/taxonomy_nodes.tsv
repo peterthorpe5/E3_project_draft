@@ -1,0 +1,51 @@
+taxon_id	name	rank	parent_taxon_id
+1	root	no rank	1
+131567	cellular organisms	no rank	1
+2759	Eukaryota	superkingdom	131567
+33090	Viridiplantae	kingdom	2759
+35493	Streptophyta	phylum	33090
+3193	Embryophyta	clade	35493
+58023	Tracheophyta	clade	3193
+58024	Spermatophyta	clade	58023
+3398	Magnoliopsida	class	58024
+3699	Brassicales	order	3398
+3700	Brassicaceae	family	3699
+3702	Arabidopsis thaliana	species	3700
+72025	Fabales	order	3398
+3803	Fabaceae	family	72025
+3847	Glycine max	species	3803
+3880	Medicago truncatula	species	3803
+3646	Malpighiales	order	3398
+3688	Salicaceae	family	3646
+3694	Populus trichocarpa	species	3688
+4069	Solanales	order	3398
+4070	Solanaceae	family	4069
+4081	Solanum lycopersicum	species	4070
+4113	Solanum tuberosum	species	4070
+4447	Liliopsida	class	58024
+1437197	Petrosaviidae	clade	4447
+4479	Poaceae	family	1437197
+359160	BOP clade	clade	4479
+147367	Oryzoideae	subfamily	359160
+147380	Oryzeae	tribe	147367
+1648021	Oryzinae	subtribe	147380
+4530	Oryza sativa	species	1648021
+147368	Pooideae	subfamily	359160
+15367	Brachypodieae	tribe	147368
+15368	Brachypodium distachyon	species	15367
+1648038	Triticodae	supertribe	147368
+147389	Triticeae	tribe	1648038
+4513	Hordeum vulgare	species	147389
+4565	Triticum aestivum	species	147389
+147370	PACMAD clade	clade	4479
+147369	Panicoideae	subfamily	147370
+1648033	Andropogonodae	supertribe	147369
+147429	Andropogoneae	tribe	1648033
+4558	Sorghum bicolor	species	147429
+4577	Zea mays	species	147429
+33208	Metazoa	kingdom	2759
+7711	Chordata	phylum	33208
+40674	Mammalia	class	7711
+9443	Primates	order	40674
+9604	Hominidae	family	9443
+9606	Homo sapiens	species	9604

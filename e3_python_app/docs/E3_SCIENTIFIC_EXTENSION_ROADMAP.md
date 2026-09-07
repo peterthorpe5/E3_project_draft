@@ -1,7 +1,19 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.0
-Last reviewed: 2026-09-02
+Status: living implementation contract after Python app v0.18.2
+Last reviewed: 2026-09-07
+
+## Implemented in v0.18.2
+
+The existing E3 orthology page now supports exact taxon IDs, clade inclusion,
+only-in-clade filtering, and exact or descendant exclusion. Selectors compose
+with AND and expose mapped, unmapped and outside-scope evidence in downloads.
+This uses a versioned subset covering the 13 curated release species; a complete
+taxonomy/tree and variety or cultivar coverage remain future inputs from the
+standalone OrthoFinder application.
+
+The pLDDT profile now occupies a full-width panel beneath the 3D viewer with
+labelled confidence bands, residue ticks and shaded hidden termini.
 
 ## Non-negotiable scientific boundaries
 

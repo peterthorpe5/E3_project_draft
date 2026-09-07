@@ -9,6 +9,7 @@ import pandas as pd
 
 from e3app.data import list_relations, quote_identifier, relation_columns
 from e3app.errors import AppError
+from e3app.taxonomy import CompiledTaxonomyFilters
 
 GroupType = Literal["orthogroup", "hierarchical_orthogroup"]
 MatchMode = Literal["any", "all"]
@@ -180,6 +181,7 @@ def collect_orthology_group_summary(
     relation: str,
     required_species: Sequence[str] = (),
     taxonomy_species: Sequence[str] = (),
+    compiled_taxonomy: CompiledTaxonomyFilters | None = None,
     breadth: str = "all",
     seeded_only: bool = False,
     maximum_rows: int = 5000,
@@ -191,6 +193,7 @@ def collect_orthology_group_summary(
         relation: Membership relation selected for the group type.
         required_species: Exact species labels which must all occur in a group.
         taxonomy_species: Curated species labels; a group must contain at least one.
+        compiled_taxonomy: Validated exact, clade, only-in and exclusion sets.
         breadth: ``all``, ``one_species``, ``multiple_species`` or ``all_species``.
         seeded_only: Retain only groups linked to inherited E3 seed evidence.
         maximum_rows: Defensive maximum number of summary rows.
@@ -233,6 +236,116 @@ def collect_orthology_group_summary(
         )
     else:
         taxonomy_expression = "0"
+    taxonomy_audit_expressions: list[str] = []
+    taxonomy_audit_columns: list[str] = []
+    if compiled_taxonomy is not None and compiled_taxonomy.active:
+        required_taxonomy = list(compiled_taxonomy.required_exact_species)
+        if required_taxonomy:
+            placeholders = ", ".join("?" for _ in required_taxonomy)
+            filters.append(
+                "matched_exact_taxonomy_species = "
+                f"{len(required_taxonomy)}"
+            )
+            parameters.extend(required_taxonomy)
+            taxonomy_audit_expressions.append(
+                "COUNT(DISTINCT CASE WHEN species IN "
+                f"({placeholders}) THEN species END) "
+                "AS matched_exact_taxonomy_species"
+            )
+        for index, (taxon_id, species) in enumerate(
+            compiled_taxonomy.include_clade_species
+        ):
+            placeholders = ", ".join("?" for _ in species)
+            alias = f"matched_include_clade_{index}"
+            filters.append(f"{alias} > 0")
+            parameters.extend(species)
+            taxonomy_audit_expressions.append(
+                "COUNT(DISTINCT CASE WHEN species IN "
+                f"({placeholders}) THEN species END) AS {alias}"
+            )
+        if compiled_taxonomy.only_allowed_species is not None:
+            allowed = list(compiled_taxonomy.only_allowed_species)
+            mapped = list(compiled_taxonomy.mapped_species)
+            allowed_placeholders = ", ".join("?" for _ in allowed)
+            mapped_placeholders = ", ".join("?" for _ in mapped)
+            filters.append("outside_only_clade_count = 0")
+            parameters.extend(allowed)
+            parameters.extend(mapped)
+            taxonomy_audit_expressions.append(
+                "COUNT(DISTINCT CASE WHEN species NOT IN "
+                f"({allowed_placeholders}) OR species NOT IN "
+                f"({mapped_placeholders}) THEN species END) "
+                "AS outside_only_clade_count"
+            )
+        excluded = list(compiled_taxonomy.excluded_species)
+        if excluded:
+            placeholders = ", ".join("?" for _ in excluded)
+            filters.append("excluded_taxonomy_species_count = 0")
+            parameters.extend(excluded)
+            taxonomy_audit_expressions.append(
+                "COUNT(DISTINCT CASE WHEN species IN "
+                f"({placeholders}) THEN species END) "
+                "AS excluded_taxonomy_species_count"
+            )
+
+        taxon_cases: list[str] = []
+        for source_species, taxon_id in compiled_taxonomy.species_taxon_ids:
+            taxon_cases.append("WHEN species = ? THEN ?")
+            parameters.extend((source_species, taxon_id))
+        taxon_expression = (
+            "CASE " + " ".join(taxon_cases) + " END"
+            if taxon_cases
+            else "NULL"
+        )
+        taxonomy_audit_expressions.extend(
+            [
+                "string_agg(DISTINCT CAST("
+                f"{taxon_expression} AS VARCHAR), ';' ORDER BY "
+                f"CAST({taxon_expression} AS VARCHAR)) "
+                "FILTER (WHERE "
+                f"{taxon_expression} IS NOT NULL) AS taxonomy_taxon_ids_present",
+            ]
+        )
+        # The CASE expression occurs three times above; duplicate its parameters.
+        if taxon_cases:
+            case_parameters = [
+                value
+                for source_species, taxon_id in compiled_taxonomy.species_taxon_ids
+                for value in (source_species, taxon_id)
+            ]
+            parameters.extend(case_parameters)
+            parameters.extend(case_parameters)
+        mapped = list(compiled_taxonomy.mapped_species)
+        mapped_placeholders = ", ".join("?" for _ in mapped)
+        parameters.extend(mapped)
+        taxonomy_audit_expressions.append(
+            "COUNT(DISTINCT CASE WHEN species IN "
+            f"({mapped_placeholders}) THEN species END) "
+            "AS taxonomy_mapped_species_count"
+        )
+        scope = list(compiled_taxonomy.selected_scope_species)
+        if scope:
+            scope_placeholders = ", ".join("?" for _ in scope)
+            parameters.extend(scope)
+            taxonomy_audit_expressions.append(
+                "COALESCE(string_agg(DISTINCT CASE WHEN species NOT IN "
+                f"({scope_placeholders}) THEN species END, ';' ORDER BY "
+                "CASE WHEN species NOT IN "
+                f"({scope_placeholders}) THEN species END), '') "
+                "AS outside_selected_taxonomy_species"
+            )
+            parameters.extend(scope)
+        else:
+            taxonomy_audit_expressions.append(
+                "'' AS outside_selected_taxonomy_species"
+            )
+        taxonomy_audit_columns = [
+            "taxonomy_taxon_ids_present",
+            "taxonomy_mapped_species_count",
+            "species_count - taxonomy_mapped_species_count "
+            "AS taxonomy_unmapped_species_count",
+            "outside_selected_taxonomy_species",
+        ]
     if breadth == "one_species":
         filters.append("species_count = 1")
     elif breadth == "multiple_species":
@@ -261,6 +374,16 @@ def collect_orthology_group_summary(
             )
         filters.append("contains_e3_seed_evidence")
     where_sql = " WHERE " + " AND ".join(filters) if filters else ""
+    taxonomy_group_sql = (
+        ",\n                   " + ",\n                   ".join(taxonomy_audit_expressions)
+        if taxonomy_audit_expressions
+        else ""
+    )
+    taxonomy_select_sql = (
+        ", " + ", ".join(taxonomy_audit_columns)
+        if taxonomy_audit_columns
+        else ""
+    )
     query = f"""
         WITH source AS (
             SELECT group_id, trim(species) AS species
@@ -278,6 +401,7 @@ def collect_orthology_group_summary(
                        AS species_present,
                    {required_expression} AS matched_required_species,
                    {taxonomy_expression} AS matched_taxonomy_species
+                   {taxonomy_group_sql}
             FROM source
             GROUP BY group_id
         ),
@@ -294,6 +418,7 @@ def collect_orthology_group_summary(
         )
         SELECT group_id, member_count, species_count, input_species,
                species_breadth, contains_e3_seed_evidence, species_present
+               {taxonomy_select_sql}
         FROM labelled{where_sql}
         ORDER BY member_count DESC, lower(group_id), group_id
         LIMIT {int(maximum_rows)}

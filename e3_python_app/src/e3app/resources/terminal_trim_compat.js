@@ -17,8 +17,10 @@ width:100%;padding:.35rem;margin-top:.18rem}#e3TerminalTrimControls input[type=r
 #e3TerminalTrimControls .e3-trim-grid{display:grid;grid-template-columns:1fr 1fr;gap:.45rem}
 #e3TerminalTrimControls .e3-trim-actions{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
 #e3TerminalTrimControls button{width:100%;padding:.42rem;margin:.15rem 0}
-#e3QualityPlot{width:100%;height:118px;border:1px solid #c5d2db;border-radius:5px;
-background:#fff;margin-top:.35rem}#e3TrimStatus{min-height:2.5rem}`;
+#e3QualityPanel{border:1px solid #b9c9d4;border-radius:8px;margin:.9rem 0;padding:.75rem;
+background:#f7fafc}#e3QualityPanel h3{margin:.05rem 0 .2rem}
+#e3QualityPlot{display:block;width:100%;height:260px;border:1px solid #c5d2db;
+border-radius:5px;background:#fff;margin-top:.45rem}#e3TrimStatus{min-height:2.5rem}`;
     document.head.appendChild(style);
 
     const controls = document.createElement("section");
@@ -41,9 +43,6 @@ change the saved model, alignment, pockets, scores or ranking.</p>
 <button id="e3SuggestTrim" type="button">Suggest from pLDDT</button>
 <button id="e3ResetTargetTrim" type="button">Reset this structure</button>
 <button id="e3ResetAllTrim" type="button">Reset all structures</button></div>
-<canvas id="e3QualityPlot" aria-label="Residue-level pLDDT profile"></canvas>
-<p class="note">pLDDT colours: dark blue ≥90; cyan 70–89; yellow 50–69; orange &lt;50.
-Low pLDDT is low model confidence and is not proof of biological disorder.</p>
 <p id="e3TrimStatus" class="note" aria-live="polite"></p>`;
     const aside = canvasElement.closest(".viewer-layout")?.querySelector("aside")
         || canvasElement.parentElement?.parentElement?.querySelector("aside")
@@ -52,6 +51,19 @@ Low pLDDT is low model confidence and is not proof of biological disorder.</p>
     const selectedHeading = Array.from(aside.querySelectorAll("h2,h3"))
         .find(element => element.textContent?.trim() === "Selected residue");
     aside.insertBefore(controls, selectedHeading || null);
+
+    const qualityPanel = document.createElement("section");
+    qualityPanel.id = "e3QualityPanel";
+    qualityPanel.setAttribute("aria-label", "Residue-level AlphaFold confidence");
+    qualityPanel.innerHTML = `
+<h3>Residue-level AlphaFold confidence (pLDDT)</h3>
+<p class="note">The selected structure and current N/C-terminal display are shown below.</p>
+<canvas id="e3QualityPlot" aria-label="Residue-level pLDDT profile"></canvas>
+<p class="note">pLDDT colours: dark blue ≥90; cyan 70–89; yellow 50–69; orange &lt;50.
+Low pLDDT is low model confidence and is not proof of biological disorder.</p>`;
+    const viewerLayout = canvasElement.closest(".viewer-layout")
+        || canvasElement.parentElement;
+    viewerLayout.insertAdjacentElement("afterend", qualityPanel);
 
     const targetSelect = document.getElementById("e3TrimTarget");
     const nInput = document.getElementById("e3TrimN");
@@ -117,49 +129,92 @@ Low pLDDT is low model confidence and is not proof of biological disorder.</p>
     function renderQualityPlot() {
         const atoms = atomsFor(targetKey());
         const context = qualityPlot.getContext("2d");
-        const width = Math.max(260, qualityPlot.getBoundingClientRect().width);
+        const width = Math.max(640, qualityPlot.getBoundingClientRect().width);
+        const height = 260;
+        const plotLeft = 48;
+        const plotRight = width - 18;
+        const plotTop = 18;
+        const plotBottom = 218;
         qualityPlot.width = Math.round(width * devicePixelRatio);
-        qualityPlot.height = Math.round(118 * devicePixelRatio);
+        qualityPlot.height = Math.round(height * devicePixelRatio);
         context.scale(devicePixelRatio, devicePixelRatio);
-        context.clearRect(0, 0, width, 118);
+        context.clearRect(0, 0, width, height);
         context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, width, 118);
+        context.fillRect(0, 0, width, height);
+        context.font = "12px system-ui";
+        context.textAlign = "right";
+        context.textBaseline = "middle";
         context.strokeStyle = "#d7e0e6";
         for (const value of [0, 50, 70, 90, 100]) {
-            const y = 104 - value;
+            const y = plotBottom - (plotBottom - plotTop) * value / 100;
             context.beginPath();
-            context.moveTo(24, y);
-            context.lineTo(width - 6, y);
+            context.moveTo(plotLeft, y);
+            context.lineTo(plotRight, y);
             context.stroke();
+            context.fillStyle = "#52616d";
+            context.fillText(String(value), plotLeft - 8, y);
         }
         if (!atoms.length || !qualityAvailable(atoms)) {
             context.fillStyle = "#52616d";
-            context.font = "12px system-ui";
-            context.fillText("Residue-level pLDDT is unavailable in this review bundle.", 30, 58);
+            context.textAlign = "left";
+            context.fillText("Residue-level pLDDT is unavailable in this review bundle.", 64, 120);
             return;
         }
         const selected = currentBounds(targetKey());
-        const plotWidth = Math.max(1, width - 32);
-        const residueX = index => 24 + plotWidth * index / Math.max(1, atoms.length - 1);
+        const plotWidth = Math.max(1, plotRight - plotLeft);
+        const residueX = index => plotLeft + plotWidth * index / Math.max(1, atoms.length - 1);
         context.fillStyle = "rgba(80,80,80,.16)";
-        if (selected.n) context.fillRect(24, 4, residueX(selected.n) - 24, 100);
+        if (selected.n) {
+            context.fillRect(
+                plotLeft, plotTop, residueX(selected.n) - plotLeft,
+                plotBottom - plotTop
+            );
+        }
         if (selected.c) {
             const start = residueX(Math.max(0, atoms.length - selected.c - 1));
-            context.fillRect(start, 4, width - 6 - start, 100);
+            context.fillRect(start, plotTop, plotRight - start, plotBottom - plotTop);
         }
         const threshold = integerValue(thresholdInput, 70);
         context.strokeStyle = "#9a5c00";
         context.setLineDash([4, 3]);
         context.beginPath();
-        context.moveTo(24, 104 - threshold);
-        context.lineTo(width - 6, 104 - threshold);
+        const thresholdY = plotBottom - (plotBottom - plotTop) * threshold / 100;
+        context.moveTo(plotLeft, thresholdY);
+        context.lineTo(plotRight, thresholdY);
         context.stroke();
         context.setLineDash([]);
+        context.lineWidth = 1.5;
+        context.beginPath();
+        let traceStarted = false;
+        for (let index = 0; index < atoms.length; index += 1) {
+            const score = qualityScore(atoms[index].plddt);
+            if (score === null) {
+                traceStarted = false;
+                continue;
+            }
+            const y = plotBottom - (plotBottom - plotTop) * score / 100;
+            if (!traceStarted) context.moveTo(residueX(index), y);
+            else context.lineTo(residueX(index), y);
+            traceStarted = true;
+        }
+        context.strokeStyle = "#52616d";
+        context.stroke();
         for (let index = 0; index < atoms.length; index += 1) {
             const score = qualityScore(atoms[index].plddt);
             if (score === null) continue;
+            const y = plotBottom - (plotBottom - plotTop) * score / 100;
             context.fillStyle = qualityColour(score, "#607d8b");
-            context.fillRect(residueX(index) - 1, 104 - score - 1, 3, 3);
+            context.fillRect(residueX(index) - 1.5, y - 1.5, 3, 3);
+        }
+        context.fillStyle = "#52616d";
+        context.textAlign = "center";
+        context.textBaseline = "top";
+        const tickCount = Math.min(8, Math.max(2, Math.floor(width / 160)));
+        for (let tick = 0; tick <= tickCount; tick += 1) {
+            const index = Math.round((atoms.length - 1) * tick / tickCount);
+            context.fillText(
+                String(atoms[index].resi || index + 1), residueX(index), plotBottom + 8
+            );
         }
     }
     function syncControls(message) {

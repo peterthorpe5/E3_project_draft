@@ -4,6 +4,30 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.2
+
+- Adds composable taxonomy filters for exact taxon IDs, clade inclusion,
+  only-in-clade selection, exact-taxon exclusion and clade exclusion.
+- Resolves clade membership from a versioned local NCBI-taxonomy subset for the
+  13 curated release species; unavailable or contradictory selectors fail
+  explicitly and unmapped labels are never guessed.
+- Adds taxonomy audit columns to filtered HOG downloads, including taxon IDs,
+  mapped and unmapped species counts, and members outside the selected scope.
+- Moves the residue-level pLDDT trace out of the narrow viewer sidebar into a
+  full-width, labelled 260-pixel panel with terminal-trim shading.
+- Preserves all existing orthology data and interfaces. The generic standalone
+  ``orthofinder-results`` application remains outside this E3 app release.
+
+## v0.18.1
+
+- Removes the unreliable RCSB computed-model pair link that could open a blank
+  page or report that a requested AlphaFold model was not found.
+- Adds on-demand retrieval and caching of exact AlphaFold Database residue-level
+  confidence for a selected pair, enabling quality colouring, a pLDDT profile
+  and low-confidence terminal suggestions in older review bundles.
+- Keeps manual N- and C-terminal display trimming available when residue-level
+  confidence cannot be retrieved.
+
 ## v0.18.0
 
 - Replaces the blank generic Mol* action with separate reference and comparison
