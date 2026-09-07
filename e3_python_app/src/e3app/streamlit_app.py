@@ -11,6 +11,10 @@ import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
+from e3app.alphafold_confidence import (
+    AlphaFoldConfidence,
+    retrieve_alphafold_confidence,
+)
 from e3app.config import AppConfig, config_from_environment, validate_config
 from e3app.deepclust import (
     collect_deepclust_metrics,
@@ -77,7 +81,10 @@ from e3app.method_annotations import method_annotation_markdown
 from e3app.navigation import NAVIGATION_STAGES, validate_navigation
 from e3app.pocket_review import (
     PocketReviewBundle,
+    add_terminal_trimming_controls,
     group_choice_labels,
+    merge_downloaded_pair_plddt,
+    merge_pair_viewer_plddt,
     prepare_human_plant_review,
     prepare_pocket_review,
     read_group_html,
@@ -125,6 +132,12 @@ from e3app.structural_help import (
     pocket_choice_help_markdown,
     reference_selection_help_markdown,
     structural_column_help,
+)
+from e3app.taxonomy import (
+    compile_taxonomy_filters,
+    load_taxonomy_nodes,
+    taxonomy_choice_labels,
+    taxonomy_filters,
 )
 from e3app.thresholds import (
     LOGICAL_THRESHOLD_FIELDS,
@@ -204,8 +217,22 @@ div[data-testid="stTabs"] button[data-baseweb="tab"],
 div[data-testid="stTabs"] button[data-testid="stTab"] {
     border-bottom: 2px solid transparent;
     flex: 0 0 auto !important;
+    font-size: 1.02rem !important;
+    font-weight: 600 !important;
     min-height: 2.5rem;
     white-space: nowrap;
+}
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[role="tab"],
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-baseweb="tab"],
+div[data-testid="stTabs"] div[data-testid="stTabs"] button[data-testid="stTab"] {
+    font-size: 0.96rem !important;
+    font-weight: 575 !important;
+}
+div[data-testid="stTabs"] div[role="tabpanel"] h3 {
+    font-size: 1.48rem !important;
+}
+div[data-testid="stTabs"] div[role="tabpanel"] h4 {
+    font-size: 1.22rem !important;
 }
 div[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
 div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
@@ -539,12 +566,88 @@ def _render_orthofinder_explorer(
         f"of {len(species_values)} exact source labels; {unmapped_count} remain "
         "unclassified and are not silently assigned."
     )
+    lineage_ids = {
+        int(token)
+        for value in represented_taxonomy["lineage_taxon_ids"].fillna("")
+        for token in str(value).split(";")
+        if token.strip()
+    }
+    taxonomy_nodes = load_taxonomy_nodes()
+    represented_nodes = taxonomy_nodes[
+        taxonomy_nodes["taxon_id"].astype(int).isin(lineage_ids)
+    ].copy()
+    taxon_choice_labels = taxonomy_choice_labels(represented_nodes)
+    exact_taxon_ids = set(
+        represented_taxonomy["taxon_id"].dropna().astype(int).tolist()
+    )
+    exact_options = [
+        taxon_id for taxon_id in taxon_choice_labels if taxon_id in exact_taxon_ids
+    ]
+    clade_options = [
+        taxon_id for taxon_id in taxon_choice_labels if taxon_id not in exact_taxon_ids
+    ]
+    with st.expander("Taxon-ID inclusion and exclusion", expanded=False):
+        st.caption(
+            "All active selectors are combined with AND. ‘Include clade’ allows "
+            "members outside the clade and reports them. ‘Only in clade’ rejects "
+            "groups with outside or unmapped members."
+        )
+        taxonomy_one, taxonomy_two, taxonomy_three = st.columns(3)
+        with taxonomy_one:
+            required_exact_taxon_ids = st.multiselect(
+                "Must contain exact taxon IDs",
+                exact_options,
+                format_func=taxon_choice_labels.__getitem__,
+                key="orthology_required_exact_taxon_ids",
+            )
+            include_clade_taxon_ids = st.multiselect(
+                "Include clades (outside members allowed)",
+                clade_options,
+                format_func=taxon_choice_labels.__getitem__,
+                key="orthology_include_clade_taxon_ids",
+            )
+        with taxonomy_two:
+            only_clade_taxon_ids = st.multiselect(
+                "Only in clades (no outside members)",
+                clade_options,
+                format_func=taxon_choice_labels.__getitem__,
+                key="orthology_only_clade_taxon_ids",
+            )
+            excluded_exact_taxon_ids = st.multiselect(
+                "Exclude exact taxon IDs",
+                exact_options,
+                format_func=taxon_choice_labels.__getitem__,
+                key="orthology_excluded_exact_taxon_ids",
+            )
+        with taxonomy_three:
+            excluded_clade_taxon_ids = st.multiselect(
+                "Exclude clades and descendants",
+                clade_options,
+                format_func=taxon_choice_labels.__getitem__,
+                key="orthology_excluded_clade_taxon_ids",
+            )
+            st.info(
+                "Example: include Poaceae (4479), exclude exact potato (4113)."
+            )
     try:
+        compiled_taxonomy = compile_taxonomy_filters(
+            filters=taxonomy_filters(
+                required_exact_taxon_ids=required_exact_taxon_ids,
+                include_clade_taxon_ids=include_clade_taxon_ids,
+                only_clade_taxon_ids=only_clade_taxon_ids,
+                excluded_exact_taxon_ids=excluded_exact_taxon_ids,
+                excluded_clade_taxon_ids=excluded_clade_taxon_ids,
+            ),
+            species_taxonomy=taxonomy,
+            available_species=species_values,
+            taxonomy_nodes=taxonomy_nodes,
+        )
         groups = collect_orthology_group_summary(
             connection=connection,
             relation=relation,
             required_species=required_species,
             taxonomy_species=taxonomy_species,
+            compiled_taxonomy=compiled_taxonomy,
             breadth=breadth,
             seeded_only=seeded_only,
             maximum_rows=int(maximum_rows),
@@ -1410,8 +1513,8 @@ def _render_external_pair_actions(
     reference_accession: object,
     comparison_accession: object,
     key_prefix: str,
-) -> None:
-    """Render reproducible EMERALD, AlphaFold and RCSB hand-off actions.
+) -> tuple[AlphaFoldConfidence, ...]:
+    """Render reproducible EMERALD, AlphaFold, Mol* and RCSB actions.
 
     Args:
         bundle: Validated portable review bundle containing pair sequences.
@@ -1419,6 +1522,9 @@ def _render_external_pair_actions(
         reference_accession: Fixed structural-reference identifier.
         comparison_accession: Aligned/mobile protein identifier.
         key_prefix: Unique Streamlit widget-key prefix.
+
+    Returns:
+        Cached exact AlphaFold confidence records for the selected pair.
     """
     actions = external_pair_actions(
         reference_accession=reference_accession,
@@ -1459,18 +1565,29 @@ def _render_external_pair_actions(
         )
 
         structural_actions = st.columns(2)
-        structural_actions[0].link_button(
-            "Open RCSB Mol* 3D View",
-            actions.rcsb_molstar_url,
-        )
-        structural_actions[1].link_button(
-            "Open RCSB pairwise alignment",
-            actions.rcsb_pairwise_alignment_url,
-        )
+        if actions.reference_molstar_url is not None:
+            structural_actions[0].link_button(
+                "Open reference in Mol*",
+                actions.reference_molstar_url,
+            )
+        else:
+            structural_actions[0].caption(
+                "An exact Mol* link requires a canonical reference UniProt accession."
+            )
+        if actions.comparison_molstar_url is not None:
+            structural_actions[1].link_button(
+                "Open comparison in Mol*",
+                actions.comparison_molstar_url,
+            )
+        else:
+            structural_actions[1].caption(
+                "An exact Mol* link requires a canonical comparison UniProt accession."
+            )
         st.caption(
-            "RCSB accepts PDB or Computed Structure Model entry IDs, local "
-            "coordinate files or coordinate-file URLs. The first structure is "
-            "the reference for pairwise superposition."
+            "Each Mol* action loads the selected AlphaFold model directly and "
+            "uses Mol*'s residue-level pLDDT colouring. The unreliable RCSB "
+            "computed-model pair hand-off is deliberately not offered. External "
+            "alignments do not replace the recorded E3 US-align/TM-align evidence."
         )
 
         alphafold_actions = st.columns(2)
@@ -1536,6 +1653,57 @@ def _render_external_pair_actions(
             "Low AlphaFold pLDDT indicates low model confidence; it is not, by "
             "itself, proof that a region is biologically disordered."
         )
+        cache_key = f"{key_prefix}_alphafold_confidence_cache"
+        cache = st.session_state.setdefault(cache_key, {})
+        if st.button(
+            "Retrieve AlphaFold pLDDT for this pair",
+            key=f"{key_prefix}_retrieve_alphafold_confidence",
+        ):
+            loaded: list[str] = []
+            failures: list[str] = []
+            for accession in (
+                actions.reference_accession,
+                actions.comparison_accession,
+            ):
+                if accession in cache:
+                    loaded.append(accession)
+                    continue
+                try:
+                    cache[accession] = retrieve_alphafold_confidence(
+                        accession=accession
+                    )
+                except AppError as exc:
+                    failures.append(f"{accession}: {exc}")
+                else:
+                    loaded.append(accession)
+            if loaded:
+                st.success(
+                    "Loaded residue-level AlphaFold confidence for: "
+                    + ", ".join(loaded)
+                    + "."
+                )
+            if failures:
+                st.warning("; ".join(failures))
+        confidence = tuple(
+            cache[accession]
+            for accession in (
+                actions.reference_accession,
+                actions.comparison_accession,
+            )
+            if isinstance(cache.get(accession), AlphaFoldConfidence)
+        )
+        if confidence:
+            st.success(
+                "Cached AlphaFold pLDDT is active in the viewer. Quality "
+                "colouring, the confidence graph and suggested terminal "
+                "trimming are enabled."
+            )
+        else:
+            st.info(
+                "Manual N/C-terminal trimming is available. Retrieve exact "
+                "AlphaFold confidence to enable pLDDT colouring and suggestions."
+            )
+        return confidence
 
 
 def _render_structural_superposition(
@@ -1618,23 +1786,36 @@ def _render_structural_superposition(
                 preserved_from_parent=key_prefix.startswith("human_plant"),
             )
         )
-    _render_external_pair_actions(
+    downloaded_confidence = _render_external_pair_actions(
         bundle=bundle,
         review_rank=int(group_row["review_rank"]),
         reference_accession=comparison["reference_accession"],
         comparison_accession=comparison["mobile_accession"],
         key_prefix=key_prefix,
     )
-    viewer_document = annotate_pair_evidence_html(
-        document=read_review_html(bundle, viewer_path)
+    pair_document = merge_pair_viewer_plddt(
+        pair_document=read_review_html(bundle, viewer_path),
+        group_document=read_review_html(
+            bundle,
+            str(group_row["group_review_html"]),
+        ),
+    )
+    pair_document = merge_downloaded_pair_plddt(
+        pair_document=pair_document,
+        confidence_records=downloaded_confidence,
+    )
+    viewer_document = add_terminal_trimming_controls(
+        annotate_pair_evidence_html(
+            document=pair_document
+        )
     )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
-        "the mapped pocket residues, and select a residue for its chain and "
-        "structure position. The mobile model is shown after applying the "
-        "recorded alignment matrix."
+        "the mapped pocket residues, trim either terminal display independently, "
+        "and select a residue for its chain and structure position. The mobile "
+        "model is shown after applying the recorded alignment matrix."
     )
-    components.html(viewer_document, height=850, scrolling=True)
+    components.html(viewer_document, height=1120, scrolling=True)
     with st.expander("❓ Define the pair-evidence terms"):
         st.markdown(pair_evidence_help_markdown())
         st.caption(

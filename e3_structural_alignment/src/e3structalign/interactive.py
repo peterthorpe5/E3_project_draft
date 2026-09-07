@@ -31,6 +31,7 @@ def _atom_payload(
                 "resi": atom.label_seq_id or atom.auth_seq_id,
                 "resn": atom.residue_name,
                 "pocket": atom.coordinate in pocket_coordinates,
+                "plddt": None if atom.plddt is None else round(atom.plddt, 2),
             }
         )
     return payload

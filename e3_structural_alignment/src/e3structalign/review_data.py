@@ -431,6 +431,7 @@ def _atom_payload(
             "chain": atom.label_chain or atom.auth_chain,
             "resi": atom.label_seq_id or atom.auth_seq_id,
             "resn": atom.residue_name,
+            "plddt": None if atom.plddt is None else round(atom.plddt, 2),
             "pockets": pocket_atoms.get(atom.coordinate, []),
         }
         for atom in atoms

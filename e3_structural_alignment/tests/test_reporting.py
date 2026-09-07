@@ -84,7 +84,9 @@ def test_static_report_contains_graphics_evidence_and_escaped_text() -> None:
 def test_pair_viewer_and_index_are_standalone(tmp_path: Path) -> None:
     """The rotatable browser embeds coordinates and links pair pages locally."""
     atoms = [
-        AtomCoordinate("A", "1", "A", "1", "", "ALA", 0.0, 0.0, 0.0),
+        AtomCoordinate(
+            "A", "1", "A", "1", "", "ALA", 0.0, 0.0, 0.0, plddt=42.5
+        ),
         AtomCoordinate("A", "2", "A", "2", "", "CYS", 0.0, 2.0, 0.0),
     ]
     viewer = render_pair_viewer(
@@ -104,6 +106,8 @@ def test_pair_viewer_and_index_are_standalone(tmp_path: Path) -> None:
     )
     assert "P1 &lt; P2" in viewer
     assert '"pocket":true' in viewer
+    assert '"plddt":42.5' in viewer
+    assert '"plddt":null' in viewer
     assert "Drag to rotate" in viewer
     assert "https://" not in viewer
     index = tmp_path / "interactive" / "structural_alignment_browser.html"

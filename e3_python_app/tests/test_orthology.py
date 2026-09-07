@@ -18,6 +18,7 @@ from e3app.orthology import (
     select_orthology_relation,
     summarise_seed_groups,
 )
+from e3app.taxonomy import CompiledTaxonomyFilters
 
 
 @pytest.fixture
@@ -147,6 +148,46 @@ def test_group_summary_filters_species_breadth_taxonomy_and_seed(
             relation="hierarchical_membership",
             maximum_rows=0,
         )
+
+
+def test_group_summary_applies_compiled_taxonomy_and_audits_members(
+    orthology_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Taxonomic predicates combine with AND and expose mapped/outside evidence."""
+    compiled = CompiledTaxonomyFilters(
+        required_exact_species=("species_a",),
+        include_clade_species=((10, ("species_a", "species_b")),),
+        only_allowed_species=None,
+        excluded_species=(),
+        mapped_species=("species_a", "species_b"),
+        selected_scope_species=("species_a", "species_b"),
+        species_taxon_ids=(("species_a", 101), ("species_b", 102)),
+    )
+    selected = collect_orthology_group_summary(
+        connection=orthology_connection,
+        relation="hierarchical_membership",
+        compiled_taxonomy=compiled,
+    )
+    assert selected["group_id"].tolist() == ["HOG1", "HOG2"]
+    assert selected.loc[0, "taxonomy_mapped_species_count"] == 2
+    assert selected.loc[0, "taxonomy_unmapped_species_count"] == 1
+    assert selected.loc[0, "outside_selected_taxonomy_species"] == "species_c"
+
+    only_mapped = CompiledTaxonomyFilters(
+        required_exact_species=(),
+        include_clade_species=(),
+        only_allowed_species=("species_a", "species_b"),
+        excluded_species=("species_b",),
+        mapped_species=("species_a", "species_b"),
+        selected_scope_species=("species_a", "species_b"),
+        species_taxon_ids=(("species_a", 101), ("species_b", 102)),
+    )
+    strict = collect_orthology_group_summary(
+        connection=orthology_connection,
+        relation="hierarchical_membership",
+        compiled_taxonomy=only_mapped,
+    )
+    assert strict["group_id"].tolist() == ["HOG2"]
 
 
 def test_seed_search_matches_any_or_all_and_deduplicates_members(

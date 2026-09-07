@@ -1,7 +1,19 @@
 # E3 scientific extension roadmap
 
-Status: implementation contract for work after Python app v0.17.0  
-Last reviewed: 2026-09-02
+Status: living implementation contract after Python app v0.18.2
+Last reviewed: 2026-09-07
+
+## Implemented in v0.18.2
+
+The existing E3 orthology page now supports exact taxon IDs, clade inclusion,
+only-in-clade filtering, and exact or descendant exclusion. Selectors compose
+with AND and expose mapped, unmapped and outside-scope evidence in downloads.
+This uses a versioned subset covering the 13 curated release species; a complete
+taxonomy/tree and variety or cultivar coverage remain future inputs from the
+standalone OrthoFinder application.
+
+The pLDDT profile now occupies a full-width panel beneath the 3D viewer with
+labelled confidence bands, residue ticks and shaded hidden termini.
 
 ## Non-negotiable scientific boundaries
 
@@ -27,7 +39,8 @@ Last reviewed: 2026-09-02
 - Every recorded structure pair has a reproducible follow-up panel with
   reference/comparison identifiers, a validated EMERALD deep link for
   canonical UniProt pairs, exact pair FASTA export, AlphaFold Database links,
-  the standalone RCSB Mol* viewer and RCSB pairwise structure alignment.
+  initial external structure-viewer and alignment actions. The generic empty
+  routes were superseded by accession-specific deep links in v0.18.0.
 - The independent pre-structure queue can export up to 1,000 ranked HOGs. The
   first 200 remain the immutable production cohort; ranks 201–1,000 are an
   exploratory queue and are not labelled structurally assessed.
@@ -41,6 +54,25 @@ EMERALD currently calculates in the browser and does not expose a documented
 results API. The app therefore opens the selected pair and exports its exact
 input rather than scraping or claiming to ingest an external result. EMERALD
 safety windows describe alignment robustness, not biological disorder.
+
+## Delivered in v0.18.0
+
+- Separate Mol* links load the exact reference or comparison AlphaFold model
+  via the documented `afdb` parameter. The RCSB action serialises both exact
+  Computed Structure Model IDs and chain selections into its documented
+  pairwise request. Local/non-UniProt identifiers receive no misleading empty
+  external action.
+- Existing group and pair viewers gain reversible manual N- and C-terminal
+  residue-count display trimming. Pair-member settings are independent and all
+  views have explicit per-model and global reset actions.
+- Structural-alignment v0.6.0 carries explicitly declared ModelCIF local pLDDT
+  into portable viewer payloads. The app then enables a configurable sustained
+  terminal low-confidence suggestion, residue-quality graph and optional pLDDT
+  trace colouring.
+- These are presentation and sensitivity controls. They do not change the full
+  model, structure transform, pocket evidence, score, rank or saved source
+  bundle. Generic B-factors are not relabelled as pLDDT, and low pLDDT is not
+  presented as proof of disorder.
 
 ## Workstream A: versioned top-1,000 structural campaign
 
@@ -88,6 +120,11 @@ tie-breaks. An overall member score should be added only after the team approves
 its purpose, weights, validation set and treatment of unavailable evidence.
 
 ## Workstream C: terminal disorder and Mol* structural review
+
+The v0.18.0 release delivers the safe display-only pLDDT slice described above.
+The remaining work in this section is independent disorder evidence, protected
+domain/pocket warnings, trimmed-coordinate and manifest exports, and a pinned
+embedded Mol* implementation with conserved/variant residue views.
 
 ### Data contract
 

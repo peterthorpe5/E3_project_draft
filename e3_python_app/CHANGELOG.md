@@ -4,6 +4,49 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.2
+
+- Adds composable taxonomy filters for exact taxon IDs, clade inclusion,
+  only-in-clade selection, exact-taxon exclusion and clade exclusion.
+- Resolves clade membership from a versioned local NCBI-taxonomy subset for the
+  13 curated release species; unavailable or contradictory selectors fail
+  explicitly and unmapped labels are never guessed.
+- Adds taxonomy audit columns to filtered HOG downloads, including taxon IDs,
+  mapped and unmapped species counts, and members outside the selected scope.
+- Moves the residue-level pLDDT trace out of the narrow viewer sidebar into a
+  full-width, labelled 260-pixel panel with terminal-trim shading.
+- Preserves all existing orthology data and interfaces. The generic standalone
+  ``orthofinder-results`` application remains outside this E3 app release.
+
+## v0.18.1
+
+- Removes the unreliable RCSB computed-model pair link that could open a blank
+  page or report that a requested AlphaFold model was not found.
+- Adds on-demand retrieval and caching of exact AlphaFold Database residue-level
+  confidence for a selected pair, enabling quality colouring, a pLDDT profile
+  and low-confidence terminal suggestions in older review bundles.
+- Keeps manual N- and C-terminal display trimming available when residue-level
+  confidence cannot be retrieved.
+
+## v0.18.0
+
+- Replaces the blank generic Mol* action with separate reference and comparison
+  links using Mol*'s documented AlphaFold Database accession parameter.
+- Replaces the blank generic RCSB alignment action with a URL-encoded pairwise
+  request containing both exact AlphaFold Computed Structure Model IDs, chain A
+  selections and the fixed E3 reference first. Unsafe/local identifiers do not
+  receive a misleading external action.
+- Adds reversible N- and C-terminal residue-count trimming to group and pairwise
+  3D views, with independent pair-member state, full-model reset and explicit
+  confirmation that the source evidence and rankings are unchanged.
+- Adds a configurable sustained-terminal pLDDT suggestion, residue-quality plot
+  and optional AlphaFold pLDDT colouring when explicit ModelCIF local confidence
+  is present. Group-report scores are joined into older copied pair viewers by
+  exact accession, chain and residue labels. Low pLDDT is labelled low model
+  confidence, not proven disorder.
+- Slightly enlarges scientific-stage tabs, nested page tabs and in-tab
+  subheadings without changing navigation order or content.
+
 ## v0.17.0
 
 - Groups the 25 existing pages into six colour-marked scientific stages while

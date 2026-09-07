@@ -4,6 +4,15 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.6.0
+
+- Retains explicitly identified residue-level pLDDT from ModelCIF local quality
+  records in C-alpha coordinate objects and portable group/pair viewer payloads.
+- Does not reinterpret generic PDB or mmCIF crystallographic B-factors as
+  AlphaFold confidence.
+- Fails explicitly for malformed, out-of-range or contradictory declared pLDDT
+  values while leaving models without local quality records fully supported.
+
 ## v0.5.0
 
 - Adds an explicit group-reference manifest so additive comparisons can retain
