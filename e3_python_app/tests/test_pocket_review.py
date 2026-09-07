@@ -297,14 +297,22 @@ def test_pair_viewer_gains_idempotent_terminal_display_controls() -> None:
     )
     upgraded = add_terminal_trimming_controls(document)
     assert 'data-e3-terminal-trimming="true"' in upgraded
-    assert "N-terminal residues to hide" in upgraded
-    assert "C-terminal residues to hide" in upgraded
-    assert "Suggest from pLDDT" in upgraded
-    assert "Residue-level pLDDT is unavailable" in upgraded
+    assert "Hide terminal regions" in upgraded
+    assert "Recommended low-confidence trim" in upgraded
+    assert "Manual fine-tuning (optional)" in upgraded
+    assert "Hide from N terminus (residues)" in upgraded
+    assert "Hide from C terminus (residues)" in upgraded
+    assert "Apply recommendation" in upgraded
+    assert "Confidence profile not loaded" in upgraded
     assert 'qualityPanel.id = "e3QualityPanel"' in upgraded
-    assert "height:260px" in upgraded
-    assert "plotBottom = 218" in upgraded
-    assert "does not\nchange the saved model" in upgraded
+    assert "pairViewerMain.insertAdjacentElement(\"afterend\", qualityPanel)" in upgraded
+    assert "height:390px" in upgraded
+    assert "const bottom = 320" in upgraded
+    assert "AlphaFold confidence along the sequence" in upgraded
+    assert "source model, alignment, pockets, scores and ranking never change" in upgraded
+    assert upgraded.index("function qualityScore") < upgraded.index(
+        "function initialiseE3TerminalTrimming"
+    )
     assert add_terminal_trimming_controls(upgraded) == upgraded
 
 
@@ -322,7 +330,7 @@ def test_group_viewer_compatibility_combines_pdf_and_terminal_controls() -> None
     upgraded = repair_pocket_review_viewer_controls(document)
     assert 'data-e3-pdf-compatibility="true"' in upgraded
     assert 'data-e3-terminal-trimming="true"' in upgraded
-    assert "terminalLowConfidenceRun" in upgraded
+    assert "suggestedTrim" in upgraded
     assert repair_pocket_review_viewer_controls(upgraded) == upgraded
 
 

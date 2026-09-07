@@ -1,9 +1,10 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.2 is the Streamlit companion to `E3_shiny_app`. It adds composable
-exact-taxon and clade filters to the existing orthology explorer and enlarges
-the residue-level AlphaFold pLDDT trace. The taxonomy snapshot is local and
-versioned: unknown species remain explicitly unmapped.
+Version 0.18.3 is the Streamlit companion to `E3_shiny_app`. It retains the
+composable exact-taxon and clade filters and gives structural reviewers a
+full-width residue-level AlphaFold confidence graph plus a guided, reversible
+terminal-display workflow. The taxonomy snapshot is local and versioned:
+unknown species remain explicitly unmapped.
 
 Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
@@ -17,19 +18,22 @@ page names, help, methods and data queries are preserved.
 Recorded structure pairs provide validated EMERALD hand-offs for canonical
 UniProt accessions, exact selected-pair FASTA export and AlphaFold Database
 links. Mol* actions now load each exact AlphaFold accession rather than an empty
-viewer, and the RCSB pairwise action carries both exact Computed Structure Model
-IDs. External results are not scraped or written back into the read-only
+viewer; the unreliable RCSB computed-model pair hand-off is deliberately not
+offered. External results are not scraped or written back into the read-only
 release. The enriched member result also adds a deterministic
 structural-readiness rank within each HOG without changing the authoritative
 HOG ranking.
 
-The embedded group and pairwise 3D views now provide reversible N- and
-C-terminal display trimming. Users may enter independent residue counts or ask
-for a sustained terminal low-confidence suggestion. When explicit ModelCIF
-local pLDDT is present, the viewer adds a residue-quality plot and optional
-AlphaFold confidence colouring. These controls never rewrite the model,
-alignment, pocket evidence, score or ranking, and low pLDDT is not labelled as
-proof of intrinsic disorder.
+The embedded group and pairwise 3D views provide reversible N- and C-terminal
+display trimming. The viewer presents a sustained low-confidence recommendation
+first, keeps its sensitivity settings collapsed, and offers manual fine-tuning
+separately. Pair reviewers may apply independent recommendations to both
+structures. When residue-level pLDDT is present, a large full-width graph shows
+confidence zones, exact hover values, coverage, current visible residues, and
+applied versus proposed terminal regions. Missing pLDDT produces an explicit
+recovery message rather than an empty plot. These controls never rewrite the
+model, alignment, pocket evidence, score or ranking, and low pLDDT is not
+labelled as proof of intrinsic disorder.
 
 The human-and-plant 3D tab now uses one synchronised evolutionary-group
 selection for its explicit reference/mobile protein comparison, selectable

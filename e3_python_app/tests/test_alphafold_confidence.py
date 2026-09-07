@@ -7,6 +7,7 @@ from urllib.error import URLError
 
 import pytest
 
+from e3app import __version__
 from e3app.alphafold_confidence import (
     ALPHAFOLD_API_BASE_URL,
     MAX_METADATA_BYTES,
@@ -116,12 +117,19 @@ def test_https_reader_restricts_host_size_and_transport(monkeypatch: pytest.Monk
             """Return an intentionally oversized response."""
             return b"1234"
 
-    monkeypatch.setattr(
-        "e3app.alphafold_confidence.urlopen",
-        lambda _request, timeout: Response(),
-    )
+    requests: list[object] = []
+
+    def open_response(request: object, timeout: int) -> Response:
+        """Capture the versioned request and return the bounded fixture."""
+        requests.append(request)
+        assert timeout > 0
+        return Response()
+
+    monkeypatch.setattr("e3app.alphafold_confidence.urlopen", open_response)
     with pytest.raises(AppError, match="size limit"):
         _read_https("https://alphafold.ebi.ac.uk/model.pdb", 3)
+    assert len(requests) == 1
+    assert requests[0].get_header("User-agent") == f"e3-python-app/{__version__}"
 
     def failed_urlopen(_request: object, timeout: int) -> None:
         """Raise a deterministic transport failure."""

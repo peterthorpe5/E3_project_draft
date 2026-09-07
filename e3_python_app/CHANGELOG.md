@@ -4,6 +4,22 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.3
+
+- Fixes the pairwise confidence panel layout so it appears below the complete
+  3D viewer rather than being squeezed into the viewer's side-column grid.
+- Enlarges the pLDDT profile to 390 pixels and adds confidence-zone shading,
+  coverage and mean-confidence summaries, visible-residue counts, clearer axes,
+  terminal-region overlays and exact residue hover values.
+- Replaces the mixed trimming controls with a guided recommendation, a single
+  apply action, an optional apply-to-both action, collapsed sensitivity settings
+  and a separate manual fine-tuning panel.
+- Replaces the empty graph shown without pLDDT with an explicit recovery message;
+  automatic controls and quality colouring are disabled without evidence while
+  reversible manual display trimming remains available.
+- Changes presentation and browser-only display state only. No model, alignment,
+  pocket evidence, score, HOG rank or within-HOG rank is recalculated.
+
 ## v0.18.2
 
 - Adds composable taxonomy filters for exact taxon IDs, clade inclusion,

@@ -11,4 +11,9 @@ python -m pydocstyle src/e3app
 python -m coverage erase
 python -m coverage run --branch -m pytest -q "${SCRIPT_DIR}/tests"
 python -m coverage report --fail-under=95
+if command -v node >/dev/null 2>&1; then
+    node "${SCRIPT_DIR}/tests/js/test_terminal_trim_core.js"
+else
+    printf '%s\n' "WARNING: node was not found; JavaScript unit tests were not run." >&2
+fi
 bash -n run_e3_python_app.sh run_tests.sh
