@@ -1,16 +1,16 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.3 is the Streamlit companion to `E3_shiny_app`. It retains the
-composable exact-taxon and clade filters and gives structural reviewers a
-full-width residue-level AlphaFold confidence graph plus a guided, reversible
-terminal-display workflow. The taxonomy snapshot is local and versioned:
-unknown species remain explicitly unmapped.
+Version 0.18.4 is the Streamlit companion to `E3_shiny_app`. It adds an
+easy-to-find **Within-HOG ranking** page, extends composable exact-taxon and
+clade filters to reviewed input-specific taxonomy mappings, and compares
+full-model with retained-core mean pLDDT in the reversible terminal-display
+workflow. Unknown species remain explicitly unmapped.
 
 Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-The 25 pages are now organised into six colour-marked scientific stages:
+The 26 pages are organised into six colour-marked scientific stages:
 information, candidate discovery, E3 orthology context, structural
 prioritisation, structural comparison, and chemistry and outputs. Existing
 page names, help, methods and data queries are preserved.
@@ -28,9 +28,10 @@ The embedded group and pairwise 3D views provide reversible N- and C-terminal
 display trimming. The viewer presents a sustained low-confidence recommendation
 first, keeps its sensitivity settings collapsed, and offers manual fine-tuning
 separately. Pair reviewers may apply independent recommendations to both
-structures. When residue-level pLDDT is present, a large full-width graph shows
-confidence zones, exact hover values, coverage, current visible residues, and
-applied versus proposed terminal regions. Missing pLDDT produces an explicit
+structures. When residue-level pLDDT is present, a 460-pixel full-width graph shows
+confidence zones, exact hover values, coverage, current retained residues,
+full-model and retained-core mean pLDDT, their difference, and applied versus
+proposed terminal regions. Missing pLDDT produces an explicit
 recovery message rather than an empty plot. These controls never rewrite the
 model, alignment, pocket evidence, score or ranking, and low pLDDT is not
 labelled as proof of intrinsic disorder.
@@ -65,6 +66,7 @@ Choose exactly one:
   --resource-duckdb /path/to/e3_integrated_resource.duckdb \
   --pocket-review-dir /path/to/portable_release/pocket_review \
   --human-plant-review-dir /path/to/human_plant_extension/pocket_review \
+  --taxonomy-map /path/to/reviewed_taxonomy_mapping.tsv \
   --max-rows 1000 \
   --host 127.0.0.1 \
   --port 8501
@@ -85,7 +87,7 @@ remaining Parquets recursively and assigns deterministic relation names.
 
 Environment equivalents are `E3_RESOURCE_DUCKDB`, `E3_RESOURCE_PARQUET`,
 `E3_RESOURCE_RUN_DIR`, `E3_EXPRESSION_DUCKDB`, `E3_POCKET_REVIEW_DIR`,
-`E3_HUMAN_PLANT_REVIEW_DIR` and `E3_MAX_TABLE_ROWS`.
+`E3_HUMAN_PLANT_REVIEW_DIR`, `E3_TAXONOMY_MAP` and `E3_MAX_TABLE_ROWS`.
 
 The pocket-review option is additive and optional. When it is omitted, the app
 auto-discovers the bundle only if exactly one valid direct child beginning with
@@ -94,11 +96,17 @@ run directory. It never guesses between multiple bundles. The separate
 human-and-plant review is never auto-discovered: it must be selected explicitly
 so it cannot be confused with the immutable plant-only baseline.
 
+The taxonomy-map option is also optional. Without it, the app uses its packaged
+13-species snapshot. With it, exact source labels and reviewed lineages can
+cover new species, subspecies, varieties and cultivars. The complete schema and
+fail-closed review rules are documented in
+[`docs/CUSTOM_TAXONOMY_MAPPING.md`](docs/CUSTOM_TAXONOMY_MAPPING.md).
+
 ## Interface
 
 The reporter provides:
 
-- six ordered, colour-marked navigation stages containing the 25 maintained
+- six ordered, colour-marked navigation stages containing the 26 maintained
   scientific pages, so the analysis can be followed from release information
   through discovery, orthology, structure and outputs;
 - a responsive Workflow schematic tracing the complete method from validated
@@ -167,6 +175,11 @@ The reporter provides:
   E3-domain and expression evidence, with an optional pre-structure-pass filter.
   Existing AlphaFold models, pockets, druggability, mapping, alignment and 3D
   results are excluded from this decision table but retained in other tabs;
+- a dedicated **Within-HOG ranking** page where one root HOG can be selected
+  directly. Its independently numbered member rows expose the exact structural
+  evidence used in the deterministic review order, keep unassessed members
+  visible by default and provide focused TSV and Excel downloads. This review
+  order does not replace the HOG-level ranks or claim E3 function;
 - a linked Visual explorer containing a selectable multi-axis candidate
   landscape, a cross-species expression heatmap, exact species-by-tissue
   profiles and the bounded evidence tables behind every selected candidate;
@@ -202,7 +215,7 @@ The reporter provides:
   and post-structure ranks, complete source-ranking fields and membership
   summaries. A separate enriched member view repeats that context beside every
   HOG member; all unmodified raw relations remain selectable for exact audit;
-- a within-HOG structural-readiness rank in the enriched member result. Joined
+- the same within-HOG structural-readiness rank in the enriched member result. Joined
   structural evidence and its component values remain visible, missing evidence
   is not converted to zero, and the rank is not presented as an E3-function
   score;
@@ -236,9 +249,17 @@ changing the exported data. The main navigation labels wrap across as many rows
 as the window requires, so sections are visible without tab-scroll arrows.
 
 The phased scientific and technical contract for top-1,000 processing,
-terminal-disorder sensitivity, pinned Mol*, taxonomy selectors, motif analysis,
-incremental updates and standalone OrthoFinder ownership is recorded in
+terminal-disorder sensitivity, external Mol* hand-offs, taxonomy selectors,
+motif analysis, incremental updates and standalone OrthoFinder ownership is recorded in
 [`docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md`](docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md).
+
+Two detailed follow-on implementation briefs are supplied separately:
+
+- [`docs/HANDOVER_E3_FAMILY_SIGNATURES_20260909.txt`](docs/HANDOVER_E3_FAMILY_SIGNATURES_20260909.txt)
+  for the proposed sibling motif, profile and structural-signature workflow;
+- [`docs/HANDOVER_ORTHOFINDER_SELECTION_COVERAGE_TREE_20260909.txt`](docs/HANDOVER_ORTHOFINDER_SELECTION_COVERAGE_TREE_20260909.txt)
+  for the generic selection-coverage tree in the standalone
+  `orthofinder-results` repository.
 
 The Computational recommendations view points readers from the top of the page
 to a detailed methodology below the authoritative table. The explanation

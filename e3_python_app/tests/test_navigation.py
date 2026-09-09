@@ -26,7 +26,7 @@ def test_navigation_groups_every_helped_page_once() -> None:
         "🔴 6 · Chemistry & outputs",
     ]
     titles = navigation_page_titles()
-    assert len(titles) == 25
+    assert len(titles) == 26
     assert len(titles) == len(set(titles))
     assert set(titles) == set(TOP_LEVEL_TAB_HELP)
     validate_navigation()

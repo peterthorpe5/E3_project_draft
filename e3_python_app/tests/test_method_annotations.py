@@ -20,6 +20,7 @@ def test_scientific_tabs_have_substantive_method_annotations() -> None:
         "Computational recommendations",
         "Threshold explorer",
         "Independent structural-review shortlist",
+        "Within-HOG ranking",
         "Orthology",
         "Domains",
         "Expression",
@@ -98,6 +99,14 @@ def test_optional_thresholds_are_not_mislabelled_as_production_gates() -> None:
     assert "Optional post-hoc controls" in markdown
     assert "disabled until selected" in markdown
     assert "must not be reported as additional production gates" in markdown
+
+
+def test_within_hog_annotation_keeps_member_and_group_ranks_separate() -> None:
+    """The focused member page cannot be mistaken for a functional rank."""
+    markdown = method_annotation_markdown(tab_name="Within-HOG ranking")
+    assert "independently within each root HOG" in markdown
+    assert "Missing structural evidence sorts last" in markdown
+    assert "does not establish E3 activity" in markdown
 
 
 def test_unknown_method_annotation_fails_explicitly() -> None:

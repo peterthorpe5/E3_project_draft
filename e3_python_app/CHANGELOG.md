@@ -4,6 +4,27 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.4
+
+- Adds a dedicated **Within-HOG ranking** page with a searchable HOG selector,
+  separate member ranks, exact component evidence, assessed/unassessed counts,
+  bounded results and focused TSV and Excel downloads.
+- Keeps the within-HOG order explicitly separate from both authoritative HOG
+  ranks and from any claim of E3 function or preferred species.
+- Adds an optional reviewed taxonomy-mapping TSV so exact/include/only/exclude
+  predicates can follow new input species, subspecies, varieties and cultivars.
+  Exact source-label matching, review-state filtering and lineage consistency
+  checks prevent inferred or ambiguous mappings.
+- Preserves the packaged 13-species taxonomy snapshot as the default and adds a
+  documented custom mapping contract and header-only TSV template.
+- Enlarges the full-width pLDDT graph to 460 pixels and adds full-model and
+  retained-core mean pLDDT, their difference and retained confidence coverage.
+  These are reversible display sensitivity summaries and do not alter a saved
+  score or rank.
+- Records EMERALD/Mol* as the deliberate external pair-review boundary. The app
+  does not relabel pairwise alignment robustness or low pLDDT as independent
+  biological-disorder prediction or phylogeny-wide conservation.
+
 ## v0.18.3
 
 - Fixes the pairwise confidence panel layout so it appears below the complete

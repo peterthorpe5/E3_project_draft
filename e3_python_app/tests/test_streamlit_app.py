@@ -15,6 +15,7 @@ PRIMARY_TAB_LABELS = {
     "Computational recommendations",
     "Threshold explorer",
     "Independent structural-review shortlist",
+    "Within-HOG ranking",
     "Visual explorer",
     "Candidates",
     "Orthology",
@@ -58,6 +59,19 @@ def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> Non
     assert "font-size: 1.22rem !important" in source
     assert "Load AlphaFold confidence for graph and trimming" in source
     assert "components.html(viewer_document, height=1480, scrolling=True)" in source
+    compatibility_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "e3app"
+        / "resources"
+        / "terminal_trim_compat.js"
+    )
+    compatibility_source = compatibility_path.read_text(encoding="utf-8")
+    assert "const height = 460;" in compatibility_source
+    assert "retained-core mean pLDDT" in compatibility_source
+    assert "do not recalculate the saved HOG or within-HOG rankings" in (
+        compatibility_source
+    )
     selector_start = source.index('selector_key = "recommendation_druggability_group"')
     selector_end = source.index("plot_rows, overview_truncated", selector_start)
     assert "index=" not in source[selector_start:selector_end]
@@ -108,13 +122,13 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         for expander in app.expander
         if expander.label == "❓ How to use this tab"
     ]
-    assert len(primary_help) == 25
+    assert len(primary_help) == 26
     method_help = [
         expander
         for expander in app.expander
         if expander.label == "ⓘ Methods and thresholds"
     ]
-    assert len(method_help) == 15
+    assert len(method_help) == 16
     alignment_tab = next(tab for tab in app.tabs if tab.label == "3D alignment")
     assert any(
         "not a threshold invented for this project" in markdown.value
@@ -138,6 +152,19 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         if checkbox.label == "Pre-structure passes only"
     )
     assert pass_filter.value is False
+    within_hog_tab = next(
+        tab for tab in app.tabs if tab.label == "Within-HOG ranking"
+    )
+    within_hog_selectors = [
+        selector
+        for selector in within_hog_tab.selectbox
+        if selector.label == "HOG to rank members within"
+    ]
+    assert len(within_hog_selectors) == 1
+    assert any(
+        metric.label == "First member in review order"
+        for metric in within_hog_tab.metric
+    )
     assert any(
         "Stages 00–01" in markdown.value
         for markdown in app.markdown
@@ -291,6 +318,35 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     assert "Glossary" in [tab.label for tab in app.tabs]
     assert "Workflow schematic" in [tab.label for tab in app.tabs]
     assert "3D alignment" in [tab.label for tab in app.tabs]
+
+
+def test_app_accepts_custom_reviewed_taxonomy(
+    resource_db: Path,
+    monkeypatch: object,
+    tmp_path: Path,
+) -> None:
+    """A new release taxonomy bridge is exposed without inferred mappings."""
+    mapping = tmp_path / "reviewed_taxonomy.tsv"
+    mapping.write_text(
+        "workflow_species_label\taccepted_species_name\tncbi_taxon_id\t"
+        "lineage_taxon_ids\tlineage_names\tlineage_ranks\t"
+        "mapping_status\trole\n"
+        "Arabidopsis_thaliana\tArabidopsis thaliana\t3702\t1;2759;3702\t"
+        "root;Eukaryota;Arabidopsis thaliana\t"
+        "no rank;superkingdom;species\tREVIEWED\ttarget_plant\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    monkeypatch.setenv("E3_TAXONOMY_MAP", str(mapping))
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=10).run()
+    assert not app.exception
+    assert any(
+        str(mapping.resolve()) in caption.value for caption in app.caption
+    )
+    assert any(
+        "Custom taxonomy mapping" in success.value for success in app.success
+    )
 
 
 def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: Path) -> None:

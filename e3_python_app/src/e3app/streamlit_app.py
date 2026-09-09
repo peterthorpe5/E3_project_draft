@@ -109,7 +109,6 @@ from e3app.orthology import (
     collect_orthology_species,
     collect_seed_group_members,
     collect_seed_identifiers,
-    load_species_taxonomy,
     select_orthology_relation,
     summarise_seed_groups,
 )
@@ -135,7 +134,7 @@ from e3app.structural_help import (
 )
 from e3app.taxonomy import (
     compile_taxonomy_filters,
-    load_taxonomy_nodes,
+    load_taxonomy_authority,
     taxonomy_choice_labels,
     taxonomy_filters,
 )
@@ -184,6 +183,12 @@ from e3app.visualisations import (
     selected_candidate_from_event,
     structural_alignment_plot_columns,
     summarise_final_gate_druggability_selection,
+)
+from e3app.within_hog_ranking import (
+    WITHIN_HOG_DEFAULT_COLUMNS,
+    WITHIN_HOG_ORDERING,
+    summarise_within_hog_members,
+    within_hog_choice_labels,
 )
 from e3app.workflow import workflow_schematic_html
 
@@ -511,7 +516,14 @@ def _render_orthofinder_explorer(
             }[value],
             key="orthology_breadth",
         )
-    taxonomy = load_species_taxonomy()
+    try:
+        taxonomy_authority = load_taxonomy_authority(
+            taxonomy_map=config.taxonomy_map
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    taxonomy = taxonomy_authority.species_taxonomy
     mapped_species = set(taxonomy["source_species_name"].dropna().astype(str))
     represented_taxonomy = taxonomy[
         taxonomy["source_species_name"].astype(str).isin(species_values)
@@ -523,8 +535,8 @@ def _render_orthofinder_explorer(
             format_func=lambda value: value.replace("_", " ").title(),
             key="orthology_taxonomy_roles",
             help=(
-                "This uses only the release's curated species manifest. Species "
-                "without an authoritative mapping remain explicitly unclassified."
+                "This uses only reviewed mappings from the active taxonomy authority. "
+                "Species without an exact source-label match remain unclassified."
             ),
         )
         taxon_labels = {
@@ -562,9 +574,12 @@ def _render_orthofinder_explorer(
         taxonomy_species = selected_taxa
     unmapped_count = len(set(species_values).difference(mapped_species))
     st.caption(
-        f"Curated taxonomy mapping covers {len(set(species_values).intersection(mapped_species))} "
-        f"of {len(species_values)} exact source labels; {unmapped_count} remain "
-        "unclassified and are not silently assigned."
+        f"Taxonomy authority: `{taxonomy_authority.source_label}`. It covers "
+        f"{len(set(species_values).intersection(mapped_species))} of "
+        f"{len(species_values)} exact source labels; {unmapped_count} remain "
+        "unclassified and are not silently assigned. "
+        f"Reviewed mappings: {taxonomy_authority.reviewed_row_count:,}; "
+        f"non-reviewed rows excluded: {taxonomy_authority.excluded_row_count:,}."
     )
     lineage_ids = {
         int(token)
@@ -572,7 +587,7 @@ def _render_orthofinder_explorer(
         for token in str(value).split(";")
         if token.strip()
     }
-    taxonomy_nodes = load_taxonomy_nodes()
+    taxonomy_nodes = taxonomy_authority.taxonomy_nodes
     represented_nodes = taxonomy_nodes[
         taxonomy_nodes["taxon_id"].astype(int).isin(lineage_ids)
     ].copy()
@@ -583,9 +598,7 @@ def _render_orthofinder_explorer(
     exact_options = [
         taxon_id for taxon_id in taxon_choice_labels if taxon_id in exact_taxon_ids
     ]
-    clade_options = [
-        taxon_id for taxon_id in taxon_choice_labels if taxon_id not in exact_taxon_ids
-    ]
+    clade_options = list(taxon_choice_labels)
     with st.expander("Taxon-ID inclusion and exclusion", expanded=False):
         st.caption(
             "All active selectors are combined with AND. ‘Include clade’ allows "
@@ -3406,6 +3419,191 @@ def _render_search(*, connection: object, max_rows: int) -> None:
     )
 
 
+def _render_within_hog_ranking(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render a focused structural-review ordering for members of one HOG."""
+    st.subheader("Within-HOG member ranking")
+    st.info(
+        "Choose one root HOG to see which member should be reviewed first. "
+        "This ordering is calculated independently inside that HOG and does not "
+        "replace either authoritative HOG-level rank. It prioritises available "
+        "selected-pocket structural evidence; it is not an E3-function score."
+    )
+    capability = enriched_hog_capability(connection=connection)
+    if not capability["membership_available"]:
+        st.warning(
+            "Within-HOG ranking requires root-level hierarchical membership. "
+            "The loaded source does not publish that relation."
+        )
+        return
+    overview_columns = (
+        "hog_id",
+        "hog_prestructure_rank",
+        "hog_poststructure_rank",
+        "hog_member_count",
+    )
+    try:
+        hogs = collect_enriched_hog_results(
+            connection=connection,
+            result=ENRICHED_HOG_OVERVIEW,
+            selected_columns=overview_columns,
+            maximum_rows=100_000,
+        )
+        hogs = hogs.loc[
+            pd.to_numeric(hogs["hog_member_count"], errors="coerce") > 0
+        ].reset_index(drop=True)
+        choices = within_hog_choice_labels(hogs=hogs)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if not choices:
+        st.info("No root HOG with member records is available in this resource.")
+        return
+
+    selected_hog = st.selectbox(
+        "HOG to rank members within",
+        options=list(choices),
+        format_func=choices.__getitem__,
+        key="within_hog_selected_hog",
+        help=(
+            "Search by HOG identifier or either HOG-level rank. The member ranks "
+            "shown below restart at 1 for every HOG."
+        ),
+    )
+    available_columns = enriched_hog_columns(
+        connection=connection,
+        result=ENRICHED_HOG_MEMBERS,
+    )
+    selector_key = "within_hog_selected_columns"
+    if selector_key not in st.session_state:
+        st.session_state[selector_key] = [
+            column
+            for column in WITHIN_HOG_DEFAULT_COLUMNS
+            if column in available_columns
+        ]
+    else:
+        st.session_state[selector_key] = [
+            column
+            for column in st.session_state[selector_key]
+            if column in available_columns
+        ]
+    selected_columns = st.multiselect(
+        "Member evidence columns",
+        options=available_columns,
+        key=selector_key,
+        help=(
+            "The default fields expose every value used in the review order. "
+            "Additional HOG and source-ranking fields remain available for audit."
+        ),
+    )
+    control_one, control_two = st.columns(2)
+    with control_one:
+        include_unassessed = st.checkbox(
+            "Include members without joined structural evidence",
+            value=True,
+            key="within_hog_include_unassessed",
+            help=(
+                "Keep this selected to see the complete HOG. Unassessed means no "
+                "joined selected-pocket row; it does not mean poor structure."
+            ),
+        )
+    with control_two:
+        maximum_rows = int(
+            st.number_input(
+                "Maximum member rows",
+                min_value=1,
+                max_value=max(1, config.max_rows),
+                value=min(1000, max(1, config.max_rows)),
+                key="within_hog_maximum_rows",
+            )
+        )
+    if not selected_columns:
+        st.warning("Select at least one member evidence column.")
+        return
+    summary_columns = (
+        "hog_id",
+        "member_raw_identifier",
+        "member_parsed_accession",
+        "member_parsed_entry",
+        "member_structural_readiness_rank",
+        "member_structural_readiness_status",
+        "member_structure_assessed",
+    )
+    query_columns = list(
+        dict.fromkeys(
+            [
+                *selected_columns,
+                *(column for column in summary_columns if column in available_columns),
+            ]
+        )
+    )
+    try:
+        members = collect_enriched_hog_results(
+            connection=connection,
+            result=ENRICHED_HOG_MEMBERS,
+            selected_columns=query_columns,
+            maximum_rows=maximum_rows,
+            hog_ids=(str(selected_hog),),
+        )
+        summary = summarise_within_hog_members(members=members)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    displayed = members
+    if not include_unassessed:
+        displayed = members.loc[
+            members["member_structure_assessed"].fillna(False).astype(bool)
+        ].copy()
+    metrics = st.columns(4)
+    metrics[0].metric("Member rows returned", f"{summary.member_count:,}")
+    metrics[1].metric(
+        "With joined pocket evidence",
+        f"{summary.structurally_assessed_count:,}",
+    )
+    metrics[2].metric(
+        "Without joined pocket evidence",
+        f"{summary.unassessed_count:,}",
+    )
+    metrics[3].metric(
+        "First member in review order",
+        summary.first_member,
+        help=summary.first_member_status,
+    )
+    selected_overview = hogs.loc[hogs["hog_id"].eq(selected_hog)].iloc[0]
+    total_members = int(selected_overview["hog_member_count"])
+    if summary.member_count < total_members:
+        st.warning(
+            f"This HOG contains {total_members:,} members, but the current bounded "
+            f"query returned {summary.member_count:,}. Increase E3_MAX_TABLE_ROWS or "
+            "--max-rows before treating the displayed ordering as complete."
+        )
+    _display_dataframe(frame=displayed.loc[:, selected_columns], height=680)
+    render_table_downloads(
+        frame=displayed.loc[:, selected_columns],
+        file_stem=f"within_hog_member_ranking_{selected_hog}",
+        tsv_label="Download this within-HOG ranking as TSV",
+        excel_label="Download this within-HOG ranking as Excel",
+        key="within_hog_member_ranking_download",
+    )
+    with st.expander("How the within-HOG review order is calculated"):
+        st.dataframe(
+            pd.DataFrame(
+                WITHIN_HOG_ORDERING,
+                columns=("priority", "evidence", "ordering"),
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(
+            "Missing structural values sort after available values and remain "
+            "missing; they are never replaced by zero. Stable text fields break "
+            "ties reproducibly."
+        )
+
+
 def _render_all_results(
     *,
     connection: object,
@@ -4335,11 +4533,12 @@ def render_app() -> None:
     human_plant_review = prepare_human_plant_review(config)
     LOGGER.info(
         "Opening E3 app source_mode=%s source=%s pocket_review=%s "
-        "human_plant_review=%s",
+        "human_plant_review=%s taxonomy_map=%s",
         config.source_mode,
         config.source_path,
         pocket_review.path,
         human_plant_review.path,
+        config.taxonomy_map,
     )
 
     st.sidebar.header("Data release")
@@ -4358,6 +4557,10 @@ def render_app() -> None:
     else:
         st.sidebar.caption("Human + plant structural extension is not configured.")
     st.sidebar.caption(f"Maximum rows per query: {config.max_rows:,}")
+    if config.taxonomy_map:
+        st.sidebar.success(f"Custom taxonomy mapping: {config.taxonomy_map}")
+    else:
+        st.sidebar.caption("Taxonomy: packaged 13-species E3 snapshot")
     st.sidebar.info(
         "Missing annotation or expression resources are shown as unavailable "
         "evidence, never silently converted into a biological negative."
@@ -4390,6 +4593,10 @@ def render_app() -> None:
                         connection=connection,
                         config=config,
                     )
+                ),
+                "Within-HOG ranking": lambda: _render_within_hog_ranking(
+                    connection=connection,
+                    config=config,
                 ),
                 "All results": lambda: _render_all_results(
                     connection=connection,

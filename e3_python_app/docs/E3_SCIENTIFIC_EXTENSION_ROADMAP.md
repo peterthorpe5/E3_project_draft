@@ -1,7 +1,30 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.3
-Last reviewed: 2026-09-07
+Status: living implementation contract after Python app v0.18.4
+Last reviewed: 2026-09-09
+
+## Implemented in v0.18.4
+
+- A dedicated **Within-HOG ranking** page makes the existing
+  `member_structural_readiness_rank` discoverable. It selects one HOG, exposes
+  every component of the member review order, distinguishes assessed from
+  unassessed evidence and exports focused TSV/Excel tables.
+- An optional reviewed taxonomy bridge extends every exact/include/only/exclude
+  predicate to the species and infraspecific taxa present in a new input
+  dataset. Source labels are exact, lineages are validated and non-reviewed
+  mappings remain outside the active authority. The 13-species snapshot remains
+  the zero-configuration default.
+- The confidence graph grows to 460 pixels and now reports full-model and
+  retained-core mean pLDDT, their difference and retained confidence coverage.
+  This is a reversible display sensitivity summary; it does not mutate either
+  HOG rank.
+- EMERALD pair hand-off, AlphaFold links and accession-specific external Mol*
+  viewing are the accepted integration boundary. EMERALD's pair panels and
+  structural superposition are used rather than duplicating a mature external
+  comparison interface inside this app.
+- Pairwise residue evidence remains available in tables. A phylogeny-wide
+  ConSurf-like projection is assigned to the family-signature workflow because
+  it requires a multiple alignment and evolutionary model, not merely a pair.
 
 ## Implemented in v0.18.3
 
@@ -21,9 +44,9 @@ The operation remains reversible browser-only presentation state.
 The existing E3 orthology page now supports exact taxon IDs, clade inclusion,
 only-in-clade filtering, and exact or descendant exclusion. Selectors compose
 with AND and expose mapped, unmapped and outside-scope evidence in downloads.
-This uses a versioned subset covering the 13 curated release species; a complete
-taxonomy/tree and variety or cultivar coverage remain future inputs from the
-standalone OrthoFinder application.
+This initially used a versioned subset covering the 13 curated release species.
+Version 0.18.4 adds a reviewed input-specific mapping bridge; the dedicated
+selection-coverage tree remains owned by the standalone OrthoFinder application.
 
 The pLDDT profile now occupies a full-width panel beneath the 3D viewer with
 labelled confidence bands, residue ticks and shaded hidden termini.
@@ -47,8 +70,8 @@ labelled confidence bands, residue ticks and shaded hidden termini.
 
 ## Delivered in v0.17.0
 
-- Six colour-marked scientific stages replace the single flat row of 25 tabs.
-  The page names, help panels, methods and data queries are unchanged.
+- Six colour-marked scientific stages replace the single flat row of 25 tabs;
+  v0.18.4 adds the 26th page without changing the stage structure.
 - Every recorded structure pair has a reproducible follow-up panel with
   reference/comparison identifiers, a validated EMERALD deep link for
   canonical UniProt pairs, exact pair FASTA export, AlphaFold Database links,
@@ -86,7 +109,7 @@ safety windows describe alignment robustness, not biological disorder.
   bundle. Generic B-factors are not relabelled as pLDDT, and low pLDDT is not
   presented as proof of disorder.
 
-## Workstream A: versioned top-1,000 structural campaign
+## Workstream A: contract for a versioned top-1,000 structural campaign
 
 Create `top1000_exploratory_v1` as a child of the frozen pre-structure ranking.
 Its manifest must record the parent release ID and checksum, included rank
@@ -103,9 +126,12 @@ Each HOG and member must carry one of these explicit processing states:
 - `EXCLUDED`
 - `INPUT_UNAVAILABLE`
 
-The workflow should process ranks 201–1,000 in resumable batches while reusing
-only checksum-compatible cached outputs. Publication produces new normalised
-tables and a separate portable review bundle. It does not edit top-200 files.
+When a campaign is run, the workflow should process its selected rank interval
+in resumable batches while reusing only checksum-compatible cached outputs.
+Publication produces new normalised tables and a separate portable review
+bundle. It does not edit top-200 files. The app exports the top-1,000 queue and
+reports structural evidence supplied to it; campaign manifests remain the
+separate operational record.
 
 Acceptance criteria:
 
@@ -133,10 +159,11 @@ its purpose, weights, validation set and treatment of unavailable evidence.
 
 ## Workstream C: terminal disorder and Mol* structural review
 
-The v0.18.0 release delivers the safe display-only pLDDT slice described above.
-The remaining work in this section is independent disorder evidence, protected
-domain/pocket warnings, trimmed-coordinate and manifest exports, and a pinned
-embedded Mol* implementation with conserved/variant residue views.
+The v0.18.0–v0.18.4 releases deliver safe display-only trimming, the full-width
+pLDDT profile, quality colouring and full-versus-retained-core pLDDT summaries.
+Independent biological-disorder evidence, protected domain/pocket warnings and
+trimmed-coordinate manifests remain possible workflow extensions. They are not
+silently inferred from low pLDDT.
 
 ### Data contract
 
@@ -164,13 +191,12 @@ For each protein, provide:
   manifest; and
 - a reset action that always returns to the unmodified full model.
 
-Mol* should be bundled at a pinned version in the portable report rather than
-loaded from an unversioned remote script. Required views are pLDDT colouring,
-pocket highlighting, conserved/variant residues, overlay on the fixed
-reference and a side-by-side comparison. Pair summaries must retain TM-score,
-RMSD, aligned-residue count, sequence identity, pocket overlap, centroid
-distance and chemical-group conservation. Trimming sensitivity must be shown
-beside, not substituted for, the recorded full-model comparison.
+The accepted external EMERALD/Mol* hand-off provides separate pair structures
+and a TM-align superposition for canonical UniProt accessions. The portable
+review remains the reproducible authority for recorded TM-score, RMSD,
+aligned-residue count, sequence identity, pocket overlap, centroid distance and
+chemical-group conservation. Trimming sensitivity is shown beside, not
+substituted for, the recorded full-model comparison.
 
 Acceptance criteria include offline operation, deterministic state snapshots,
 keyboard-accessible controls, model/pocket provenance, coordinate-safe residue
@@ -193,7 +219,8 @@ Selectors operate on a HOG member set using composable predicates:
 Multiple selectors combine with logical `AND`, making queries such as “include
 Poaceae, not *Solanum tuberosum*, may occur elsewhere” explicit. Species,
 subspecies, varieties and cultivars require stable taxon IDs plus source-name
-and synonym audit fields. Contradictory predicates must be rejected before a
+and lineage audit fields. The v0.18.4 custom taxonomy bridge now supplies these
+arbitrary reviewed mappings; contradictory predicates are rejected before a
 query runs.
 
 A compact pruned phylogenetic tree should show selected and excluded clades,
@@ -203,7 +230,8 @@ absence.
 
 ## Workstream E: motif discovery
 
-Run motifs as a separate versioned campaign over exact exported sequences.
+Run motifs as a separate versioned `e3_family_signatures` package/workflow over
+exact exported sequences; do not place its compute engine inside Streamlit.
 Start with family/domain-stratified sets—for example RING/U-box, HECT, RBR and
 substrate-receptor classes—because pooling mechanistically different E3
 families is likely to yield misleading composition signals.
@@ -246,12 +274,13 @@ supplementary workbook. The locally inspected Table S1 checksum is
    a duplicate cluster job; validate its manifest and output inventory first.
 2. Publish the standalone OrthoFinder repository, then remove the generic
    package from this repository in a separate history-preserving change.
-3. Freeze the top-1,000 campaign manifest and execute ranks 201–1,000 in
-   restartable batches.
-4. Publish residue-level confidence/disorder data and the pinned Mol* viewer,
-   then enable reversible trimming sensitivity.
-5. Add the taxonomy bridge/tree and the evolutionary-representative rank.
-6. Run the family-stratified motif campaign and UPS catalogue overlap audit.
+3. Use the v0.18.4 taxonomy bridge in E3 releases with new input taxa; add the
+   selection-coverage tree and evolutionary-representative rank in the
+   standalone OrthoFinder application.
+4. Build the separate family-stratified `e3_family_signatures` workflow and UPS
+   catalogue overlap audit.
+5. Add independent disorder evidence or coordinate-changing trim exports only
+   through a separately validated structural workflow extension.
 
 No deletion of the current generic OrthoFinder package should occur until its
 new remote repository, tags and history have been verified.
@@ -259,7 +288,7 @@ new remote repository, tags and history have been verified.
 ## External references
 
 - [EMERALD-UI](https://algbio.github.io/emerald-ui/)
-- [EMERALD-UI source](https://github.com/AlgoBio/emerald-ui)
+- [EMERALD-UI source](https://github.com/algbio/emerald-ui)
 - [RCSB Mol* 3D View](https://www.rcsb.org/3d-view)
 - [RCSB pairwise structure alignment](https://www.rcsb.org/alignment)
 - [RCSB Mol* documentation](https://www.rcsb.org/docs/3d-viewers/mol*/mol*-cheat-sheet)

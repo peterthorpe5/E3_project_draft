@@ -17,6 +17,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Computational recommendations",
         "Threshold explorer",
         "Independent structural-review shortlist",
+        "Within-HOG ranking",
         "Visual explorer",
         "Candidates",
         "Orthology",

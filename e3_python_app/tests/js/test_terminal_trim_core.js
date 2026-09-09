@@ -85,9 +85,47 @@ function testConfidenceSummary() {
     });
 }
 
+function testRetainedConfidenceSummary() {
+    const atoms = [atom(20), atom(40), atom(80), atom(90), atom(null), atom(30)];
+    assert.deepEqual(trim.retainedConfidenceSummary(atoms, 2, 1), {
+        total: 3,
+        available: 2,
+        missing: 1,
+        mean: 85,
+        n: 2,
+        c: 1,
+        adjusted: false,
+        firstIndex: 2,
+        lastIndex: 4,
+    });
+    assert.deepEqual(trim.retainedConfidenceSummary(atoms, 5, 5), {
+        total: 1,
+        available: 1,
+        missing: 0,
+        mean: 30,
+        n: 5,
+        c: 0,
+        adjusted: true,
+        firstIndex: 5,
+        lastIndex: 5,
+    });
+    assert.deepEqual(trim.retainedConfidenceSummary([], 2, 3), {
+        total: 0,
+        available: 0,
+        missing: 0,
+        mean: null,
+        n: 0,
+        c: 0,
+        adjusted: true,
+        firstIndex: null,
+        lastIndex: null,
+    });
+}
+
 testQualityScore();
 testIntegerValue();
 testClampCounts();
 testTerminalLowConfidenceRun();
 testSuggestedTrim();
 testConfidenceSummary();
+testRetainedConfidenceSummary();

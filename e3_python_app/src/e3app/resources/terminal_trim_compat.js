@@ -41,12 +41,12 @@ background:#dcecf4;color:#18475f;padding:.08rem .45rem;font-size:.76rem;vertical
 #e3QualityPanel{border:1px solid #b9c9d4;border-radius:10px;margin:1rem 0;padding:1rem;
 background:#f7fafc;min-width:0}body>#e3QualityPanel{margin:0 1rem 1rem}
 #e3QualityPanel h2,#e3QualityPanel h3{margin:.05rem 0 .25rem}
-#e3QualityMetrics{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:.55rem;
+#e3QualityMetrics{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:.55rem;
 margin:.8rem 0}#e3QualityMetrics div{background:#fff;border:1px solid #d1dde4;border-radius:7px;
 padding:.55rem}#e3QualityMetrics strong{display:block;font-size:1.08rem;color:#173f5f;
 overflow-wrap:anywhere}#e3QualityMetrics span{font-size:.78rem;color:#52616d}
 #e3QualityPlotShell{position:relative;overflow-x:auto;background:#fff;border:1px solid #b7c8d2;
-border-radius:7px;padding:.25rem}#e3QualityPlot{display:block;width:100%;min-width:920px;height:390px;
+border-radius:7px;padding:.25rem}#e3QualityPlot{display:block;width:100%;min-width:920px;height:460px;
 background:#fff}#e3QualityEmpty{background:#fff5d9;border:1px solid #e1c66d;border-radius:7px;
 padding:1rem;margin-top:.7rem;line-height:1.45}#e3QualityTooltip{position:absolute;display:none;
 pointer-events:none;background:#132a3a;color:#fff;border-radius:5px;padding:.35rem .5rem;
@@ -116,9 +116,11 @@ Restore all structures</button></div>
 are currently hidden; blue-tinted regions are suggested but not yet applied.</p>
 <div id="e3QualityMetrics">
 <div><strong id="e3QualityStructure">—</strong><span>selected structure</span></div>
-<div><strong id="e3QualityCoverage">—</strong><span>residues with pLDDT</span></div>
-<div><strong id="e3QualityMean">—</strong><span>mean available pLDDT</span></div>
-<div><strong id="e3QualityVisible">—</strong><span>residues currently visible</span></div>
+<div><strong id="e3QualityCoverage">—</strong><span>full-model pLDDT coverage</span></div>
+<div><strong id="e3QualityMean">—</strong><span>full-model mean pLDDT</span></div>
+<div><strong id="e3QualityCoreMean">—</strong><span>retained-core mean pLDDT</span></div>
+<div><strong id="e3QualityDelta">—</strong><span>core minus full mean</span></div>
+<div><strong id="e3QualityVisible">—</strong><span>residues retained in core</span></div>
 </div>
 <div id="e3QualityEmpty" hidden><strong>Confidence profile not loaded.</strong><br>
 Use “Load AlphaFold confidence for graph and trimming” above this viewer. Manual terminal
@@ -129,7 +131,8 @@ aria-label="Residue-level pLDDT profile"></canvas><div id="e3QualityTooltip"></d
 <span class="e3-confident">Confident 70–89</span><span class="e3-low">Low 50–69</span>
 <span class="e3-very-low">Very low &lt;50</span></div>
 <p class="note">Low pLDDT means low local model confidence; by itself, it does not prove
-biological disorder.</p>`;
+biological disorder. Full-model and retained-core means are a display sensitivity summary;
+they do not recalculate the saved HOG or within-HOG rankings.</p>`;
     const groupViewerLayout = canvasElement.closest(".viewer-layout");
     const pairViewerMain = canvasElement.closest("main");
     if (groupViewerLayout) {
@@ -236,14 +239,22 @@ biological disorder.</p>`;
 
     /** Update graph summary cards using explicit available and missing data. */
     function updateQualityMetrics(atoms, summary, selected) {
+        const retained = trimCore.retainedConfidenceSummary(
+            atoms, selected.n, selected.c,
+        );
         document.getElementById("e3QualityStructure").textContent = targetLabel();
         document.getElementById("e3QualityCoverage").textContent = summary.total
             ? `${summary.available} / ${summary.total}` : "0 / 0";
         document.getElementById("e3QualityMean").textContent = summary.mean === null
             ? "Unavailable" : summary.mean.toFixed(1);
-        document.getElementById("e3QualityVisible").textContent = String(
-            Math.max(0, atoms.length - selected.n - selected.c),
-        );
+        document.getElementById("e3QualityCoreMean").textContent = retained.mean === null
+            ? "Unavailable" : retained.mean.toFixed(1);
+        const delta = summary.mean === null || retained.mean === null
+            ? null : retained.mean - summary.mean;
+        document.getElementById("e3QualityDelta").textContent = delta === null
+            ? "Unavailable" : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`;
+        document.getElementById("e3QualityVisible").textContent = retained.total
+            ? `${retained.total} (${retained.available} scored)` : "0";
     }
 
     /** Render the large residue-level confidence graph. */
@@ -265,12 +276,12 @@ biological disorder.</p>`;
 
         const context = qualityPlot.getContext("2d");
         const width = Math.max(920, qualityPlot.getBoundingClientRect().width);
-        const height = 390;
+        const height = 460;
         const pixelRatio = window.devicePixelRatio || 1;
         const left = 68;
         const right = width - 32;
         const top = 26;
-        const bottom = 320;
+        const bottom = 385;
         const plotWidth = Math.max(1, right - left);
         const plotHeight = bottom - top;
         const residueX = index => left
