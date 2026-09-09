@@ -143,6 +143,30 @@ def validate_enriched_hog_result(*, result: str) -> EnrichedHogResult:
     return cast(EnrichedHogResult, result)
 
 
+def normalise_hog_ids(*, hog_ids: Sequence[str]) -> tuple[str, ...]:
+    """Validate HOG identifiers used to constrain an enriched query.
+
+    Args:
+        hog_ids: Exact HOG identifiers supplied by a trusted UI selection.
+
+    Returns:
+        Unique stripped identifiers in input order.
+
+    Raises:
+        AppError: If an identifier is blank or more than 1,000 are requested.
+    """
+    if len(hog_ids) > 1_000:
+        raise AppError("At most 1000 HOG identifiers may constrain one query")
+    normalised: list[str] = []
+    for value in hog_ids:
+        identifier = str(value).strip()
+        if not identifier:
+            raise AppError("HOG identifiers used as filters must not be blank")
+        if identifier not in normalised:
+            normalised.append(identifier)
+    return tuple(normalised)
+
+
 def enriched_hog_capability(*, connection: object) -> dict[str, object]:
     """Report which resource-wide HOG joins can be constructed.
 
@@ -739,6 +763,7 @@ def _build_enriched_hog_query(
     result: str,
     selected_columns: Sequence[str],
     maximum_rows: int,
+    hog_ids: Sequence[str] = (),
 ) -> tuple[str, list[object]]:
     """Build one bounded enriched HOG overview or member-detail query."""
     selected_result = validate_enriched_hog_result(result=result)
@@ -849,8 +874,14 @@ def _build_enriched_hog_query(
             "AS member_structural_readiness_status FROM enriched)"
         )
         source = "member_ranked"
+    selected_hog_ids = normalise_hog_ids(hog_ids=hog_ids)
+    where_sql = ""
+    if selected_hog_ids:
+        placeholders = ", ".join("?" for _ in selected_hog_ids)
+        where_sql = f" WHERE hog_id IN ({placeholders})"
+        parameters.extend(selected_hog_ids)
     query = (
-        f"{enriched_cte} SELECT {selected_sql} FROM {source} "
+        f"{enriched_cte} SELECT {selected_sql} FROM {source}{where_sql} "
         f"ORDER BY {order} LIMIT {int(maximum_rows)}"
     )
     return query, parameters
@@ -862,6 +893,7 @@ def collect_enriched_hog_results(
     result: str,
     selected_columns: Sequence[str],
     maximum_rows: int = 1000,
+    hog_ids: Sequence[str] = (),
 ) -> pd.DataFrame:
     """Collect a bounded resource-wide HOG result.
 
@@ -870,6 +902,7 @@ def collect_enriched_hog_results(
         result: Enriched overview or member-detail key.
         selected_columns: Explicit output fields to retain.
         maximum_rows: Hard returned-row cap.
+        hog_ids: Optional exact HOG identifiers applied with bound parameters.
 
     Returns:
         Joined HOG rows with complete source-ranking fields.
@@ -882,11 +915,17 @@ def collect_enriched_hog_results(
         result=result,
         selected_columns=selected_columns,
         maximum_rows=maximum_rows,
+        hog_ids=hog_ids,
     )
     try:
         frame = connection.execute(query, parameters).fetchdf()
     except duckdb.Error as exc:
         LOGGER.exception("Could not collect the enriched HOG result %s", result)
         raise AppError(f"Could not collect enriched HOG results: {exc}") from exc
-    LOGGER.info("Collected %s rows from enriched HOG result %s", len(frame), result)
+    LOGGER.info(
+        "Collected %s rows from enriched HOG result %s constrained_hogs=%d",
+        len(frame),
+        result,
+        len(hog_ids),
+    )
     return frame

@@ -21,6 +21,7 @@ class AppConfig:
     resource_parquet: Path | None = None
     resource_run_dir: Path | None = None
     human_plant_review_dir: Path | None = None
+    taxonomy_map: Path | None = None
 
     @property
     def source_mode(self) -> str:
@@ -66,6 +67,7 @@ def config_from_environment(environment: Mapping[str, str] | None = None) -> App
     human_plant_review = values.get(
         "E3_HUMAN_PLANT_REVIEW_DIR", ""
     ).strip()
+    taxonomy_map = values.get("E3_TAXONOMY_MAP", "").strip()
     max_rows = parse_positive_integer(values.get("E3_MAX_TABLE_ROWS", "1000"), "max rows")
     return AppConfig(
         resource_duckdb=(
@@ -86,6 +88,9 @@ def config_from_environment(environment: Mapping[str, str] | None = None) -> App
             Path(human_plant_review).expanduser().resolve()
             if human_plant_review
             else None
+        ),
+        taxonomy_map=(
+            Path(taxonomy_map).expanduser().resolve() if taxonomy_map else None
         ),
     )
 
@@ -133,4 +138,11 @@ def validate_config(config: AppConfig) -> None:
             "Human-and-plant review directory does not exist: "
             f"{config.human_plant_review_dir}"
         )
+    if config.taxonomy_map is not None:
+        if not config.taxonomy_map.is_file():
+            raise AppError(
+                f"Taxonomy mapping TSV does not exist: {config.taxonomy_map}"
+            )
+        if config.taxonomy_map.suffix.casefold() != ".tsv":
+            raise AppError("Taxonomy mapping must be a tab-separated .tsv file")
     parse_positive_integer(str(config.max_rows), "max rows")

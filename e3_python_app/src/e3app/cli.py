@@ -25,6 +25,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expression-duckdb", type=Path)
     parser.add_argument("--pocket-review-dir", type=Path)
     parser.add_argument("--human-plant-review-dir", type=Path)
+    parser.add_argument(
+        "--taxonomy-map",
+        type=Path,
+        help=(
+            "Reviewed TSV mapping exact workflow species labels to taxon IDs "
+            "and complete lineages"
+        ),
+    )
     parser.add_argument("--max-rows", type=int, default=1000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
@@ -68,6 +76,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         pocket_review_dir=args.pocket_review_dir,
         max_rows=args.max_rows,
         human_plant_review_dir=args.human_plant_review_dir,
+        taxonomy_map=args.taxonomy_map,
     )
     try:
         validate_config(config)
@@ -104,6 +113,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             environment.pop("E3_HUMAN_PLANT_REVIEW_DIR", None)
+        if config.taxonomy_map:
+            environment["E3_TAXONOMY_MAP"] = str(config.taxonomy_map.resolve())
+        else:
+            environment.pop("E3_TAXONOMY_MAP", None)
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",

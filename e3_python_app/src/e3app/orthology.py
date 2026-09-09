@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from importlib.resources import files
 from typing import Literal, Sequence
 
 import pandas as pd
 
 from e3app.data import list_relations, quote_identifier, relation_columns
 from e3app.errors import AppError
-from e3app.taxonomy import CompiledTaxonomyFilters
+from e3app.taxonomy import CompiledTaxonomyFilters, load_taxonomy_authority
 
 GroupType = Literal["orthogroup", "hierarchical_orthogroup"]
 MatchMode = Literal["any", "all"]
@@ -617,7 +616,9 @@ def summarise_seed_groups(*, members: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_species_taxonomy() -> pd.DataFrame:
-    """Load the small curated species manifest shipped with the application."""
-    resource = files("e3app").joinpath("resources", "species_taxonomy.tsv")
-    with resource.open(mode="r", encoding="utf-8", newline="") as handle:
-        return pd.read_csv(handle, sep="\t", dtype_backend="numpy_nullable")
+    """Load the packaged species manifest for compatibility callers.
+
+    Returns:
+        A copy of the maintained default 13-species taxonomy mapping.
+    """
+    return load_taxonomy_authority().species_taxonomy.copy()

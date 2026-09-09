@@ -84,6 +84,17 @@ TOP_LEVEL_TAB_HELP = {
             "human, Arabidopsis, rice and barley representatives and table downloads."
         ),
     ),
+    "Within-HOG ranking": TabHelpEntry(
+        instruction=(
+            "Choose one root HOG, review its member-specific structural evidence in rank order "
+            "and retain unassessed members unless you deliberately want a focused evidence view."
+        ),
+        yields=(
+            "A separately numbered member review order within the chosen HOG, with the exact "
+            "druggability, pocket mapping, pocket confidence and predictor-agreement fields, "
+            "plus TSV and Excel downloads."
+        ),
+    ),
     "Visual explorer": TabHelpEntry(
         instruction=(
             "Choose candidate metrics and a group to connect overview plots to the exact "

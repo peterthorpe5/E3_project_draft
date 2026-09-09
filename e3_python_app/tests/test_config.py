@@ -26,6 +26,7 @@ def test_environment_config_and_validation(
     resource_db: Path,
     master_parquet: Path,
     run_results_dir: Path,
+    tmp_path: Path,
 ) -> None:
     """Documented environment variables resolve into validated paths."""
 
@@ -34,17 +35,21 @@ def test_environment_config_and_validation(
     )
     assert config.max_rows == 42
     validate_config(config)
+    taxonomy_map = tmp_path / "taxonomy.tsv"
+    taxonomy_map.write_text("source_species_name\n", encoding="utf-8")
     expression_config = config_from_environment(
         {
             "E3_RESOURCE_DUCKDB": str(resource_db),
             "E3_EXPRESSION_DUCKDB": str(resource_db),
             "E3_POCKET_REVIEW_DIR": str(run_results_dir),
             "E3_HUMAN_PLANT_REVIEW_DIR": str(run_results_dir),
+            "E3_TAXONOMY_MAP": str(taxonomy_map),
         }
     )
     assert expression_config.expression_duckdb == resource_db
     assert expression_config.pocket_review_dir == run_results_dir
     assert expression_config.human_plant_review_dir == run_results_dir
+    assert expression_config.taxonomy_map == taxonomy_map
     validate_config(expression_config)
     parquet_config = config_from_environment(
         {"E3_RESOURCE_PARQUET": str(master_parquet)}
@@ -96,6 +101,19 @@ def test_missing_resource_and_expression(resource_db: Path, tmp_path: Path) -> N
                 resource_duckdb=resource_db,
                 human_plant_review_dir=tmp_path / "missing_human_review",
             )
+        )
+    with pytest.raises(AppError, match="Taxonomy mapping TSV does not exist"):
+        validate_config(
+            AppConfig(
+                resource_duckdb=resource_db,
+                taxonomy_map=tmp_path / "missing.tsv",
+            )
+        )
+    invalid_suffix = tmp_path / "taxonomy.csv"
+    invalid_suffix.write_text("source_species_name\n", encoding="utf-8")
+    with pytest.raises(AppError, match="tab-separated"):
+        validate_config(
+            AppConfig(resource_duckdb=resource_db, taxonomy_map=invalid_suffix)
         )
     with pytest.raises(AppError, match="between"):
         validate_config(AppConfig(resource_db, max_rows=0))

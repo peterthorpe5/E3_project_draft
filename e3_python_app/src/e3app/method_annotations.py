@@ -166,6 +166,30 @@ METHOD_ANNOTATIONS = {
             "This is a review queue, not a newly recalculated primary candidate ranking."
         ),
     ),
+    "Within-HOG ranking": MethodAnnotation(
+        introduction=(
+            "Member structural-readiness ranks are calculated independently within each root "
+            "HOG. They provide a deterministic order for structural review while preserving "
+            "the authoritative HOG-level rankings."
+        ),
+        sections=(
+            MethodSection(
+                heading="Lexicographic evidence order",
+                bullets=(
+                    "Members with a joined selected-pocket structural row precede members "
+                    "without one.",
+                    "Available druggability, pocket-mapping fraction, pocket pLDDT fraction "
+                    "and predictor agreement are then ordered from higher to lower.",
+                    "Missing structural evidence sorts last without being imputed as zero; "
+                    "species and raw identifiers provide stable final tie-breaks.",
+                ),
+            ),
+        ),
+        interpretation_boundary=(
+            "Rank 1 means first for structural review inside that HOG. It does not establish "
+            "E3 activity, biological importance, orthology quality or a preferred species."
+        ),
+    ),
     "Orthology": MethodAnnotation(
         introduction=(
             "OrthoFinder 2.5.5 results were integrated without conflating phylogenetic HOGs, "

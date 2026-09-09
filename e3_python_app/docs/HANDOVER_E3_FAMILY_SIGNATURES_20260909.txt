@@ -1,0 +1,602 @@
+E3 FAMILY SIGNATURES WORKFLOW — COMPLETE IMPLEMENTATION HANDOVER
+================================================================
+
+Handover date: 2026-09-09
+Proposed package name: e3_family_signatures
+Proposed first release: 0.1.0
+Proposed branch: feature/e3-family-signatures-v0.1.0
+
+1. WHERE THIS WORK BELONGS
+--------------------------
+
+Create this as a new sibling Python package/workflow inside the existing E3
+repository, not as another Streamlit tab and not inside orthofinder-results.
+
+Mac repository root:
+  /Users/PThorpe001/github_repos/E3_project_draft
+
+New package root:
+  /Users/PThorpe001/github_repos/E3_project_draft/e3_family_signatures
+
+Related packages that must remain separate:
+  /Users/PThorpe001/github_repos/E3_project_draft/e3_python_app
+  /Users/PThorpe001/github_repos/E3_project_draft/e3_end_to_end_workflow
+  /Users/PThorpe001/github_repos/E3_project_draft/e3_structural_alignment
+  /Users/PThorpe001/github_repos/orthofinder-results
+
+The Python app is the read-only presentation layer. The new package performs
+expensive, versioned sequence, motif, profile and structural-signature analysis,
+then publishes compact tables and assets that the app may consume later.
+
+Do not move the generic OrthoFinder application back into E3_project_draft.
+orthofinder-results remains the authority for generic OrthoFinder parsing,
+taxonomy reconciliation, trees and evolutionary-representative statistics.
+
+2. GOAL
+-------
+
+Determine which sequence, domain, residue, fold and pocket characteristics
+distinguish experimentally supported E3 ubiquitin-ligase systems from suitable
+controls, while respecting the fact that “E3” is not one homogeneous protein
+family and does not have one universal short motif.
+
+The workflow must answer these separate questions:
+
+  A. Which signatures recur within a defined E3 mechanistic class or role?
+  B. Which signatures are enriched relative to matched non-E3 controls?
+  C. Which signatures generalise to held-out HOGs, species and clades?
+  D. Which residues or structural regions are conserved within a family?
+  E. Which candidate members best represent the observed family signature?
+  F. Where is evidence unavailable, ambiguous or sample-limited?
+
+The output is evidence for prioritisation and hypothesis generation. It is not
+proof that a candidate is an E3, binds a ligand or ubiquitinates a substrate.
+
+3. REQUIRED E3 STRATIFICATION
+-----------------------------
+
+Never pool all labelled E3-related proteins into a single motif discovery set.
+Create an explicit controlled vocabulary with at least these mechanistic classes
+and component roles:
+
+  RING E3 ligases
+    - Single-subunit RING proteins, including plant RING families and TRIM-like
+      proteins where supported.
+    - RING domains primarily recruit an E2 and promote direct ubiquitin transfer;
+      the E3 generally does not form a catalytic ubiquitin thioester.
+
+  U-box E3 ligases
+    - RING-like proteins such as PUB/CHIP-related classes.
+    - Analyse separately from canonical RING before considering a combined
+      RING-like stratum.
+
+  HECT E3 ligases
+    - Catalytic HECT-domain proteins with an active-site cysteine and an E3–Ub
+      thioester intermediate.
+    - Analyse HECT N-lobe/E2-binding and C-lobe/catalytic regions explicitly.
+
+  RBR E3 ligases
+    - RING1–IBR/between-RING–RING2 architecture.
+    - Hybrid mechanism: RING1 recruits E2 and RING2 contributes the catalytic
+      cysteine. Treating RBR as ordinary RING would obscure this distinction.
+
+  Cullin–RING ligase systems
+    - Cullin scaffold.
+    - RBX/RING catalytic component.
+    - Adaptor components.
+    - Substrate receptors, including F-box, BTB, DCAF/DDB1-associated,
+      VHL-box and SOCS-box classes where applicable.
+    - Do not label every receptor or adaptor as an independently catalytic E3.
+      Preserve component_role separately from system_class.
+
+  Other or atypical ubiquitin E3 mechanisms
+    - Retain only with explicit source evidence and a named mechanism/class.
+    - Do not force uncertain proteins into RING, HECT or RBR.
+
+  Ubiquitin-like modifier ligases
+    - SUMO, NEDD8, UFM1 and other UBL systems must be separate strata, not
+      silently mixed with ubiquitin E3s.
+
+  Putative, pseudoenzyme or E3-associated records
+    - Keep separate evidence states for putative catalytic E3, non-catalytic
+      complex component, E3-associated protein, pseudoenzyme and unknown.
+
+  PHD and other zinc-binding domains
+    - A PHD/RING-like fold or annotation alone is not universal proof of E3
+      activity. Require curated role evidence and retain ambiguity explicitly.
+
+Minimum controlled fields:
+  e3_system_class
+  e3_mechanistic_class
+  component_role
+  e3_family
+  evidence_status
+  evidence_source
+  evidence_reference
+  active_site_expected
+  active_site_residue
+  curation_status
+  curation_reason
+
+Recommended curation_status values:
+  REVIEWED_POSITIVE
+  REVIEWED_NEGATIVE
+  REVIEWED_COMPONENT_NOT_CATALYTIC
+  PROPOSED
+  AMBIGUOUS
+  UNMAPPED
+  EXCLUDED
+
+4. SCIENTIFIC INPUTS
+--------------------
+
+Every run must consume immutable, checksummed manifests. Never discover inputs
+by taking whichever file happens to be newest.
+
+Required inputs:
+
+  1. Candidate/HOG manifest
+     - Exact HOG IDs and authoritative pre-structure ranks.
+     - Campaign identifier and parent E3 release identifier.
+     - Explicit inclusion interval or exact selected-HOG list.
+     - Do not infer whether a cluster campaign has run from the app version.
+
+  2. Protein sequences
+     - Exact source identifier, normalised accession and source species label.
+     - Full-length sequence and checksum.
+     - Sequence completeness and fragment status.
+     - HOG, OG and discovery-cluster links kept as distinct fields.
+
+  3. Curated E3 authority
+     - Known positives, mechanistic class, family and component role.
+     - Evidence/provenance and review status.
+     - Records from the 2026 UPS survey must enter as proposed until reviewed;
+       they must not silently replace the established seed authority.
+
+  4. Domain evidence
+     - InterPro/Pfam accessions, descriptions, coordinates and assessment state.
+     - Exact E3-domain catalogue version and checksum.
+
+  5. Structural evidence, where available
+     - Exact model accession/version and coordinate checksum.
+     - ModelCIF residue-level pLDDT and PAE provenance.
+     - Selected pockets and residue mappings.
+     - Existing pairwise TM-align/US-align outputs and transformations.
+     - Full-model and retained-core values must remain separate.
+
+  6. Orthology/taxonomy bridge from orthofinder-results
+     - Exact source label, accepted name, taxon ID and full ordered lineage.
+     - HOG membership and optional gene/species-tree distances.
+     - Mapping and review states.
+     - Never infer taxonomy from underscore replacement alone.
+
+  7. Negative and comparison sets
+     - Matched non-E3 proteins with similar length, taxonomic composition,
+       domain complexity, subcellular context and structure availability.
+     - Within-superfamily non-E3 or non-catalytic controls where defensible.
+     - Shuffled sequences may test composition artefacts but are not sufficient
+       as the only biological negative set.
+
+5. RECOMMENDED PACKAGE LAYOUT
+-----------------------------
+
+e3_family_signatures/
+  README.md
+  CHANGELOG.md
+  LICENSE
+  pyproject.toml
+  run_tests.sh
+  configs/
+    schema.json
+    example_campaign.yaml
+  src/e3_family_signatures/
+    __init__.py
+    cli.py
+    config.py
+    errors.py
+    logging_config.py
+    manifests.py
+    identifiers.py
+    e3_classes.py
+    sequence_sets.py
+    redundancy.py
+    domains.py
+    motif_inputs.py
+    meme.py
+    fimo.py
+    enrichment.py
+    profile_hmms.py
+    alignments.py
+    conservation.py
+    disorder.py
+    structures.py
+    structural_signatures.py
+    validation.py
+    incremental.py
+    publish.py
+    provenance.py
+  tests/
+    fixtures/
+    test_*.py
+    test_end_to_end.py
+  docs/
+    METHODS.md
+    INPUT_CONTRACTS.md
+    OUTPUT_CONTRACTS.md
+    SCIENTIFIC_BOUNDARIES.md
+    TEST_TRACEABILITY.tsv
+
+Keep command wrappers thin. Core functions must accept explicit values and paths,
+return typed results, and be callable directly by unit tests.
+
+6. REQUIRED WORKFLOW STAGES
+---------------------------
+
+Stage 00 — validate and freeze inputs
+  - Validate schemas, identifiers, sequences, coordinates and checksums.
+  - Reject duplicate identities with conflicting sequences or annotations.
+  - Emit an immutable campaign manifest and normalised configuration.
+  - Record all unavailable evidence explicitly.
+
+Stage 01 — assign reviewed E3 strata
+  - Join curated class, family and component-role authority.
+  - Produce overlap/disagreement tables for old versus new curation sources.
+  - Keep proposed records out of positive training sets by default.
+
+Stage 02 — build analysis sequence sets
+  - Publish full-length, domain-only and optional retained-core FASTA separately.
+  - Retained-core FASTA must record exact original coordinates and rule.
+  - Never trim through a mapped catalytic/E3 domain or protected pocket residue
+    without an explicit exclusion or reviewed override.
+  - Deduplicate exact sequences and cluster near-redundant sequences.
+
+Stage 03 — partition without leakage
+  - Split discovery/training and validation by HOG or higher taxonomic clade,
+    not by random individual sequence alone.
+  - A near-identical paralogue must not appear in both discovery and validation.
+  - Freeze split manifests before motif discovery.
+
+Stage 04 — discover sequence motifs
+  - Run MEME for richer motif models where sample size permits.
+  - Run STREME for differential enriched short motifs.
+  - Scan independent sets with FIMO.
+  - Use AME/SEA or an equivalent documented enrichment test where appropriate.
+  - Record program/version, container digest, occurrence model, motif widths,
+    background model, strand policy, random seed, command argv and checksums.
+  - Run family/domain strata separately before any pooled exploratory analysis.
+
+Stage 05 — build profile models
+  - Build family/domain multiple alignments with a pinned aligner.
+  - Construct and calibrate HMMER profiles when a dispersed domain signature is
+    more biologically plausible than a short motif.
+  - Compare profile-HMM and short-motif discrimination on held-out data.
+
+Stage 06 — quantify evolutionary residue conservation
+  - Estimate site-specific evolutionary rates from a versioned multiple
+    alignment and tree (Rate4Site/ConSurf-like method or a local equivalent).
+  - Map scores back to exact sequence and structure residue coordinates.
+  - This is different from EMERALD pairwise alignment safety windows.
+  - Record mapping failures, gaps and model-coordinate discontinuities.
+
+Stage 07 — evaluate structural signatures
+  - Compare fold/domain architecture within each mechanistic class.
+  - Use pinned Foldseek and/or US-align/TM-align workflows as appropriate.
+  - Compare conserved pockets, catalytic residues and class-specific geometry.
+  - Retain pLDDT/PAE and coverage so low-confidence geometry is not over-read.
+  - Do not treat a common globular fold as sufficient proof of E3 function.
+
+Stage 08 — optional independent disorder evidence
+  - Integrate a locally runnable, licence-compatible predictor only after its
+    exact version, model files and redistribution terms are recorded.
+  - IUPred2A or another reviewed predictor may be evaluated.
+  - Keep predictor output separate from AlphaFold pLDDT; neither is ground truth.
+  - A web button marked “coming soon” is not an implemented evidence source.
+
+Stage 09 — validate signatures
+  - Evaluate held-out positives and matched negatives.
+  - Report sensitivity, specificity, precision, recall, MCC, PR-AUC and ROC-AUC
+    only when sample sizes and class balance make them interpretable.
+  - Bootstrap at the HOG level where possible.
+  - Report confidence intervals and per-class sample counts.
+  - Include ablations: motif alone, domain alone, structural signature alone and
+    combinations.
+
+Stage 10 — publish an immutable result bundle
+  - Write normalised TSV and Parquet tables, FASTA, MEME XML/text, HMM profiles,
+    Newick trees, SVG/PDF figures and portable structure assets.
+  - Do not use CSV for scientific data exchange.
+  - Add SHA-256 checksums and a complete provenance manifest.
+  - Publish app-facing tables only after schema and reconciliation tests pass.
+
+7. OUTPUT DATA CONTRACTS
+------------------------
+
+At minimum publish:
+
+  campaign_manifest.json
+  input_inventory.tsv
+  e3_class_assignments.tsv
+  sequence_set_manifest.tsv
+  redundancy_clusters.tsv
+  data_partitions.tsv
+  motif_catalogue.tsv
+  motif_occurrences.tsv
+  motif_enrichment.tsv
+  profile_hmm_catalogue.tsv
+  profile_hmm_hits.tsv
+  residue_conservation.tsv
+  disorder_predictions.tsv                 optional, explicit availability
+  structural_signature_summary.tsv
+  structural_signature_members.tsv
+  signature_validation_summary.tsv
+  signature_validation_predictions.tsv
+  member_signature_readiness.tsv
+  publication_inventory.tsv
+  SHA256SUMS.txt
+
+Every result row should carry:
+  campaign_id
+  parent_release_id
+  source_record_id
+  hog_id where applicable
+  species and taxon_id where applicable
+  e3_mechanistic_class
+  component_role
+  evidence_status
+  tool_name and tool_version
+  input_checksum or manifest reference
+  configuration_checksum
+
+Use explicit statuses such as:
+  COMPLETE
+  NOT_SELECTED
+  INPUT_UNAVAILABLE
+  INSUFFICIENT_SAMPLE_SIZE
+  NO_SIGNIFICANT_SIGNATURE
+  FAILED
+  EXCLUDED
+  AMBIGUOUS_CLASS
+  MAPPING_FAILED
+
+“No significant signature” is a valid assessed result. It is not the same as
+“not run” or “input unavailable”.
+
+8. MEMBER RANKING OUTPUT
+------------------------
+
+Do not overwrite `member_structural_readiness_rank` from e3_python_app.
+Publish separate, purpose-labelled fields, for example:
+
+  member_motif_representative_rank
+  member_family_signature_rank
+  member_evolutionary_representative_rank   imported from orthofinder-results
+
+The motif-representative rank should favour:
+  - reviewed family/class assignment;
+  - complete sequence and required domain coverage;
+  - non-redundancy/diversity contribution;
+  - complete motif/profile evidence;
+  - exact coordinate mapping;
+  - stable identifier tie-breaks.
+
+It must expose every component field. Do not create a single universal “best E3”
+rank without an approved purpose, weights and independent validation.
+
+9. COMMAND-LINE INTERFACE
+-------------------------
+
+Use named arguments only. Suggested commands:
+
+  e3-family-signatures validate-inputs --config CONFIG --output-dir OUTPUT
+  e3-family-signatures freeze-manifest --config CONFIG --output-dir OUTPUT
+  e3-family-signatures prepare-sequences --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures discover-motifs --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures build-profiles --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures analyse-conservation --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures analyse-structures --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures validate-signatures --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures publish --manifest MANIFEST --output-dir OUTPUT
+  e3-family-signatures run-all --config CONFIG --output-dir OUTPUT --resume
+
+Commands must support `--validate-only`. Dry-run/plan output must say exactly
+which stages and records would run or be reused.
+
+10. INCREMENTAL AND RESTARTABLE EXECUTION
+-----------------------------------------
+
+The cache key for one unit of work must include:
+  input content checksum
+  normalised configuration checksum
+  code commit
+  tool version
+  container digest where used
+  relevant reference-database checksum
+
+Write to a staging path, validate, then promote atomically. Never consider the
+existence of a directory sufficient evidence that a task completed. A completed
+record requires a success manifest plus validated expected outputs.
+
+Retries must be per HOG/member/stratum where practical. One failed record must
+not erase successful independent work.
+
+11. CLUSTER TEMPORARY-DIRECTORY RULE
+------------------------------------
+
+On the cluster, perform heavy temporary work inside the scheduler-provided
+TMPDIR, then validate and copy results to a persistent working directory.
+Never hard-code /tmp. The Mac workflow must not require /tmp either.
+
+Example cluster pattern (replace persistent paths and scheduler directives):
+
+  set -Eeuo pipefail
+  : "${TMPDIR:?The cluster must provide TMPDIR}"
+  PERSISTENT_RUN="/persistent/path/e3_family_signatures/campaign_001"
+  JOB_TOKEN="${SLURM_JOB_ID:-manual}"
+  JOB_WORK_DIR="${TMPDIR}/e3_family_signatures_${JOB_TOKEN}"
+
+  mkdir -p "${JOB_WORK_DIR}" "${PERSISTENT_RUN}"
+  rsync -a "/persistent/path/frozen_inputs/" "${JOB_WORK_DIR}/inputs/"
+
+  e3-family-signatures run-all \
+    --config "${JOB_WORK_DIR}/inputs/campaign.yaml" \
+    --output-dir "${JOB_WORK_DIR}/results" \
+    --resume
+
+  e3-family-signatures validate-inputs \
+    --config "${JOB_WORK_DIR}/inputs/campaign.yaml" \
+    --output-dir "${JOB_WORK_DIR}/results"
+
+  rsync -a "${JOB_WORK_DIR}/results/" "${PERSISTENT_RUN}/"
+
+Do not use `--delete` in handover rsync commands. Log the source and destination,
+copy checksums, and verify the persistent copy before the job exits.
+
+12. CODING AND QUALITY STANDARDS
+--------------------------------
+
+Mandatory requirements from the project owner:
+
+  - Python 3.11 or newer.
+  - PEP 8 compliant; use the repository's declared maximum line length.
+  - Google-style docstrings for every module, class and function.
+  - Type hints for public and internal function signatures.
+  - Named Python arguments in workflow calls; avoid opaque positional APIs.
+  - Unit tests for every new function, including private validation helpers.
+  - Synthetic end-to-end tests covering a complete small campaign.
+  - Defensive input/schema/range/identifier validation.
+  - Structured, informative logging at stage, stratum and work-unit level.
+  - No secrets, credentials or machine-specific paths in committed code.
+  - No silent exception swallowing and no broad `except Exception` unless it
+    re-raises with context at a top-level boundary.
+  - No biological missing value converted to zero/False without a documented
+    scientific rule.
+  - Read-only inputs; staged and atomic outputs.
+  - TSV rather than CSV for tabular scientific interchange.
+  - UK English in user-facing text and documentation.
+  - Deterministic ordering, random seeds and output names.
+  - Pin external command versions/containers and record their argv safely.
+
+Recommended local quality gate:
+
+  python -m compileall -q src tests
+  python -m pycodestyle src tests --max-line-length=100
+  python -m pydocstyle --convention=google src/e3_family_signatures
+  python -m coverage erase
+  python -m coverage run --branch -m pytest -q
+  python -m coverage report --fail-under=95
+
+13. REQUIRED TESTS
+------------------
+
+Unit tests must cover at least:
+  - configuration defaults, types and bounds;
+  - checksums and stable manifest serialisation;
+  - identifier normalisation and collision rejection;
+  - class/role assignment and ambiguity;
+  - full/domain/core coordinate mapping;
+  - exact and near-redundancy handling;
+  - HOG/clade split leakage prevention;
+  - external-tool argv construction without shell interpolation;
+  - parsers for every supported MEME/HMMER/alignment output version;
+  - missing/failed/no-signature state separation;
+  - conservation-to-sequence and sequence-to-structure mapping;
+  - incremental cache invalidation;
+  - atomic publication and checksum inventory;
+  - deterministic ranks and tie-breaks;
+  - malicious or malformed TSV/FASTA/config inputs.
+
+Integration tests must run pinned tiny fixtures through each external adapter.
+If a third-party binary is unavailable in normal CI, keep parser/argv tests
+mandatory and place a clearly labelled container smoke test in optional CI.
+
+The synthetic end-to-end test must include:
+  - at least two E3 mechanistic classes;
+  - a catalytic component and a non-catalytic complex component;
+  - matched negatives;
+  - two HOGs and at least two taxa;
+  - an unreviewed mapping;
+  - missing structure and missing-domain cases;
+  - a successful motif/signature result and a no-significant-signature result;
+  - a rerun proving completed work is reused;
+  - exact reconciliation to the publication manifest.
+
+Maintain docs/TEST_TRACEABILITY.tsv mapping every function and acceptance rule
+to tests.
+
+14. APP-FACING INTEGRATION
+--------------------------
+
+Do not make Streamlit execute MEME, HMMER, Foldseek or large alignments. The
+workflow publishes compact, immutable relations. A later E3 Python app release
+may add a “Family signatures” results page that reads:
+
+  motif_catalogue
+  motif_occurrences
+  profile_hmm_hits
+  residue_conservation
+  structural_signature_summary
+  member_signature_readiness
+  signature_validation_summary
+
+The app must display discovery and held-out validation separately. It must show
+class/role, sample size, availability state, provenance and warnings beside any
+logo, score or structure projection.
+
+EMERALD remains a useful external pairwise review hand-off. It is not a
+replacement for multi-sequence evolutionary conservation, family-stratified
+motif discovery or independent biological-disorder prediction.
+
+15. REFERENCE AUDIT
+-------------------
+
+Use the following preprint as a versioned curation/validation input, not as an
+automatic truth set:
+
+  Survey of the human proteostasis network: the ubiquitin-proteasome system
+  https://www.biorxiv.org/content/10.64898/2026.03.13.711689v3
+
+For every downloaded supplement record:
+  source URL
+  access timestamp
+  filename
+  byte size
+  SHA-256
+  sheet/table name
+  licence/redistribution note
+  parser version
+
+Produce an accession/class/role/domain overlap table against current E3 seeds.
+New disagreements require review; do not resolve them silently in favour of the
+newest source.
+
+16. MINIMUM ACCEPTANCE CRITERIA FOR v0.1.0
+------------------------------------------
+
+  1. A clean checkout installs with documented commands on macOS and Linux.
+  2. The full quality gate passes at or above 95% statement/branch coverage as
+     reported by the repository command.
+  3. A tiny offline end-to-end campaign runs twice; the second run reuses every
+     checksum-compatible completed unit.
+  4. RING/U-box, HECT, RBR and Cullin-system component roles remain separate.
+  5. Training/validation leakage by exact sequence, redundancy cluster and HOG
+     is detected and rejected.
+  6. Every external result is tied to tool/reference versions and checksums.
+  7. Missing, failed, excluded and assessed-negative states remain distinct.
+  8. Motif and profile results are validated against held-out HOGs or clades.
+  9. Publication reconciles exactly to frozen inputs and has SHA-256 inventory.
+ 10. App-facing tables are documented, bounded and contain no machine-local
+     temporary paths.
+
+17. OUT OF SCOPE FOR THE FIRST RELEASE
+--------------------------------------
+
+  - Running heavy analysis interactively in Streamlit.
+  - Replacing the authoritative E3 HOG rank.
+  - Declaring one motif universal to every E3 mechanism.
+  - Treating low AlphaFold pLDDT as proven disorder.
+  - Calling every Cullin-system component a catalytic E3.
+  - Scraping browser-only EMERALD results into the authority.
+  - Reimplementing generic OrthoFinder parsing or the selection-coverage tree.
+  - Assuming that absence from a sampled dataset means biological absence.
+
+END OF HANDOVER

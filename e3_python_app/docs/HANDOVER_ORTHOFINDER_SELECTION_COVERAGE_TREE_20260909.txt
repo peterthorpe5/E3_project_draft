@@ -1,0 +1,565 @@
+ORTHOFINDER-RESULTS SELECTION-COVERAGE TREE — COMPLETE HANDOVER
+================================================================
+
+Handover date: 2026-09-09
+Target application: standalone orthofinder-results
+Feature: taxonomy/species selection-coverage tree
+
+1. TARGET REPOSITORY AND OWNERSHIP
+----------------------------------
+
+Mac repository root:
+  /Users/PThorpe001/github_repos/orthofinder-results
+
+Remote repository:
+  https://github.com/peterthorpe5/orthofinder-results
+
+Do not implement this feature in:
+  /Users/PThorpe001/github_repos/E3_project_draft/e3_python_app
+
+The tree is a generic OrthoFinder/taxonomy capability and belongs in the
+standalone app. The E3 app may later consume its versioned exports, but no E3
+assumption should enter the generic tree engine.
+
+Start from the then-current clean `main`, inspect its `pyproject.toml` version and
+increment the minor version appropriate at implementation time. Do not assume
+that the version named in this handover is still current.
+
+Suggested branch:
+  feature/selection-coverage-tree
+
+2. USER REQUEST
+---------------
+
+Provide a phylogenetic/taxonomic visualisation that helps users construct and
+understand combined selections. It must show:
+
+  - selected exact taxa;
+  - included clades;
+  - only-in-clade scope;
+  - excluded exact taxa and excluded clades;
+  - taxa represented by the loaded OrthoFinder input;
+  - represented hits outside an included-clade search scope;
+  - reviewed expected taxa that have no data;
+  - input labels lacking a reviewed taxonomy mapping.
+
+Example selection:
+  Include Poaceae, exclude exact Solanum tuberosum, permit members elsewhere.
+
+The figure is a selection and coverage aid. It is not a gene tree, is not a HOG
+phylogram and must not imply biological absence when a taxon has no sampled data.
+
+3. DEFINITIONS THAT MUST REMAIN SEPARATE
+----------------------------------------
+
+Species/taxonomy coverage tree
+  A pruned hierarchy of reviewed taxonomic lineages for input or expected taxa.
+  This is the feature requested here.
+
+Species tree
+  The topology used or inferred by OrthoFinder. It may differ in detail from an
+  NCBI taxonomy tree. If shown, label its authority explicitly.
+
+Gene tree or HOG phylogram
+  Evolutionary relationships among genes within a HOG. Existing group-tree
+  functionality must remain separate.
+
+Represented
+  At least one exact input species label has a reviewed mapping to the taxon.
+
+No data
+  A taxon is in a declared, reviewed expected-taxon universe but no corresponding
+  input label is represented. This means “not represented in this dataset”, not
+  “the gene/HOG is biologically absent”.
+
+Unmapped
+  An input source label lacks a reviewed exact mapping. It must never be placed
+  speculatively on the tree.
+
+4. SELECTION SEMANTICS
+----------------------
+
+All active selectors compose with logical AND. Preserve these exact meanings:
+
+Required exact taxon
+  Every selected terminal taxon must occur in the group.
+
+Include clade
+  Every selected clade must contribute at least one group member. Members from
+  outside the selected clade are allowed and must be counted/reported.
+
+Only in clade
+  At least one member must fall within the selected clade and no member may occur
+  outside it. Unmapped members make an only-in result fail closed because their
+  lineage cannot be proven inside the allowed scope.
+
+Exclude exact taxon
+  No member may have the selected terminal taxon ID.
+
+Exclude clade
+  No member may descend from the selected clade.
+
+When several only-in clades are selected, use the intersection of their mapped
+member sets, matching the current E3 selector behaviour. If the product owner
+wants union semantics later, expose it as a separately named mode; never change
+the meaning silently.
+
+Reject contradictory predicates before query execution, including:
+  - the same exact taxon required and excluded;
+  - an included clade fully covered by exclusions;
+  - a required exact taxon outside the only-in scope;
+  - only-in clades with no represented intersection;
+  - unknown taxon IDs under the chosen authority.
+
+5. TWO ORTHOGONAL VISUAL STATES
+-------------------------------
+
+Do not compress selection and data coverage into one status. Each node/leaf must
+carry two independent dimensions.
+
+Selection state examples:
+  NEUTRAL
+  REQUIRED_EXACT
+  INCLUDE_CLADE
+  ONLY_IN_SCOPE
+  EXCLUDED_EXACT
+  EXCLUDED_CLADE
+  CONFLICT                    validation should normally prevent publication
+
+Coverage state examples:
+  REPRESENTED_IN_INPUT
+  EXPECTED_NO_DATA
+  ANCESTOR_OF_REPRESENTED
+  OUTSIDE_SELECTED_SCOPE_WITH_HITS
+  NOT_IN_EXPECTED_UNIVERSE
+  UNRESOLVED_INPUT            shown in a separate inventory, not attached
+
+Also carry Boolean audit flags rather than relying only on display strings:
+  is_selected
+  is_excluded
+  is_represented
+  is_expected
+  has_represented_descendant
+  has_expected_no_data_descendant
+  is_outside_selected_scope
+
+6. TAXONOMY AUTHORITY AND INPUT CONTRACT
+----------------------------------------
+
+The renderer must be offline and deterministic. Do not query a live taxonomy
+service every time the app redraws.
+
+Consume a versioned reviewed taxonomy mapping with at least:
+  workflow_species_label
+  accepted_species_name
+  ncbi_taxon_id
+  lineage_taxon_ids
+  lineage_names
+  lineage_ranks
+  taxon_rank
+  mapping_status
+  mapping_method
+  mapping_reason
+  taxonomy_authority
+  taxonomy_release
+  source_name_original
+
+`lineage_*` values are ordered root-to-terminal semicolon-delimited vectors and
+must have equal length. Only `mapping_status=REVIEWED` enters the authoritative
+tree. Retain pending, ambiguous and unmapped input labels in a separate table.
+
+Support terminal ranks including:
+  species
+  subspecies
+  varietas
+  forma
+  cultivar where the chosen authority supplies a stable reviewed identifier
+
+Do not invent an NCBI taxon ID for a cultivar not represented by NCBI Taxonomy.
+If the project uses an additional controlled cultivar authority, preserve both
+`taxonomy_authority` and the authority-specific ID; do not mislabel a project ID
+as an NCBI taxon ID.
+
+The expected-taxon universe must be explicit. Valid sources include:
+  - a reviewed project sampling manifest;
+  - the exact species list supplied to an OrthoFinder run;
+  - a user-selected reviewed target list;
+  - a bounded descendant list from a pinned taxonomy release.
+
+Never expand “all descendants of Eukaryota” by default. Large clades require a
+reviewed bounded universe or an explicit maximum and warning.
+
+7. REQUIRED DERIVED TABLES
+--------------------------
+
+Build pure, testable functions that derive:
+
+taxonomy_nodes
+  taxon_id, name, rank, parent_taxon_id, lineage_depth, authority, release
+
+input_taxon_mapping
+  source label, reviewed terminal taxon, status and provenance
+
+expected_taxa
+  expected taxon IDs, reason/source and inclusion status
+
+selection_predicates
+  selector type, taxon ID, label, order and normalised logical mode
+
+taxon_coverage
+  one row per displayed node with both selection and coverage dimensions
+
+group_taxon_evaluation
+  one row per selected group/taxon or a compact equivalent that records why a
+  group passed/failed each predicate and which hits lie outside scope
+
+tree_edges
+  parent/child pairs for the minimal pruned displayed tree
+
+unmapped_input_taxa
+  exact source labels, counts, mapping state and reason
+
+8. TREE CONSTRUCTION ALGORITHM
+------------------------------
+
+1. Validate the taxonomy release and reviewed mapping.
+2. Resolve selection taxon IDs only against that authority.
+3. Define the displayed terminal universe as the union of:
+     represented reviewed input taxa;
+     declared expected taxa;
+     exact selected/excluded taxa;
+     reviewed terminals needed to explain active clade selectors.
+4. Add every ancestor required to connect those terminals to their least common
+   displayed root.
+5. Preserve original parent relationships and lineage depth.
+6. Collapse unary neutral internal nodes only when the user enables a labelled
+   compact mode. Never collapse a selected/excluded node.
+7. Attach selection and coverage attributes independently.
+8. Calculate descendant counts for represented, expected-no-data and excluded
+   terminals.
+9. Produce stable child ordering: lineage order/name/taxon ID with explicit
+   deterministic rules.
+10. Reconcile displayed leaves and counts against the source manifests before
+    rendering.
+
+If the OrthoFinder species-tree topology is offered as an alternative, label the
+view “OrthoFinder species tree” and keep taxonomy-lineage selection semantics
+available. Do not silently mix edges from two authorities.
+
+9. INTERFACE REQUIREMENTS
+-------------------------
+
+Add a clearly named page or subpage:
+  Selection coverage tree
+
+Recommended layout:
+
+  Top: authority and coverage summary
+    taxonomy source/release
+    reviewed mapped input taxa
+    unmapped input labels
+    expected taxa
+    expected taxa with no data
+    represented taxa outside include scope
+
+  Left/control panel:
+    exact required taxa
+    include clades
+    only-in clades
+    exact exclusions
+    clade exclusions
+    expected-taxon universe
+    tree authority if more than one exists
+    compact/full lineage toggle
+
+  Main panel:
+    rooted rectangular tree by default
+    readable labels with taxon name, rank and ID
+    search and fit/reset controls
+    zoom/pan without losing current selector state
+    optional counts beside internal nodes
+
+  Below:
+    legend
+    current predicates in plain English
+    represented/outside/no-data/unmapped tables
+    filtered groups and predicate audit
+    downloads
+
+Clicking a node should offer only valid actions for its role:
+  require exact taxon
+  include clade
+  restrict to clade
+  exclude exact taxon
+  exclude clade
+  clear selection from this node
+
+Changing a selector must update the tree, plain-English query summary and group
+results together. A failed/contradictory selection must show an error and retain
+the last valid result; it must not display an empty tree as if no taxa matched.
+
+10. ACCESSIBLE VISUAL ENCODING
+------------------------------
+
+Use colour plus shape/stroke/pattern, never colour alone. Suggested semantics:
+
+  represented input       filled circle
+  expected no data        hollow circle with dashed outline
+  include clade           thick blue branch or node ring
+  only-in scope           pale blue subtree background/branch band
+  exact exclusion         red cross plus red outline
+  excluded clade          red dashed branch/subtree mark
+  outside-scope hits      amber diamond or amber outline
+  unmapped inputs         grey warning list outside tree
+
+Use a colour-blind-safe palette, adequate contrast and keyboard-accessible node
+controls. The exported SVG/PDF legend must use the same styles as the app.
+
+11. DOWNLOADS AND REPRODUCIBILITY
+--------------------------------
+
+Provide at least:
+  selection_predicates.tsv
+  taxon_coverage.tsv
+  group_taxon_evaluation.tsv
+  unmapped_input_taxa.tsv
+  selection_coverage_tree.newick
+  selection_coverage_tree_styles.tsv
+  selection_coverage_tree.svg
+  selection_coverage_tree.pdf
+  selection_manifest.json
+
+Use TSV rather than CSV. The manifest must include:
+  input OrthoFinder result checksum/identity
+  taxonomy authority and release
+  mapping-table checksum
+  expected-universe checksum
+  normalised selectors and semantics version
+  code/package version
+  creation timestamp
+  displayed-root taxon
+  compact/full-lineage choice
+  row and descendant limits
+
+Newick alone cannot preserve the full selection/coverage style. Pair it with the
+style TSV and JSON manifest.
+
+12. E3 BRIDGE CONTRACT
+----------------------
+
+Publish a reviewed taxonomy bridge directly compatible with E3 Python app
+v0.18.4. Required/accepted headers are:
+
+  workflow_species_label
+  accepted_species_name
+  ncbi_taxon_id
+  lineage_taxon_ids
+  lineage_names
+  lineage_ranks
+  taxon_rank
+  mapping_status
+  role
+
+The E3 app starts with:
+
+  ./run_e3_python_app.sh \
+    --resource-duckdb /path/to/e3_resource.duckdb \
+    --taxonomy-map /path/to/reviewed_taxonomy_mapping.tsv
+
+The generic app may publish additional provenance columns; the E3 loader ignores
+extra columns. It rejects multiple aliases for one meaning, duplicate exact
+source labels, inconsistent lineages and a file with no REVIEWED rows.
+
+Also publish optional group-level coverage fields for future E3 integration:
+  group_id
+  mapped_member_count
+  unmapped_member_count
+  represented_taxon_ids
+  outside_selected_scope_taxon_ids
+  predicate_pass
+  predicate_failure_reasons
+  selection_manifest_id
+
+13. RECOMMENDED CODE STRUCTURE
+------------------------------
+
+Adapt names to the current repository architecture after inspection. A clean
+separation would include:
+
+  taxonomy_authority.py
+    load/validate pinned taxonomy and reviewed mappings
+
+  taxonomy_selection.py
+    immutable selector models, contradiction checks and group evaluation
+
+  coverage.py
+    represented/expected/no-data/outside-scope calculations
+
+  coverage_tree.py
+    minimal pruned node/edge construction and stable ordering
+
+  coverage_tree_render.py
+    Plotly/HTML/SVG/PDF presentation only
+
+  coverage_exports.py
+    TSV/Newick/JSON/figure publication and checksums
+
+  report.py or app page module
+    controls and orchestration only
+
+Do not bury scientific predicate logic in Streamlit callbacks or JavaScript.
+The Python domain functions must be independently unit-testable.
+
+14. COMMAND-LINE SUPPORT
+------------------------
+
+Add named options or a subcommand that can reproduce an app selection without
+opening the UI. For example:
+
+  orthofinder-results coverage-tree \
+    --results-dir /path/to/Results_* \
+    --taxonomy-map /path/to/reviewed_taxonomy_mapping.tsv \
+    --expected-taxa /path/to/expected_taxa.tsv \
+    --include-clade-tax-id 4479 \
+    --exclude-exact-tax-id 4113 \
+    --output-dir /persistent/path/coverage_tree_run
+
+Repeated selectors should use repeated named options, not delimited positional
+arguments. Provide `--validate-only` and a dry-run summary.
+
+15. CLUSTER AND MAC PATH RULES
+------------------------------
+
+The Mac workflow must not require /tmp.
+
+On the cluster, stage temporary computation under the scheduler-provided TMPDIR
+and copy validated results to a persistent working directory. Do not hard-code
+/tmp and do not use destructive rsync options.
+
+Example cluster pattern:
+
+  set -Eeuo pipefail
+  : "${TMPDIR:?The cluster must provide TMPDIR}"
+  PERSISTENT_OUTPUT="/persistent/path/orthofinder_selection_coverage"
+  JOB_TOKEN="${SLURM_JOB_ID:-manual}"
+  JOB_WORK_DIR="${TMPDIR}/orthofinder_coverage_${JOB_TOKEN}"
+
+  mkdir -p "${JOB_WORK_DIR}" "${PERSISTENT_OUTPUT}"
+  rsync -a "/persistent/path/Results_example/" \
+    "${JOB_WORK_DIR}/Results_example/"
+
+  orthofinder-results coverage-tree \
+    --results-dir "${JOB_WORK_DIR}/Results_example" \
+    --taxonomy-map "/persistent/path/reviewed_taxonomy_mapping.tsv" \
+    --expected-taxa "/persistent/path/expected_taxa.tsv" \
+    --output-dir "${JOB_WORK_DIR}/published"
+
+  rsync -a "${JOB_WORK_DIR}/published/" "${PERSISTENT_OUTPUT}/"
+
+16. CODING STANDARDS
+--------------------
+
+Mandatory project-owner requirements:
+
+  - PEP 8 compliant Python using the repository line-length setting.
+  - Google-style docstrings for every module, class and function.
+  - Type hints throughout.
+  - Named arguments for Python APIs and CLI operations.
+  - Unit tests for every new function, including validation helpers.
+  - End-to-end tests.
+  - Defensive validation and fail-closed taxonomy behaviour.
+  - Extensive useful logging without secrets or sequence dumps.
+  - UK English in documentation and user-facing text.
+  - TSV, not CSV, for scientific table exchange.
+  - Deterministic ordering and output.
+  - Read-only input handling and atomic publication.
+  - No network requirement for rendering a completed imported run.
+
+Follow the current repository's test runner and coverage threshold. Do not lower
+coverage to make the feature pass.
+
+17. REQUIRED UNIT TESTS
+-----------------------
+
+Test at least:
+  - exact, include, only and exclude selectors individually;
+  - combined Poaceae/include plus potato/exact-exclude example;
+  - several include-clade predicates combined with AND;
+  - only-in intersection semantics;
+  - every contradiction listed above;
+  - reviewed versus pending/ambiguous/unmapped mappings;
+  - exact source-label matching and case-collision rejection;
+  - species, subspecies, varietas and cultivar lineages;
+  - inconsistent parent/name/rank metadata rejection;
+  - expected-no-data versus represented calculation;
+  - outside-selected-scope represented hits;
+  - unmapped members causing only-in to fail closed;
+  - minimal ancestor closure and stable tree order;
+  - selected/excluded nodes never collapsed in compact mode;
+  - reconciliation of leaf/internal descendant counts;
+  - Newick escaping and deterministic serialisation;
+  - TSV/JSON/SVG/PDF export contracts;
+  - row/descendant limits and malicious labels;
+  - no mutation of the underlying group membership.
+
+18. END-TO-END TEST
+-------------------
+
+Create a small synthetic completed OrthoFinder result with:
+  - two Poaceae species;
+  - Solanum tuberosum;
+  - one other represented plant outside Poaceae;
+  - one reviewed expected species with no data;
+  - one reviewed infraspecific/cultivar taxon;
+  - one unmapped input label;
+  - at least four groups with deliberately different predicate outcomes.
+
+Run the full command with:
+  include Poaceae
+  exclude exact Solanum tuberosum
+  outside hits allowed
+
+Assert that:
+  - matching groups are correct;
+  - outside hits are reported, not discarded;
+  - potato-containing groups fail for the exact reason;
+  - the no-data taxon is shown but never called biologically absent;
+  - the unmapped input is in the separate inventory;
+  - the pruned tree contains every necessary ancestor exactly once;
+  - all tabular, Newick, JSON and figure outputs exist;
+  - checksums and manifest reconciliation pass;
+  - a second run is deterministic.
+
+Add a headless app test that changes selectors and confirms that the tree,
+plain-English query summary, metrics and filtered group table remain synchronised.
+
+19. ACCEPTANCE CRITERIA
+-----------------------
+
+  1. The page is clearly named “Selection coverage tree”.
+  2. It is visibly and textually distinct from gene/HOG phylograms.
+  3. Exact/include/only/exclude predicates match documented AND semantics.
+  4. Selection state and coverage state are exported independently.
+  5. Represented, outside-scope, expected-no-data and unmapped states are clear.
+  6. No-data text always says dataset coverage, never biological absence.
+  7. New species and infraspecific taxa work from a reviewed mapping without
+     code edits.
+  8. Contradictions and unknown IDs fail before querying groups.
+  9. The same selection is reproducible from the CLI and manifest.
+ 10. TSV, Newick, JSON, SVG and PDF downloads reconcile to one tree state.
+ 11. The reviewed bridge loads directly in E3 Python app v0.18.4.
+ 12. All quality, unit, integration and end-to-end tests pass at the repository's
+     existing coverage threshold.
+
+20. OUT OF SCOPE
+----------------
+
+  - Claiming a missing taxon proves biological gene absence.
+  - Building E3-specific motif or structure analysis.
+  - Replacing HOG gene trees with the taxonomy coverage tree.
+  - Guessing unresolved species, cultivar or synonym mappings.
+  - Querying a live taxonomy service during ordinary report rendering.
+  - Rendering every descendant of a huge clade without a bounded universe.
+  - Moving orthofinder-results back under E3_project_draft.
+
+END OF HANDOVER

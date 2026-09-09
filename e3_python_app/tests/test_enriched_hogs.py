@@ -12,6 +12,7 @@ from e3app.enriched_hogs import (
     collect_enriched_hog_results,
     enriched_hog_capability,
     enriched_hog_columns,
+    normalise_hog_ids,
     validate_enriched_hog_result,
 )
 from e3app.errors import AppError
@@ -240,6 +241,40 @@ def test_enriched_hog_collection_validates_columns_and_bounds(
             selected_columns=["hog_id"],
             maximum_rows=0,
         )
+    assert normalise_hog_ids(hog_ids=(" N0.HOG1 ", "N0.HOG1")) == (
+        "N0.HOG1",
+    )
+    with pytest.raises(AppError, match="must not be blank"):
+        normalise_hog_ids(hog_ids=("",))
+    with pytest.raises(AppError, match="At most 1000"):
+        normalise_hog_ids(hog_ids=tuple(f"N0.HOG{index}" for index in range(1001)))
+
+
+def test_enriched_hog_collection_filters_exact_hog_with_parameters(
+    enriched_hog_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """The dedicated member page retrieves only its exact selected HOG."""
+    result = collect_enriched_hog_results(
+        connection=enriched_hog_connection,
+        result=ENRICHED_HOG_MEMBERS,
+        selected_columns=(
+            "hog_id",
+            "member_raw_identifier",
+            "member_structural_readiness_rank",
+        ),
+        maximum_rows=100,
+        hog_ids=("N0.HOG2",),
+    )
+    assert result["hog_id"].tolist() == ["N0.HOG2"]
+    assert result["member_raw_identifier"].tolist() == ["MAIZE1"]
+    injected = collect_enriched_hog_results(
+        connection=enriched_hog_connection,
+        result=ENRICHED_HOG_MEMBERS,
+        selected_columns=("hog_id", "member_raw_identifier"),
+        maximum_rows=100,
+        hog_ids=("N0.HOG1' OR TRUE --",),
+    )
+    assert injected.empty
 
 
 def test_enriched_hog_overview_accepts_ranking_only_resources() -> None:

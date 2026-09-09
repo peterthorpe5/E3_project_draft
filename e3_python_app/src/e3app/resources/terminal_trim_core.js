@@ -130,11 +130,36 @@
         return {total, available, missing: total - available, mean};
     }
 
+    /**
+     * Summarise confidence after reversible N- and C-terminal display trimming.
+     *
+     * @param {Array<object>} atoms Ordered C-alpha atom records.
+     * @param {*} nValue Requested N-terminal count.
+     * @param {*} cValue Requested C-terminal count.
+     * @returns {{total:number,available:number,missing:number,mean:number|null,
+     *     n:number,c:number,adjusted:boolean,firstIndex:number|null,lastIndex:number|null}}
+     *     Retained-core coverage, confidence and validated boundaries.
+     */
+    function retainedConfidenceSummary(atoms, nValue, cValue) {
+        const records = Array.isArray(atoms) ? atoms : [];
+        const bounds = clampCounts(nValue, cValue, records.length);
+        const start = Math.min(bounds.n, Math.max(0, records.length - 1));
+        const end = Math.max(start + 1, records.length - bounds.c);
+        const retained = records.length ? records.slice(start, end) : [];
+        return {
+            ...confidenceSummary(retained),
+            ...bounds,
+            firstIndex: retained.length ? start : null,
+            lastIndex: retained.length ? end - 1 : null,
+        };
+    }
+
     return {
         clampCounts,
         confidenceSummary,
         integerValue,
         qualityScore,
+        retainedConfidenceSummary,
         suggestedTrim,
         terminalLowConfidenceRun,
     };

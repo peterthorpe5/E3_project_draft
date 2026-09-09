@@ -306,8 +306,8 @@ def test_pair_viewer_gains_idempotent_terminal_display_controls() -> None:
     assert "Confidence profile not loaded" in upgraded
     assert 'qualityPanel.id = "e3QualityPanel"' in upgraded
     assert "pairViewerMain.insertAdjacentElement(\"afterend\", qualityPanel)" in upgraded
-    assert "height:390px" in upgraded
-    assert "const bottom = 320" in upgraded
+    assert "height:460px" in upgraded
+    assert "const bottom = 385" in upgraded
     assert "AlphaFold confidence along the sequence" in upgraded
     assert "source model, alignment, pockets, scores and ranking never change" in upgraded
     assert upgraded.index("function qualityScore") < upgraded.index(

@@ -68,6 +68,7 @@ NAVIGATION_STAGES = (
                 "Independent structural-review shortlist",
                 method_annotation=True,
             ),
+            NavigationPage("Within-HOG ranking", method_annotation=True),
             NavigationPage("All results"),
             NavigationPage("Candidates"),
             NavigationPage("E3 seed catalogue"),
