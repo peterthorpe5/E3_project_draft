@@ -429,6 +429,7 @@ def test_ligandability_helpers_and_missing_structure_state(
         stage_root=tmp_path / "stage",
     )
     assert summaries[0]["conservation_status"] == "INSUFFICIENT_STRUCTURES"
+    assert "exact residue coordinates" in summaries[0]["interpretation"]
     assert members == []
 
     input_fasta = tmp_path / "input.fasta"
@@ -461,6 +462,87 @@ def test_ligandability_helpers_and_missing_structure_state(
             log_path=tmp_path / "failed.log",
             threads=1,
         )
+
+
+def test_conservation_excludes_out_of_range_model_coordinates(
+    synthetic_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model/FASTA length mismatch must not abort unrelated conservation."""
+    config = load_config(synthetic_config)
+    selected = [
+        {
+            "cluster_id": "cluster_1",
+            "primary_group_type": "HIERARCHICAL_ORTHOGROUP",
+            "primary_group_id": "N0.HOG0001",
+            "candidate_accession": accession,
+            "species_column": species,
+            "pocket_number": 1,
+            "druggability_score": 0.8,
+            "mapping_fraction": 1.0,
+            "conservative_fraction_plddt_ge_70": 0.9,
+            "passes_druggability_threshold": True,
+            "passes_mapping_threshold": True,
+            "predictor_agreement": True,
+        }
+        for accession, species in (("U5GBX4", "Species_a"), ("Q2", "Species_b"))
+    ]
+    mappings = [
+        {
+            "accession": "U5GBX4",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_label_seq_id": 2,
+            "model_residue_name": "ALA",
+        },
+        {
+            "accession": "U5GBX4",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_label_seq_id": 521,
+            "model_residue_name": "CYS",
+        },
+        {
+            "accession": "Q2",
+            "pocket_number": 1,
+            "mapping_status": "MAPPED",
+            "model_label_seq_id": 2,
+            "model_residue_name": "ALA",
+        },
+    ]
+
+    def copy_alignment(**kwargs: Any) -> None:
+        """Copy the exact input as a deterministic gap-free alignment."""
+        kwargs["output_fasta"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["output_fasta"].write_text(
+            kwargs["input_fasta"].read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        kwargs["log_path"].write_text("fixture alignment\n", encoding="utf-8")
+
+    warning_messages: list[str] = []
+    monkeypatch.setattr("e3workflow.ligandability._run_mafft", copy_alignment)
+    monkeypatch.setattr(
+        "e3workflow.ligandability.LOGGER.warning",
+        lambda message, *args: warning_messages.append(message % args),
+    )
+
+    summaries, members = measure_pocket_conservation(
+        config=config,
+        selected_records=selected,
+        mapping_records=mappings,
+        sequences={"U5GBX4": "MACD", "Q2": "MACD"},
+        stage_root=tmp_path / "stage",
+    )
+
+    assert summaries[0]["conservation_status"] == "CONSERVED_REGION_SUPPORTED"
+    assert summaries[0]["structured_accession_count"] == 2
+    assert {row["candidate_accession"] for row in members} == {"U5GBX4", "Q2"}
+    assert all(row["alignment_columns"] == "2" for row in members)
+    warning_text = "\n".join(warning_messages)
+    assert "FASTA_POSITION_OUT_OF_RANGE=1" in warning_text
+    assert "U5GBX4/1" in warning_text
 
 
 def test_prepared_sequence_loading_and_bad_parquet(

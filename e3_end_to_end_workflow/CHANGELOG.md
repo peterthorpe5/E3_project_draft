@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.1
+
+- Corrects Stage 09 pocket conservation to consume the existing exact FASTA
+  coordinate audit instead of raw model `label_seq_id` values.
+- Keeps out-of-range, residue-identity-mismatched and otherwise non-exact
+  coordinates explicit in `pocket_sequence_coordinates`, while excluding them
+  from MAFFT conservation without clipping or renumbering residues.
+- Prevents one model/sequence coordinate mismatch from aborting unrelated
+  evolutionary groups in a large restartable structural campaign.
+- Adds aggregate warning logs, a non-exact-coordinate QC count, a focused unit
+  regression and a production-path scientific pipeline regression.
+
 ## v0.16.0
 
 - Adds an optional, restartable human-and-plant structural extension to both
