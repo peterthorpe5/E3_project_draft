@@ -448,7 +448,7 @@ def test_downloaded_evidence_to_app_ready_release(
             ("Q9SA03", 1, "MAPPED", "A", 2, "A", 2, "", "ALA", 90.0),
             ("Q9SA03", 1, "MAPPED", "A", 3, "A", 3, "", "CYS", 90.0),
             ("Q00002", 1, "MAPPED", "A", 2, "A", 2, "", "ALA", 88.0),
-            ("Q00002", 1, "MAPPED", "A", 3, "A", 3, "", "CYS", 88.0),
+            ("Q00002", 1, "MAPPED", "A", 521, "A", 521, "", "CYS", 88.0),
         ],
     )
     _write_parquet(
@@ -519,6 +519,21 @@ def test_downloaded_evidence_to_app_ready_release(
     run_ligandability_stage(
         config=config, stage_root=config.run_root / "09_ligandability"
     )
+    coordinate_connection = duckdb.connect(":memory:")
+    try:
+        coordinate_status = coordinate_connection.execute(
+            "SELECT sequence_coordinate_status FROM read_parquet(?) "
+            "WHERE candidate_accession = 'Q00002' AND fasta_position = 521",
+            [
+                str(
+                    config.run_root
+                    / "09_ligandability/tables/pocket_sequence_coordinates.parquet"
+                )
+            ],
+        ).fetchone()
+    finally:
+        coordinate_connection.close()
+    assert coordinate_status == ("FASTA_POSITION_OUT_OF_RANGE",)
     structural_tables = (
         config.run_root
         / "09b_structural_alignment"

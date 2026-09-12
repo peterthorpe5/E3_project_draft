@@ -5,10 +5,13 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.16.0` adds a restartable human-and-plant structural extension while
-retaining the completed plant analysis as an immutable comparison baseline.
-The same extension can attach to an existing checksum-valid release or run as
-the final branch of a future start-to-finish workflow.
+Version `0.16.1` ensures that pocket-conservation alignments use only exact,
+identity-validated FASTA coordinates. Model positions that are outside the
+prepared sequence, disagree with its residue identity or cannot otherwise be
+mapped remain explicit in the coordinate audit and are excluded from sequence
+conservation without terminating unrelated groups. Version `0.16.0` added the
+restartable human-and-plant structural extension while retaining the completed
+plant analysis as an immutable comparison baseline.
 
 The workflow supports five explicit production strategies:
 

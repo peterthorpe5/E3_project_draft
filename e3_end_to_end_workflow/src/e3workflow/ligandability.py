@@ -1011,33 +1011,100 @@ def measure_pocket_conservation(
     sequences: Mapping[str, str],
     stage_root: Path,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Align selected candidates and calculate conserved pocket-region evidence."""
+    """Align selected candidates and calculate conserved pocket-region evidence.
+
+    Pocket positions enter the alignment only after the model residue number,
+    sequence range and amino-acid identity have been validated against the
+    exact candidate FASTA sequence. Non-exact coordinates remain available in
+    the published coordinate audit but are excluded from conservation rather
+    than clipped, renumbered or allowed to abort unrelated groups.
+
+    Args:
+        config: Validated workflow configuration.
+        selected_records: Selected pocket records in evolutionary-group context.
+        mapping_records: Residue-level model mapping records.
+        sequences: Exact candidate protein sequences keyed by accession.
+        stage_root: Staging directory for alignment inputs, outputs and logs.
+
+    Returns:
+        A pair containing group-level conservation summaries and member-level
+        aligned pocket-region records.
+
+    Raises:
+        StageError: If selected identifiers or exact coordinate records violate
+            the workflow contract, or if MAFFT produces an invalid alignment.
+    """
     selected_pocket_keys = {
         (str(record["candidate_accession"]), int(record["pocket_number"]))
         for record in selected_records
     }
+    coordinate_records = map_pocket_residues_to_fasta(
+        selected_records=selected_records,
+        mapping_records=mapping_records,
+        sequences=sequences,
+    )
     positions: dict[tuple[str, int], set[int]] = defaultdict(set)
-    for record in mapping_records:
-        accession = str(record.get("accession", ""))
+    excluded_status_counts: dict[str, int] = defaultdict(int)
+    excluded_pockets: set[tuple[str, int]] = set()
+    for record in coordinate_records:
+        accession = str(record.get("candidate_accession", "")).strip()
         try:
             pocket_number = int(record.get("pocket_number"))
         except (TypeError, ValueError) as exc:
             raise StageError(
-                f"Pocket residue mapping has a non-integer pocket number for {accession}"
+                f"Pocket sequence coordinate has a non-integer pocket number for {accession}"
             ) from exc
         pocket_key = (accession, pocket_number)
         if pocket_key not in selected_pocket_keys:
+            raise StageError(
+                "Pocket coordinate mapper returned an unselected accession/pocket: "
+                f"{accession}/{pocket_number}"
+            )
+        coordinate_status = str(
+            record.get("sequence_coordinate_status") or "STATUS_UNAVAILABLE"
+        ).upper()
+        if coordinate_status != "MAPPED_EXACT":
+            excluded_status_counts[coordinate_status] += 1
+            excluded_pockets.add(pocket_key)
             continue
-        if str(record.get("mapping_status", "")) != "MAPPED":
-            continue
-        position = record.get("model_label_seq_id")
-        if position is not None and str(position) != "":
-            try:
-                positions[pocket_key].add(int(position))
-            except (TypeError, ValueError) as exc:
-                raise StageError(
-                    f"Mapped pocket position is not an integer for {accession}/{pocket_number}"
-                ) from exc
+        raw_position = record.get("fasta_position")
+        if isinstance(raw_position, bool):
+            raise StageError(
+                f"Exact FASTA pocket position is boolean for {accession}/{pocket_number}"
+            )
+        try:
+            position = int(raw_position)
+        except (TypeError, ValueError) as exc:
+            raise StageError(
+                f"Exact FASTA pocket position is not an integer for "
+                f"{accession}/{pocket_number}"
+            ) from exc
+        sequence = sequences.get(accession)
+        if sequence is None or position < 1 or position > len(sequence):
+            raise StageError(
+                "Exact pocket-coordinate audit conflicts with the prepared "
+                f"sequence for {accession}/{pocket_number}: position={position}; "
+                f"sequence_length={len(sequence) if sequence is not None else 'unavailable'}"
+            )
+        positions[pocket_key].add(position)
+    if excluded_status_counts:
+        status_summary = "; ".join(
+            f"{status}={count}"
+            for status, count in sorted(excluded_status_counts.items())
+        )
+        examples = "; ".join(
+            f"{accession}/{pocket_number}"
+            for accession, pocket_number in sorted(excluded_pockets)[:10]
+        )
+        LOGGER.warning(
+            "Excluded %d non-exact residue coordinate record(s) across %d "
+            "accession/pocket(s) from pocket-conservation alignment; statuses: %s; "
+            "examples: %s",
+            sum(excluded_status_counts.values()),
+            len(excluded_pockets),
+            status_summary,
+            examples,
+        )
     by_group: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for record in selected_records:
         key = (
@@ -1096,7 +1163,8 @@ def measure_pocket_conservation(
                     "conserved_pocket_score": 0.0,
                     "conservation_status": "INSUFFICIENT_STRUCTURES",
                     "interpretation": (
-                        "fewer than two reusable mapped pocket predictions were available"
+                        "fewer than two selected pockets had exact residue coordinates "
+                        "in the prepared FASTA sequences"
                     ),
                 }
             )
@@ -1510,6 +1578,10 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
                     row["sequence_coordinate_status"] == "MAPPED_EXACT"
                     for row in sequence_coordinates
                 ),
+                "non_exact_pocket_sequence_coordinate_count": sum(
+                    row["sequence_coordinate_status"] != "MAPPED_EXACT"
+                    for row in sequence_coordinates
+                ),
                 "conserved_region_supported_count": sum(
                     row["conservation_status"] == "CONSERVED_REGION_SUPPORTED"
                     for row in summaries
@@ -1534,6 +1606,7 @@ def run_ligandability_stage(*, config: WorkflowConfig, stage_root: Path) -> None
             "pocket_sequence_coordinate_count",
             "ranked_pocket_sequence_coordinate_count",
             "exact_pocket_sequence_coordinate_count",
+            "non_exact_pocket_sequence_coordinate_count",
             "conserved_region_supported_count",
             "mode",
             "evidence_source",
