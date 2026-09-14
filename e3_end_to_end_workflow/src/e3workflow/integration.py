@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -76,6 +77,36 @@ FINAL_FIELDS = (
 )
 
 MASTER_PARQUET_NAME = "e3_candidate_master_results.parquet"
+
+REVIEW_SHORTLIST_OUTPUT_PATTERN = re.compile(
+    r"^top_(?P<limit>[1-9][0-9]*)_computational_review_shortlist\.(?:tsv|parquet)$"
+)
+
+
+def _declared_review_shortlist_limits(*, config: WorkflowConfig) -> tuple[int, ...]:
+    """Return every named Top-N shortlist required by the release contract.
+
+    The canonical Top-20 relation and the configured final review limit remain
+    stable application interfaces. Additional named limits are discovered from
+    the Stage 10 declared outputs, allowing an immutable production
+    configuration to request Top-50 or another bounded review view independently
+    of ``final_candidate_limit``.
+
+    Args:
+        config: Validated workflow configuration.
+
+    Returns:
+        Sorted, unique positive shortlist limits.
+    """
+    limits = {20, config.analysis.prioritisation.final_candidate_limit}
+    for relative_output in config.stage("10_integrated_resource").expected_outputs:
+        match = REVIEW_SHORTLIST_OUTPUT_PATTERN.fullmatch(
+            Path(relative_output).name
+        )
+        if match is not None:
+            limits.add(int(match.group("limit")))
+    return tuple(sorted(limits))
+
 
 RESOURCE_SECTIONS = {
     "candidate_evidence": ("candidate_discovery", "candidate"),
@@ -734,8 +765,15 @@ def _write_resource_relation_catalog(
     *,
     connection: duckdb.DuckDBPyConnection,
     sources: Sequence[tuple[str, Path]],
+    review_shortlist_relations: Sequence[str],
 ) -> None:
-    """Materialise relation purpose, granularity and source provenance."""
+    """Materialise relation purpose, granularity and source provenance.
+
+    Args:
+        connection: Open integrated-resource DuckDB connection.
+        sources: Imported evidence relation names and source paths.
+        review_shortlist_relations: Configuration-declared named Top-N relations.
+    """
     connection.execute(
         "CREATE TABLE resource_relation_catalog ("
         "relation_name VARCHAR, app_section VARCHAR, row_granularity VARCHAR, "
@@ -755,12 +793,12 @@ def _write_resource_relation_catalog(
                 str(source_path),
             )
         )
-    for relation_name in (
+    generated_relations = (
         "final_candidate_prioritisation",
         "candidate_master_results",
         "final_evolutionary_candidate_prioritisation",
-        "top_20_computational_review_shortlist",
         "top_computational_review_shortlist",
+        *review_shortlist_relations,
         "gate_sensitivity_detail",
         "gate_sensitivity_summary",
         "grant_aligned_predicted_candidates",
@@ -768,8 +806,12 @@ def _write_resource_relation_catalog(
         "final_candidate_exclusion_audit",
         "resource_metadata",
         "resource_relation_catalog",
-    ):
-        section, granularity = RESOURCE_SECTIONS[relation_name]
+    )
+    for relation_name in dict.fromkeys(generated_relations):
+        section, granularity = RESOURCE_SECTIONS.get(
+            relation_name,
+            ("final_recommendations", "evolutionary_candidate_group"),
+        )
         records.append((relation_name, section, granularity, "generated_in_stage_10"))
     connection.executemany(
         "INSERT INTO resource_relation_catalog VALUES (?, ?, ?, ?)",
@@ -1147,8 +1189,14 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             + _final_contributor_query(connection=connection)
         )
         top_limit = config.analysis.prioritisation.final_candidate_limit
-        dynamic_top_relation = (
-            f"top_{top_limit}_computational_review_shortlist"
+        review_limits = _declared_review_shortlist_limits(config=config)
+        review_shortlist_relations = tuple(
+            f"top_{review_limit}_computational_review_shortlist"
+            for review_limit in review_limits
+        )
+        LOGGER.info(
+            "Publishing named review shortlists for limits: %s",
+            ", ".join(str(review_limit) for review_limit in review_limits),
         )
         connection.execute(
             "CREATE TABLE top_computational_review_shortlist AS SELECT *, "
@@ -1159,16 +1207,19 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
             "ORDER BY final_evolutionary_rank LIMIT ?",
             [top_limit],
         )
-        connection.execute(
-            f"CREATE TABLE {quote_identifier(dynamic_top_relation)} AS "
-            "SELECT * FROM top_computational_review_shortlist "
-            "ORDER BY final_evolutionary_rank"
-        )
-        if dynamic_top_relation != "top_20_computational_review_shortlist":
+        for review_limit, relation_name in zip(
+            review_limits,
+            review_shortlist_relations,
+            strict=True,
+        ):
             connection.execute(
-                "CREATE TABLE top_20_computational_review_shortlist AS "
-                "SELECT * FROM top_computational_review_shortlist "
-                "ORDER BY final_evolutionary_rank LIMIT 20"
+                f"CREATE TABLE {quote_identifier(relation_name)} AS SELECT *, "
+                "CASE WHEN grant_aligned_final_pass THEN "
+                "'STRUCTURALLY_SUPPORTED_FOR_BOSS_REVIEW' ELSE "
+                "'BOSS_REVIEW_WITH_EXPLICIT_EVIDENCE_GAPS' END AS boss_review_status "
+                "FROM final_evolutionary_candidate_prioritisation "
+                "ORDER BY final_evolutionary_rank LIMIT ?",
+                [review_limit],
             )
         _create_gate_sensitivity_tables(
             connection=connection,
@@ -1209,6 +1260,7 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
         _write_resource_relation_catalog(
             connection=connection,
             sources=resource_tables,
+            review_shortlist_relations=review_shortlist_relations,
         )
         final_rows = connection.execute(
             "SELECT * FROM final_candidate_prioritisation ORDER BY final_rank"
@@ -1250,14 +1302,6 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "SELECT * FROM top_computational_review_shortlist "
                 "ORDER BY final_evolutionary_rank"
             ),
-            dynamic_top_relation: (
-                f"SELECT * FROM {quote_identifier(dynamic_top_relation)} "
-                "ORDER BY final_evolutionary_rank"
-            ),
-            "top_20_computational_review_shortlist": (
-                "SELECT * FROM top_20_computational_review_shortlist "
-                "ORDER BY final_evolutionary_rank"
-            ),
             "grant_aligned_predicted_candidates": (
                 "SELECT * FROM grant_aligned_predicted_candidates "
                 "ORDER BY final_evolutionary_rank"
@@ -1278,6 +1322,11 @@ def run_integrated_stage(*, config: WorkflowConfig, stage_root: Path) -> None:
                 "SELECT * FROM gate_sensitivity_summary ORDER BY scenario_id"
             ),
         }
+        for relation_name in review_shortlist_relations:
+            final_queries[relation_name] = (
+                f"SELECT * FROM {quote_identifier(relation_name)} "
+                "ORDER BY final_evolutionary_rank"
+            )
         for basename, query in final_queries.items():
             _copy_query_tsv(
                 connection=connection,

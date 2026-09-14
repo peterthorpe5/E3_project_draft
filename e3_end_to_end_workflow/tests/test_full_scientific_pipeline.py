@@ -14,7 +14,12 @@ import duckdb
 from openpyxl import load_workbook
 
 from e3workflow.config import load_config
-from e3workflow.integration import _final_query, run_app_ready_stage, run_integrated_stage
+from e3workflow.integration import (
+    _declared_review_shortlist_limits,
+    _final_query,
+    run_app_ready_stage,
+    run_integrated_stage,
+)
 from e3workflow.ligandability import (
     POCKET_CONSERVATION_COLUMN_TYPES,
     POCKET_CONSERVATION_FIELDS,
@@ -212,6 +217,39 @@ def test_empty_conservation_output_has_typed_parquet_schema(tmp_path: Path) -> N
     assert schema["structured_species_count"] == "BIGINT"
     assert schema["conserved_component_fraction"] == "DOUBLE"
     assert schema["all_assessed_members_pass_mapping"] == "BOOLEAN"
+
+
+def test_declared_review_shortlist_limits_follow_stage_contract(
+    synthetic_config: Path,
+) -> None:
+    """Named shortlist limits must remain independent of the default review size."""
+
+    base = load_config(synthetic_config)
+    config = replace(
+        base,
+        analysis=replace(
+            base.analysis,
+            prioritisation=replace(
+                base.analysis.prioritisation,
+                final_candidate_limit=1,
+            ),
+        ),
+        stages=tuple(
+            replace(
+                stage,
+                expected_outputs=(
+                    *stage.expected_outputs,
+                    "final_results/top_50_computational_review_shortlist.tsv",
+                    "final_results/top_50_computational_review_shortlist.parquet",
+                ),
+            )
+            if stage.name == "10_integrated_resource"
+            else stage
+            for stage in base.stages
+        ),
+    )
+
+    assert _declared_review_shortlist_limits(config=config) == (1, 20, 50)
 
 
 def test_downloaded_evidence_to_app_ready_release(
@@ -585,20 +623,26 @@ def test_downloaded_evidence_to_app_ready_release(
             )
         ],
     )
-    config = replace(
-        config,
-        stages=tuple(
-            replace(
+    updated_stages = []
+    for stage in config.stages:
+        if stage.name == "09b_structural_alignment":
+            stage = replace(
                 stage,
                 enabled=True,
                 required=False,
                 evidence_mode="generate",
             )
-            if stage.name == "09b_structural_alignment"
-            else stage
-            for stage in config.stages
-        ),
-    )
+        elif stage.name == "10_integrated_resource":
+            stage = replace(
+                stage,
+                expected_outputs=(
+                    *stage.expected_outputs,
+                    "final_results/top_50_computational_review_shortlist.tsv",
+                    "final_results/top_50_computational_review_shortlist.parquet",
+                ),
+            )
+        updated_stages.append(stage)
+    config = replace(config, stages=tuple(updated_stages))
     run_integrated_stage(
         config=config, stage_root=config.run_root / "10_integrated_resource"
     )
@@ -616,6 +660,12 @@ def test_downloaded_evidence_to_app_ready_release(
         tables = {
             row[0]
             for row in connection.execute("SHOW TABLES").fetchall()
+        }
+        catalogued_relations = {
+            row[0]
+            for row in connection.execute(
+                "SELECT relation_name FROM resource_relation_catalog"
+            ).fetchall()
         }
     finally:
         connection.close()
@@ -635,7 +685,9 @@ def test_downloaded_evidence_to_app_ready_release(
         "candidate_master_results",
         "structural_alignment_summary",
         "structural_pocket_residue_matches",
+        "top_50_computational_review_shortlist",
     }.issubset(tables)
+    assert "top_50_computational_review_shortlist" in catalogued_relations
     master = (
         config.run_root
         / "10_integrated_resource/tables/e3_candidate_master_results.parquet"
@@ -654,6 +706,17 @@ def test_downloaded_evidence_to_app_ready_release(
     ).is_file()
     final_root = config.run_root / "10_integrated_resource/final_results"
     assert (final_root / "top_20_computational_review_shortlist.parquet").is_file()
+    assert (final_root / "top_50_computational_review_shortlist.tsv").is_file()
+    top_50_path = final_root / "top_50_computational_review_shortlist.parquet"
+    assert top_50_path.is_file()
+    shortlist_connection = duckdb.connect(":memory:")
+    try:
+        assert shortlist_connection.execute(
+            "SELECT COUNT(*) FROM read_parquet(?)",
+            [str(top_50_path)],
+        ).fetchone() == (1,)
+    finally:
+        shortlist_connection.close()
     assert (final_root / "top_computational_review_shortlist.parquet").is_file()
     assert (final_root / "gate_sensitivity_summary.parquet").is_file()
     assert (final_root / "grant_aligned_predicted_candidates.parquet").is_file()
