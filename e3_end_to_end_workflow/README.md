@@ -5,7 +5,11 @@ packages. Snakemake controls dependencies; each component package remains respon
 detailed scientific analysis, while the master package enforces shared manifests, missing-data
 semantics, scoring, provenance, reporting and application hand-off.
 
-Version `0.16.1` ensures that pocket-conservation alignments use only exact,
+Version `0.16.2` makes Stage 10 publish every configuration-declared named
+Top-N review shortlist, so a required Top-50 release is independent of the
+canonical `final_candidate_limit`. It also reports the effective Snakemake
+Slurm status command rather than always labelling it as `squeue`. Version
+`0.16.1` ensures that pocket-conservation alignments use only exact,
 identity-validated FASTA coordinates. Model positions that are outside the
 prepared sequence, disagree with its residue identity or cannot otherwise be
 mapped remain explicit in the coordinate audit and are excluded from sequence

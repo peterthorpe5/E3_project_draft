@@ -491,7 +491,16 @@ fi
 printf 'E3 controller submission preflight passed.\n'
 printf 'Run: %s\n' "${RUN_NAME}"
 printf 'Configuration: %s\n' "${CONFIG}"
-printf 'Status backend for scientific jobs: squeue\n'
+SCIENTIFIC_STATUS_BACKEND="squeue"
+for ((ARGUMENT_INDEX = 0; ARGUMENT_INDEX < ${#RUNNER_ARGS[@]}; ARGUMENT_INDEX++)); do
+    if [[ "${RUNNER_ARGS[ARGUMENT_INDEX]}" == "--slurm-status-command" ]] &&
+        ((ARGUMENT_INDEX + 1 < ${#RUNNER_ARGS[@]})); then
+        SCIENTIFIC_STATUS_BACKEND="${RUNNER_ARGS[ARGUMENT_INDEX + 1]}"
+    elif [[ "${RUNNER_ARGS[ARGUMENT_INDEX]}" == --slurm-status-command=* ]]; then
+        SCIENTIFIC_STATUS_BACKEND="${RUNNER_ARGS[ARGUMENT_INDEX]#*=}"
+    fi
+done
+printf 'Status backend for scientific jobs: %s\n' "${SCIENTIFIC_STATUS_BACKEND}"
 
 if PRIOR_JOB_ID="$(read_job_id)"; then
     :

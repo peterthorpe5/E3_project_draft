@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.16.2
+
+- Makes Stage 10 generate every named Top-N review shortlist declared by the
+  immutable output contract, independently of `final_candidate_limit`.
+- Builds each named shortlist directly from the complete evolutionary-group
+  ranking, preserving the correct Top-50 result even when the canonical review
+  table uses another limit.
+- Catalogues all generated Top-N relations in the integrated DuckDB and adds
+  unit and downloaded-evidence-to-app-ready regression coverage.
+- Reports the effective Snakemake Slurm status command in controller submission
+  output, including the `sacct` override used for durable child-job accounting.
+
 ## v0.16.1
 
 - Corrects Stage 09 pocket conservation to consume the existing exact FASTA
