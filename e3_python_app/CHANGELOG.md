@@ -19,6 +19,10 @@ This changelog consolidates the package's historical release notes. Entries are 
   passed to the tested Python command-line application.
 - Adds deployment tests and operator documentation without changing scientific
   scores, gates, rankings or result tables.
+- Ensures root-installed source and virtual-environment files remain readable
+  and executable, but not writable, by the unprivileged `e3app` service group.
+- Makes a failed service-user resource validation fatal so an unreadable or
+  otherwise invalid release can never be reported as successfully validated.
 
 ## v0.18.4
 

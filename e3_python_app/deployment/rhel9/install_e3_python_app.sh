@@ -304,6 +304,12 @@ install_application() {
     "${APPLICATION_VENV}/bin/python" -m pip freeze \
         >"${APPLICATION_ROOT}/installed-packages.txt"
     printf '%s\n' "${commit_sha}" >"${APPLICATION_ROOT}/installed-commit.txt"
+    chown --recursive root:"${SERVICE_USER}" \
+        "${APPLICATION_SOURCE}" \
+        "${APPLICATION_VENV}"
+    chmod --recursive u=rwX,g=rX,o= \
+        "${APPLICATION_SOURCE}" \
+        "${APPLICATION_VENV}"
     chmod 0644 \
         "${APPLICATION_ROOT}/installed-packages.txt" \
         "${APPLICATION_ROOT}/installed-commit.txt"
@@ -419,6 +425,13 @@ validation_command() {
     runuser --user "${SERVICE_USER}" -- "${command[@]}"
 }
 
+validate_release_or_fail() {
+    local release_path=$1
+    validation_command "${release_path}" || {
+        fail "Release validation failed as service user ${SERVICE_USER}: ${release_path}"
+    }
+}
+
 install_release() {
     local resource_path
     local expression_path=""
@@ -450,8 +463,8 @@ install_release() {
         "${taxonomy_path}")
     local destination_path="${RELEASES_ROOT}/${release_id}"
     if [[ -d "${destination_path}" ]]; then
-        log "Validated release ${release_id} is already installed."
-        validation_command "${destination_path}"
+        log "Release ${release_id} is already installed; validating it again."
+        validate_release_or_fail "${destination_path}"
     else
         ensure_copy_capacity \
             "${resource_path}" \
@@ -488,7 +501,7 @@ install_release() {
         ) >"${staging_release}/SHA256SUMS.txt"
         chown --recursive root:"${SERVICE_USER}" "${staging_release}"
         chmod --recursive u=rwX,g=rX,o= "${staging_release}"
-        validation_command "${staging_release}"
+        validate_release_or_fail "${staging_release}"
         mv "${staging_release}" "${destination_path}"
         rmdir "${STAGING_ROOT}"
         STAGING_ROOT=""

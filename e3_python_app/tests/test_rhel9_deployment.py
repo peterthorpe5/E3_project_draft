@@ -94,6 +94,35 @@ def test_repository_ref_resolution_emits_only_the_checkout_ref() -> None:
     assert completed.stdout == "origin/main\n"
 
 
+def test_release_validation_failure_is_fatal() -> None:
+    """A service-user execution failure must stop release activation."""
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source {INSTALLER!s}; "
+            "runuser() { return 126; }; "
+            "validate_release_or_fail /srv/e3-python-app/test-release",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 2
+    assert "Release validation failed as service user" in completed.stderr
+
+
+def test_installed_code_is_readable_but_not_writable_by_service_group() -> None:
+    """Root owns installed code while the service group receives read/execute access."""
+
+    source = INSTALLER.read_text(encoding="utf-8")
+    assert 'chown --recursive root:"${SERVICE_USER}"' in source
+    assert 'chmod --recursive u=rwX,g=rX,o=' in source
+    assert '"${APPLICATION_SOURCE}"' in source
+    assert '"${APPLICATION_VENV}"' in source
+
+
 def test_service_starter_uses_only_named_application_options() -> None:
     """The service wrapper preserves every supported release companion path."""
 
