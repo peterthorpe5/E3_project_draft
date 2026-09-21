@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Sequence
 
 from e3app.config import AppConfig, validate_config
+from e3app.data import list_relations, open_read_only, open_resource
 from e3app.errors import AppError
+from e3app.pocket_review import load_pocket_review
+from e3app.taxonomy import load_taxonomy_authority
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,6 +68,36 @@ def streamlit_command(args: argparse.Namespace) -> list[str]:
     ]
 
 
+def validate_deployment_resources(config: AppConfig) -> tuple[str, ...]:
+    """Open and inspect every explicitly configured deployment resource.
+
+    Args:
+        config: Validated application configuration.
+
+    Returns:
+        Sorted relation names available from the primary resource.
+
+    Raises:
+        AppError: If the primary resource cannot be opened, has no relations or an
+            explicitly configured companion resource violates its schema.
+    """
+    with open_resource(config) as connection:
+        relations = tuple(list_relations(connection))
+    if not relations:
+        raise AppError("The primary resource contains no queryable relations")
+    if config.expression_duckdb is not None:
+        with open_read_only(config.expression_duckdb) as expression_connection:
+            if not list_relations(expression_connection):
+                raise AppError("The expression DuckDB contains no queryable relations")
+    if config.pocket_review_dir is not None:
+        load_pocket_review(config.pocket_review_dir)
+    if config.human_plant_review_dir is not None:
+        load_pocket_review(config.human_plant_review_dir)
+    if config.taxonomy_map is not None:
+        load_taxonomy_authority(taxonomy_map=config.taxonomy_map)
+    return relations
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Validate application inputs and launch Streamlit."""
     args = build_parser().parse_args(argv)
@@ -81,7 +114,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         validate_config(config)
         if args.validate_only:
-            print(f"VALID\t{config.source_mode}\t{config.source_path}")
+            relations = validate_deployment_resources(config)
+            print(
+                f"VALID\t{config.source_mode}\t{config.source_path}\t"
+                f"relations={len(relations)}"
+            )
             return 0
         environment = os.environ.copy()
         for name in (

@@ -1,10 +1,20 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.4 is the Streamlit companion to `E3_shiny_app`. It adds an
-easy-to-find **Within-HOG ranking** page, extends composable exact-taxon and
-clade filters to reviewed input-specific taxonomy mappings, and compares
+Version 0.18.5 is the Streamlit companion to `E3_shiny_app`. It retains the
+v0.18.4 scientific interface and adds a tested, rerunnable RHEL 9 deployment for
+the University-hosted milestone application. It also makes validation-only mode
+open and inspect the configured DuckDB and any explicitly supplied structural or
+taxonomy companions before a service can be activated.
+
+Version 0.18.4 introduced an
+easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and
+clade filters to reviewed input-specific taxonomy mappings, and compared
 full-model with retained-core mean pLDDT in the reversible terminal-display
 workflow. Unknown species remain explicitly unmapped.
+
+For the persistent University RHEL 9 deployment of this milestone application, see
+the [tested server deployment guide](deployment/rhel9/README.md). That deployment is
+separate from the experimental OrthoFinder interrogation viewer.
 
 Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,

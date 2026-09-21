@@ -4,6 +4,22 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.5
+
+- Adds an idempotent RHEL 9 deployment for the milestone `e3_python_app`, with
+  an unprivileged systemd service, Python 3.11 virtual environment, immutable
+  fingerprinted releases, health checking, restart after maintenance reboots
+  and a firewall rule restricted to the University reverse proxy.
+- Keeps SELinux enforcing and defaults to a loopback-only service suitable for
+  private testing through an SSH tunnel.
+- Makes `--validate-only` open the primary resource read-only, enumerate its
+  queryable relations and validate explicitly supplied pocket-review and
+  taxonomy resources before activation.
+- Repairs the shell launcher so its documented `--taxonomy-map` option is
+  passed to the tested Python command-line application.
+- Adds deployment tests and operator documentation without changing scientific
+  scores, gates, rankings or result tables.
+
 ## v0.18.4
 
 - Adds a dedicated **Within-HOG ranking** page with a searchable HOG selector,

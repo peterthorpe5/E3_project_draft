@@ -6,7 +6,13 @@ import argparse
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from e3app.cli import build_parser, main, streamlit_command
+from e3app.cli import (
+    build_parser,
+    main,
+    streamlit_command,
+    validate_deployment_resources,
+)
+from e3app.config import AppConfig
 from e3app.errors import AppError
 
 
@@ -40,6 +46,27 @@ def test_validate_only_and_missing(
     assert main(["--resource-parquet", str(master_parquet), "--validate-only"]) == 0
     assert main(["--resource-run-dir", str(run_results_dir), "--validate-only"]) == 0
     assert main(["--resource-duckdb", str(tmp_path / "missing"), "--validate-only"]) == 2
+
+
+def test_deployment_validation_opens_primary_resource(resource_db: Path) -> None:
+    """Deployment validation proves that DuckDB is readable and queryable."""
+
+    relations = validate_deployment_resources(
+        AppConfig(
+            resource_duckdb=resource_db,
+            expression_duckdb=resource_db,
+        )
+    )
+    assert "candidate_master_results" in relations
+
+    corrupt = resource_db.parent / "corrupt.duckdb"
+    corrupt.write_text("not a DuckDB", encoding="utf-8")
+    try:
+        validate_deployment_resources(AppConfig(resource_duckdb=corrupt))
+    except AppError as exc:
+        assert "open DuckDB read-only" in str(exc)
+    else:
+        raise AssertionError("A corrupt deployment DuckDB was accepted")
 
 
 def test_launcher_subprocess(resource_db: Path) -> None:

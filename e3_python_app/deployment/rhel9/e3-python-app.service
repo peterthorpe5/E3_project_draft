@@ -1,0 +1,51 @@
+[Unit]
+Description=ARIA plant E3 target interrogation application
+Documentation=https://github.com/peterthorpe5/E3_project_draft/tree/main/e3_python_app
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=e3app
+Group=e3app
+WorkingDirectory=/opt/e3-python-app/source/e3_python_app
+Environment=HOME=/var/lib/e3-python-app
+Environment=XDG_CACHE_HOME=/var/cache/e3-python-app
+Environment=STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+Environment=STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+Environment=STREAMLIT_SERVER_RUN_ON_SAVE=false
+EnvironmentFile=/etc/e3-python-app.env
+ExecStart=/opt/e3-python-app/start_e3_service.sh
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+UMask=0027
+
+# Application code and published resources remain read-only to the service.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/cache/e3-python-app /var/lib/e3-python-app /var/log/e3-python-app
+MemoryHigh=10G
+MemoryMax=12G
+TasksMax=512
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

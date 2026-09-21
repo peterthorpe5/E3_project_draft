@@ -16,4 +16,8 @@ if command -v node >/dev/null 2>&1; then
 else
     printf '%s\n' "WARNING: node was not found; JavaScript unit tests were not run." >&2
 fi
-bash -n run_e3_python_app.sh run_tests.sh
+bash -n \
+    run_e3_python_app.sh \
+    run_tests.sh \
+    deployment/rhel9/install_e3_python_app.sh \
+    deployment/rhel9/start_e3_service.sh
