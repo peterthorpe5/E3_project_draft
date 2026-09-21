@@ -259,12 +259,12 @@ create_service_account_and_directories() {
 resolve_repository_ref() {
     local requested_ref=$1
     if git -C "${APPLICATION_SOURCE}" rev-parse --verify --quiet \
-        "origin/${requested_ref}^{commit}"; then
+        "origin/${requested_ref}^{commit}" >/dev/null; then
         printf 'origin/%s\n' "${requested_ref}"
         return 0
     fi
     if git -C "${APPLICATION_SOURCE}" rev-parse --verify --quiet \
-        "${requested_ref}^{commit}"; then
+        "${requested_ref}^{commit}" >/dev/null; then
         printf '%s\n' "${requested_ref}"
         return 0
     fi

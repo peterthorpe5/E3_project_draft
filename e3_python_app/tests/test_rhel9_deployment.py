@@ -76,6 +76,24 @@ def test_installer_argument_functions_accept_safe_preparation() -> None:
     assert accepted.returncode == 0, accepted.stderr
 
 
+def test_repository_ref_resolution_emits_only_the_checkout_ref() -> None:
+    """Git validation output must not contaminate the resolved ref value."""
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source {INSTALLER!s}; "
+            "git() { printf 'mock-commit-sha\\n'; return 0; }; "
+            "resolve_repository_ref main",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout == "origin/main\n"
+
+
 def test_service_starter_uses_only_named_application_options() -> None:
     """The service wrapper preserves every supported release companion path."""
 
