@@ -23,6 +23,8 @@ This changelog consolidates the package's historical release notes. Entries are 
   and executable, but not writable, by the unprivileged `e3app` service group.
 - Makes a failed service-user resource validation fatal so an unreadable or
   otherwise invalid release can never be reported as successfully validated.
+- Keeps validation diagnostics out of the release-path return channel so the
+  generated systemd environment file always contains one valid path per line.
 
 ## v0.18.4
 

@@ -113,6 +113,25 @@ def test_release_validation_failure_is_fatal() -> None:
     assert "Release validation failed as service user" in completed.stderr
 
 
+def test_release_validation_keeps_stdout_reserved_for_release_path() -> None:
+    """Validation diagnostics cannot contaminate install_release output."""
+
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source {INSTALLER!s}; "
+            "runuser() { printf 'validated 42 relations\\n'; }; "
+            "validation_command /srv/e3-python-app/test-release",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout == ""
+    assert completed.stderr == "validated 42 relations\n"
+
+
 def test_installed_code_is_readable_but_not_writable_by_service_group() -> None:
     """Root owns installed code while the service group receives read/execute access."""
 

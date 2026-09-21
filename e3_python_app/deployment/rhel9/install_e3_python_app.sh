@@ -422,7 +422,10 @@ validation_command() {
     [[ ! -f "${release_path}/taxonomy_mapping.tsv" ]] || {
         command+=(--taxonomy-map "${release_path}/taxonomy_mapping.tsv")
     }
-    runuser --user "${SERVICE_USER}" -- "${command[@]}"
+    # install_release is called in a command substitution whose stdout is
+    # reserved exclusively for the resolved release path. Keep validation
+    # diagnostics visible without allowing them to contaminate that value.
+    runuser --user "${SERVICE_USER}" -- "${command[@]}" >&2
 }
 
 validate_release_or_fail() {
