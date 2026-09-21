@@ -1,0 +1,130 @@
+project:
+  name: e3_full_onekp_diamond_clust_benchmark
+
+inputs:
+  fasta: /home/pthorpe001/data/2026_E3_protac/e3_discovery_engine_results/full_onekp_plus_v0_1_14_20260715_100551/prepared_inputs/combined_proteomes.fasta
+  expected_sequences: 25821204
+  expected_residues: 7341469958
+  # Optional but recommended: a headered TSV with one sequence_id column
+  # containing exact internal identifiers of known E3 seed sequences.
+  sentinel_ids_tsv: null
+
+outputs:
+  root: /home/pthorpe001/data/2026_E3_protac/diamond_clust_benchmark_results/full_onekp_plus_v0_1_0_20260921
+  # "auto" uses SLURM_TMPDIR, then TMPDIR, then <root>/scratch.
+  scratch_root: auto
+
+resources:
+  threads: 32
+  diamond_memory_limit: 220G
+  sampling_interval_seconds: 0.2
+
+benchmark:
+  repeats: 3
+  quality_repeat: 1
+  baseline_case_id: diamond_2_2_3_deepclust_exact
+  decision_stage: pairwise_pipeline
+  minimum_speedup_percent: 10
+  minimum_pairwise_f1: 0.99
+  minimum_sentinel_recall: 0.99
+  bootstrap_iterations: 10000
+  cases:
+    - case_id: diamond_2_2_3_deepclust_exact
+      executable: diamond
+      conda_environment: e3_discovery
+      expected_version: 2.2.3
+      command: deepclust
+      identity_mode: exact
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true
+
+    - case_id: diamond_2_2_8_deepclust_exact
+      executable: diamond
+      conda_environment: diamond_clust_2_2_8
+      expected_version: 2.2.8
+      command: deepclust
+      identity_mode: exact
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true
+
+    - case_id: diamond_2_2_8_deepclust_exact_fast_final
+      executable: diamond
+      conda_environment: diamond_clust_2_2_8
+      expected_version: 2.2.8
+      command: deepclust
+      identity_mode: exact
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps:
+        - faster_lin
+        - fast_lin
+        - linclust-40_lin
+        - fast
+      no_reassign: false
+      extra_args: []
+      run_realign: true
+
+    - case_id: diamond_2_2_8_linclust_exact
+      executable: diamond
+      conda_environment: diamond_clust_2_2_8
+      expected_version: 2.2.8
+      command: linclust
+      identity_mode: exact
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true
+
+    - case_id: diamond_2_2_8_deepclust_approximate
+      executable: diamond
+      conda_environment: diamond_clust_2_2_8
+      expected_version: 2.2.8
+      command: deepclust
+      identity_mode: approximate
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true
+
+    - case_id: diamond_2_2_8_linclust_approximate
+      executable: diamond
+      conda_environment: diamond_clust_2_2_8
+      expected_version: 2.2.8
+      command: linclust
+      identity_mode: approximate
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true

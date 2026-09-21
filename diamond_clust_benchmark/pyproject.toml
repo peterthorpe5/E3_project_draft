@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diamond-clust-benchmark"
+version = "0.1.0"
+description = "Reproducible benchmarking of DIAMOND clustering strategies"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Peter Thorpe project team"}]
+dependencies = [
+  "duckdb>=1.1,<2",
+  "psutil>=5.9,<8",
+  "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "coverage>=7,<8",
+  "pycodestyle>=2.12,<3",
+]
+
+[project.scripts]
+diamond-clust-benchmark = "diamond_clust_benchmark.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pycodestyle]
+max-line-length = 88
+exclude = ".git,.snakemake,results"

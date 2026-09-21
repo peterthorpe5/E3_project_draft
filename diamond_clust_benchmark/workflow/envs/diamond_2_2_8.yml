@@ -1,0 +1,6 @@
+name: diamond_clust_2_2_8
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - diamond=2.2.8

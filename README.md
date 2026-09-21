@@ -5,6 +5,13 @@ integration and reporting software for the PT_E3_6 / ARIA plant E3 project. The 
 independently testable, but `e3_end_to_end_workflow` joins them into one restartable Snakemake
 workflow.
 
+The standalone `diamond_clust_benchmark` package extends the discovery
+engine's DIAMOND, Snakemake and Slurm conventions to test whether alternative
+database-building/clustering strategies achieve the project's internal 10%
+speed target without materially changing cluster membership. It remains
+separate from the downstream E3 workflow and publishes reviewable timing,
+concordance and provenance evidence.
+
 The repository also includes `orthofinder_results`, a generic standalone
 package for interrogating completed OrthoFinder 2 or 3 runs from any protein
 collection. It publishes all-level HOG/orthogroup memberships, tree resources,

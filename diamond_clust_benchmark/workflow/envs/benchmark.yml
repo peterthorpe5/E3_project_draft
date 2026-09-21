@@ -1,0 +1,14 @@
+name: diamond_clust_benchmark
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - duckdb=1.5.*
+  - python-duckdb=1.5.*
+  - psutil>=5.9,<8
+  - pyyaml=6.*
+  - snakemake-minimal=9.23.*
+  - coverage=7.*
+  - pycodestyle=2.14.*
+  - pip

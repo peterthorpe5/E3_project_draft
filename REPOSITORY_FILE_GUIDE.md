@@ -19,6 +19,7 @@ isolated output directories and checksum-bound manifests.
 | Order | Package or tool | Main responsibility | Main hand-off |
 |---|---|---|---|
 | 1 | `e3_discovery_engine` | E3-seeded DIAMOND/DeepClust discovery | discovery DuckDB and cluster evidence |
+| — | `diamond_clust_benchmark` | Controlled DIAMOND database/clustering speed and concordance comparison | timing, quality and provenance report |
 | 2 | `e3_source_to_parquet_seed` | Candidate-evidence and curated Parquet resources | candidate-evidence Parquet and provenance |
 | 3 | OrthoFinder 2.5.5 | Complete-proteome grouping | OrthoFinder result directory/archive |
 | — | `orthofinder_results` | Generic OrthoFinder 2/3 result interrogation | all-level memberships, trees, distance statistics, Parquet, DuckDB and offline HTML |
@@ -204,6 +205,24 @@ clusters, not OrthoFinder orthogroups.
 | `docs/` | Methods, data dictionaries/sources, benchmark protocol, runbooks, release/testing standards, legacy limitations and interpretation guidance. |
 | `legacy_reference/` | Frozen inherited scripts/configuration for audit only. It is not the production implementation. |
 | `tests/` | Unit, integration, command, release and workflow tests. |
+
+## `diamond_clust_benchmark`
+
+This standalone optimisation package reuses discovery-engine conventions but
+does not duplicate downstream E3 analysis. It times fresh `makedb`, DeepClust
+or LinClust, and representative/member realignment runs; compares retained
+memberships with scalable DuckDB queries; and applies the predeclared 10% speed
+target only when global and optional E3-sentinel guardrails pass.
+
+| File or group | Role |
+|---|---|
+| `README.md`, `docs/`, `CHANGELOG.md` | Scope, frozen protocol, grant mapping, runbook and history. |
+| `config/full_onekp_cluster.template.yaml` | Full-input baseline and candidate benchmark matrix. |
+| `Snakefile`, `run_workflow.sh` | Sequential, restartable workflow and named launcher. |
+| `scripts/submit_benchmark_slurm.sh` | Single Dundee Slurm-controller submission. |
+| `workflow/envs/` | Controller dependencies and pinned DIAMOND 2.2.8 candidate environment. |
+| `src/diamond_clust_benchmark/` | Validation, command construction, resource monitoring, scalable concordance and reporting. |
+| `tests/`, `run_tests.sh` | Unit, external-executable integration, style and coverage checks. |
 
 ## `e3_source_to_parquet_seed`
 

@@ -1,0 +1,145 @@
+"""Snakemake orchestration for isolated sequential DIAMOND benchmarks."""
+
+import os
+import sys
+from pathlib import Path
+
+
+WORKFLOW_ROOT = Path(workflow.basedir).resolve()
+sys.path.insert(0, str(WORKFLOW_ROOT / "src"))
+
+from diamond_clust_benchmark.config import load_config
+
+
+if "DIAMOND_BENCHMARK_CONFIG" not in os.environ:
+    raise ValueError(
+        "DIAMOND_BENCHMARK_CONFIG must identify the benchmark YAML"
+    )
+
+CONFIG_PATH = Path(os.environ["DIAMOND_BENCHMARK_CONFIG"]).resolve()
+BENCHMARK = load_config(CONFIG_PATH)
+RUN_ROOT = BENCHMARK.output_root
+CASE_IDS = [case.case_id for case in BENCHMARK.enabled_cases]
+REPEATS = list(range(1, BENCHMARK.repeats + 1))
+RUN_SEQUENCE = [
+    (case_id, repeat)
+    for repeat in REPEATS
+    for case_id in CASE_IDS
+]
+RUN_POSITION = {
+    item: index
+    for index, item in enumerate(RUN_SEQUENCE)
+}
+CASE_DIRECTORIES = expand(
+    str(RUN_ROOT / "cases" / "{case_id}" / "repeat_{repeat}"),
+    case_id=CASE_IDS,
+    repeat=REPEATS,
+)
+
+
+def previous_case_directory(wildcards):
+    """Return the preceding observation to enforce the frozen run order."""
+
+    item = (wildcards.case_id, int(wildcards.repeat))
+    position = RUN_POSITION[item]
+    if position == 0:
+        return []
+    case_id, repeat = RUN_SEQUENCE[position - 1]
+    return [
+        str(RUN_ROOT / "cases" / case_id / f"repeat_{repeat}")
+    ]
+
+
+rule all:
+    input:
+        RUN_ROOT / "reports" / "report_manifest.json",
+        RUN_ROOT / "reports" / "benchmark_summary.html",
+        RUN_ROOT / "tables" / "benchmark_summary.tsv",
+        RUN_ROOT / "tables" / "quality_summary.tsv",
+        RUN_ROOT / "tables" / "decision_summary.tsv",
+
+
+rule validate_runtime:
+    output:
+        RUN_ROOT / "provenance" / "runtime_preflight.json",
+    log:
+        RUN_ROOT / "logs" / "runtime_preflight.log",
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p "$(dirname {output:q})" "$(dirname {log:q})"
+        PYTHONPATH={WORKFLOW_ROOT}/src python -m diamond_clust_benchmark.cli \
+          validate-runtime --config {CONFIG_PATH:q} --output {output:q} \
+          > {log:q} 2>&1
+        """
+
+
+rule profile_input:
+    input:
+        runtime=RUN_ROOT / "provenance" / "runtime_preflight.json",
+        fasta=BENCHMARK.input_fasta,
+    output:
+        RUN_ROOT / "provenance" / "input_profile.tsv",
+    log:
+        RUN_ROOT / "logs" / "input_profile.log",
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p "$(dirname {output:q})" "$(dirname {log:q})"
+        PYTHONPATH={WORKFLOW_ROOT}/src python -m diamond_clust_benchmark.cli \
+          profile-input --config {CONFIG_PATH:q} --output {output:q} \
+          > {log:q} 2>&1
+        """
+
+
+rule benchmark_case:
+    input:
+        runtime=RUN_ROOT / "provenance" / "runtime_preflight.json",
+        profile=RUN_ROOT / "provenance" / "input_profile.tsv",
+        previous=previous_case_directory,
+    output:
+        directory(
+            str(RUN_ROOT / "cases" / "{case_id}" / "repeat_{repeat}")
+        ),
+    threads:
+        BENCHMARK.threads
+    resources:
+        benchmark_slot=1
+    params:
+        retain=lambda wildcards: (
+            "--retain-clusters"
+            if int(wildcards.repeat) == BENCHMARK.quality_repeat
+            else ""
+        ),
+    shell:
+        """
+        set -euo pipefail
+        PYTHONPATH={WORKFLOW_ROOT}/src python -m diamond_clust_benchmark.cli \
+          run-case --config {CONFIG_PATH:q} --case-id {wildcards.case_id:q} \
+          --repeat {wildcards.repeat:q} --output-directory {output:q} \
+          {params.retain}
+        """
+
+
+rule report:
+    input:
+        profile=RUN_ROOT / "provenance" / "input_profile.tsv",
+        cases=CASE_DIRECTORIES,
+    output:
+        manifest=RUN_ROOT / "reports" / "report_manifest.json",
+        html=RUN_ROOT / "reports" / "benchmark_summary.html",
+        benchmark=RUN_ROOT / "tables" / "benchmark_summary.tsv",
+        quality=RUN_ROOT / "tables" / "quality_summary.tsv",
+        decision=RUN_ROOT / "tables" / "decision_summary.tsv",
+    threads:
+        2
+    log:
+        RUN_ROOT / "logs" / "report.log",
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p "$(dirname {log:q})"
+        PYTHONPATH={WORKFLOW_ROOT}/src python -m diamond_clust_benchmark.cli \
+          report --config {CONFIG_PATH:q} --run-root {RUN_ROOT:q} \
+          > {log:q} 2>&1
+        """

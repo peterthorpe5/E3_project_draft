@@ -1,0 +1,43 @@
+project:
+  name: synthetic_diamond_clust_benchmark
+
+inputs:
+  fasta: ../tests/fixtures/proteins.fasta
+  expected_sequences: 4
+  expected_residues: 52
+  sentinel_ids_tsv: ../tests/fixtures/sentinels.tsv
+
+outputs:
+  root: ../test_outputs/synthetic
+  scratch_root: auto
+
+resources:
+  threads: 2
+  diamond_memory_limit: 2G
+  sampling_interval_seconds: 0.05
+
+benchmark:
+  repeats: 3
+  quality_repeat: 1
+  baseline_case_id: baseline
+  decision_stage: pairwise_pipeline
+  minimum_speedup_percent: 10
+  minimum_pairwise_f1: 0.99
+  minimum_sentinel_recall: 0.99
+  bootstrap_iterations: 1000
+  cases:
+    - case_id: baseline
+      executable: ../tests/fixtures/fake_diamond.py
+      conda_environment: null
+      expected_version: 2.2.3
+      command: deepclust
+      identity_mode: exact
+      identity_percent: 50
+      mutual_cover_percent: 50
+      evalue: 0.1
+      comp_based_stats: 0
+      masking: tantan
+      cluster_steps: []
+      no_reassign: false
+      extra_args: []
+      run_realign: true

@@ -1,0 +1,10 @@
+*.egg-info/
+.venv/
+__pycache__/
+.coverage
+.snakemake/
+build/
+dist/
+htmlcov/
+results/
+test_outputs/
