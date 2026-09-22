@@ -6,6 +6,7 @@ import csv
 import gzip
 import hashlib
 import math
+import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Set, Tuple
@@ -382,11 +383,154 @@ def _sql_path(path: Path) -> str:
     return str(Path(path).resolve()).replace("'", "''")
 
 
+def _prepare_duckdb_connection(
+    duckdb_module,
+    working_directory: Optional[Path],
+):
+    """Create a bounded-thread DuckDB connection with explicit spill space.
+
+    Args:
+        duckdb_module: Imported DuckDB Python module.
+        working_directory: Optional parent for query spill files.
+
+    Returns:
+        Tuple containing the connection and optional temporary-directory owner.
+    """
+
+    temporary = None
+    connection = duckdb_module.connect(":memory:")
+    try:
+        connection.execute("SET threads = 2")
+        connection.execute("SET preserve_insertion_order = false")
+        if working_directory is not None:
+            root = Path(working_directory).expanduser().resolve()
+            root.mkdir(parents=True, exist_ok=True)
+            temporary = tempfile.TemporaryDirectory(
+                prefix="duckdb-membership-",
+                dir=root,
+            )
+            spill_path = _sql_path(Path(temporary.name))
+            connection.execute(f"SET temp_directory = '{spill_path}'")
+    except BaseException:
+        connection.close()
+        if temporary is not None:
+            temporary.cleanup()
+        raise
+    return connection, temporary
+
+
+def _sentinel_metrics_duckdb(
+    connection,
+    sentinels: Set[str],
+) -> Dict[str, object]:
+    """Calculate sentinel metrics using staged, bounded-memory joins.
+
+    The input membership views can contain tens of millions of rows. Explicit
+    intermediate tables ensure that each large scan joins only against the
+    small set of matched sentinel clusters, instead of asking DuckDB to plan
+    two simultaneous membership self-joins.
+
+    Args:
+        connection: DuckDB connection containing baseline and candidate views.
+        sentinels: Non-empty set of controlled sequence identifiers.
+
+    Returns:
+        Sentinel counts, recall and Jaccard metrics.
+
+    Raises:
+        DataValidationError: If no sentinel occurs in both memberships.
+    """
+
+    connection.execute(
+        "CREATE TEMP TABLE sentinels(sequence_id VARCHAR PRIMARY KEY)"
+    )
+    connection.executemany(
+        "INSERT INTO sentinels VALUES (?)",
+        [(value,) for value in sorted(sentinels)],
+    )
+    connection.execute(
+        """
+        CREATE TEMP TABLE baseline_sentinel_matches AS
+        SELECT s.sequence_id, b.centroid
+        FROM sentinels s
+        JOIN baseline b ON b.member = s.sequence_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE TEMP TABLE candidate_sentinel_matches AS
+        SELECT s.sequence_id, c.centroid
+        FROM sentinels s
+        JOIN candidate c ON c.member = s.sequence_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE TEMP TABLE matched_sentinels AS
+        SELECT
+            b.sequence_id,
+            b.centroid AS baseline_centroid,
+            c.centroid AS candidate_centroid
+        FROM baseline_sentinel_matches b
+        JOIN candidate_sentinel_matches c USING (sequence_id)
+        """
+    )
+    matched = connection.execute(
+        "SELECT count(*)::BIGINT FROM matched_sentinels"
+    ).fetchone()[0]
+    if matched == 0:
+        raise DataValidationError("No sentinel identifier matched both tables")
+    connection.execute(
+        """
+        CREATE TEMP TABLE baseline_neighbours AS
+        SELECT b.member
+        FROM baseline b
+        SEMI JOIN (
+            SELECT DISTINCT baseline_centroid
+            FROM matched_sentinels
+        ) m ON b.centroid = m.baseline_centroid
+        """
+    )
+    connection.execute(
+        """
+        CREATE TEMP TABLE candidate_neighbours AS
+        SELECT c.member
+        FROM candidate c
+        SEMI JOIN (
+            SELECT DISTINCT candidate_centroid
+            FROM matched_sentinels
+        ) m ON c.centroid = m.candidate_centroid
+        """
+    )
+    baseline_n, candidate_n, intersection = connection.execute(
+        """
+        SELECT
+            (SELECT count(*)::BIGINT FROM baseline_neighbours),
+            (SELECT count(*)::BIGINT FROM candidate_neighbours),
+            (
+                SELECT count(*)::BIGINT
+                FROM baseline_neighbours
+                JOIN candidate_neighbours USING (member)
+            )
+        """
+    ).fetchone()
+    union = baseline_n + candidate_n - intersection
+    return {
+        "sentinel_count": len(sentinels),
+        "matched_sentinel_count": matched,
+        "sentinel_baseline_neighbours": baseline_n,
+        "sentinel_candidate_neighbours": candidate_n,
+        "sentinel_recall": intersection / baseline_n if baseline_n else 1.0,
+        "sentinel_jaccard": intersection / union if union else 1.0,
+    }
+
+
 def compare_memberships(
     baseline_path: Path,
     candidate_path: Path,
     sentinel_ids_tsv: Optional[Path] = None,
     small_file_limit_bytes: int = 64 * 1024 * 1024,
+    working_directory: Optional[Path] = None,
 ) -> Dict[str, object]:
     """Compare memberships with DuckDB at scale and a small-file fallback.
 
@@ -396,6 +540,7 @@ def compare_memberships(
         sentinel_ids_tsv: Optional sentinel identifier TSV.
         small_file_limit_bytes: Maximum combined bytes for the pure-Python
             fallback when DuckDB is unavailable.
+        working_directory: Optional directory for DuckDB spill files.
 
     Returns:
         Concordance and sentinel-neighbourhood metrics.
@@ -423,141 +568,118 @@ def compare_memberships(
         raise RuntimeError(
             "DuckDB is required to compare large membership tables"
         ) from error
-    connection = duckdb.connect(":memory:")
-    connection.execute(_duckdb_view_sql(baseline_path, "baseline"))
-    connection.execute(_duckdb_view_sql(candidate_path, "candidate"))
-    audit = connection.execute(
-        """
-        SELECT
-            (SELECT count(*) FROM baseline),
-            (SELECT count(DISTINCT member) FROM baseline),
-            (SELECT count(*) FROM candidate),
-            (SELECT count(DISTINCT member) FROM candidate),
-            (SELECT count(*) FROM baseline b ANTI JOIN candidate c USING (member)),
-            (SELECT count(*) FROM candidate c ANTI JOIN baseline b USING (member))
-        """
-    ).fetchone()
-    if audit[0] != audit[1] or audit[2] != audit[3]:
-        raise DataValidationError("A membership table contains duplicate members")
-    if audit[4] or audit[5] or audit[0] != audit[2]:
-        raise DataValidationError(
-            f"Membership identifier sets differ: missing={audit[4]}, extra={audit[5]}"
-        )
-    row = connection.execute(
-        """
-        WITH joined AS (
-            SELECT b.centroid AS b_cluster, c.centroid AS c_cluster
-            FROM baseline b JOIN candidate c USING (member)
-        ),
-        b_counts AS (
-            SELECT b_cluster, count(*)::BIGINT AS n FROM joined GROUP BY b_cluster
-        ),
-        c_counts AS (
-            SELECT c_cluster, count(*)::BIGINT AS n FROM joined GROUP BY c_cluster
-        ),
-        cells AS (
-            SELECT b_cluster, c_cluster, count(*)::BIGINT AS n
-            FROM joined GROUP BY b_cluster, c_cluster
-        )
-        SELECT
-            (SELECT count(*) FROM joined) AS member_count,
-            (SELECT count(*) FROM b_counts) AS baseline_clusters,
-            (SELECT count(*) FROM c_counts) AS candidate_clusters,
-            (SELECT coalesce(sum(n * (n - 1) / 2), 0) FROM b_counts) AS b_pairs,
-            (SELECT coalesce(sum(n * (n - 1) / 2), 0) FROM c_counts) AS c_pairs,
-            (SELECT coalesce(sum(n * (n - 1) / 2), 0) FROM cells) AS shared_pairs
-        """
-    ).fetchone()
-    member_count, b_clusters, c_clusters, b_pairs, c_pairs, shared_pairs = row
-    precision = shared_pairs / c_pairs if c_pairs else 1.0
-    recall = shared_pairs / b_pairs if b_pairs else 1.0
-    f1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0
-    all_pairs = _combination_two(member_count)
-    expected = b_pairs * c_pairs / all_pairs if all_pairs else 0.0
-    maximum = 0.5 * (b_pairs + c_pairs)
-    adjusted_rand = (
-        (shared_pairs - expected) / (maximum - expected)
-        if maximum != expected
-        else 1.0
+    connection, temporary = _prepare_duckdb_connection(
+        duckdb,
+        working_directory,
     )
-    metrics: Dict[str, object] = {
-        "member_count": member_count,
-        "baseline_cluster_count": b_clusters,
-        "candidate_cluster_count": c_clusters,
-        "pairwise_precision": precision,
-        "pairwise_recall": recall,
-        "pairwise_f1": f1,
-        "adjusted_rand_index": adjusted_rand,
-    }
-    sentinels = _read_sentinel_ids(sentinel_ids_tsv)
-    if sentinels:
-        connection.execute("CREATE TABLE sentinels(sequence_id VARCHAR PRIMARY KEY)")
-        connection.executemany(
-            "INSERT INTO sentinels VALUES (?)",
-            [(value,) for value in sorted(sentinels)],
-        )
-        sentinel_row = connection.execute(
+    try:
+        connection.execute(_duckdb_view_sql(baseline_path, "baseline"))
+        connection.execute(_duckdb_view_sql(candidate_path, "candidate"))
+        audit = connection.execute(
             """
-            WITH matched AS (
-                SELECT s.sequence_id
-                FROM sentinels s
-                JOIN baseline b ON b.member = s.sequence_id
-                JOIN candidate c ON c.member = s.sequence_id
-            ),
-            bn AS (
-                SELECT DISTINCT b2.member
-                FROM baseline b1
-                JOIN matched m ON m.sequence_id = b1.member
-                JOIN baseline b2 ON b2.centroid = b1.centroid
-            ),
-            cn AS (
-                SELECT DISTINCT c2.member
-                FROM candidate c1
-                JOIN matched m ON m.sequence_id = c1.member
-                JOIN candidate c2 ON c2.centroid = c1.centroid
-            ),
-            intersection_count AS (
-                SELECT count(*)::BIGINT AS n FROM bn JOIN cn USING (member)
-            ),
-            union_count AS (
-                SELECT count(*)::BIGINT AS n FROM (
-                    SELECT member FROM bn UNION SELECT member FROM cn
-                )
-            )
             SELECT
-                (SELECT count(*) FROM sentinels),
-                (SELECT count(*) FROM matched),
-                (SELECT count(*) FROM bn),
-                (SELECT count(*) FROM cn),
-                (SELECT n FROM intersection_count),
-                (SELECT n FROM union_count)
+                (SELECT count(*) FROM baseline),
+                (SELECT count(DISTINCT member) FROM baseline),
+                (SELECT count(*) FROM candidate),
+                (SELECT count(DISTINCT member) FROM candidate),
+                (
+                    SELECT count(*)
+                    FROM baseline b ANTI JOIN candidate c USING (member)
+                ),
+                (
+                    SELECT count(*)
+                    FROM candidate c ANTI JOIN baseline b USING (member)
+                )
             """
         ).fetchone()
-        total, matched, baseline_n, candidate_n, intersection, union = sentinel_row
-        if matched == 0:
-            raise DataValidationError("No sentinel identifier matched both tables")
-        metrics.update(
-            {
-                "sentinel_count": total,
-                "matched_sentinel_count": matched,
-                "sentinel_baseline_neighbours": baseline_n,
-                "sentinel_candidate_neighbours": candidate_n,
-                "sentinel_recall": intersection / baseline_n if baseline_n else 1.0,
-                "sentinel_jaccard": intersection / union if union else 1.0,
-            }
+        if audit[0] != audit[1] or audit[2] != audit[3]:
+            raise DataValidationError(
+                "A membership table contains duplicate members"
+            )
+        if audit[4] or audit[5] or audit[0] != audit[2]:
+            raise DataValidationError(
+                "Membership identifier sets differ: "
+                f"missing={audit[4]}, extra={audit[5]}"
+            )
+        row = connection.execute(
+            """
+            WITH joined AS (
+                SELECT b.centroid AS b_cluster, c.centroid AS c_cluster
+                FROM baseline b JOIN candidate c USING (member)
+            ),
+            b_counts AS (
+                SELECT b_cluster, count(*)::BIGINT AS n
+                FROM joined GROUP BY b_cluster
+            ),
+            c_counts AS (
+                SELECT c_cluster, count(*)::BIGINT AS n
+                FROM joined GROUP BY c_cluster
+            ),
+            cells AS (
+                SELECT b_cluster, c_cluster, count(*)::BIGINT AS n
+                FROM joined GROUP BY b_cluster, c_cluster
+            )
+            SELECT
+                (SELECT count(*) FROM joined) AS member_count,
+                (SELECT count(*) FROM b_counts) AS baseline_clusters,
+                (SELECT count(*) FROM c_counts) AS candidate_clusters,
+                (
+                    SELECT coalesce(sum(n * (n - 1) / 2), 0)
+                    FROM b_counts
+                ) AS b_pairs,
+                (
+                    SELECT coalesce(sum(n * (n - 1) / 2), 0)
+                    FROM c_counts
+                ) AS c_pairs,
+                (
+                    SELECT coalesce(sum(n * (n - 1) / 2), 0)
+                    FROM cells
+                ) AS shared_pairs
+            """
+        ).fetchone()
+        member_count, b_clusters, c_clusters, b_pairs, c_pairs, shared_pairs = row
+        precision = shared_pairs / c_pairs if c_pairs else 1.0
+        recall = shared_pairs / b_pairs if b_pairs else 1.0
+        f1 = (
+            2.0 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
         )
-    else:
-        metrics.update(
-            {
-                "sentinel_count": 0,
-                "matched_sentinel_count": 0,
-                "sentinel_baseline_neighbours": "",
-                "sentinel_candidate_neighbours": "",
-                "sentinel_recall": "",
-                "sentinel_jaccard": "",
-            }
+        all_pairs = _combination_two(member_count)
+        expected = b_pairs * c_pairs / all_pairs if all_pairs else 0.0
+        maximum = 0.5 * (b_pairs + c_pairs)
+        adjusted_rand = (
+            (shared_pairs - expected) / (maximum - expected)
+            if maximum != expected
+            else 1.0
         )
-    connection.close()
+        metrics: Dict[str, object] = {
+            "member_count": member_count,
+            "baseline_cluster_count": b_clusters,
+            "candidate_cluster_count": c_clusters,
+            "pairwise_precision": precision,
+            "pairwise_recall": recall,
+            "pairwise_f1": f1,
+            "adjusted_rand_index": adjusted_rand,
+        }
+        sentinels = _read_sentinel_ids(sentinel_ids_tsv)
+        if sentinels:
+            metrics.update(_sentinel_metrics_duckdb(connection, sentinels))
+        else:
+            metrics.update(
+                {
+                    "sentinel_count": 0,
+                    "matched_sentinel_count": 0,
+                    "sentinel_baseline_neighbours": "",
+                    "sentinel_candidate_neighbours": "",
+                    "sentinel_recall": "",
+                    "sentinel_jaccard": "",
+                }
+            )
+    finally:
+        connection.close()
+        if temporary is not None:
+            temporary.cleanup()
     for key, value in tuple(metrics.items()):
         if isinstance(value, float) and not math.isfinite(value):
             raise DataValidationError(f"Non-finite quality metric: {key}")

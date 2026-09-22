@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 - 2026-09-22
+
+- Replace the large sentinel-membership self-joins with staged, bounded-memory
+  DuckDB queries.
+- Add explicit two-thread DuckDB execution, disabled insertion-order retention
+  and persistent-filesystem spill space for full 1KP quality comparisons.
+- Add a report-only Slurm recovery launcher so completed DIAMOND observations
+  are never rerun after a reporting failure.
+- Correct the benchmark launcher's Dundee partition default to `barton`.
+
 ## 0.1.0 - 2026-09-21
 
 - Add isolated DIAMOND 2.2.3 versus 2.2.8 clustering benchmark matrix.

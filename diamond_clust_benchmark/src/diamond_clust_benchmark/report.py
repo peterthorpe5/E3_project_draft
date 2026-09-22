@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import math
 import random
 import statistics
@@ -14,6 +15,8 @@ from diamond_clust_benchmark.config import BenchmarkConfiguration
 from diamond_clust_benchmark.io_utils import write_json, write_tsv
 from diamond_clust_benchmark.membership import compare_memberships
 from diamond_clust_benchmark.runner import StageMetrics, read_metrics
+
+LOGGER = logging.getLogger(__name__)
 
 SUMMARY_FIELDS = [
     "case_id",
@@ -238,6 +241,10 @@ def calculate_quality(
         )
     rows: List[Dict[str, object]] = []
     for case in config.enabled_cases:
+        LOGGER.info(
+            "Comparing retained memberships for quality case=%s",
+            case.case_id,
+        )
         candidate_path = (
             root / "cases" / case.case_id / f"repeat_{repeat}" / "clusters.tsv"
         )
@@ -249,8 +256,14 @@ def calculate_quality(
             baseline_path,
             candidate_path,
             config.sentinel_ids_tsv,
+            working_directory=root / "scratch" / "quality",
         )
         rows.append({"case_id": case.case_id, **metrics})
+        LOGGER.info(
+            "Completed quality comparison case=%s pairwise_f1=%.6f",
+            case.case_id,
+            float(metrics["pairwise_f1"]),
+        )
     return rows
 
 
@@ -468,6 +481,7 @@ def generate_report(
     """
 
     root = Path(run_root)
+    LOGGER.info("Generating benchmark report from run root %s", root)
     report_root = root / "reports"
     table_root = root / "tables"
     records = collect_metrics(config, root)
@@ -497,4 +511,5 @@ def generate_report(
         "fastest_passing_case": fastest["case_id"] if fastest else None,
     }
     write_json(report_root / "report_manifest.json", manifest)
+    LOGGER.info("Completed benchmark report: %s", report_path)
     return manifest

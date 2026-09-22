@@ -321,7 +321,7 @@ def _case_manifest(
     return {
         "schema_version": "1.0",
         "created_utc": datetime.now(timezone.utc).isoformat(),
-        "package_version": "0.1.0",
+        "package_version": "0.1.1",
         "configuration": configuration_to_dict(config),
         "case": asdict(case),
         "repeat": repeat,

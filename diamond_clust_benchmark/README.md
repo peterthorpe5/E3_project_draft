@@ -127,7 +127,7 @@ compete for CPU, memory, scratch or filesystem bandwidth:
 ./scripts/submit_benchmark_slurm.sh \
     --config config/full_onekp_cluster.v0_1_0.yaml \
     --account barton \
-    --partition general \
+    --partition barton \
     --cpus 32 \
     --memory 256G \
     --time 3-00:00:00 \
@@ -149,6 +149,25 @@ The configured output root contains:
 Incomplete prior outputs are moved to `failed/`, never silently overwritten.
 Case scratch directories are isolated and removed only after success or
 captured failure metadata.
+
+If all case repeats are complete but final quality reporting is interrupted,
+rerun only the report in a fresh allocation. This command cannot rerun DIAMOND:
+
+```bash
+./scripts/submit_report_slurm.sh \
+    --config config/full_onekp_cluster.v0_1_0.yaml \
+    --run-root /absolute/path/to/the/existing/benchmark/root \
+    --account barton \
+    --partition barton \
+    --cpus 2 \
+    --memory 256G \
+    --time 2-00:00:00 \
+    --conda-env e3_discovery
+```
+
+The report uses two DuckDB threads and an isolated spill directory below
+`<run-root>/scratch/quality`. Temporary spill data are removed after each
+membership comparison.
 
 ## Tests
 

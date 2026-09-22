@@ -27,6 +27,8 @@ class RepositoryContractTests(unittest.TestCase):
             "docs/CLUSTER_RUNBOOK.md",
             "docs/GRANT_ALIGNMENT.md",
             "scripts/submit_benchmark_slurm.sh",
+            "scripts/submit_report_slurm.sh",
+            "scripts/slurm_report.sh",
         ]
         for relative in required:
             with self.subTest(relative=relative):
@@ -60,7 +62,9 @@ class RepositoryContractTests(unittest.TestCase):
             PACKAGE_ROOT / "run_workflow.sh",
             PACKAGE_ROOT / "run_tests.sh",
             PACKAGE_ROOT / "scripts" / "slurm_controller.sh",
+            PACKAGE_ROOT / "scripts" / "slurm_report.sh",
             PACKAGE_ROOT / "scripts" / "submit_benchmark_slurm.sh",
+            PACKAGE_ROOT / "scripts" / "submit_report_slurm.sh",
         ]
         for path in scripts:
             with self.subTest(path=path.name):
@@ -68,6 +72,17 @@ class RepositoryContractTests(unittest.TestCase):
                 self.assertTrue(text.startswith("#!/usr/bin/env bash"))
                 self.assertNotIn("python <<", text)
                 self.assertTrue(os.access(path, os.X_OK))
+
+    def test_diamond_launchers_default_to_barton_partition(self) -> None:
+        """Keep benchmark submissions on the confirmed Dundee partition."""
+
+        for name in ("submit_benchmark_slurm.sh", "submit_report_slurm.sh"):
+            with self.subTest(name=name):
+                text = (PACKAGE_ROOT / "scripts" / name).read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn('ACCOUNT="barton"', text)
+                self.assertIn('PARTITION="barton"', text)
 
     def test_outputs_are_tsv_not_csv(self) -> None:
         """Prevent comma-delimited outputs from entering the new package."""

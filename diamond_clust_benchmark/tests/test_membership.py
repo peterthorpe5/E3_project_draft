@@ -11,6 +11,7 @@ from unittest import mock
 from diamond_clust_benchmark.exceptions import DataValidationError
 from diamond_clust_benchmark.membership import (
     _combination_two,
+    _prepare_duckdb_connection,
     _read_sentinel_ids,
     _sql_path,
     compare_memberships,
@@ -106,6 +107,45 @@ class MembershipTests(unittest.TestCase):
         no_sentinels = compare_memberships_small(self.baseline, self.baseline)
         self.assertEqual(no_sentinels["sentinel_count"], 0)
 
+    def test_duckdb_uses_spill_directory_and_staged_sentinels(self) -> None:
+        """Use explicit spill space while preserving sentinel metrics."""
+
+        working = self.root / "spill"
+        metrics = compare_memberships(
+            self.baseline,
+            FIXTURES / "changed.tsv",
+            FIXTURES / "sentinels.tsv",
+            working_directory=working,
+        )
+        self.assertEqual(metrics["matched_sentinel_count"], 2)
+        self.assertLess(metrics["sentinel_jaccard"], 1.0)
+        self.assertTrue(working.is_dir())
+        self.assertEqual(list(working.iterdir()), [])
+
+    def test_duckdb_connection_settings(self) -> None:
+        """Configure low-thread DuckDB execution and external spill space."""
+
+        import duckdb
+
+        working = self.root / "settings"
+        connection, temporary = _prepare_duckdb_connection(duckdb, working)
+        try:
+            settings = dict(
+                connection.execute(
+                    """
+                    SELECT name, value
+                    FROM duckdb_settings()
+                    WHERE name IN ('threads', 'preserve_insertion_order')
+                    """
+                ).fetchall()
+            )
+            self.assertEqual(settings["threads"], "2")
+            self.assertEqual(settings["preserve_insertion_order"], "false")
+        finally:
+            connection.close()
+            self.assertIsNotNone(temporary)
+            temporary.cleanup()
+
     def test_concordance_rejects_identifier_and_sentinel_errors(self) -> None:
         """Reject missing members, duplicates, bad sentinels and no matches."""
 
@@ -135,8 +175,10 @@ class MembershipTests(unittest.TestCase):
             _read_sentinel_ids(empty)
         absent = self.root / "sentinel_absent.tsv"
         absent.write_text("sequence_id\nunknown\n", encoding="utf-8")
-        with self.assertRaises(DataValidationError):
-            compare_memberships_small(self.baseline, self.baseline, absent)
+        for function in (compare_memberships_small, compare_memberships):
+            with self.subTest(function=function.__name__):
+                with self.assertRaises(DataValidationError):
+                    function(self.baseline, self.baseline, absent)
 
     def test_small_helpers(self) -> None:
         """Cover combination arithmetic and safe SQL path escaping."""

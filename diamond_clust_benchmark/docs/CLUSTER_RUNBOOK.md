@@ -48,6 +48,28 @@ completed observation.
 Scratch data are disposable. Persistent logs, measurements, membership
 summary, manifest and failure record are kept under the output root.
 
+## Report-only recovery
+
+When every case/repeat contains `COMPLETE` but the final report fails, do not
+rerun the benchmark cases. Submit only the report with the existing immutable
+configuration and result root:
+
+```bash
+./scripts/submit_report_slurm.sh \
+    --config config/full_onekp_cluster.v0_1_0.yaml \
+    --run-root /absolute/path/to/the/existing/benchmark/root \
+    --account barton \
+    --partition barton \
+    --cpus 2 \
+    --memory 256G \
+    --time 2-00:00:00 \
+    --conda-env e3_discovery
+```
+
+This launcher invokes the reporting CLI directly and therefore cannot execute
+DIAMOND. Large DuckDB joins may spill below `<run-root>/scratch/quality`; each
+comparison removes its temporary directory after the connection closes.
+
 ## Acceptance checks
 
 After completion, require all of the following:

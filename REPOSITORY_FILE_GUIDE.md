@@ -220,6 +220,7 @@ target only when global and optional E3-sentinel guardrails pass.
 | `config/full_onekp_cluster.template.yaml` | Full-input baseline and candidate benchmark matrix. |
 | `Snakefile`, `run_workflow.sh` | Sequential, restartable workflow and named launcher. |
 | `scripts/submit_benchmark_slurm.sh` | Single Dundee Slurm-controller submission. |
+| `scripts/submit_report_slurm.sh` | Report-only recovery after all benchmark observations complete. |
 | `workflow/envs/` | Controller dependencies and pinned DIAMOND 2.2.8 candidate environment. |
 | `src/diamond_clust_benchmark/` | Validation, command construction, resource monitoring, scalable concordance and reporting. |
 | `tests/`, `run_tests.sh` | Unit, external-executable integration, style and coverage checks. |
