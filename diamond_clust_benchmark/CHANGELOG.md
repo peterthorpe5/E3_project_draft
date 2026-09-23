@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 - 2026-09-23
+
+- Add bounded-memory all-against-all comparison of every retained clustering.
+- Add pairwise Jaccard, adjusted Rand, mutual-information, variation-of-
+  information, exact-match, split/merge and size-stratified cluster metrics.
+- Add aggregate and per-sequence E3 sentinel-neighbourhood comparisons.
+- Add repeat-stability reporting with an explicit result when memberships were
+  not retained for enough repeats.
+- Add PNG/PDF figures, a portable HTML summary, checkpoints and Slurm launchers.
+
 ## 0.1.1 - 2026-09-22
 
 - Replace the large sentinel-membership self-joins with staged, bounded-memory

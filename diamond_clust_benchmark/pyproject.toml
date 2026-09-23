@@ -4,15 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diamond-clust-benchmark"
-version = "0.1.1"
+version = "0.2.0"
 description = "Reproducible benchmarking of DIAMOND clustering strategies"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "Peter Thorpe project team"}]
 dependencies = [
   "duckdb>=1.1,<2",
+  "matplotlib>=3.8,<4",
+  "numpy>=1.26,<3",
   "psutil>=5.9,<8",
   "PyYAML>=6,<7",
+  "scipy>=1.11,<2",
 ]
 
 [project.optional-dependencies]

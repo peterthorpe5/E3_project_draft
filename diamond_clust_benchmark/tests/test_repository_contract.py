@@ -26,6 +26,10 @@ class RepositoryContractTests(unittest.TestCase):
             "docs/BENCHMARK_PROTOCOL.md",
             "docs/CLUSTER_RUNBOOK.md",
             "docs/GRANT_ALIGNMENT.md",
+            "docs/ALL_AGAINST_ALL_ANALYSIS.md",
+            "scripts/compare_all_memberships.py",
+            "scripts/submit_all_against_all_slurm.sh",
+            "scripts/slurm_all_against_all.sh",
             "scripts/submit_benchmark_slurm.sh",
             "scripts/submit_report_slurm.sh",
             "scripts/slurm_report.sh",
@@ -63,6 +67,8 @@ class RepositoryContractTests(unittest.TestCase):
             PACKAGE_ROOT / "run_tests.sh",
             PACKAGE_ROOT / "scripts" / "slurm_controller.sh",
             PACKAGE_ROOT / "scripts" / "slurm_report.sh",
+            PACKAGE_ROOT / "scripts" / "slurm_all_against_all.sh",
+            PACKAGE_ROOT / "scripts" / "submit_all_against_all_slurm.sh",
             PACKAGE_ROOT / "scripts" / "submit_benchmark_slurm.sh",
             PACKAGE_ROOT / "scripts" / "submit_report_slurm.sh",
         ]
@@ -76,7 +82,11 @@ class RepositoryContractTests(unittest.TestCase):
     def test_diamond_launchers_default_to_barton_partition(self) -> None:
         """Keep benchmark submissions on the confirmed Dundee partition."""
 
-        for name in ("submit_benchmark_slurm.sh", "submit_report_slurm.sh"):
+        for name in (
+            "submit_all_against_all_slurm.sh",
+            "submit_benchmark_slurm.sh",
+            "submit_report_slurm.sh",
+        ):
             with self.subTest(name=name):
                 text = (PACKAGE_ROOT / "scripts" / name).read_text(
                     encoding="utf-8"

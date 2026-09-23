@@ -20,7 +20,7 @@ usage() {
         '' \
         'Options:' \
         '  --account NAME       Slurm account. Default: barton.' \
-        '  --partition NAME     Slurm partition. Default: general.' \
+        '  --partition NAME     Slurm partition. Default: barton.' \
         '  --cpus N             CPUs per task. Default: 32.' \
         '  --memory VALUE       Slurm memory. Default: 256G.' \
         '  --time VALUE         Slurm time. Default: 3-00:00:00.' \

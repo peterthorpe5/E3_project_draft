@@ -6,8 +6,11 @@ dependencies:
   - python=3.12
   - duckdb=1.5.*
   - python-duckdb=1.5.*
+  - matplotlib=3.10.*
+  - numpy=2.*
   - psutil>=5.9,<8
   - pyyaml=6.*
+  - scipy=1.*
   - snakemake-minimal=9.23.*
   - coverage=7.*
   - pycodestyle=2.14.*

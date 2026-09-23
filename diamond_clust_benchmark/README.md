@@ -185,3 +185,16 @@ DIAMOND or cluster data:
 See `docs/BENCHMARK_PROTOCOL.md`, `docs/CLUSTER_RUNBOOK.md` and
 `docs/GRANT_ALIGNMENT.md` for the frozen protocol, operational checks and the
 grant-to-deliverable mapping.
+
+## All-against-all clustering analysis
+
+The optional post-benchmark analysis compares every retained method with every
+other method using pairwise F1, same-pair Jaccard, adjusted Rand index,
+normalised mutual information, variation of information, cluster split/merge
+diagnostics, size-stratified best matches and E3 sentinel-neighbourhood
+metrics. It also measures repeat stability when multiple membership tables
+were retained for a method.
+
+This analysis evaluates agreement, not biological correctness. See
+`docs/ALL_AGAINST_ALL_ANALYSIS.md` for the full interpretation and the Dundee
+Slurm command.
