@@ -1,0 +1,2 @@
+# Example UniProt accession; one per line.
+P04637

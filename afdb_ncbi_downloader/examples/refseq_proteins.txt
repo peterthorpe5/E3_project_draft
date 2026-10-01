@@ -1,0 +1,2 @@
+# Example NCBI RefSeq protein accession; replace with your own IDs.
+NP_000537.3
