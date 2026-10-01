@@ -33,6 +33,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Pocket-aligned sequences",
         "3D alignment",
         "Human & plant 3D alignment",
+        "HOG model comparison",
         "Computational chemistry",
         "Search",
         "All results",

@@ -1,10 +1,11 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.5 is the Streamlit companion to `E3_shiny_app`. It retains the
-v0.18.4 scientific interface and adds a tested, rerunnable RHEL 9 deployment for
-the University-hosted milestone application. It also makes validation-only mode
-open and inspect the configured DuckDB and any explicitly supplied structural or
-taxonomy companions before a service can be activated.
+Version 0.18.6 is the Streamlit companion to `E3_shiny_app`. It retains the
+v0.18.5 deployment and scientific interface and adds a dedicated **HOG model
+comparison** page. Users can select one HOG, choose its recognised UniProt
+members and prepare available AlphaFold Database models as a compatibility ZIP
+for manual upload to the external AlphaFold 3 Multi-Model Inspector. Missing
+models are reported without blocking the models that are available.
 
 Version 0.18.4 introduced an
 easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and
@@ -20,7 +21,7 @@ Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-The 26 pages are organised into six colour-marked scientific stages:
+The 27 pages are organised into six colour-marked scientific stages:
 information, candidate discovery, E3 orthology context, structural
 prioritisation, structural comparison, and chemistry and outputs. Existing
 page names, help, methods and data queries are preserved.
@@ -190,6 +191,15 @@ The reporter provides:
   evidence used in the deterministic review order, keep unassessed members
   visible by default and provide focused TSV and Excel downloads. This review
   order does not replace the HOG-level ranks or claim E3 function;
+- a separate **HOG model comparison** page where one root HOG and any subset of
+  its recognised UniProt members can be selected. All members are selected by
+  default. The app retrieves each available AlphaFold Database mmCIF model and
+  optional PAE document, skips unavailable models with an explicit audit record,
+  and creates one ZIP for the user to download and manually upload to the
+  external AlphaFold 3 Multi-Model Inspector. The archive includes
+  `manifest.tsv`, source URLs, checksums and an interpretation guide. These are
+  models of different HOG members, not alternative AF3 conformers of one
+  protein; unavailable AF3-specific scores must not be treated as zero;
 - a linked Visual explorer containing a selectable multi-axis candidate
   landscape, a cross-species expression heatmap, exact species-by-tissue
   profiles and the bounded evidence tables behind every selected candidate;

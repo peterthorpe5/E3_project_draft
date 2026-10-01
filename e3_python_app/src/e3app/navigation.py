@@ -116,6 +116,7 @@ NAVIGATION_STAGES = (
                 "Human & plant 3D alignment",
                 method_annotation=True,
             ),
+            NavigationPage("HOG model comparison", method_annotation=True),
         ),
     ),
     NavigationStage(

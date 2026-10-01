@@ -4,6 +4,26 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.6
+
+- Adds a dedicated **HOG model comparison** page under structural comparison.
+  Users choose one HOG and a subset of its canonical UniProt members; all
+  recognised members are selected by default.
+- Retrieves available AlphaFold Database mmCIF models and optional predicted
+  aligned error documents on demand, while treating missing member models as
+  an audited partial result rather than failing the complete export.
+- Creates a bounded compatibility ZIP for manual upload to the external
+  AlphaFold 3 Multi-Model Inspector. The ZIP includes a source/checksum
+  manifest and a plain-language interpretation guide.
+- States explicitly that HOG-member models are different proteins, not
+  alternative AlphaFold 3 conformers of one protein. Absent AF3-only scores
+  are unavailable evidence and must not be read as zero.
+- Supports current parsed-accession fields, joined structural accessions and
+  standard legacy `sp|ACCESSION|...` or `tr|ACCESSION|...` member identifiers.
+- Uses approved-host HTTPS validation, defensive response and bundle limits,
+  bounded concurrency, portable filenames, detailed logging and focused unit
+  and end-to-end application tests.
+
 ## v0.18.5
 
 - Adds an idempotent RHEL 9 deployment for the milestone `e3_python_app`, with

@@ -1,7 +1,20 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.4
-Last reviewed: 2026-09-09
+Status: living implementation contract after Python app v0.18.6
+Last reviewed: 2026-10-01
+
+## Implemented in v0.18.6
+
+- A dedicated **HOG model comparison** page selects one HOG and any subset of
+  recognised UniProt members, with all members selected by default.
+- Available AlphaFold Database mmCIF models and optional PAE documents are
+  assembled into a bounded compatibility ZIP for manual upload to the external
+  AlphaFold 3 Multi-Model Inspector. Missing models remain explicit in the
+  included manifest and do not block available models.
+- The bundle records exact source URLs, model checksums and retrieval outcomes.
+  Its interpretation guide distinguishes comparisons between different HOG
+  members from genuine alternative AlphaFold 3 conformers of one protein and
+  prevents unavailable AF3-specific outputs being interpreted as zero.
 
 ## Implemented in v0.18.4
 
@@ -71,7 +84,8 @@ labelled confidence bands, residue ticks and shaded hidden termini.
 ## Delivered in v0.17.0
 
 - Six colour-marked scientific stages replace the single flat row of 25 tabs;
-  v0.18.4 adds the 26th page without changing the stage structure.
+  v0.18.4 adds the 26th page and v0.18.6 adds the 27th without changing the
+  stage structure.
 - Every recorded structure pair has a reproducible follow-up panel with
   reference/comparison identifiers, a validated EMERALD deep link for
   canonical UniProt pairs, exact pair FASTA export, AlphaFold Database links,

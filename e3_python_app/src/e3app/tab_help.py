@@ -258,6 +258,18 @@ TOP_LEVEL_TAB_HELP = {
             "views, pairwise evidence tables and portable HTML, TSV and Excel downloads."
         ),
     ),
+    "HOG model comparison": TabHelpEntry(
+        instruction=(
+            "Choose one root HOG, keep all canonical UniProt members selected or narrow the "
+            "list, then prepare and download the compatibility ZIP before uploading it manually "
+            "to the external Inspector."
+        ),
+        yields=(
+            "An audited ZIP containing every available selected AlphaFold Database mmCIF model, "
+            "optional PAE data, a Model-number-to-accession manifest, missing-model statuses and "
+            "clear guidance on which Inspector panels can be interpreted."
+        ),
+    ),
     "Computational chemistry": TabHelpEntry(
         instruction=(
             "Review chemistry readiness, pharmacophore features and method status, recognising "
