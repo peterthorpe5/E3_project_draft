@@ -30,6 +30,7 @@ def test_scientific_tabs_have_substantive_method_annotations() -> None:
         "Pocket-aligned sequences",
         "3D alignment",
         "Human & plant 3D alignment",
+        "HOG model comparison",
         "Computational chemistry",
         "Provenance and QC",
     }
@@ -81,6 +82,15 @@ def test_human_extension_annotation_explains_member_and_reference_selection() ->
     assert "pocket mapping fraction" in markdown
     assert "Species identity was not part of that ordering" in markdown
     assert "not an ancestral or preferred-species claim" in markdown
+
+
+def test_hog_model_comparison_annotation_prevents_af3_overinterpretation() -> None:
+    """The compatibility hand-off distinguishes HOG members from AF3 conformers."""
+    markdown = method_annotation_markdown(tab_name="HOG model comparison")
+    assert "manual" in markdown
+    assert "SHA-256 checksums" in markdown
+    assert "not AlphaFold 3 conformers" in markdown
+    assert "must not be treated as zero-valued evidence" in markdown
 
 
 def test_mapping_annotation_distinguishes_integrated_and_component_qc() -> None:

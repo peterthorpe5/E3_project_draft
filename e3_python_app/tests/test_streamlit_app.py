@@ -31,6 +31,7 @@ PRIMARY_TAB_LABELS = {
     "Pocket-aligned sequences",
     "3D alignment",
     "Human & plant 3D alignment",
+    "HOG model comparison",
     "Computational chemistry",
     "Search",
     "All results",
@@ -122,13 +123,13 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
         for expander in app.expander
         if expander.label == "❓ How to use this tab"
     ]
-    assert len(primary_help) == 26
+    assert len(primary_help) == 27
     method_help = [
         expander
         for expander in app.expander
         if expander.label == "ⓘ Methods and thresholds"
     ]
-    assert len(method_help) == 16
+    assert len(method_help) == 17
     alignment_tab = next(tab for tab in app.tabs if tab.label == "3D alignment")
     assert any(
         "not a threshold invented for this project" in markdown.value
@@ -164,6 +165,29 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert any(
         metric.label == "First member in review order"
         for metric in within_hog_tab.metric
+    )
+    hog_model_tab = next(
+        tab for tab in app.tabs if tab.label == "HOG model comparison"
+    )
+    model_hog_selectors = [
+        selector
+        for selector in hog_model_tab.selectbox
+        if selector.label == "HOG to compare with AlphaFold models"
+    ]
+    assert len(model_hog_selectors) == 1
+    model_member_selectors = [
+        selector
+        for selector in hog_model_tab.multiselect
+        if selector.label == "HOG members to include in the model ZIP"
+    ]
+    assert len(model_member_selectors) == 1
+    assert len(model_member_selectors[0].value) == len(
+        model_member_selectors[0].options
+    )
+    assert set(model_member_selectors[0].value) == {"P38398", "Q9SA03"}
+    assert any(
+        button.label == "Prepare Inspector ZIP for selected members"
+        for button in hog_model_tab.button
     )
     assert any(
         "Stages 00–01" in markdown.value

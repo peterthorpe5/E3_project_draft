@@ -15,6 +15,13 @@ from e3app.alphafold_confidence import (
     AlphaFoldConfidence,
     retrieve_alphafold_confidence,
 )
+from e3app.alphafold_hog_bundle import (
+    AF3_INSPECTOR_URL,
+    AlphaFoldHogBundle,
+    MAX_BUNDLE_MODELS,
+    build_alphafold_hog_bundle,
+    hog_model_candidates,
+)
 from e3app.config import AppConfig, config_from_environment, validate_config
 from e3app.deepclust import (
     collect_deepclust_metrics,
@@ -3419,6 +3426,242 @@ def _render_search(*, connection: object, max_rows: int) -> None:
     )
 
 
+def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> None:
+    """Render the selected-member AlphaFold DB compatibility hand-off."""
+    st.markdown("#### AlphaFold models for this HOG")
+    st.info(
+        "Choose the HOG members to include; all members with a canonical UniProt "
+        "accession are selected by default. Preparing the ZIP contacts AlphaFold "
+        "Database and can take several minutes for a large HOG. Keep this browser "
+        "tab open while it runs. Missing models are skipped and reported rather "
+        "than causing the whole export to fail."
+    )
+    try:
+        candidates = hog_model_candidates(members=members)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if not candidates:
+        st.warning(
+            "No canonical UniProt accessions are available for AlphaFold Database "
+            "lookup in the loaded member rows."
+        )
+        return
+
+    labels = {candidate.accession: candidate.label for candidate in candidates}
+    species = {
+        candidate.accession: candidate.species for candidate in candidates
+    }
+    accessions = tuple(labels)
+    selection_key = f"within_hog_alphafold_members_{selected_hog}"
+    selected_accessions = st.multiselect(
+        "HOG members to include in the model ZIP",
+        options=accessions,
+        default=accessions,
+        format_func=labels.__getitem__,
+        key=selection_key,
+        help=(
+            "The selection lists canonical UniProt accessions from the currently "
+            "loaded HOG. Model availability is checked only when the ZIP is prepared."
+        ),
+    )
+    st.caption(
+        "This is an exploratory compatibility bundle: the selected files are "
+        "different AlphaFold Database HOG-member models, not alternative AlphaFold "
+        "3 conformers or seeds of one protein. In the Inspector, use the 3D overlay, "
+        "pLDDT and any available PAE panels. Do not interpret absent AF3-specific "
+        "pTM, ipTM, ranking, contact or chain-pair values as zero."
+    )
+
+    bundle_state_key = "within_hog_alphafold_bundle"
+    fingerprint = (selected_hog, tuple(selected_accessions))
+    if st.button(
+        "Prepare Inspector ZIP for selected members",
+        type="primary",
+        disabled=not selected_accessions,
+        key=f"within_hog_prepare_alphafold_{selected_hog}",
+        help=(
+            "Downloads available mmCIF models and PAE documents from AlphaFold "
+            "Database, then creates one ZIP for manual upload."
+        ),
+    ):
+        try:
+            with st.spinner(
+                "Downloading available AlphaFold models and preparing the ZIP. "
+                "This may take several minutes..."
+            ):
+                bundle = build_alphafold_hog_bundle(
+                    hog_id=selected_hog,
+                    accessions=selected_accessions,
+                    species_by_accession=species,
+                )
+            st.session_state[bundle_state_key] = {
+                "fingerprint": fingerprint,
+                "bundle": bundle,
+            }
+        except AppError as exc:
+            st.session_state.pop(bundle_state_key, None)
+            st.error(str(exc))
+
+    stored = st.session_state.get(bundle_state_key)
+    bundle = None
+    if (
+        isinstance(stored, dict)
+        and stored.get("fingerprint") == fingerprint
+        and isinstance(stored.get("bundle"), AlphaFoldHogBundle)
+    ):
+        bundle = stored["bundle"]
+    if bundle is None:
+        st.caption(
+            "After the ZIP is prepared, download it here, open the external "
+            "Inspector and upload the ZIP using its file chooser. The E3 app does "
+            "not send files to the external website automatically."
+        )
+        return
+
+    if bundle.included_count:
+        st.success(
+            f"Prepared {bundle.included_count:,} of {bundle.requested_count:,} "
+            f"requested models; PAE was included for {bundle.pae_count:,}."
+        )
+    else:
+        st.warning(
+            "AlphaFold Database returned no downloadable model for the selected "
+            "members. The audit ZIP contains the manifest and explanation only."
+        )
+    if bundle.skipped_accessions:
+        st.warning(
+            "No model was added for: "
+            + ", ".join(bundle.skipped_accessions)
+            + ". See the manifest below for the exact status."
+        )
+    audit = pd.DataFrame(asdict(record) for record in bundle.records)
+    _display_dataframe(frame=audit, height=260)
+    action_columns = st.columns(2)
+    with action_columns[0]:
+        st.download_button(
+            "Download ZIP for manual Inspector upload",
+            data=bundle.payload,
+            file_name=(
+                f"e3_{selected_hog}_alphafold_models_for_af3_inspector.zip"
+            ),
+            mime="application/zip",
+            key=f"within_hog_alphafold_zip_{selected_hog}",
+            disabled=bundle.included_count == 0,
+        )
+    with action_columns[1]:
+        st.link_button(
+            "Open AlphaFold 3 Multi-Model Inspector",
+            AF3_INSPECTOR_URL,
+            help="Open the external site, then choose the ZIP downloaded here.",
+        )
+    st.caption(
+        "Manual hand-off: download the ZIP, open the Inspector, choose the ZIP, "
+        "and use manifest.tsv to map its Model numbers back to accessions and species."
+    )
+
+
+def _render_hog_model_comparison(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render a dedicated HOG-to-external-Inspector model hand-off."""
+    st.subheader("HOG AlphaFold model comparison")
+    st.write(
+        "Choose one root HOG, select its members and prepare a model bundle for "
+        "manual upload to the external AlphaFold 3 Multi-Model Inspector."
+    )
+    capability = enriched_hog_capability(connection=connection)
+    if not capability["membership_available"]:
+        st.warning(
+            "HOG model comparison requires root-level hierarchical membership. "
+            "The loaded source does not publish that relation."
+        )
+        return
+    overview_columns = (
+        "hog_id",
+        "hog_prestructure_rank",
+        "hog_poststructure_rank",
+        "hog_member_count",
+    )
+    try:
+        hogs = collect_enriched_hog_results(
+            connection=connection,
+            result=ENRICHED_HOG_OVERVIEW,
+            selected_columns=overview_columns,
+            maximum_rows=100_000,
+        )
+        hogs = hogs.loc[
+            pd.to_numeric(hogs["hog_member_count"], errors="coerce") > 0
+        ].reset_index(drop=True)
+        choices = within_hog_choice_labels(hogs=hogs)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if not choices:
+        st.info("No root HOG with member records is available in this resource.")
+        return
+
+    selected_hog = st.selectbox(
+        "HOG to compare with AlphaFold models",
+        options=list(choices),
+        format_func=choices.__getitem__,
+        key="hog_model_comparison_selected_hog",
+        help=(
+            "Search by HOG identifier or either recorded HOG-level rank. Member "
+            "models are kept in the existing within-HOG review order."
+        ),
+    )
+    available_columns = enriched_hog_columns(
+        connection=connection,
+        result=ENRICHED_HOG_MEMBERS,
+    )
+    requested_columns = (
+        "hog_id",
+        "member_parsed_accession",
+        "member_structural_accession",
+        "member_species",
+        "member_raw_identifier",
+        "member_structural_readiness_rank",
+        "member_structural_readiness_status",
+    )
+    selected_columns = tuple(
+        column for column in requested_columns if column in available_columns
+    )
+    if not {
+        "member_parsed_accession",
+        "member_structural_accession",
+        "member_raw_identifier",
+    }.intersection(selected_columns):
+        st.warning(
+            "The loaded HOG membership does not contain a usable accession source."
+        )
+        return
+    maximum_rows = min(config.max_rows, MAX_BUNDLE_MODELS)
+    try:
+        members = collect_enriched_hog_results(
+            connection=connection,
+            result=ENRICHED_HOG_MEMBERS,
+            selected_columns=selected_columns,
+            maximum_rows=maximum_rows,
+            hog_ids=(str(selected_hog),),
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    total_members = int(
+        hogs.loc[hogs["hog_id"].eq(selected_hog), "hog_member_count"].iloc[0]
+    )
+    if len(members) < total_members:
+        st.warning(
+            f"This HOG contains {total_members:,} member rows, but the safe model "
+            f"bundle view loaded {len(members):,}. Increase E3_MAX_TABLE_ROWS up to "
+            f"{MAX_BUNDLE_MODELS:,} before treating this as a complete HOG export."
+        )
+    _render_hog_model_bundle(selected_hog=str(selected_hog), members=members)
+
+
 def _render_within_hog_ranking(
     *,
     connection: object,
@@ -3528,6 +3771,7 @@ def _render_within_hog_ranking(
         "member_raw_identifier",
         "member_parsed_accession",
         "member_parsed_entry",
+        "member_species",
         "member_structural_readiness_rank",
         "member_structural_readiness_status",
         "member_structure_assessed",
@@ -4674,6 +4918,10 @@ def render_app() -> None:
                     _render_human_plant_structural_review(
                         bundle=human_plant_review,
                     )
+                ),
+                "HOG model comparison": lambda: _render_hog_model_comparison(
+                    connection=connection,
+                    config=config,
                 ),
                 "Computational chemistry": lambda: _render_section(
                     connection=connection,

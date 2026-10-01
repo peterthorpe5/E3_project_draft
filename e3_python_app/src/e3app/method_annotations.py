@@ -562,6 +562,43 @@ METHOD_ANNOTATIONS = {
             ),
         ),
     ),
+    "HOG model comparison": MethodAnnotation(
+        introduction=(
+            "This page creates a portable compatibility archive from selected "
+            "AlphaFold Database models for members of one root HOG. The user keeps "
+            "control of the external hand-off by downloading and uploading the ZIP "
+            "manually."
+        ),
+        sections=(
+            MethodSection(
+                heading="Retrieval and provenance",
+                bullets=(
+                    "Only exact canonical UniProt accessions are queried. Available mmCIF "
+                    "models and optional predicted-aligned-error documents are retrieved from "
+                    "approved AlphaFold Database HTTPS URLs with bounded response sizes.",
+                    "Unavailable or failed members are retained in manifest.tsv rather than "
+                    "silently removed. Included models retain source URLs, byte counts and "
+                    "SHA-256 checksums.",
+                ),
+            ),
+            MethodSection(
+                heading="Inspector compatibility",
+                bullets=(
+                    "Model and optional PAE filenames follow the external Inspector's archive "
+                    "pattern. A README and manifest map each displayed model number back to its "
+                    "HOG member and species.",
+                    "The E3 app never uploads the archive to the third-party site. The user "
+                    "downloads it, opens the Inspector and chooses the file manually.",
+                ),
+            ),
+        ),
+        interpretation_boundary=(
+            "These are different HOG-member proteins, not AlphaFold 3 conformers, seeds or "
+            "samples of one protein. The 3D overlay, pLDDT and supplied PAE are exploratory; "
+            "absent AF3 pTM, ipTM, ranking, contact and chain-pair values must not be treated "
+            "as zero-valued evidence."
+        ),
+    ),
     "Computational chemistry": MethodAnnotation(
         introduction=(
             "The completed project resource records a preliminary open-source, residue-derived "
