@@ -9,7 +9,10 @@ from e3app.navigation import (
     NAVIGATION_STAGES,
     NavigationPage,
     NavigationStage,
+    navigation_page,
     navigation_page_titles,
+    navigation_stage,
+    navigation_stage_labels,
     validate_navigation,
 )
 from e3app.tab_help import TOP_LEVEL_TAB_HELP
@@ -17,7 +20,7 @@ from e3app.tab_help import TOP_LEVEL_TAB_HELP
 
 def test_navigation_groups_every_helped_page_once() -> None:
     """Six ordered stages cover every maintained top-level page exactly once."""
-    assert [stage.label for stage in NAVIGATION_STAGES] == [
+    assert list(navigation_stage_labels()) == [
         "🔵 1 · Information",
         "🟢 2 · Candidate discovery",
         "🟣 3 · E3 orthology context",
@@ -26,10 +29,22 @@ def test_navigation_groups_every_helped_page_once() -> None:
         "🔴 6 · Chemistry & outputs",
     ]
     titles = navigation_page_titles()
-    assert len(titles) == 27
+    assert len(titles) == 28
     assert len(titles) == len(set(titles))
     assert set(titles) == set(TOP_LEVEL_TAB_HELP)
     validate_navigation()
+
+
+def test_navigation_selects_one_stage_and_page_for_lazy_rendering() -> None:
+    """Exact selectors return one maintained page without rendering every page."""
+    stage = navigation_stage(label="🟣 3 · E3 orthology context")
+    assert "C-terminal conservation" in [page.title for page in stage.pages]
+    page = navigation_page(stage=stage, title="C-terminal conservation")
+    assert page.method_annotation
+    with pytest.raises(AppError, match="Unknown application navigation stage"):
+        navigation_stage(label="missing")
+    with pytest.raises(AppError, match="Unknown application page"):
+        navigation_page(stage=stage, title="missing")
 
 
 @pytest.mark.parametrize(

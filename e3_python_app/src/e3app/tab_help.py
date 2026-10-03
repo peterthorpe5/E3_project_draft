@@ -126,6 +126,18 @@ TOP_LEVEL_TAB_HELP = {
             "downloadable supporting data."
         ),
     ),
+    "C-terminal conservation": TabHelpEntry(
+        instruction=(
+            "Enter an exact one-letter C-terminal sequence, set the required plant-member "
+            "percentage and review qualifying HOGs before choosing one group for member-level "
+            "and FASTA evidence."
+        ),
+        yields=(
+            "An orthology-first screen of exact protein endings, with separate plant-member and "
+            "plant-species breadth, Arabidopsis follow-up evidence, an independent human "
+            "comparison and downloadable group, member and sequence records."
+        ),
+    ),
     "Human HOGs": TabHelpEntry(
         instruction=(
             "Load root HOGs containing human sequence input, search identifiers or names and "

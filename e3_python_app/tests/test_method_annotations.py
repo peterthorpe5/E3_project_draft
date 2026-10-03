@@ -22,6 +22,7 @@ def test_scientific_tabs_have_substantive_method_annotations() -> None:
         "Independent structural-review shortlist",
         "Within-HOG ranking",
         "Orthology",
+        "C-terminal conservation",
         "Domains",
         "Expression",
         "Ligandability",

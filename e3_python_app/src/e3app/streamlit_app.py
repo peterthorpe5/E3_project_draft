@@ -85,10 +85,16 @@ from e3app.human_hogs import (
     human_hog_capability,
 )
 from e3app.method_annotations import method_annotation_markdown
-from e3app.navigation import NAVIGATION_STAGES, validate_navigation
+from e3app.navigation import (
+    navigation_page,
+    navigation_stage,
+    navigation_stage_labels,
+    validate_navigation,
+)
 from e3app.pocket_review import (
     PocketReviewBundle,
     add_terminal_trimming_controls,
+    discover_pocket_review_dir,
     group_choice_labels,
     merge_downloaded_pair_plddt,
     merge_pair_viewer_plddt,
@@ -159,6 +165,16 @@ from e3app.thresholds import (
     select_threshold_relation,
 )
 from e3app.tab_help import tab_help_text
+from e3app.terminal_sequences import (
+    ARABIDOPSIS_SPECIES,
+    DEFAULT_MINIMUM_MATCH_FRACTION,
+    DEFAULT_TERMINAL_SEQUENCE,
+    collect_terminal_group_members,
+    collect_terminal_group_summary,
+    normalise_terminal_sequence,
+    terminal_member_fasta_frame,
+    terminal_sequence_capability,
+)
 from e3app.unified_search import (
     collect_unified_search,
     parse_search_terms,
@@ -900,6 +916,253 @@ def _render_orthology_explorer(
     _render_orthofinder_explorer(connection=connection, config=config)
     st.divider()
     _render_deepclust_onekp_explorer(connection=connection, config=config)
+
+
+def _render_terminal_conservation(
+    *,
+    connection: object,
+    config: AppConfig,
+) -> None:
+    """Render an orthology-first exact C-terminal sequence screen."""
+    st.subheader("C-terminal sequence conservation")
+    st.info(
+        "This screen groups proteins by OrthoFinder first, then asks whether an "
+        "exact protein ending is retained among plant members. The default is a "
+        "single terminal asparagine (`N`) in at least 80% of plant members with "
+        "available sequences. Human members are reported separately for comparison."
+    )
+    capability = terminal_sequence_capability(connection=connection)
+    if not capability.available:
+        st.warning(capability.reason)
+        return
+    if capability.candidate_bounded:
+        st.warning(
+            "This release publishes member sequences for E3 candidate-linked "
+            "OrthoFinder groups, not every unrelated group in the source proteomes. "
+            "The results are therefore a candidate-focused pilot screen rather than "
+            "a complete plant proteome screen. A future full sequence-bearing "
+            "orthology relation will be selected automatically when supplied."
+        )
+    taxonomy = load_taxonomy_authority(taxonomy_map=config.taxonomy_map)
+    species_taxonomy = taxonomy.species_taxonomy
+    plant_rows = species_taxonomy.loc[
+        species_taxonomy["role"].fillna("").astype(str) == "target_plant"
+    ]
+    plant_species = tuple(
+        sorted(
+            {
+                str(value).strip()
+                for value in plant_rows["source_species_name"]
+                if str(value).strip()
+            }
+        )
+    )
+    if not plant_species:
+        st.warning(
+            "The active reviewed taxonomy contains no rows labelled `target_plant`, "
+            "so a plant-specific terminal-sequence denominator cannot be calculated."
+        )
+        return
+    st.caption(
+        f"Sequence authority: `{capability.relation}`; scope: "
+        f"{capability.scope_label}. Plant labels: {len(plant_species):,}; "
+        f"taxonomy: {taxonomy.source_label}."
+    )
+    group_type = _orthology_group_type_control(key="terminal_group_type")
+    maximum_rows = min(max(config.max_rows, 1), 100_000)
+    with st.form("terminal_conservation_controls"):
+        selected_plant_species = st.multiselect(
+            "Plant species included in the conservation calculation",
+            options=plant_species,
+            default=plant_species,
+            format_func=lambda value: str(value).replace("_", " "),
+            help=(
+                "All reviewed target plants are selected by default. Narrow this "
+                "list when the pilot question concerns a particular crop or clade."
+            ),
+        )
+        arabidopsis_available = ARABIDOPSIS_SPECIES in selected_plant_species
+        controls = st.columns(spec=(1.1, 1.4, 1, 1, 1.4))
+        with controls[0]:
+            requested_terminal = st.text_input(
+                "Exact C-terminal sequence",
+                value=DEFAULT_TERMINAL_SEQUENCE,
+                max_chars=50,
+                help=(
+                    "Enter one or more one-letter amino-acid codes. Matching is "
+                    "case-insensitive, exact and anchored to the final residue."
+                ),
+            )
+        with controls[1]:
+            minimum_percent = st.slider(
+                "Minimum matching plant members (%)",
+                min_value=0,
+                max_value=100,
+                value=int(DEFAULT_MINIMUM_MATCH_FRACTION * 100),
+                step=1,
+                help=(
+                    "The denominator contains target-plant members with an available "
+                    "protein sequence. Human members never enter this percentage."
+                ),
+            )
+        with controls[2]:
+            minimum_members = int(
+                st.number_input(
+                    "Minimum plant members",
+                    min_value=1,
+                    max_value=1_000_000,
+                    value=2,
+                    step=1,
+                )
+            )
+        with controls[3]:
+            minimum_species = int(
+                st.number_input(
+                    "Minimum plant species",
+                    min_value=1,
+                    max_value=max(len(plant_species), 1),
+                    value=min(2, max(len(plant_species), 1)),
+                    step=1,
+                )
+            )
+        with controls[4]:
+            require_arabidopsis = st.checkbox(
+                "Require an Arabidopsis match",
+                value=arabidopsis_available,
+                disabled=not arabidopsis_available,
+                help=(
+                    "Requires at least one matching Arabidopsis thaliana member, "
+                    "supporting a practical mutant and antibody follow-up route."
+                ),
+            )
+        row_limit = int(
+            st.number_input(
+                "Maximum qualifying groups to return",
+                min_value=1,
+                max_value=maximum_rows,
+                value=min(1_000, maximum_rows),
+                step=min(100, maximum_rows),
+            )
+        )
+        st.form_submit_button("Apply C-terminal conservation screen")
+    try:
+        terminal_sequence = normalise_terminal_sequence(value=requested_terminal)
+        summary = collect_terminal_group_summary(
+            connection=connection,
+            group_type=group_type,
+            terminal_sequence=terminal_sequence,
+            minimum_match_fraction=minimum_percent / 100.0,
+            minimum_plant_members=minimum_members,
+            minimum_plant_species=minimum_species,
+            require_arabidopsis_match=require_arabidopsis,
+            plant_species=selected_plant_species,
+            maximum_rows=row_limit,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if summary.empty:
+        st.info(
+            "No published orthology group meets the active terminal-sequence, "
+            "plant-member, species-breadth and Arabidopsis criteria."
+        )
+        return
+    metrics = st.columns(spec=4)
+    metrics[0].metric("Qualifying groups", f"{len(summary):,}")
+    metrics[1].metric("Exact protein ending", terminal_sequence)
+    metrics[2].metric("Minimum plant-member match", f"{minimum_percent}%")
+    arabidopsis_groups = int(
+        (summary["arabidopsis_matching_member_count"] > 0).sum()
+    )
+    metrics[3].metric("Groups with an Arabidopsis match", f"{arabidopsis_groups:,}")
+    st.caption(
+        "A plant species is counted as matching when at least one assessed member "
+        "has the selected ending. `fully_matching_plant_species_count` is stricter: "
+        "every assessed member from that species must match. Missing sequences remain "
+        "explicitly unavailable."
+    )
+    _display_dataframe(frame=summary, height=620)
+    render_table_downloads(
+        frame=summary,
+        file_stem=f"terminal_{terminal_sequence}_{group_type}_summary",
+        tsv_label="Download qualifying groups as TSV",
+        excel_label="Download qualifying groups as Excel",
+        key="terminal_group_summary_download",
+    )
+
+    selected_group = st.selectbox(
+        "Orthology group to inspect",
+        options=summary["group_id"].astype(str).tolist(),
+        key="terminal_selected_group",
+        help=(
+            "Member detail preserves matches, non-matches, missing sequences, "
+            "Arabidopsis evidence and the separate human comparison."
+        ),
+    )
+    try:
+        members = collect_terminal_group_members(
+            connection=connection,
+            group_type=group_type,
+            group_id=selected_group,
+            terminal_sequence=terminal_sequence,
+            plant_species=selected_plant_species,
+            maximum_rows=100_000,
+        )
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    if members.empty:
+        st.warning("The selected group has no member rows in the sequence authority.")
+        return
+    st.markdown(f"### Members of `{selected_group}`")
+    member_metrics = st.columns(spec=3)
+    member_metrics[0].metric("Members", f"{len(members):,}")
+    member_metrics[1].metric(
+        "Exact terminal matches",
+        f"{int(members['terminal_match'].fillna(False).astype(bool).sum()):,}",
+    )
+    member_metrics[2].metric(
+        "Unavailable sequences",
+        f"{int((~members['sequence_available'].astype(bool)).sum()):,}",
+    )
+    displayed_members = members.drop(columns=["protein_sequence"])
+    _display_dataframe(frame=displayed_members, height=640)
+    render_table_downloads(
+        frame=members,
+        file_stem=f"terminal_{terminal_sequence}_{selected_group}_members",
+        tsv_label="Download member evidence as TSV",
+        excel_label="Download member evidence as Excel",
+        key="terminal_group_member_download",
+    )
+    try:
+        fasta_rows = terminal_member_fasta_frame(members=members)
+        fasta_payload = dataframe_to_fasta_bytes(
+            frame=fasta_rows,
+            identifier_column="fasta_identifier",
+            sequence_column="protein_sequence",
+            description_columns=(
+                "parsed_accession",
+                "raw_identifier",
+                "taxonomic_role",
+                "terminal_match",
+            ),
+        )
+    except (AppError, TypeError, ValueError) as exc:
+        st.caption(f"Member FASTA is unavailable: {exc}")
+    else:
+        st.download_button(
+            "Download available selected-group sequences as FASTA",
+            data=fasta_payload,
+            file_name=f"terminal_{terminal_sequence}_{selected_group}_members.fasta",
+            mime="text/x-fasta",
+            key="terminal_group_member_fasta",
+        )
+    st.warning(
+        "This screen prioritises a testable Cereblon-substrate hypothesis. A "
+        "matching ending does not demonstrate Cereblon binding or degradation, "
+        "and the result depends on the correctness of the selected protein isoform "
+        "and its annotated C terminus."
+    )
 
 
 def _seed_member_fasta(*, members: pd.DataFrame) -> bytes:
@@ -4773,15 +5036,15 @@ def render_app() -> None:
         st.error(str(exc))
         st.stop()
         return
-    pocket_review = prepare_pocket_review(config)
-    human_plant_review = prepare_human_plant_review(config)
+    pocket_review_dir = discover_pocket_review_dir(config)
+    human_plant_review_dir = config.human_plant_review_dir
     LOGGER.info(
         "Opening E3 app source_mode=%s source=%s pocket_review=%s "
         "human_plant_review=%s taxonomy_map=%s",
         config.source_mode,
         config.source_path,
-        pocket_review.path,
-        human_plant_review.path,
+        pocket_review_dir,
+        human_plant_review_dir,
         config.taxonomy_map,
     )
 
@@ -4790,13 +5053,13 @@ def render_app() -> None:
     st.sidebar.caption(f"Source mode: {config.source_mode}")
     if config.expression_duckdb:
         st.sidebar.caption(f"Raw Expression Atlas: {config.expression_duckdb}")
-    if pocket_review.available:
-        st.sidebar.success(f"Pocket review: {pocket_review.path}")
+    if pocket_review_dir is not None:
+        st.sidebar.success(f"Pocket review configured: {pocket_review_dir}")
     else:
         st.sidebar.warning("Portable pocket review is not configured.")
-    if human_plant_review.available:
+    if human_plant_review_dir is not None:
         st.sidebar.success(
-            f"Human + plant review: {human_plant_review.path}"
+            f"Human + plant review configured: {human_plant_review_dir}"
         )
     else:
         st.sidebar.caption("Human + plant structural extension is not configured.")
@@ -4877,6 +5140,10 @@ def render_app() -> None:
                     connection=connection,
                     config=config,
                 ),
+                "C-terminal conservation": lambda: _render_terminal_conservation(
+                    connection=connection,
+                    config=config,
+                ),
                 "Human HOGs": lambda: _render_human_hog_explorer(
                     connection=connection,
                     config=config,
@@ -4902,21 +5169,21 @@ def render_app() -> None:
                     section="pocket_conservation",
                 ),
                 "3D structures & pockets": lambda: _render_pocket_review(
-                    bundle=pocket_review,
+                    bundle=prepare_pocket_review(config),
                     focus="structure",
                 ),
                 "Pocket-aligned sequences": lambda: _render_pocket_review(
-                    bundle=pocket_review,
+                    bundle=prepare_pocket_review(config),
                     focus="alignment",
                 ),
                 "3D alignment": lambda: _render_structural_alignment_section(
                     connection=connection,
                     config=config,
-                    bundle=pocket_review,
+                    bundle=prepare_pocket_review(config),
                 ),
                 "Human & plant 3D alignment": lambda: (
                     _render_human_plant_structural_review(
-                        bundle=human_plant_review,
+                        bundle=prepare_human_plant_review(config),
                     )
                 ),
                 "HOG model comparison": lambda: _render_hog_model_comparison(
@@ -4933,25 +5200,37 @@ def render_app() -> None:
                     max_rows=config.max_rows,
                 ),
             }
-            stage_tabs = st.tabs([stage.label for stage in NAVIGATION_STAGES])
-            for stage_tab, stage in zip(
-                stage_tabs,
-                NAVIGATION_STAGES,
-                strict=True,
-            ):
-                with stage_tab:
-                    st.caption(stage.description)
-                    page_tabs = st.tabs([page.title for page in stage.pages])
-                    for page_tab, page in zip(
-                        page_tabs,
-                        stage.pages,
-                        strict=True,
-                    ):
-                        with page_tab:
-                            _render_tab_help(tab_name=page.title)
-                            if page.method_annotation:
-                                _render_method_annotation(tab_name=page.title)
-                            page_renderers[page.title]()
+            selected_stage_label = st.radio(
+                "Analysis section",
+                options=navigation_stage_labels(),
+                horizontal=True,
+                key="e3_navigation_stage",
+                help=(
+                    "Only the selected page is queried and rendered. This keeps "
+                    "interactive filtering responsive while preserving all sections."
+                ),
+            )
+            selected_stage = navigation_stage(label=selected_stage_label)
+            st.caption(selected_stage.description)
+            selected_page_title = st.radio(
+                "Page",
+                options=tuple(page.title for page in selected_stage.pages),
+                horizontal=True,
+                key=f"e3_navigation_page_{selected_stage_label}",
+            )
+            selected_page = navigation_page(
+                stage=selected_stage,
+                title=selected_page_title,
+            )
+            LOGGER.info(
+                "Rendering selected application stage=%s page=%s",
+                selected_stage.label,
+                selected_page.title,
+            )
+            _render_tab_help(tab_name=selected_page.title)
+            if selected_page.method_annotation:
+                _render_method_annotation(tab_name=selected_page.title)
+            page_renderers[selected_page.title]()
     except AppError as exc:
         LOGGER.exception("The E3 application could not render")
         st.error(str(exc))

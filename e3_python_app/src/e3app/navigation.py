@@ -86,6 +86,7 @@ NAVIGATION_STAGES = (
         ),
         pages=(
             NavigationPage("Orthology", method_annotation=True),
+            NavigationPage("C-terminal conservation", method_annotation=True),
             NavigationPage("Human HOGs"),
             NavigationPage("Plant & human HOGs"),
             NavigationPage("Seed & HOG explorer"),
@@ -145,6 +146,64 @@ def navigation_page_titles(
         Ordered page titles.
     """
     return tuple(page.title for stage in stages for page in stage.pages)
+
+
+def navigation_stage_labels(
+    *, stages: Sequence[NavigationStage] = NAVIGATION_STAGES
+) -> tuple[str, ...]:
+    """Return stage labels in maintained display order.
+
+    Args:
+        stages: Navigation stages to inspect.
+
+    Returns:
+        Ordered stage labels.
+    """
+    return tuple(stage.label for stage in stages)
+
+
+def navigation_stage(
+    *,
+    label: str,
+    stages: Sequence[NavigationStage] = NAVIGATION_STAGES,
+) -> NavigationStage:
+    """Return one navigation stage by its exact displayed label.
+
+    Args:
+        label: Exact stage label selected by the user.
+        stages: Navigation stages to search.
+
+    Returns:
+        Matching navigation stage.
+
+    Raises:
+        AppError: If the label is unknown.
+    """
+    for stage in stages:
+        if stage.label == label:
+            return stage
+    raise AppError(f"Unknown application navigation stage: {label}")
+
+
+def navigation_page(*, stage: NavigationStage, title: str) -> NavigationPage:
+    """Return one page from a selected navigation stage.
+
+    Args:
+        stage: Selected navigation stage.
+        title: Exact page title selected by the user.
+
+    Returns:
+        Matching page definition.
+
+    Raises:
+        AppError: If the page is not part of the selected stage.
+    """
+    for page in stage.pages:
+        if page.title == title:
+            return page
+    raise AppError(
+        f"Unknown application page for stage {stage.label}: {title}"
+    )
 
 
 def validate_navigation(

@@ -21,6 +21,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Visual explorer",
         "Candidates",
         "Orthology",
+        "C-terminal conservation",
         "Human HOGs",
         "Plant & human HOGs",
         "Seed & HOG explorer",

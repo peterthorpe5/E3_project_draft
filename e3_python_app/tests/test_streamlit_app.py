@@ -8,36 +8,6 @@ from streamlit.testing.v1 import AppTest
 
 from test_pocket_review import make_pocket_review
 
-PRIMARY_TAB_LABELS = {
-    "Overview",
-    "Workflow schematic",
-    "Glossary",
-    "Computational recommendations",
-    "Threshold explorer",
-    "Independent structural-review shortlist",
-    "Within-HOG ranking",
-    "Visual explorer",
-    "Candidates",
-    "Orthology",
-    "Human HOGs",
-    "Plant & human HOGs",
-    "Seed & HOG explorer",
-    "E3 seed catalogue",
-    "Domains",
-    "Expression",
-    "Ligandability",
-    "Pocket conservation",
-    "3D structures & pockets",
-    "Pocket-aligned sequences",
-    "3D alignment",
-    "Human & plant 3D alignment",
-    "HOG model comparison",
-    "Computational chemistry",
-    "Search",
-    "All results",
-    "Provenance and QC",
-}
-
 STAGE_TAB_LABELS = [
     "🔵 1 · Information",
     "🟢 2 · Candidate discovery",
@@ -46,6 +16,17 @@ STAGE_TAB_LABELS = [
     "🟡 5 · Structural comparison",
     "🔴 6 · Chemistry & outputs",
 ]
+
+
+def _navigate(app: AppTest, *, stage: str, page: str) -> AppTest:
+    """Select one lazily rendered application page in a headless test."""
+    stage_control = next(
+        radio for radio in app.radio if radio.label == "Analysis section"
+    )
+    stage_control.set_value(stage).run()
+    page_control = next(radio for radio in app.radio if radio.label == "Page")
+    page_control.set_value(page).run()
+    return app
 
 
 def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> None:
@@ -79,7 +60,7 @@ def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> Non
 
 
 def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> None:
-    """The app renders all tabs and accepts a representative accession."""
+    """Lazy navigation renders one page and supports terminal and search work."""
 
     monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
     monkeypatch.setenv("E3_MAX_TABLE_ROWS", "100")
@@ -87,137 +68,91 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert app.title[0].value == "ARIA plant E3 discovery and ligandability resource"
-    assert PRIMARY_TAB_LABELS.issubset({tab.label for tab in app.tabs})
-    assert [
-        tab.label for tab in app.tabs if tab.label in STAGE_TAB_LABELS
-    ] == STAGE_TAB_LABELS
-    assert "Glossary" in [tab.label for tab in app.tabs]
-    assert "3D alignment" in [tab.label for tab in app.tabs]
-    glossary_selectors = [
-        selector for selector in app.selectbox if selector.label == "Glossary section"
-    ]
-    assert len(glossary_selectors) == 1
-    assert glossary_selectors[0].options[0] == "All sections"
-    tab_labels = [tab.label for tab in app.tabs]
-    assert "Candidate landscape" in tab_labels
-    assert "Glossary" in tab_labels
-    assert "Workflow schematic" in tab_labels
-    assert "Computational recommendations" in tab_labels
-    assert "Threshold explorer" in tab_labels
-    assert "Independent structural-review shortlist" in tab_labels
-    assert "Visual explorer" in tab_labels
-    assert "Expression heatmap" in tab_labels
-    assert "Species & tissue expression" in tab_labels
-    assert "Volcano eligibility" in tab_labels
-    assert "Computational chemistry" in tab_labels
-    assert "3D structures & pockets" in tab_labels
-    assert "Pocket-aligned sequences" in tab_labels
-    assert "Human HOGs" in tab_labels
-    assert "Plant & human HOGs" in tab_labels
-    assert "Seed & HOG explorer" in tab_labels
-    assert "E3 seed catalogue" in tab_labels
-    assert "Search" in tab_labels
-    assert "3D alignment" in tab_labels
+    stage_control = next(
+        radio for radio in app.radio if radio.label == "Analysis section"
+    )
+    assert stage_control.options == STAGE_TAB_LABELS
+    assert stage_control.value == "🔵 1 · Information"
+    page_control = next(radio for radio in app.radio if radio.label == "Page")
+    assert page_control.value == "Overview"
+    assert "Glossary" in page_control.options
     primary_help = [
         expander
         for expander in app.expander
         if expander.label == "❓ How to use this tab"
     ]
-    assert len(primary_help) == 27
-    method_help = [
-        expander
+    assert len(primary_help) == 1
+    assert not any(
+        expander.label == "ⓘ Methods and thresholds"
         for expander in app.expander
-        if expander.label == "ⓘ Methods and thresholds"
-    ]
-    assert len(method_help) == 17
-    alignment_tab = next(tab for tab in app.tabs if tab.label == "3D alignment")
-    assert any(
-        "not a threshold invented for this project" in markdown.value
-        and "bioinformatics/btq066" in markdown.value
-        for markdown in alignment_tab.markdown
     )
-    ranked_hog_tab = next(
-        tab
-        for tab in app.tabs
-        if tab.label == "Independent structural-review shortlist"
+
+    _navigate(
+        app,
+        stage="🟣 3 · E3 orthology context",
+        page="C-terminal conservation",
     )
-    top_n = next(
-        number
-        for number in ranked_hog_tab.number_input
-        if number.label == "Shortlist size"
+    assert not app.exception
+    terminal_input = next(
+        item
+        for item in app.text_input
+        if item.label == "Exact C-terminal sequence"
     )
-    assert top_n.value == 100
-    pass_filter = next(
-        checkbox
-        for checkbox in ranked_hog_tab.checkbox
-        if checkbox.label == "Pre-structure passes only"
+    terminal_slider = next(
+        slider
+        for slider in app.slider
+        if slider.label == "Minimum matching plant members (%)"
     )
-    assert pass_filter.value is False
-    within_hog_tab = next(
-        tab for tab in app.tabs if tab.label == "Within-HOG ranking"
-    )
-    within_hog_selectors = [
+    assert terminal_input.value == "N"
+    assert terminal_slider.value == 80
+    plant_selector = next(
         selector
-        for selector in within_hog_tab.selectbox
-        if selector.label == "HOG to rank members within"
-    ]
-    assert len(within_hog_selectors) == 1
+        for selector in app.multiselect
+        if selector.label
+        == "Plant species included in the conservation calculation"
+    )
+    assert "Arabidopsis_thaliana" in plant_selector.value
+    assert "Oryza_sativa" in plant_selector.value
     assert any(
-        metric.label == "First member in review order"
-        for metric in within_hog_tab.metric
+        metric.label == "Qualifying groups" and metric.value == "1"
+        for metric in app.metric
     )
-    hog_model_tab = next(
-        tab for tab in app.tabs if tab.label == "HOG model comparison"
-    )
-    model_hog_selectors = [
+    group_selector = next(
         selector
-        for selector in hog_model_tab.selectbox
-        if selector.label == "HOG to compare with AlphaFold models"
-    ]
-    assert len(model_hog_selectors) == 1
-    model_member_selectors = [
-        selector
-        for selector in hog_model_tab.multiselect
-        if selector.label == "HOG members to include in the model ZIP"
-    ]
-    assert len(model_member_selectors) == 1
-    assert len(model_member_selectors[0].value) == len(
-        model_member_selectors[0].options
+        for selector in app.selectbox
+        if selector.label == "Orthology group to inspect"
     )
-    assert set(model_member_selectors[0].value) == {"P38398", "Q9SA03"}
+    assert group_selector.value == "N0.HOG0001"
     assert any(
-        button.label == "Prepare Inspector ZIP for selected members"
-        for button in hog_model_tab.button
+        metric.label == "Groups with an Arabidopsis match"
+        and metric.value == "1"
+        for metric in app.metric
     )
     assert any(
-        "Stages 00–01" in markdown.value
-        for markdown in app.markdown
+        button.label == "Download available selected-group sequences as FASTA"
+        for button in app.get("download_button")
     )
-    assert len(app.multiselect) >= 8
-    assert any("Columns to display" in item.label for item in app.multiselect)
-    metric_labels = [metric.label for metric in app.metric]
-    assert "Evolutionary groups assessed" in metric_labels
-    assert "Milestone 1 pre-structure passes" in metric_labels
-    assert "E3-seeded neighbourhoods" in metric_labels
-    orthology_tab = next(tab for tab in app.tabs if tab.label == "Orthology")
-    orthology_checkbox_labels = [
-        checkbox.label for checkbox in orthology_tab.checkbox
-    ]
-    assert "Log-transform group-size axis" in orthology_checkbox_labels
-    assert "Log-transform group-count axis" in orthology_checkbox_labels
-    assert "Log-transform 1KP-species axis" in orthology_checkbox_labels
-    seed_tab = next(tab for tab in app.tabs if tab.label == "Seed & HOG explorer")
-    group_level_radios = [orthology_tab.radio[0], seed_tab.radio[0]]
-    for group_level_radio in group_level_radios:
-        assert group_level_radio.label == "OrthoFinder grouping level"
-        assert (
-            "Root-level phylogenetic HOGs (N0.HOG…; recommended)"
-            in group_level_radio.options
-        )
-        assert (
-            "Original MCL orthogroups (OG…; broader legacy view)"
-            in group_level_radio.options
-        )
+    assert len(
+        [
+            expander
+            for expander in app.expander
+            if expander.label == "❓ How to use this tab"
+        ]
+    ) == 1
+    assert len(
+        [
+            expander
+            for expander in app.expander
+            if expander.label == "ⓘ Methods and thresholds"
+        ]
+    ) == 1
+
+    _navigate(
+        app,
+        stage="🔴 6 · Chemistry & outputs",
+        page="Search",
+    )
+    assert not app.exception
     search_area = next(
         area for area in app.text_area if area.label == "Search term(s)"
     )
@@ -233,33 +168,6 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     assert any(
         metric.label == "Entered terms matched" and metric.value == "1 / 1"
         for metric in app.metric
-    )
-    assert any(
-        slider.label == "Minimum member druggability score"
-        for slider in app.slider
-    )
-    metric_labels = [metric.label for metric in app.metric]
-    assert "Pre-structure passes" in metric_labels
-    assert "Structurally informed passes" in metric_labels
-    assert any(
-        "### Pre-structure candidate list" in markdown.value
-        for markdown in app.markdown
-    )
-    assert any(
-        "### Structurally informed candidate list" in markdown.value
-        for markdown in app.markdown
-    )
-    focused_sliders = [
-        slider
-        for slider in app.slider
-        if slider.label
-        == "Minimum member druggability required for every assessed member"
-    ]
-    assert len(focused_sliders) == 1
-    assert focused_sliders[0].value == 0.50
-    assert any(
-        "recorded production threshold is 0.50" in caption.value
-        for caption in app.caption
     )
 
 
@@ -285,6 +193,12 @@ def test_final_druggability_slider_recalculates_the_focused_pass_list(
     monkeypatch.setenv("E3_MAX_TABLE_ROWS", "100")
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
+    assert not app.exception
+    _navigate(
+        app,
+        stage="🟢 2 · Candidate discovery",
+        page="Computational recommendations",
+    )
     assert not app.exception
     focused = next(
         slider
@@ -338,10 +252,12 @@ def test_app_accepts_master_parquet(master_parquet: Path, monkeypatch: object) -
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert PRIMARY_TAB_LABELS.issubset({tab.label for tab in app.tabs})
-    assert "Glossary" in [tab.label for tab in app.tabs]
-    assert "Workflow schematic" in [tab.label for tab in app.tabs]
-    assert "3D alignment" in [tab.label for tab in app.tabs]
+    stage_control = next(
+        radio for radio in app.radio if radio.label == "Analysis section"
+    )
+    assert stage_control.options == STAGE_TAB_LABELS
+    page_control = next(radio for radio in app.radio if radio.label == "Page")
+    assert page_control.value == "Overview"
 
 
 def test_app_accepts_custom_reviewed_taxonomy(
@@ -366,7 +282,7 @@ def test_app_accepts_custom_reviewed_taxonomy(
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
     assert any(
-        str(mapping.resolve()) in caption.value for caption in app.caption
+        str(mapping.resolve()) in success.value for success in app.success
     )
     assert any(
         "Custom taxonomy mapping" in success.value for success in app.success
@@ -385,7 +301,7 @@ def test_app_handles_empty_and_corrupt_databases(monkeypatch: object, tmp_path: 
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert len(app.info) >= 4
+    assert len(app.info) >= 1
 
     corrupt = tmp_path / "corrupt.duckdb"
     corrupt.write_text("not duckdb", encoding="utf-8")
@@ -408,20 +324,55 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
+
+    _navigate(
+        app,
+        stage="🟡 5 · Structural comparison",
+        page="3D structures & pockets",
+    )
+    assert not app.exception
     group_selectors = [
         selector for selector in app.selectbox if selector.label == "Evolutionary group"
     ]
-    assert len(group_selectors) == 2
-    assert all(
-        selector.value == "groups/rank_001__hog__N0.HOG1.html"
-        for selector in group_selectors
+    assert len(group_selectors) == 1
+    assert group_selectors[0].value == "groups/rank_001__hog__N0.HOG1.html"
+
+    _navigate(
+        app,
+        stage="🟡 5 · Structural comparison",
+        page="3D alignment",
     )
+    assert not app.exception
     superposition_selectors = [
         selector
         for selector in app.selectbox
         if selector.label == "Evolutionary group for structural superposition"
     ]
     assert len(superposition_selectors) == 1
+    pair_selectors = [
+        selector
+        for selector in app.selectbox
+        if selector.label == "Reference and aligned protein pair"
+    ]
+    assert len(pair_selectors) == 1
+    assert any("Reference: P1" in option for option in pair_selectors[0].options)
+    expander_labels = [expander.label for expander in app.expander]
+    assert "❓ Why was this structural reference selected?" in expander_labels
+    assert "❓ Define the pair-evidence terms" in expander_labels
+    assert "↗ EMERALD and Mol* follow-up" in expander_labels
+    pair_downloads = [
+        button
+        for button in app.get("download_button")
+        if button.label == "Download exact pair FASTA"
+    ]
+    assert len(pair_downloads) == 1
+
+    _navigate(
+        app,
+        stage="🟡 5 · Structural comparison",
+        page="Human & plant 3D alignment",
+    )
+    assert not app.exception
     human_group_selectors = [
         selector
         for selector in app.selectbox
@@ -440,27 +391,21 @@ def test_app_renders_portable_structure_and_alignment_tabs(
         for selector in app.selectbox
         if selector.label == "Reference and aligned protein pair"
     ]
-    assert len(pair_selectors) == 2
+    assert len(pair_selectors) == 1
     assert any("Reference: P1" in option for option in pair_selectors[0].options)
-    human_tab = next(
-        tab for tab in app.tabs if tab.label == "Human & plant 3D alignment"
-    )
-    nested_labels = {tab.label for tab in human_tab.tabs}
+    nested_labels = {tab.label for tab in app.tabs}
     assert "Pairwise 3D comparison" in nested_labels
     assert "Choose structures & pockets" in nested_labels
     assert "Pocket-aligned FASTA" in nested_labels
     expander_labels = [expander.label for expander in app.expander]
-    assert expander_labels.count("❓ Why was this structural reference selected?") == 2
-    assert expander_labels.count("❓ Define the pair-evidence terms") == 2
+    assert expander_labels.count("❓ Why was this structural reference selected?") == 1
+    assert expander_labels.count("❓ Define the pair-evidence terms") == 1
     assert "❓ Why are only some parent ranks listed?" in expander_labels
     assert "❓ What do the protein and pocket choices mean?" in expander_labels
-    assert expander_labels.count("↗ EMERALD and Mol* follow-up") == 2
+    assert expander_labels.count("↗ EMERALD and Mol* follow-up") == 1
     pair_downloads = [
         button
         for button in app.get("download_button")
         if button.label == "Download exact pair FASTA"
     ]
-    assert len(pair_downloads) == 2
-    assert any(
-        tab.label == "Human & plant 3D alignment" for tab in app.tabs
-    )
+    assert len(pair_downloads) == 1

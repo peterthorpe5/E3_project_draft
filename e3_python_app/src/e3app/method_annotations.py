@@ -220,6 +220,42 @@ METHOD_ANNOTATIONS = {
             "conserved E3 function, pocket equivalence or ligand binding."
         ),
     ),
+    "C-terminal conservation": MethodAnnotation(
+        introduction=(
+            "Proteins are grouped by the recorded OrthoFinder result before their exact "
+            "C-terminal amino-acid sequence is compared. The default screen requires the "
+            "selected ending in 0.80 of plant members with available sequences."
+        ),
+        sections=(
+            MethodSection(
+                heading="Separate evidence measures",
+                bullets=(
+                    "The primary fraction is the number of matching plant members divided by "
+                    "plant members with a published sequence. Missing sequences are reported "
+                    "separately and are not converted into non-matches.",
+                    "Plant-species breadth is also reported because duplicated genes can make "
+                    "a member-only percentage appear stronger or weaker than its distribution "
+                    "across species.",
+                    "Arabidopsis is shown separately for experimental feasibility, and human "
+                    "members are a comparison only; neither changes the plant denominator.",
+                ),
+            ),
+            MethodSection(
+                heading="Exact sequence rule",
+                bullets=(
+                    "The entry is an exact one-letter amino-acid ending of one or more residues; "
+                    "it is not a regular expression or wildcard motif.",
+                    "Root-level HOGs are recommended for the phylogenetic view. Original "
+                    "orthogroups remain available as a broader legacy comparison.",
+                ),
+            ),
+        ),
+        interpretation_boundary=(
+            "A conserved terminal sequence is hypothesis-generating pilot evidence. It does "
+            "not establish Cereblon binding, degradation, protein accumulation or biological "
+            "function, and it remains sensitive to gene-model and protein-isoform accuracy."
+        ),
+    ),
     "Domains": MethodAnnotation(
         introduction=(
             "Target-plant proteins were annotated through the cached InterPro protein API and "

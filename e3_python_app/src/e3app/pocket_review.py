@@ -352,6 +352,37 @@ def load_pocket_review(review_dir: Path) -> PocketReviewBundle:
     )
 
 
+@lru_cache(maxsize=4)
+def _load_pocket_review_cached(review_dir: Path) -> PocketReviewBundle:
+    """Validate one immutable review bundle once per application process."""
+    LOGGER.info("Validating and caching pocket-review bundle path=%s", review_dir)
+    return load_pocket_review(review_dir)
+
+
+def load_pocket_review_for_app(review_dir: Path) -> PocketReviewBundle:
+    """Load a review bundle through the bounded application-process cache.
+
+    The deployed application treats a release directory as immutable. Caching
+    therefore avoids rereading large tables and recalculating every viewer
+    checksum on each Streamlit interaction without weakening the explicit CLI
+    validation path. Replacing files in place requires an application restart;
+    new fingerprinted release paths receive independent cache entries.
+
+    Args:
+        review_dir: Review bundle root.
+
+    Returns:
+        Validated, cached review bundle.
+    """
+    root = review_dir.expanduser().resolve()
+    return _load_pocket_review_cached(root)
+
+
+def clear_pocket_review_cache() -> None:
+    """Clear cached review bundles for tests or an explicit in-process refresh."""
+    _load_pocket_review_cached.cache_clear()
+
+
 def prepare_pocket_review(config: AppConfig) -> PocketReviewBundle:
     """Prepare optional review data without preventing core app use.
 
@@ -376,7 +407,7 @@ def prepare_pocket_review(config: AppConfig) -> PocketReviewBundle:
             structural_viewers=pd.DataFrame(),
         )
     try:
-        return load_pocket_review(review_dir)
+        return load_pocket_review_for_app(review_dir)
     except AppError as exc:
         return PocketReviewBundle(
             available=False,
@@ -406,7 +437,7 @@ def prepare_human_plant_review(config: AppConfig) -> PocketReviewBundle:
             structural_viewers=pd.DataFrame(),
         )
     try:
-        return load_pocket_review(review_dir)
+        return load_pocket_review_for_app(review_dir)
     except AppError as exc:
         return PocketReviewBundle(
             available=False,

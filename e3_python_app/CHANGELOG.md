@@ -4,6 +4,31 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.7
+
+- Adds a dedicated **C-terminal conservation** page under E3 orthology context.
+  The orthology-first screen accepts an exact one-letter amino-acid ending of
+  one or more residues, defaults to terminal `N`, and defaults to a minimum 80%
+  match across plant members with available sequences. All reviewed target
+  plants are selected by default and can be narrowed for a specific question.
+- Reports member and species breadth separately, highlights Arabidopsis evidence
+  for practical mutant follow-up, and keeps human members as a comparison that
+  never enters the plant denominator. Missing sequences remain unavailable
+  rather than becoming non-matches.
+- Provides qualifying-group and member TSV/Excel downloads plus exact available
+  member FASTA for downstream review. Candidate-bounded releases are labelled
+  explicitly and are not presented as proteome-wide Cereblon substrate screens.
+- Supports a future full sequence-bearing orthology relation without changing
+  the interface, while retaining HOGs as the recommended phylogenetic view and
+  OGs as a broader legacy comparison.
+- Replaces eager rendering of every page with one selected section/page at a
+  time, preventing all 28 scientific pages from querying on every interaction.
+- Validates immutable pocket-review bundles once per application process and
+  reuses the validated result. Explicit command-line deployment validation is
+  unchanged, and a new fingerprinted release path receives a new validation.
+- Adds full branch-tested terminal-query functions, navigation tests, cache
+  tests and a headless end-to-end terminal-screen workflow.
+
 ## v0.18.6
 
 - Adds a dedicated **HOG model comparison** page under structural comparison.

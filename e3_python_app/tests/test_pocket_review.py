@@ -17,9 +17,11 @@ from e3app.pocket_review import (
     _read_tsv,
     _safe_group_page,
     add_terminal_trimming_controls,
+    clear_pocket_review_cache,
     discover_pocket_review_dir,
     group_choice_labels,
     load_pocket_review,
+    load_pocket_review_for_app,
     merge_downloaded_pair_plddt,
     merge_pair_viewer_plddt,
     pocket_review_available,
@@ -206,6 +208,20 @@ def test_review_bundle_loads_and_selects_members(tmp_path: Path) -> None:
     assert "Pocket-annotated MAFFT sequence alignment" in alignment_html
     assert "scrollIntoView" in alignment_html
     assert read_review_html(bundle, "evidence_matrix.html") == "<html>matrix</html>"
+
+
+def test_application_review_cache_avoids_repeated_integrity_work(
+    tmp_path: Path,
+) -> None:
+    """Immutable app releases are validated once until an explicit cache clear."""
+    root = make_pocket_review(tmp_path)
+    clear_pocket_review_cache()
+    first = load_pocket_review_for_app(root)
+    second = load_pocket_review_for_app(root)
+    assert first is second
+    clear_pocket_review_cache()
+    third = load_pocket_review_for_app(root)
+    assert third is not first
 
 
 def test_supplementary_human_sequences_are_validated_and_downloadable(

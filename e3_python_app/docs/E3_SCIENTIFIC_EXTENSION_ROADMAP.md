@@ -1,7 +1,25 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.6
-Last reviewed: 2026-10-01
+Status: living implementation contract after Python app v0.18.7
+Last reviewed: 2026-10-03
+
+## Implemented in v0.18.7
+
+- A dedicated **C-terminal conservation** page performs an orthology-first
+  exact suffix screen. It defaults to terminal `N` in at least 80% of assessed
+  plant members, accepts multi-residue endings, and keeps HOG and OG meanings
+  distinct.
+- Member fraction and represented-species breadth are reported separately.
+  Arabidopsis is available as an experimental-feasibility requirement, while
+  human evidence is comparison-only and excluded from the plant denominator.
+- The currently published sequence authority is explicitly candidate-bounded;
+  it supports a pilot screen without being mislabelled as a whole-proteome
+  Cereblon substrate catalogue. A future full group-member sequence relation is
+  preferred automatically when present.
+- Navigation now renders only the selected page. Validated immutable
+  pocket-review bundles are cached in the application process, eliminating
+  repeated table reads and structural-viewer checksum calculations during
+  normal interactions without weakening deployment validation.
 
 ## Implemented in v0.18.6
 
@@ -84,8 +102,8 @@ labelled confidence bands, residue ticks and shaded hidden termini.
 ## Delivered in v0.17.0
 
 - Six colour-marked scientific stages replace the single flat row of 25 tabs;
-  v0.18.4 adds the 26th page and v0.18.6 adds the 27th without changing the
-  stage structure.
+  v0.18.4 adds the 26th page, v0.18.6 adds the 27th and v0.18.7 adds the 28th
+  without changing the stage structure.
 - Every recorded structure pair has a reproducible follow-up panel with
   reference/comparison identifiers, a validated EMERALD deep link for
   canonical UniProt pairs, exact pair FASTA export, AlphaFold Database links,

@@ -1,11 +1,11 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.6 is the Streamlit companion to `E3_shiny_app`. It retains the
-v0.18.5 deployment and scientific interface and adds a dedicated **HOG model
-comparison** page. Users can select one HOG, choose its recognised UniProt
-members and prepare available AlphaFold Database models as a compatibility ZIP
-for manual upload to the external AlphaFold 3 Multi-Model Inspector. Missing
-models are reported without blocking the models that are available.
+Version 0.18.7 is the Streamlit companion to `E3_shiny_app`. It retains the
+v0.18.6 HOG model-comparison workflow and adds a dedicated **C-terminal
+conservation** page. The new orthology-first screen defaults to proteins ending
+in asparagine (`N`) in at least 80% of plant members, while accepting any exact
+one-letter amino-acid ending of one or more residues. It reports Arabidopsis
+evidence for experimental follow-up and human members as a separate comparison.
 
 Version 0.18.4 introduced an
 easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and
@@ -21,10 +21,14 @@ Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-The 27 pages are organised into six colour-marked scientific stages:
+The 28 pages are organised into six colour-marked scientific stages:
 information, candidate discovery, E3 orthology context, structural
 prioritisation, structural comparison, and chemistry and outputs. Existing
-page names, help, methods and data queries are preserved.
+page names, help, methods and data queries are preserved. Only the selected
+section and page are queried and rendered, so an interaction no longer executes
+every application page. Immutable structural-review bundles are fully validated
+once per application process and then reused; explicit deployment validation is
+unchanged.
 
 Recorded structure pairs provide validated EMERALD hand-offs for canonical
 UniProt accessions, exact selected-pair FASTA export and AlphaFold Database
@@ -117,7 +121,7 @@ fail-closed review rules are documented in
 
 The reporter provides:
 
-- six ordered, colour-marked navigation stages containing the 26 maintained
+- six ordered, colour-marked navigation stages containing the 28 maintained
   scientific pages, so the analysis can be followed from release information
   through discovery, orthology, structure and outputs;
 - a responsive Workflow schematic tracing the complete method from validated
@@ -147,6 +151,14 @@ The reporter provides:
   with independently selectable linear/logarithmic x and y axes. Its grouping
   selector distinguishes recommended root-level phylogenetic hierarchical
   orthogroups (`N0.HOG…`) from the broader original MCL orthogroups (`OG…`);
+- a dedicated **C-terminal conservation** page that groups proteins by HOG or
+  OG before applying an exact terminal-sequence rule. It defaults to `N` and an
+  80% plant-member match, accepts multi-residue endings, lets users narrow the
+  reviewed target-plant set, reports plant-member and plant-species breadth
+  separately, can require an Arabidopsis match, keeps human evidence outside
+  the plant denominator, and exports group/member tables plus available sequence
+  FASTA. The current candidate-linked sequence relation is labelled as a
+  pilot-data scope rather than a whole-proteome screen;
 - separate lazy-loaded **Human HOGs** and **Plant & human HOGs** views. The
   first retains every root-level `N0.HOG…` containing `Homo_sapiens`; the
   second requires both a human member and at least one of the 12 curated target
