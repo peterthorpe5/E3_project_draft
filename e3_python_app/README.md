@@ -1,11 +1,14 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.7 is the Streamlit companion to `E3_shiny_app`. It retains the
-v0.18.6 HOG model-comparison workflow and adds a dedicated **C-terminal
-conservation** page. The new orthology-first screen defaults to proteins ending
-in asparagine (`N`) in at least 80% of plant members, while accepting any exact
-one-letter amino-acid ending of one or more residues. It reports Arabidopsis
-evidence for experimental follow-up and human members as a separate comparison.
+Version 0.18.8 is the Streamlit companion to `E3_shiny_app`. Its **C-terminal
+conservation** page presents a compact selectable group summary, reviewed
+taxonomy filters, species and sequence-coverage evidence, available E3/seed
+annotations and independently filterable member detail. The orthology-first
+screen retains the default of terminal asparagine (`N`) in at least 80% of
+assessed plant members. Arabidopsis supports experimental follow-up and human
+members remain a separate comparison. See the
+[C-terminal review guide](docs/C_TERMINAL_CONSERVATION_REVIEW.md) for exact
+denominators, taxon semantics and export scope.
 
 Version 0.18.4 introduced an
 easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and

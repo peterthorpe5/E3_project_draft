@@ -1,7 +1,20 @@
 # E3 scientific extension roadmap
 
-Status: living implementation contract after Python app v0.18.7
+Status: living implementation contract after Python app v0.18.8
 Last reviewed: 2026-10-03
+
+## Implemented in v0.18.8
+
+- The C-terminal page exposes readable protein/species fractions, sequence
+  coverage, exact Arabidopsis/human identifiers, published ranks and nullable
+  linked E3/seed annotations. Complete group/member evidence remains available.
+- Reviewed taxonomy predicates are applied to published group membership before
+  limiting, with accepted/source labels and custom human/Arabidopsis aliases.
+- Optional species and sequence-coverage gates, complete per-species audits,
+  independent member-preview filters and downloadable settings preserve the
+  scientific denominator and reveal unavailable evidence explicitly.
+- No full sequence authority, biological validation or phylogeny is manufactured
+  by this presentation update. It changes only e3_python_app.
 
 ## Implemented in v0.18.7
 

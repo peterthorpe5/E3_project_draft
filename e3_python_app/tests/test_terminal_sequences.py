@@ -8,9 +8,16 @@ import pytest
 
 import e3app.terminal_sequences as terminal_module
 from e3app.errors import AppError
+from e3app.taxonomy import (
+    CompiledTaxonomyFilters,
+    compile_taxonomy_filters,
+    load_taxonomy_authority,
+    taxonomy_filters,
+)
 from e3app.terminal_sequences import (
     collect_terminal_group_members,
     collect_terminal_group_summary,
+    collect_terminal_species,
     normalise_terminal_sequence,
     terminal_member_fasta_frame,
     terminal_sequence_capability,
@@ -424,4 +431,278 @@ def test_query_failures_are_wrapped_with_context(
             group_type="hierarchical_orthogroup",
             group_id="N0.HOG1",
             plant_species=PLANTS,
+        )
+
+
+def test_screen_counts_are_unlimited_and_retained_for_empty_results(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """A bounded result cannot be mistaken for the full qualifying-group count."""
+    result = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, minimum_match_fraction=0.5,
+        require_arabidopsis_match=False, maximum_rows=1,
+    )
+    assert len(result) == 1
+    assert result.attrs["screen_audit"] == {
+        "source_group_count": 2, "plant_group_count": 2, "assessable_group_count": 2,
+        "taxonomy_group_count": 2, "qualifying_group_count": 2,
+        "returned_group_count": 1, "result_limit": 1,
+    }
+    empty = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, minimum_match_fraction=1.0,
+    )
+    assert empty.empty
+    assert empty.attrs["screen_audit"]["qualifying_group_count"] == 0
+    assert empty.attrs["screen_audit"]["source_group_count"] == 2
+    assert "group_id" in empty.columns
+    terminal_connection.execute("DELETE FROM candidate_group_member_sequences")
+    no_source = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup", plant_species=PLANTS,
+    )
+    assert no_source.empty
+    assert no_source.attrs["screen_audit"]["source_group_count"] == 0
+
+
+def test_species_and_sequence_coverage_gates_are_independent(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Optional gates detect species breadth and incomplete sequence coverage separately."""
+    normal = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup", plant_species=PLANTS,
+    )
+    assert normal.loc[0, "plant_sequence_coverage_fraction"] == pytest.approx(5 / 6)
+    for kwargs in (
+        {"minimum_species_match_fraction": 0.81},
+        {"minimum_sequence_coverage_fraction": 0.84},
+    ):
+        filtered = collect_terminal_group_summary(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+            plant_species=PLANTS, **kwargs,
+        )
+        assert filtered.empty
+    accepted = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, minimum_species_match_fraction=0.8,
+        minimum_sequence_coverage_fraction=0.8,
+    )
+    assert len(accepted) == 1
+
+
+@pytest.mark.parametrize(
+    ("filters", "expected"),
+    [
+        ({"required_exact_taxon_ids": [9606]}, ["N0.HOG1"]),
+        ({"required_exact_taxon_ids": [3702, 4530]}, ["N0.HOG1", "N0.HOG2"]),
+        ({"include_clade_taxon_ids": [4479]}, ["N0.HOG1", "N0.HOG2"]),
+        ({"only_clade_taxon_ids": [33090]}, ["N0.HOG2"]),
+        ({"excluded_exact_taxon_ids": [9606]}, ["N0.HOG2"]),
+        ({"excluded_clade_taxon_ids": [33208]}, ["N0.HOG2"]),
+        ({"include_clade_taxon_ids": [4479], "excluded_exact_taxon_ids": [9606]}, ["N0.HOG2"]),
+    ],
+)
+def test_taxonomy_filters_apply_to_all_published_members_before_limiting(
+    terminal_connection: duckdb.DuckDBPyConnection, filters: dict[str, list[int]],
+    expected: list[str],
+) -> None:
+    """Taxonomic predicates test membership, independent of terminal sequence status."""
+    authority = load_taxonomy_authority()
+    # The release uses an accepted tomato name rather than the packaged source alias.
+    taxonomy = authority.species_taxonomy.copy()
+    taxonomy.loc[
+        taxonomy["source_species_name"] == "Lycopersicon_esculentum", "source_species_name"
+    ] = "Solanum_lycopersicum"
+    compiled = compile_taxonomy_filters(
+        filters=taxonomy_filters(**filters), species_taxonomy=taxonomy,
+        available_species=collect_terminal_species(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+        ),
+        taxonomy_nodes=authority.taxonomy_nodes,
+    )
+    result = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, minimum_match_fraction=0.5,
+        require_arabidopsis_match=False, compiled_taxonomy=compiled,
+    )
+    assert result["group_id"].tolist() == expected
+    assert result.attrs["screen_audit"]["qualifying_group_count"] == len(expected)
+    if expected == ["N0.HOG1"]:
+        assert result.loc[0, "plant_member_match_fraction"] == 0.8
+
+
+def test_only_clade_rejects_unmapped_members_with_unavailable_sequences(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Unavailable termini do not conceal outside/unmapped group membership."""
+    authority = load_taxonomy_authority()
+    terminal_connection.execute(
+        "INSERT INTO candidate_group_member_sequences(record_type, group_id, species, "
+        "raw_identifier, protein_sequence) VALUES "
+        "('HIERARCHICAL_ORTHOGROUP', 'N0.HOG2', 'Unmapped_species', 'unknown1', NULL)"
+    )
+    compiled = compile_taxonomy_filters(
+        filters=taxonomy_filters(only_clade_taxon_ids=[33090]),
+        species_taxonomy=authority.species_taxonomy,
+        available_species=collect_terminal_species(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+        ), taxonomy_nodes=authority.taxonomy_nodes,
+    )
+    result = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, minimum_match_fraction=0.5,
+        require_arabidopsis_match=False, compiled_taxonomy=compiled,
+    )
+    assert result.empty
+    assert result.attrs["screen_audit"]["taxonomy_group_count"] == 0
+
+
+def test_custom_source_labels_resolve_human_and_arabidopsis_by_reviewed_taxonomy(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Renaming a workflow species label cannot change its experimental/comparison role."""
+    terminal_connection.execute(
+        "UPDATE candidate_group_member_sequences SET species = 'arath_input' "
+        "WHERE species = 'Arabidopsis_thaliana'"
+    )
+    terminal_connection.execute(
+        "UPDATE candidate_group_member_sequences SET species = 'human_input' "
+        "WHERE species = 'Homo_sapiens'"
+    )
+    plants = tuple("arath_input" if value == "Arabidopsis_thaliana" else value for value in PLANTS)
+    result = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=(*plants, "human_input"), human_species=("human_input",),
+        arabidopsis_species=("arath_input",),
+    )
+    assert result["group_id"].tolist() == ["N0.HOG1"]
+    assert result.loc[0, "plant_member_match_fraction"] == 0.8
+    assert result.loc[0, "arabidopsis_matching_identifiers"] == "A1"
+    assert result.loc[0, "human_identifiers"] == "H1"
+    members = collect_terminal_group_members(
+        connection=terminal_connection, group_type="hierarchical_orthogroup", group_id="N0.HOG1",
+        plant_species=plants, human_species=("human_input",), arabidopsis_species=("arath_input",),
+    )
+    assert members.loc[members["parsed_accession"] == "H1", "taxonomic_role"].item() == (
+        "HUMAN_COMPARISON"
+    )
+
+
+def test_required_exact_taxon_accepts_one_of_multiple_reviewed_source_aliases(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Exact species requirements do not demand every alternate source label of one taxon."""
+    authority = load_taxonomy_authority()
+    alias = authority.species_taxonomy.loc[
+        authority.species_taxonomy["source_species_name"] == "Arabidopsis_thaliana"
+    ].copy()
+    alias["source_species_name"] = "arath_second_input"
+    taxonomy = pd.concat(objs=[authority.species_taxonomy, alias], ignore_index=True)
+    compiled = compile_taxonomy_filters(
+        filters=taxonomy_filters(required_exact_taxon_ids=[3702]), species_taxonomy=taxonomy,
+        available_species=(*PLANTS, "Homo_sapiens", "arath_second_input"),
+        taxonomy_nodes=authority.taxonomy_nodes,
+    )
+    result = collect_terminal_group_summary(
+        connection=terminal_connection, group_type="hierarchical_orthogroup",
+        plant_species=PLANTS, compiled_taxonomy=compiled,
+    )
+    assert result["group_id"].tolist() == ["N0.HOG1"]
+
+
+def test_optional_description_fields_and_missing_seed_flags_remain_nullable() -> None:
+    """A minimal future full authority may provide names without E3 seed annotations."""
+    with duckdb.connect(":memory:") as connection:
+        connection.execute(
+            "CREATE TABLE orthology_group_member_sequences(record_type VARCHAR, group_id VARCHAR, "
+            "species VARCHAR, raw_identifier VARCHAR, protein_sequence VARCHAR, "
+            "protein_names VARCHAR)"
+        )
+        connection.execute(
+            "INSERT INTO orthology_group_member_sequences VALUES "
+            "('HIERARCHICAL_ORTHOGROUP', 'N0.NAME', 'Arabidopsis_thaliana', "
+            "'id1', 'MN', 'Protein name')"
+        )
+        members = collect_terminal_group_members(
+            connection=connection, group_type="hierarchical_orthogroup", group_id="N0.NAME",
+            plant_species=PLANTS, human_species=(), arabidopsis_species=(),
+        )
+        assert members.loc[0, "protein_description"] == "Protein name"
+        assert pd.isna(members.loc[0, "is_input_candidate"])
+        assert not members.loc[0, "is_human"]
+        assert not members.loc[0, "is_arabidopsis"]
+
+
+@pytest.mark.parametrize("value", [True, 1.5, float("inf"), float("nan"), "1.5"])
+def test_integer_controls_reject_non_integral_and_non_finite_values(
+    terminal_connection: duckdb.DuckDBPyConnection, value: object,
+) -> None:
+    """Member/result limits cannot silently truncate a non-integral control."""
+    with pytest.raises(AppError, match="positive integer"):
+        collect_terminal_group_summary(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+            plant_species=PLANTS, maximum_rows=value,
+        )
+
+
+@pytest.mark.parametrize("value", [True, float("nan"), float("inf"), -0.1, 1.1])
+def test_optional_fraction_controls_are_defensive(
+    terminal_connection: duckdb.DuckDBPyConnection, value: object,
+) -> None:
+    """Independent species/coverage gates reject invalid fractions before query execution."""
+    with pytest.raises(AppError, match="between 0 and 1"):
+        collect_terminal_group_summary(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+            plant_species=PLANTS, minimum_species_match_fraction=value,
+        )
+
+
+def test_species_listing_uses_exact_group_type_and_missing_authority_fails(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Taxonomy choices are compiled from the active HOG or OG membership only."""
+    og_species = collect_terminal_species(connection=terminal_connection, group_type="orthogroup")
+    assert og_species == ("Arabidopsis_thaliana", "Oryza_sativa")
+    with duckdb.connect(":memory:") as connection:
+        with pytest.raises(AppError, match="no supported"):
+            collect_terminal_species(connection=connection, group_type="orthogroup")
+
+
+def test_species_listing_wraps_database_errors(
+    terminal_connection: duckdb.DuckDBPyConnection, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed data read has a controlled diagnostic rather than an uncaught traceback."""
+    capability = terminal_sequence_capability(connection=terminal_connection)
+    monkeypatch.setattr(
+        terminal_module, "terminal_sequence_capability", lambda **_kwargs: capability,
+    )
+    terminal_connection.close()
+    with pytest.raises(AppError, match="list C-terminal"):
+        collect_terminal_species(connection=terminal_connection, group_type="orthogroup")
+
+
+def test_only_predicate_with_no_mapped_allowed_species_is_false() -> None:
+    """An empty reviewed only-in scope cannot admit every group."""
+    compiled = CompiledTaxonomyFilters(
+        required_exact_species=(), include_clade_species=(), only_allowed_species=(),
+        excluded_species=(), mapped_species=(), selected_scope_species=(), species_taxon_ids=(),
+    )
+    assert terminal_module._taxonomy_group_predicate(compiled_taxonomy=compiled) == ("FALSE", [])
+
+
+def test_invalid_sequence_species_list_and_arabidopsis_switch_are_rejected(
+    terminal_connection: duckdb.DuckDBPyConnection,
+) -> None:
+    """Text and Boolean controls cannot be silently coerced into biological input."""
+    with pytest.raises(AppError, match="must be text"):
+        normalise_terminal_sequence(value=True)
+    with pytest.raises(AppError, match="sequence of source labels"):
+        collect_terminal_group_summary(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+            plant_species="Arabidopsis_thaliana",
+        )
+    with pytest.raises(AppError, match="must be Boolean"):
+        collect_terminal_group_summary(
+            connection=terminal_connection, group_type="hierarchical_orthogroup",
+            plant_species=PLANTS, require_arabidopsis_match="False",
         )

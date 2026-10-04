@@ -129,13 +129,15 @@ TOP_LEVEL_TAB_HELP = {
     "C-terminal conservation": TabHelpEntry(
         instruction=(
             "Enter an exact one-letter C-terminal sequence, set the required plant-member "
-            "percentage and review qualifying HOGs before choosing one group for member-level "
-            "and FASTA evidence."
+            "percentage and optionally apply reviewed group-taxonomy filters. Click a "
+            "qualifying summary row or select its HOG, then review species evidence and "
+            "filter member detail without changing the conservation calculation."
         ),
         yields=(
             "An orthology-first screen of exact protein endings, with separate plant-member and "
             "plant-species breadth, Arabidopsis follow-up evidence, an independent human "
-            "comparison and downloadable group, member and sequence records."
+            "comparison, available E3/seed annotations, unlimited screen counts and "
+            "downloadable settings, group, species, member and sequence records."
         ),
     ),
     "Human HOGs": TabHelpEntry(

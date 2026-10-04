@@ -236,8 +236,12 @@ METHOD_ANNOTATIONS = {
                     "Plant-species breadth is also reported because duplicated genes can make "
                     "a member-only percentage appear stronger or weaker than its distribution "
                     "across species.",
-                    "Arabidopsis is shown separately for experimental feasibility, and human "
-                    "members are a comparison only; neither changes the plant denominator.",
+                    "Selected Arabidopsis members enter the plant denominator and are also "
+                    "reported separately for experimental feasibility. Human members never "
+                    "enter the plant denominator.",
+                    "Sequence coverage is assessed selected plant members / published selected "
+                    "plant members. Species-match and coverage gates default to zero; the "
+                    "original member threshold remains 80% until explicitly changed.",
                 ),
             ),
             MethodSection(
@@ -247,6 +251,21 @@ METHOD_ANNOTATIONS = {
                     "it is not a regular expression or wildcard motif.",
                     "Root-level HOGs are recommended for the phylogenetic view. Original "
                     "orthogroups remain available as a broader legacy comparison.",
+                ),
+            ),
+            MethodSection(
+                heading="Taxonomy, annotations and audit",
+                bullets=(
+                    "Exact/include/only/exclude predicates test published group membership "
+                    "independently of terminal matching and plant denominator selection. "
+                    "Only-in rejects outside or unresolved members; exclusion rejects the group.",
+                    "Source, selected-plant, assessable, taxonomy and qualifying counts are "
+                    "calculated before the display limit and exported with active settings.",
+                    "Group E3 labels describe linked source clusters. Member-specific domain "
+                    "annotations use exact accession/species/cluster and group/type joins. "
+                    "Neither annotation nor pipeline rank is a Cereblon-substrate prediction.",
+                    "Species/member previews distinguish non-matches from unavailable "
+                    "sequences. Preview filters do not recalculate the group screen.",
                 ),
             ),
         ),

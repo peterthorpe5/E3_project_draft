@@ -4,6 +4,33 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.18.8
+
+- Replaces the wide C-terminal summary with a compact selectable group table,
+  labelled count fractions and percentages, sequence coverage, Arabidopsis
+  matching identifiers, separate human identifiers, published group rank and
+  linked E3-family context. Complete evidence remains expandable.
+- Joins available protein descriptions, linked seed names/categories and
+  E3-domain evidence without guessing missing annotation. Exact member domain
+  joins constrain accession, species, cluster and published group/type.
+- Adds reviewed exact-taxon requirements, clade inclusion, only-in-clade and
+  exact/clade exclusion directly to this page. These filter published group
+  membership before result limiting; the plant denominator remains a separate
+  species selection. Only-in predicates reject unresolved members.
+- Preserves accepted species names, NCBI IDs and workflow source labels.
+  Arabidopsis and human comparison roles use reviewed taxon IDs, including
+  custom source aliases. Deselecting Arabidopsis disables its match requirement.
+- Reports unlimited source/plant/assessable/taxonomy/qualifying group counts,
+  explicit display limits and downloadable active settings. Optional species
+  conservation and sequence-coverage gates default to zero, preserving the
+  original N/80% screen until deliberately enabled.
+- Adds complete selected-group species audits, distinguishing no published
+  member, unavailable sequence and assessed non-match; member previews filter
+  matches/non-matches/unavailable, species and comparison role independently.
+- Adds settings, species and filtered-member TSV/Excel exports while retaining
+  member evidence and available-sequence FASTA. Scientific resources remain
+  read-only; the standalone OrthoFinder app is unchanged.
+
 ## v0.18.7
 
 - Adds a dedicated **C-terminal conservation** page under E3 orthology context.

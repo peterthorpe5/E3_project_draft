@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import asdict
 from typing import Sequence
@@ -165,12 +166,26 @@ from e3app.thresholds import (
     select_threshold_relation,
 )
 from e3app.tab_help import tab_help_text
+from e3app.terminal_review import (
+    MEMBER_FILTER_LABELS,
+    ROLE_FILTER_LABELS,
+    STATUS_LABELS,
+    annotate_terminal_members,
+    enrich_terminal_group_summary,
+    filter_terminal_members,
+    terminal_member_display,
+    terminal_screen_provenance,
+    terminal_species_labels,
+    terminal_species_summary,
+    terminal_summary_display,
+)
 from e3app.terminal_sequences import (
     ARABIDOPSIS_SPECIES,
     DEFAULT_MINIMUM_MATCH_FRACTION,
     DEFAULT_TERMINAL_SEQUENCE,
     collect_terminal_group_members,
     collect_terminal_group_summary,
+    collect_terminal_species,
     normalise_terminal_sequence,
     terminal_member_fasta_frame,
     terminal_sequence_capability,
@@ -919,17 +934,19 @@ def _render_orthology_explorer(
 
 
 def _render_terminal_conservation(
-    *,
-    connection: object,
-    config: AppConfig,
+    *, connection: object, config: AppConfig,
 ) -> None:
-    """Render an orthology-first exact C-terminal sequence screen."""
+    """Render a bounded conservation screen with readable, auditable evidence.
+
+    Args:
+        connection: Open read-only DuckDB connection.
+        config: Validated application configuration and reviewed taxonomy path.
+    """
     st.subheader("C-terminal sequence conservation")
     st.info(
-        "This screen groups proteins by OrthoFinder first, then asks whether an "
-        "exact protein ending is retained among plant members. The default is a "
-        "single terminal asparagine (`N`) in at least 80% of plant members with "
-        "available sequences. Human members are reported separately for comparison."
+        "Find related plant proteins sharing an exact protein ending. The default is "
+        "terminal asparagine (N) in at least 80% of assessed plant proteins. "
+        "Human members are an independent comparison."
     )
     capability = terminal_sequence_capability(connection=connection)
     if not capability.available:
@@ -937,231 +954,475 @@ def _render_terminal_conservation(
         return
     if capability.candidate_bounded:
         st.warning(
-            "This release publishes member sequences for E3 candidate-linked "
-            "OrthoFinder groups, not every unrelated group in the source proteomes. "
-            "The results are therefore a candidate-focused pilot screen rather than "
-            "a complete plant proteome screen. A future full sequence-bearing "
-            "orthology relation will be selected automatically when supplied."
+            "Candidate-focused pilot screen: this release publishes sequences for E3 "
+            "candidate-linked groups. It cannot establish a complete proteome-wide list "
+            "of proteins with this ending."
         )
-    taxonomy = load_taxonomy_authority(taxonomy_map=config.taxonomy_map)
-    species_taxonomy = taxonomy.species_taxonomy
-    plant_rows = species_taxonomy.loc[
-        species_taxonomy["role"].fillna("").astype(str) == "target_plant"
-    ]
-    plant_species = tuple(
-        sorted(
-            {
-                str(value).strip()
-                for value in plant_rows["source_species_name"]
-                if str(value).strip()
-            }
-        )
-    )
-    if not plant_species:
-        st.warning(
-            "The active reviewed taxonomy contains no rows labelled `target_plant`, "
-            "so a plant-specific terminal-sequence denominator cannot be calculated."
-        )
+    try:
+        taxonomy = load_taxonomy_authority(taxonomy_map=config.taxonomy_map)
+        species_taxonomy = taxonomy.species_taxonomy
+        species_labels = terminal_species_labels(species_taxonomy=species_taxonomy)
+    except AppError as exc:
+        st.warning(str(exc))
         return
-    st.caption(
-        f"Sequence authority: `{capability.relation}`; scope: "
-        f"{capability.scope_label}. Plant labels: {len(plant_species):,}; "
-        f"taxonomy: {taxonomy.source_label}."
+    human_species = tuple(
+        species_taxonomy.loc[species_taxonomy["taxon_id"] == 9606, "source_species_name"]
     )
+    arabidopsis_species = tuple(
+        species_taxonomy.loc[species_taxonomy["taxon_id"] == 3702, "source_species_name"]
+    )
+    plant_species = tuple(sorted(
+        set(species_taxonomy.loc[
+            species_taxonomy["role"].fillna("").eq(other="target_plant"), "source_species_name"
+        ]).difference(human_species)
+    ))
+    if not plant_species:
+        st.warning("The active reviewed taxonomy contains no target-plant source labels.")
+        return
     group_type = _orthology_group_type_control(key="terminal_group_type")
+    try:
+        available_species = collect_terminal_species(connection=connection, group_type=group_type)
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    represented = species_taxonomy.loc[
+        species_taxonomy["source_species_name"].isin(values=available_species)
+    ]
+    represented_ids = {
+        int(token)
+        for value in represented["lineage_taxon_ids"]
+        for token in str(value).split(";") if token.strip()
+    } | set(represented["taxon_id"].astype(int))
+    nodes = taxonomy.taxonomy_nodes.loc[
+        taxonomy.taxonomy_nodes["taxon_id"].isin(values=represented_ids)
+    ]
+    taxon_labels = taxonomy_choice_labels(nodes=nodes)
+    exact_options = [value for value in taxon_labels if value in set(represented["taxon_id"])]
+    unmapped_species = sorted(set(available_species).difference(species_labels))
+    st.caption(
+        f"Sequence scope: {capability.scope_label}. Reviewed taxonomy: {taxonomy.source_label}. "
+        f"{len(available_species) - len(unmapped_species):,}/{len(available_species):,} "
+        "source species mapped. Accepted names and original source labels are retained."
+    )
+    if unmapped_species:
+        with st.expander("Unresolved taxonomy in the sequence authority"):
+            st.write("; ".join(unmapped_species))
+            st.caption(
+                "These labels stay unresolved. They never enter the reviewed plant "
+                "denominator, and groups containing them fail an active only-in-clade filter."
+            )
     maximum_rows = min(max(config.max_rows, 1), 100_000)
     with st.form("terminal_conservation_controls"):
         selected_plant_species = st.multiselect(
             "Plant species included in the conservation calculation",
-            options=plant_species,
-            default=plant_species,
-            format_func=lambda value: str(value).replace("_", " "),
+            options=plant_species, default=plant_species,
+            format_func=species_labels.__getitem__,
+            key="terminal_plant_species",
             help=(
-                "All reviewed target plants are selected by default. Narrow this "
-                "list when the pilot question concerns a particular crop or clade."
+                "This selection defines the plant denominator; group taxonomy filters are separate."
             ),
         )
-        arabidopsis_available = ARABIDOPSIS_SPECIES in selected_plant_species
         controls = st.columns(spec=(1.1, 1.4, 1, 1, 1.4))
         with controls[0]:
             requested_terminal = st.text_input(
-                "Exact C-terminal sequence",
-                value=DEFAULT_TERMINAL_SEQUENCE,
-                max_chars=50,
-                help=(
-                    "Enter one or more one-letter amino-acid codes. Matching is "
-                    "case-insensitive, exact and anchored to the final residue."
-                ),
+                "Exact C-terminal sequence", value=DEFAULT_TERMINAL_SEQUENCE, max_chars=50,
+                key="terminal_sequence_input",
+                help="One-letter amino-acid codes, exact and anchored to the final residue.",
             )
         with controls[1]:
             minimum_percent = st.slider(
-                "Minimum matching plant members (%)",
-                min_value=0,
-                max_value=100,
-                value=int(DEFAULT_MINIMUM_MATCH_FRACTION * 100),
-                step=1,
-                help=(
-                    "The denominator contains target-plant members with an available "
-                    "protein sequence. Human members never enter this percentage."
-                ),
+                "Minimum matching plant members (%)", min_value=0, max_value=100,
+                value=int(DEFAULT_MINIMUM_MATCH_FRACTION * 100), step=1,
+                key="terminal_minimum_member_percent",
+                help="Matching / assessed selected plant proteins. Human proteins are excluded.",
             )
         with controls[2]:
-            minimum_members = int(
-                st.number_input(
-                    "Minimum plant members",
-                    min_value=1,
-                    max_value=1_000_000,
-                    value=2,
-                    step=1,
-                )
-            )
+            minimum_members = int(st.number_input(
+                "Minimum plant members", min_value=1, max_value=1_000_000,
+                value=2, step=1, key="terminal_minimum_members",
+            ))
         with controls[3]:
-            minimum_species = int(
-                st.number_input(
-                    "Minimum plant species",
-                    min_value=1,
-                    max_value=max(len(plant_species), 1),
-                    value=min(2, max(len(plant_species), 1)),
-                    step=1,
-                )
-            )
+            minimum_species = int(st.number_input(
+                "Minimum plant species", min_value=1, max_value=max(len(plant_species), 1),
+                value=min(2, len(plant_species)), step=1, key="terminal_minimum_species",
+            ))
         with controls[4]:
+            arabidopsis_selected = bool(
+                set(arabidopsis_species).intersection(selected_plant_species)
+            )
             require_arabidopsis = st.checkbox(
-                "Require an Arabidopsis match",
-                value=arabidopsis_available,
-                disabled=not arabidopsis_available,
-                help=(
-                    "Requires at least one matching Arabidopsis thaliana member, "
-                    "supporting a practical mutant and antibody follow-up route."
-                ),
+                "Require an Arabidopsis match", value=arabidopsis_selected,
+                disabled=not arabidopsis_selected, key="terminal_require_arabidopsis",
+                help="Requires at least one matching reviewed Arabidopsis thaliana member.",
             )
-        row_limit = int(
-            st.number_input(
-                "Maximum qualifying groups to return",
-                min_value=1,
-                max_value=maximum_rows,
-                value=min(1_000, maximum_rows),
-                step=min(100, maximum_rows),
+        with st.expander("Species conservation and sequence coverage"):
+            optional_controls = st.columns(spec=2)
+            with optional_controls[0]:
+                minimum_species_percent = st.slider(
+                    "Minimum matching plant species (%)", min_value=0, max_value=100,
+                    value=0, step=1, key="terminal_minimum_species_percent",
+                    help=(
+                        "Matching / assessed species. A species matches when at least one "
+                        "assessed protein matches. Zero leaves this optional gate inactive."
+                    ),
+                )
+            with optional_controls[1]:
+                minimum_coverage_percent = st.slider(
+                    "Minimum plant sequence coverage (%)", min_value=0, max_value=100,
+                    value=0, step=1, key="terminal_minimum_coverage_percent",
+                    help=(
+                        "Assessed / published selected plant proteins within each group. "
+                        "This does not measure coverage of complete source proteomes."
+                    ),
+                )
+        selected_taxa: dict[str, list[int]] = {}
+        with st.expander("Taxon-ID inclusion and exclusion"):
+            st.caption(
+                "These predicates test membership in the published group, irrespective of "
+                "terminal matching. All active predicates use AND. Include accepts outside "
+                "members; only-in rejects outside and unresolved members. Exclusion rejects "
+                "the entire group. These controls do not change the plant denominator."
             )
-        )
+            taxon_columns = st.columns(spec=2)
+            for index, (field, label, options) in enumerate((
+                ("required_exact_taxon_ids", "Must contain exact taxon IDs", exact_options),
+                ("include_clade_taxon_ids", "Include clades (outside members allowed)",
+                 list(taxon_labels)),
+                ("only_clade_taxon_ids", "Only in clades (no outside members)", list(taxon_labels)),
+                ("excluded_exact_taxon_ids", "Exclude exact taxon IDs", exact_options),
+                ("excluded_clade_taxon_ids", "Exclude clades and descendants", list(taxon_labels)),
+            )):
+                with taxon_columns[index % 2]:
+                    selected_taxa[field] = st.multiselect(
+                        label, options=options, format_func=taxon_labels.__getitem__,
+                        key=f"terminal_{field}",
+                    )
+        row_limit = int(st.number_input(
+            "Maximum qualifying groups to return", min_value=1, max_value=maximum_rows,
+            value=min(1_000, maximum_rows), step=min(100, maximum_rows),
+            key="terminal_result_limit",
+        ))
         st.form_submit_button("Apply C-terminal conservation screen")
+    require_arabidopsis = bool(require_arabidopsis and arabidopsis_selected)
     try:
         terminal_sequence = normalise_terminal_sequence(value=requested_terminal)
-        summary = collect_terminal_group_summary(
-            connection=connection,
-            group_type=group_type,
-            terminal_sequence=terminal_sequence,
-            minimum_match_fraction=minimum_percent / 100.0,
-            minimum_plant_members=minimum_members,
-            minimum_plant_species=minimum_species,
-            require_arabidopsis_match=require_arabidopsis,
-            plant_species=selected_plant_species,
-            maximum_rows=row_limit,
+        compiled = compile_taxonomy_filters(
+            filters=taxonomy_filters(**selected_taxa), species_taxonomy=species_taxonomy,
+            available_species=available_species, taxonomy_nodes=taxonomy.taxonomy_nodes,
         )
+        summary = collect_terminal_group_summary(
+            connection=connection, group_type=group_type, terminal_sequence=terminal_sequence,
+            minimum_match_fraction=minimum_percent / 100.0,
+            minimum_species_match_fraction=minimum_species_percent / 100.0,
+            minimum_sequence_coverage_fraction=minimum_coverage_percent / 100.0,
+            minimum_plant_members=minimum_members, minimum_plant_species=minimum_species,
+            require_arabidopsis_match=require_arabidopsis, plant_species=selected_plant_species,
+            compiled_taxonomy=compiled, human_species=human_species,
+            arabidopsis_species=arabidopsis_species, maximum_rows=row_limit,
+        )
+        settings = terminal_screen_provenance(summary=summary, settings={
+            "terminal_sequence": terminal_sequence, "group_type": group_type,
+            "sequence_authority": capability.relation, "sequence_scope": capability.scope_label,
+            "candidate_bounded": capability.candidate_bounded,
+            "taxonomy_source": taxonomy.source_label,
+            "selected_plant_species": selected_plant_species,
+            "human_comparison_species": human_species, "arabidopsis_species": arabidopsis_species,
+            "minimum_plant_member_match_fraction": minimum_percent / 100.0,
+            "minimum_plant_species_match_fraction": minimum_species_percent / 100.0,
+            "minimum_plant_sequence_coverage_fraction": minimum_coverage_percent / 100.0,
+            "minimum_assessed_plant_members": minimum_members,
+            "minimum_assessed_plant_species": minimum_species,
+            "require_arabidopsis_match": require_arabidopsis, **selected_taxa,
+        })
     except AppError as exc:
         st.warning(str(exc))
         return
-    if summary.empty:
-        st.info(
-            "No published orthology group meets the active terminal-sequence, "
-            "plant-member, species-breadth and Arabidopsis criteria."
-        )
-        return
+    audit = summary.attrs["screen_audit"]
     metrics = st.columns(spec=4)
-    metrics[0].metric("Qualifying groups", f"{len(summary):,}")
+    metrics[0].metric("Qualifying groups", f"{audit['qualifying_group_count']:,}")
     metrics[1].metric("Exact protein ending", terminal_sequence)
     metrics[2].metric("Minimum plant-member match", f"{minimum_percent}%")
-    arabidopsis_groups = int(
-        (summary["arabidopsis_matching_member_count"] > 0).sum()
+    metrics[3].metric(
+        "Groups with an Arabidopsis match",
+        f"{int(summary['arabidopsis_matching_member_count'].gt(other=0).sum()):,}",
     )
-    metrics[3].metric("Groups with an Arabidopsis match", f"{arabidopsis_groups:,}")
     st.caption(
-        "A plant species is counted as matching when at least one assessed member "
-        "has the selected ending. `fully_matching_plant_species_count` is stricter: "
-        "every assessed member from that species must match. Missing sequences remain "
-        "explicitly unavailable."
+        f"{audit['source_group_count']:,} groups in the sequence authority; "
+        f"{audit['plant_group_count']:,} contain selected plants; "
+        f"{audit['assessable_group_count']:,} have assessable selected plant sequences; "
+        f"{audit['taxonomy_group_count']:,} selected-plant groups pass taxonomy; "
+        f"{audit['qualifying_group_count']:,} pass the complete screen; "
+        f"{len(summary):,} are displayed. Arabidopsis match counts above refer to displayed groups."
     )
-    _display_dataframe(frame=summary, height=620)
+    with st.expander("Screen settings, counts and downloads"):
+        _display_dataframe(frame=settings)
+        render_table_downloads(
+            frame=settings, file_stem=f"terminal_{terminal_sequence}_{group_type}_screen_settings",
+            tsv_label="Download screen settings and counts as TSV",
+            excel_label="Download screen settings and counts as Excel",
+            key="terminal_screen_settings",
+        )
+    if summary.empty:
+        st.info(
+            "No published group meets the active sequence, coverage, taxonomy and breadth criteria."
+        )
+        return
+    if len(summary) < audit["qualifying_group_count"]:
+        st.warning(
+            f"Displaying the first {len(summary):,} of {audit['qualifying_group_count']:,} "
+            "qualifying groups. Group downloads contain the displayed subset."
+        )
+    try:
+        summary = enrich_terminal_group_summary(
+            connection=connection, summary=summary, group_type=group_type,
+        )
+    except AppError as exc:
+        st.warning(f"Optional group annotations are unavailable: {exc}")
+    with st.expander("❓ How to read the conservation tables"):
+        st.markdown(
+            "- **Plant proteins:** matching / assessed selected plant proteins.\n"
+            "- **Plant species:** species with at least one match / assessed species. "
+            "A large paralogue family can affect protein and species fractions differently.\n"
+            "- **Sequence coverage:** assessed / published selected plant proteins. "
+            "Unavailable sequences are excluded from matching percentages.\n"
+            "- **Group rank:** the existing pipeline rank, separate from terminal conservation "
+            "order. Missing ranks and annotations stay unavailable.\n"
+            "- **Linked E3 families and seed descriptions:** evidence attached to source "
+            "E3 clusters, not proof that every member is an E3 or a Cereblon substrate.\n"
+            "- **Only-in/exclusion:** evaluated against this sequence authority's published "
+            "membership; unpublished members cannot be tested."
+        )
+    compact = terminal_summary_display(summary=summary)
+    table_fingerprint = hashlib.sha256(
+        (group_type + terminal_sequence + ";".join(summary["group_id"].astype(str))).encode("utf-8")
+    ).hexdigest()[:16]
+    selection = st.dataframe(
+        data=compact, hide_index=True, width="stretch",
+        height=min(420, 90 + 35 * len(compact)),
+        on_select="rerun", selection_mode="single-row",
+        key=f"terminal_group_table_{table_fingerprint}",
+        column_config={
+            "Group": st.column_config.Column(label="HOG / OG", width="medium"),
+            "Plant proteins matching / assessed": st.column_config.Column(
+                label="Plant proteins", width="small",
+                help="Unavailable sequences and human members are excluded."
+            ),
+            "Plant species matching / assessed": st.column_config.Column(
+                label="Plant species", width="small",
+                help="At least one assessed member must match in a matching species."
+            ),
+            "Plant sequences available / published": st.column_config.Column(
+                label="Sequence coverage", width="small",
+                help="Assessed / published plant proteins; missing sequences stay unavailable."
+            ),
+            "Arabidopsis matching IDs": st.column_config.Column(
+                label="Arabidopsis matches", width="medium",
+            ),
+            "Human IDs": st.column_config.Column(width="medium"),
+            "Human comparison": st.column_config.Column(label="Human ending", width="medium"),
+            "Group rank after structure": st.column_config.Column(
+                label="Group rank", width="small",
+                help="Published group rank, independent of terminal-conservation ordering."
+            ),
+            "Linked E3 families": st.column_config.Column(
+                width="medium",
+                help="Annotation of linked source clusters; inspect member-specific evidence below."
+            ),
+        },
+    )
+    with st.expander("Complete group evidence and source annotations"):
+        _display_dataframe(frame=summary, height=min(620, 70 + 35 * len(summary)))
     render_table_downloads(
-        frame=summary,
-        file_stem=f"terminal_{terminal_sequence}_{group_type}_summary",
+        frame=summary, file_stem=f"terminal_{terminal_sequence}_{group_type}_summary",
         tsv_label="Download qualifying groups as TSV",
         excel_label="Download qualifying groups as Excel",
         key="terminal_group_summary_download",
     )
-
+    group_ids = summary["group_id"].astype(str).tolist()
+    previous_row = st.session_state.get("terminal_table_selection")
+    rows = selection.selection.rows
+    row_group = group_ids[rows[0]] if rows and rows[0] < len(group_ids) else None
+    current_row = (table_fingerprint, row_group)
+    if row_group is not None and current_row != previous_row:
+        st.session_state["terminal_selected_group"] = row_group
+    st.session_state["terminal_table_selection"] = current_row
+    if st.session_state.get("terminal_selected_group") not in group_ids:
+        st.session_state["terminal_selected_group"] = group_ids[0]
     selected_group = st.selectbox(
-        "Orthology group to inspect",
-        options=summary["group_id"].astype(str).tolist(),
-        key="terminal_selected_group",
+        "Orthology group to inspect", options=group_ids, key="terminal_selected_group",
         help=(
-            "Member detail preserves matches, non-matches, missing sequences, "
-            "Arabidopsis evidence and the separate human comparison."
+            "Click a summary row or choose a group here; both open the same member evidence."
         ),
     )
+    selected_summary = summary.loc[summary["group_id"].eq(other=selected_group)].iloc[0]
+    context_columns = (
+        "linked_seed_protein_descriptions", "linked_seed_categories", "linked_seed_identifiers",
+        "linked_cluster_domain_support_status", "linked_cluster_e3_families", "ranking_source",
+    )
+    with st.expander("Selected-group E3 annotations and ranking context"):
+        context = pd.DataFrame(data=[
+            {"Evidence": field.replace("_", " ").capitalize(),
+             "Published value": selected_summary.get(field)}
+            for field in context_columns
+        ])
+        _display_dataframe(frame=context)
+        st.caption(
+            "These are published links to E3 seed/cluster evidence. Member-specific domain "
+            "annotations are reported in the member view; unavailable descriptions are not guessed."
+        )
+    _render_terminal_member_review(
+        connection=connection, group_type=group_type, selected_group=selected_group,
+        terminal_sequence=terminal_sequence, selected_plant_species=selected_plant_species,
+        species_taxonomy=species_taxonomy, human_species=human_species,
+        arabidopsis_species=arabidopsis_species,
+        expected_members=int(selected_summary["total_member_count"]),
+    )
+
+
+def _render_terminal_member_review(
+    *, connection: object, group_type: str, selected_group: str, terminal_sequence: str,
+    selected_plant_species: Sequence[str], species_taxonomy: pd.DataFrame,
+    human_species: Sequence[str], arabidopsis_species: Sequence[str], expected_members: int,
+) -> None:
+    """Render species audits and independently filterable selected-group members.
+
+    Args:
+        connection: Open read-only DuckDB connection.
+        group_type: Active HOG or OG grouping selector.
+        selected_group: Exact group selected in the summary.
+        terminal_sequence: Normalised exact ending used for the screen.
+        selected_plant_species: Exact plant labels defining the denominator.
+        species_taxonomy: Active reviewed source-label authority.
+        human_species: Reviewed source labels for human comparison.
+        arabidopsis_species: Reviewed source labels for Arabidopsis comparison.
+        expected_members: Unlimited published member count from the group summary.
+    """
     try:
         members = collect_terminal_group_members(
-            connection=connection,
-            group_type=group_type,
-            group_id=selected_group,
-            terminal_sequence=terminal_sequence,
-            plant_species=selected_plant_species,
+            connection=connection, group_type=group_type, group_id=selected_group,
+            terminal_sequence=terminal_sequence, plant_species=selected_plant_species,
+            human_species=human_species, arabidopsis_species=arabidopsis_species,
             maximum_rows=100_000,
+        )
+        members = annotate_terminal_members(
+            connection=connection, members=members, species_taxonomy=species_taxonomy,
+            group_type=group_type,
         )
     except AppError as exc:
         st.warning(str(exc))
         return
     if members.empty:
-        st.warning("The selected group has no member rows in the sequence authority.")
+        st.warning("The selected group has no published member rows.")
         return
-    st.markdown(f"### Members of `{selected_group}`")
-    member_metrics = st.columns(spec=3)
-    member_metrics[0].metric("Members", f"{len(members):,}")
-    member_metrics[1].metric(
-        "Exact terminal matches",
-        f"{int(members['terminal_match'].fillna(False).astype(bool).sum()):,}",
+    truncated = len(members) < expected_members
+    if truncated:
+        st.warning(
+            f"Member review is bounded: {len(members):,}/{expected_members:,} rows shown. "
+            "The complete species audit is unavailable and member downloads contain this subset."
+        )
+    else:
+        species_evidence = terminal_species_summary(
+            members=members, plant_species=selected_plant_species,
+            species_taxonomy=species_taxonomy,
+        )
+        st.markdown(f"#### Species evidence for {selected_group}")
+        display_species = species_evidence[[
+            "accepted_species_name", "species", "taxonomic_role", "published_member_count",
+            "assessed_member_count", "matching_member_count",
+            "unavailable_sequence_count", "match_status",
+        ]].copy()
+        display_species["match_status"] = display_species["match_status"].map(
+            arg={**STATUS_LABELS, "NOT_REPRESENTED": "No published member"}
+        )
+        display_species = display_species.rename(columns={
+            "accepted_species_name": "Accepted species", "species": "Source species",
+            "taxonomic_role": "Comparison role", "published_member_count": "Published proteins",
+            "assessed_member_count": "Assessed", "matching_member_count": "Matching",
+            "unavailable_sequence_count": "Unavailable", "match_status": "Species result",
+        })
+        _display_dataframe(frame=display_species, height=min(570, 70 + 35 * len(display_species)))
+        st.caption(
+            "All selected plants are listed, including those without a published group member. "
+            "That state is distinct from an unavailable sequence or an assessed non-match."
+        )
+        render_table_downloads(
+            frame=species_evidence,
+            file_stem=f"terminal_{terminal_sequence}_{selected_group}_species",
+            tsv_label="Download species evidence as TSV",
+            excel_label="Download species evidence as Excel",
+            key="terminal_species_evidence",
+        )
+    st.markdown(f"#### Members of {selected_group}")
+    preview_controls = st.columns(spec=3)
+    with preview_controls[0]:
+        match_filter = st.selectbox(
+            "Member sequence state", options=list(MEMBER_FILTER_LABELS),
+            format_func=MEMBER_FILTER_LABELS.__getitem__, key="terminal_member_match_filter",
+        )
+    with preview_controls[1]:
+        role_filter = st.selectbox(
+            "Member comparison", options=list(ROLE_FILTER_LABELS),
+            format_func=ROLE_FILTER_LABELS.__getitem__, key="terminal_member_role_filter",
+        )
+    with preview_controls[2]:
+        labels = terminal_species_labels(species_taxonomy=species_taxonomy)
+        selected_species = st.multiselect(
+            "Member species", options=sorted(set(members["species"].astype(str))),
+            format_func=lambda value: labels.get(value, f"Unresolved · source: {value}"),
+            key=f"terminal_member_species_{selected_group}",
+        )
+    filtered = filter_terminal_members(
+        members=members, match_filter=match_filter, role_filter=role_filter,
+        species=selected_species,
     )
-    member_metrics[2].metric(
-        "Unavailable sequences",
-        f"{int((~members['sequence_available'].astype(bool)).sum()):,}",
+    st.caption(
+        f"Preview: {len(filtered):,}/{len(members):,} loaded members. These filters do not change "
+        "the group screen, species audit or complete loaded-member downloads."
     )
-    displayed_members = members.drop(columns=["protein_sequence"])
-    _display_dataframe(frame=displayed_members, height=640)
+    if filtered.empty:
+        st.info("No members meet these preview filters.")
+    else:
+        _display_dataframe(
+            frame=terminal_member_display(members=filtered),
+            height=min(640, 70 + 35 * len(filtered)),
+        )
+    with st.expander("Complete loaded-member evidence"):
+        _display_dataframe(frame=members.drop(columns=["protein_sequence"]), height=500)
     render_table_downloads(
-        frame=members,
-        file_stem=f"terminal_{terminal_sequence}_{selected_group}_members",
+        frame=members, file_stem=f"terminal_{terminal_sequence}_{selected_group}_members",
         tsv_label="Download member evidence as TSV",
         excel_label="Download member evidence as Excel",
         key="terminal_group_member_download",
     )
+    if len(filtered) != len(members):
+        render_table_downloads(
+            frame=filtered,
+            file_stem=f"terminal_{terminal_sequence}_{selected_group}_filtered_members",
+            tsv_label="Download filtered member preview as TSV",
+            excel_label="Download filtered member preview as Excel",
+            key="terminal_filtered_members",
+        )
     try:
         fasta_rows = terminal_member_fasta_frame(members=members)
         fasta_payload = dataframe_to_fasta_bytes(
-            frame=fasta_rows,
-            identifier_column="fasta_identifier",
+            frame=fasta_rows, identifier_column="fasta_identifier",
             sequence_column="protein_sequence",
             description_columns=(
-                "parsed_accession",
-                "raw_identifier",
-                "taxonomic_role",
-                "terminal_match",
+                "parsed_accession", "raw_identifier", "taxonomic_role", "terminal_match",
             ),
         )
     except (AppError, TypeError, ValueError) as exc:
         st.caption(f"Member FASTA is unavailable: {exc}")
     else:
         st.download_button(
-            "Download available selected-group sequences as FASTA",
-            data=fasta_payload,
+            "Download available selected-group sequences as FASTA", data=fasta_payload,
             file_name=f"terminal_{terminal_sequence}_{selected_group}_members.fasta",
-            mime="text/x-fasta",
-            key="terminal_group_member_fasta",
+            mime="text/x-fasta", key="terminal_group_member_fasta",
         )
     st.warning(
-        "This screen prioritises a testable Cereblon-substrate hypothesis. A "
-        "matching ending does not demonstrate Cereblon binding or degradation, "
-        "and the result depends on the correctness of the selected protein isoform "
-        "and its annotated C terminus."
+        "A conserved ending prioritises a Cereblon-substrate hypothesis. It does not establish "
+        "binding, ubiquitination, degradation or accumulation. Confirm the experimental "
+        "protein isoform and its annotated C terminus before laboratory selection."
     )
 
 
