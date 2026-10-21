@@ -1,0 +1,3 @@
+sample_id	model_path	sequence_id	cluster	chain
+model_01	../alphafold_models/cluster_01/model.cif	BRCA1_representative_01	cluster_01	A
+model_02	../alphafold_models/cluster_02/model.pdb	BRCA1_representative_02	cluster_02	A

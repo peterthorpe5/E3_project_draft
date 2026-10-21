@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protein-pocket-pipeline"
+version = "1.0.0"
+description = "Standalone fpocket and P2Rank evidence for local protein models"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = ["gemmi>=0.7,<0.8", "duckdb>=1.4,<2", "openpyxl>=3.1,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruff>=0.11,<1", "build>=1,<2"]
+
+[project.scripts]
+protein-pockets = "protein_pockets.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+protein_pockets = ["resources/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["external: requires real fpocket and P2Rank executables"]
+
+[tool.coverage.run]
+branch = true
+source = ["protein_pockets"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 95
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
