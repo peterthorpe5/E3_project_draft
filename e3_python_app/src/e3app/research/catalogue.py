@@ -126,6 +126,7 @@ def open_catalogue(
                 choices=(
                     "cluster_id",
                     "CLUSTER",
+                    "CLUSTERID",
                     "ClustID",
                     "ClusterID",
                     "ClustId",
@@ -207,7 +208,14 @@ def sequence_aliases(*, identifier: str, prefixes: Sequence[str] = ()) -> tuple[
         ResearchError: If an identifier is blank or includes control characters.
     """
     value = str(identifier).strip()
-    if not value or len(value) > 2_000 or any(character.isspace() for character in value):
+    if (
+        not value
+        or len(value) > 2_000
+        or any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in value
+        )
+    ):
         raise ResearchError("Sequence identifiers must be non-empty and contain no whitespace")
     values = [value]
     parts = value.split("|")

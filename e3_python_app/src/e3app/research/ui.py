@@ -16,6 +16,7 @@ import streamlit.components.v1 as components
 
 from .catalogue import browse_clusters, open_catalogue
 from .common import ResearchConfig, ResearchError, iter_fasta, load_config
+from .deepclust_exchange import centroid_list
 from .jobs import artifact_path, cancel_job, job_directory, list_jobs, submit_job
 from .viewers import auspice_dataset_url, nightingale_features, viewer_document
 
@@ -140,6 +141,71 @@ def queue_action(
     st.success(f"Queued {operation} job {job_id}. The research worker will execute it.")
 
 
+def render_deepclust_import(*, config: ResearchConfig) -> None:
+    """Queue one selected upstream FASTA export without a global database installation.
+
+    Args:
+        config: Research workspace and sequence bounds.
+    """
+    st.write(
+        "Import a selected cluster exported by drostlab/deepclust_dataretrieval with "
+        "--per-clust-output 1. The global database is needed on the extraction machine; "
+        "this app needs only the resulting FASTA."
+    )
+    st.caption(
+        "Keep exact identifiers and source prefixes, for example NR_UGC79169.1. "
+        "A sequence accession or local E3 group ID is not necessarily a global centroid."
+    )
+    with st.form("research_deepclust_import"):
+        identifier = st.text_input("Exact DeepClust centroid ID", placeholder="NR_UGC79169.1")
+        uploaded = st.file_uploader(
+            "Per-cluster FASTA export (maximum 20 MB)",
+            type=["fa", "faa", "fasta"],
+            key="deepclust_export",
+        )
+        provenance = st.text_input("Export source / database release")
+        expected = st.number_input(
+            "Expected published member count (0 if unavailable)",
+            min_value=0,
+            max_value=config.max_sequences,
+            value=0,
+        )
+        st.caption(
+            "The centroid must occur in the FASTA. A supplied member count is checked; "
+            "membership and completeness otherwise remain those of the supplied export. "
+            "For larger files use the import-deepclust command in DEEPCLUST_EXCHANGE.md."
+        )
+        queued = st.form_submit_button("Queue cluster import")
+    if queued:
+        if uploaded is None:
+            raise ResearchError("Select a per-cluster FASTA export before importing")
+        if not provenance.strip():
+            raise ResearchError("Supply the export source and database release")
+        centroid_list(identifiers=[identifier])
+        if uploaded.size > 20_000_000:
+            raise ResearchError(
+                "FASTA export exceeds 20 MB; use the local import-deepclust command"
+            )
+        try:
+            fasta = uploaded.getvalue().decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ResearchError("FASTA export must be UTF-8 text") from exc
+        queue_action(
+            config=config,
+            operation="import_cluster",
+            parameters={
+                "cluster_id": identifier,
+                "source_label": provenance,
+                "expected_members": expected or None,
+            },
+            fasta=fasta,
+        )
+    st.info(
+        "After the worker completes the import, select its cluster.fasta under Family analysis "
+        "to recluster or align it. Jobs contains the membership, length summary and source audit."
+    )
+
+
 def render_discovery(*, config: ResearchConfig, connection: object | None) -> None:
     """Render global rankings, exact-sequence linking and the optional E3 selection adapter.
 
@@ -147,10 +213,15 @@ def render_discovery(*, config: ResearchConfig, connection: object | None) -> No
         config: DeepClust source profile.
         connection: Optional immutable E3 connection; absent in generic mode.
     """
-    modes = ["Global cluster ranking", "Sequence identifiers"]
+    modes = ["Global cluster ranking", "Sequence identifiers", "Import extracted cluster"]
+    if not config.index or not Path(config.index).expanduser().is_file():
+        modes.insert(0, modes.pop())
     if connection is not None:
         modes.append("E3 ranked groups")
     mode = st.radio("Discover clusters", modes, horizontal=True)
+    if mode == "Import extracted cluster":
+        render_deepclust_import(config=config)
+        return
     if mode == "Global cluster ranking":
         with st.form("research_browse"):
             minimum = st.number_input("Minimum published cluster size", min_value=1, value=3)
@@ -270,6 +341,17 @@ def render_discovery(*, config: ResearchConfig, connection: object | None) -> No
             )
         )
     ids = split_identifiers(value=st.text_area("Global cluster IDs to retrieve in full"))
+    if ids:
+        st.download_button(
+            "Download centroid list for official extraction tool",
+            data=centroid_list(identifiers=ids),
+            file_name="centroids.id.txt",
+            mime="text/plain",
+        )
+        st.caption(
+            "One exact centroid ID per line, for --centroid_file. Prefixes and accession "
+            "versions are preserved; the extraction machine needs the DeepClust database."
+        )
     if st.button("Queue complete cluster retrieval", disabled=not ids):
         queue_action(config=config, operation="retrieve", parameters={"cluster_ids": ids})
     with st.expander("Species metadata and source setup"):

@@ -15,6 +15,7 @@ import time
 from typing import Sequence
 
 from .common import ResearchConfig, ResearchError, bounded_number, load_config
+from .deepclust_exchange import centroid_list
 from .jobs import OPERATIONS, cancel_job, get_job, list_jobs, submit_job
 from .runner import run_next_job
 
@@ -38,6 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--parameters", type=Path, help="JSON object containing scientific controls"
     )
     submit.add_argument("--fasta", type=Path)
+    imported = commands.add_parser(
+        "import-deepclust", help="Queue one selected per-cluster FASTA, including large exports"
+    )
+    imported.add_argument("--fasta", type=Path, required=True)
+    imported.add_argument("--cluster-id", required=True)
+    imported.add_argument("--source-label", required=True)
+    imported.add_argument("--expected-members", type=int)
     worker = commands.add_parser("worker", help="Execute queued work on a local or HPC worker")
     worker.add_argument("--once", action="store_true")
     worker.add_argument("--job-id")
@@ -144,6 +152,20 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             print(json.dumps(list_jobs(workspace=config.workspace), indent=2))
         elif args.command == "cancel":
             cancel_job(workspace=config.workspace, job_id=args.job_id)
+        elif args.command == "import-deepclust":
+            centroid_list(identifiers=[args.cluster_id])
+            print(
+                submit_job(
+                    workspace=config.workspace,
+                    operation="import_cluster",
+                    parameters={
+                        "cluster_id": args.cluster_id,
+                        "source_label": args.source_label,
+                        "expected_members": args.expected_members,
+                    },
+                    fasta_path=args.fasta.expanduser(),
+                )
+            )
         elif args.command == "submit":
             parameters = (
                 json.loads(args.parameters.read_text(encoding="utf-8")) if args.parameters else {}

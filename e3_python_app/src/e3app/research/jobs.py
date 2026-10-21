@@ -7,6 +7,7 @@ import json
 import logging
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 from typing import Iterator, Mapping
 from uuid import uuid4
@@ -23,6 +24,7 @@ OPERATIONS = {
     "annotate",
     "taxonomy_index",
     "search",
+    "import_cluster",
 }
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 
@@ -73,7 +75,12 @@ def job_directory(*, workspace: Path, job_id: str) -> Path:
 
 
 def submit_job(
-    *, workspace: Path, operation: str, parameters: Mapping[str, object], fasta: str | None = None
+    *,
+    workspace: Path,
+    operation: str,
+    parameters: Mapping[str, object],
+    fasta: str | None = None,
+    fasta_path: Path | None = None,
 ) -> str:
     """Persist a validated operation request without executing work in the web process.
 
@@ -82,6 +89,8 @@ def submit_job(
         operation: Supported generic protein workflow.
         parameters: JSON-serialisable named scientific controls.
         fasta: Optional uploaded protein FASTA; at most 20 MB.
+        fasta_path: Operator-selected local FASTA, streamed into a private snapshot.
+            This CLI-only route supports exports larger than the web upload limit.
 
     Returns:
         New queued job identifier.
@@ -91,6 +100,10 @@ def submit_job(
     """
     if operation not in OPERATIONS:
         raise ResearchError("Unsupported research job operation")
+    if fasta is not None and fasta_path is not None:
+        raise ResearchError("Supply FASTA text or a local FASTA file, not both")
+    if fasta_path is not None and not fasta_path.is_file():
+        raise ResearchError("The selected local FASTA file does not exist")
     request = json.dumps(dict(parameters), allow_nan=False, sort_keys=True)
     if len(request) > 2_000_000 or (fasta is not None and len(fasta.encode("utf-8")) > 20_000_000):
         raise ResearchError("Research input exceeds the explicit upload/request size limit")
@@ -99,6 +112,10 @@ def submit_job(
     directory.mkdir(parents=True, mode=0o700)
     if fasta is not None:
         (directory / "input.fasta").write_text(fasta, encoding="utf-8")
+    elif fasta_path is not None:
+        with fasta_path.open(mode="rb") as source:
+            with (directory / "input.fasta").open(mode="xb") as destination:
+                shutil.copyfileobj(fsrc=source, fdst=destination, length=1024 * 1024)
     atomic_json(
         path=directory / "request.json",
         value={
@@ -106,7 +123,9 @@ def submit_job(
             "operation": operation,
             "parameters": dict(parameters),
             "input_sha256": (
-                file_sha256(path=directory / "input.fasta") if fasta is not None else None
+                file_sha256(path=directory / "input.fasta")
+                if fasta is not None or fasta_path is not None
+                else None
             ),
             "created_at": utc_now(),
         },

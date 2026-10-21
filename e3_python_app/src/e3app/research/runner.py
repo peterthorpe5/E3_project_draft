@@ -22,6 +22,7 @@ from .catalogue import (
     resolve_sequence_ids,
 )
 from .common import ResearchConfig, ResearchError, atomic_json, file_sha256, utc_now
+from .deepclust_exchange import import_cluster
 from .jobs import artifact_path, claim_job, finish_job, job_directory
 from .providers import annotate_batch, predict_batch
 
@@ -276,6 +277,15 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
         path = build_cluster_taxonomy(config=config, output=output)
         return {path.name: path}
     source = prepare_input(config=config, job=job, output=output)
+    if operation == "import_cluster":
+        return import_cluster(
+            config=config,
+            source=source,
+            output=output,
+            cluster_id=parameters.get("cluster_id", ""),
+            source_label=parameters.get("source_label", ""),
+            expected_members=parameters.get("expected_members"),
+        )
     if operation == "subcluster":
         return subcluster(config=config, source=source, output=output, parameters=parameters)
     if operation == "align":

@@ -435,7 +435,14 @@ support, RNA expression, predicted cavities, pocket-region conservation and
 US-align/TM-align agreement do not prove E3 activity, compound binding or
 induced degradation.
 
-## Protein research workbench (v0.19.0)
+## Protein research workbench (v0.19.1)
+
+For selected DeepClust exports without a global database on your laptop, see
+[DEEPCLUST_EXCHANGE.md](DEEPCLUST_EXCHANGE.md). Stage 3 → Protein research workbench
+→ Discover → Import extracted cluster accepts the upstream tool's per-cluster
+FASTA files. Extraction still requires a database holder; cloning its tool alone
+does not provide remote sequence access. The official `SEQID/CLUSTERID` sequence
+map schema is supported.
 
 Stage 3 now includes a generic protein-family workbench: global DeepClust linking
 and complete indexed retrieval, audited stricter subclusters, MAFFT/statistics,

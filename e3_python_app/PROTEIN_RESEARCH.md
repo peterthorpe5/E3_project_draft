@@ -1,4 +1,4 @@
-# Protein research workbench — v0.19.0
+# Protein research workbench — v0.19.1
 
 This adds a generic protein-family research engine inside **e3_python_app**. It is
 available in stage 3 as **Protein research workbench**, and independently through
@@ -14,6 +14,7 @@ The existing E3 resource remains read-only; new results live in a separate works
 | Global discovery | Size-ranked DeepClust catalogue; exact centroid IDs; clusters containing submitted protein IDs; any/all requested taxon IDs; any reviewed species. |
 | E3 linking | Top 200 (configurable) pre-structure HOGs or computationally ranked discovery clusters, or exact local IDs; member/source accessions and inherited seeds retain their E3 context. Exact matches, declared aliases, one-to-many and unmatched mappings are exported. Local E3 cluster IDs are never treated as global DeepClust centroids. |
 | Complete retrieval | Reads only indexed physical Parquet row groups, including clusters spanning several groups. Filters by global centroid, rejects duplicate sequence IDs and reconciles every count with NMEMBER. Complete per-cluster FASTA, member audit, length statistics and reviewed species counts. |
+| Selected export import | Imports one per-cluster FASTA from the upstream retrieval tool without a local global database. Preserves exact source IDs, checks the centroid and supplied member count, records source/sequence hashes and publishes export-scoped statistics. Large local exports use a streaming CLI snapshot. |
 | Stricter families | Native DIAMOND DeepClust with exact identity/mutual coverage controls, followed by exact representative-to-member realignment. Both coverages, E-value and bitscore >20 are audited. Failed/missing assignments survive as singleton subclusters. |
 | Alignments | MAFFT, per-column gaps/consensus/entropy, reference-to-member identity/overlap/raw BLOSUM62 statistics. Full family or explicit deterministic sampling with the reference retained; selections are audited. |
 | Viewers | Locally bundled JBrowse MSA (alignment plus inferred tree), Alignment Viewer 2 (BLOSUM62-to-query sorting), and Nightingale (sequence/domain coordinates). Standalone downloadable alignment HTML works without a CDN. |
@@ -54,6 +55,12 @@ itself does not download model weights. CUDA is used when available, otherwise C
 
 ## 2. Configure the DeepClust release and a writable workspace
 
+**For selected exports without a local global database, start with
+[DEEPCLUST_EXCHANGE.md](DEEPCLUST_EXCHANGE.md).** It explains exact centroid naming,
+the upstream extraction command for a database holder, rsync and the app's import
+route. Cloning the upstream repository does not supply its database. The setup
+below is for operators who already have or deliberately install the global files.
+
 Copy `config/protein_research.example.toml` outside the checkout and edit it. Use
 absolute paths; the TOML parser does not expand shell variables such as `$HOME`.
 `~` is accepted for workspace/source paths. Command names must be executable names
@@ -71,7 +78,7 @@ Required files and accepted canonical schemas:
 | --- | --- |
 | index | `CLUSTER`, `NMEMBER`, `RowStart`, `RowGroup`; aliases `cluster_id`, `member_count`, `row_start`, `row_groups` are accepted. |
 | sequences | `f0` = exact sequence ID; `f1` = protein sequence; `f2` = global centroid. Normalised sequence_id/protein_sequence/cluster_id names are also supported. |
-| sequence_map | Exact sequence ID to global centroid. Official `f0/f1` and explicit SeqID/ClustID-style aliases are supported. |
+| sequence_map | Exact sequence ID to global centroid. Official `SEQID/CLUSTERID`, `f0/f1` and explicit SeqID/ClustID-style aliases are supported. |
 | identifier_bridge | Optional `input_id`, `sequence_id`. Only use an audited bridge; no implicit orthology-based equivalence. |
 | taxonomy | `sequence_id`, `species`, positive numeric `taxon_id`. Optional `mapping_status` is filtered to REVIEWED. If omitted, the operator declares the entire table reviewed. Conflicting sequence/taxon mappings are rejected during taxonomy-index creation and excluded from tip metadata. |
 | cluster_taxonomy | Worker-produced `cluster_id`, `taxon_id`, `species`, `annotated_member_count`. |
