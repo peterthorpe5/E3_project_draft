@@ -434,3 +434,18 @@ These are computational recommendations. OrthoFinder membership, E3-domain
 support, RNA expression, predicted cavities, pocket-region conservation and
 US-align/TM-align agreement do not prove E3 activity, compound binding or
 induced degradation.
+
+## Protein research workbench (v0.19.0)
+
+Stage 3 now includes a generic protein-family workbench: global DeepClust linking
+and complete indexed retrieval, audited stricter subclusters, MAFFT/statistics,
+JBrowse MSA, Alignment Viewer 2, Nightingale, self-hosted Auspice integration and
+optional ESMFold/InterProScan/eggNOG jobs. The E3 input adapter is separate from the
+generic engine, which also runs without an E3 resource.
+
+See [PROTEIN_RESEARCH.md](PROTEIN_RESEARCH.md) for prerequisites, source schemas,
+scientific limits, worker/service setup and a complete walkthrough. Configure a
+writable sidecar using `config/protein_research.example.toml`, then add
+`--research-config /absolute/path/research.toml` to your existing E3 launch command.
+The DeepClust release and optional annotation/model databases are separate operator
+installations; they are not downloaded automatically when installing the app.

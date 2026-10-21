@@ -87,6 +87,7 @@ NAVIGATION_STAGES = (
         pages=(
             NavigationPage("Orthology", method_annotation=True),
             NavigationPage("C-terminal conservation", method_annotation=True),
+            NavigationPage("Protein research workbench"),
             NavigationPage("Human HOGs"),
             NavigationPage("Plant & human HOGs"),
             NavigationPage("Seed & HOG explorer"),

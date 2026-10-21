@@ -4,23 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-python-app"
-version = "0.18.8"
+version = "0.19.0"
 description = "Testable Streamlit and DuckDB browser for the ARIA plant E3 resource"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "Peter Thorpe and collaborators"}]
 dependencies = [
+  "biopython>=1.85,<2",
   "duckdb>=1.4,<2",
   "kaleido>=0.2.1,<1",
   "pandas>=2.2,<3",
   "plotly>=6,<7",
   "pyarrow>=18,<26",
+  "requests>=2.32.4,<3",
   "streamlit>=1.51,<2",
   "xlsxwriter>=3.2,<4",
 ]
 
 [project.optional-dependencies]
+folding = [
+  "torch>=2.6,<3",
+  "transformers>=4.48,<5",
+  "accelerate>=1.3,<2",
+]
 dev = [
   "coverage>=7.6,<8",
   "pycodestyle>=2.12,<3",
@@ -30,17 +37,18 @@ dev = [
 
 [project.scripts]
 e3-python-app = "e3app.cli:main"
+protein-research-workbench = "e3app.research.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-e3app = ["*.toml", "resources/*.js", "resources/*.tsv"]
+e3app = ["*.toml", "resources/*.js", "resources/*.tsv", "resources/research_viewers/*"]
 
 [tool.coverage.run]
 branch = true
 source = ["e3app"]
-omit = ["*/__main__.py", "*/streamlit_app.py"]
+omit = ["*/__main__.py", "*/streamlit_app.py", "*/research/ui.py", "*/research/standalone.py"]
 
 [tool.coverage.report]
 show_missing = true

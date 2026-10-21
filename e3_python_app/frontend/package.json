@@ -1,0 +1,23 @@
+{
+  "name": "protein-research-viewers",
+  "version": "0.19.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@nightingale-elements/nightingale-navigation": "5.11.0",
+    "@nightingale-elements/nightingale-sequence": "5.11.0",
+    "@nightingale-elements/nightingale-track": "5.11.1",
+    "alignment-viewer-2": "2.0.0-beta-2",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "sass": "1.69.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "playwright": "1.51.1"
+  }
+}

@@ -1,0 +1,43 @@
+# Copy this file outside the repository and replace paths with installed resources.
+# Source Parquet files stay immutable. The workspace must be writable.
+workspace = "/path/to/writable/protein_research"
+index = "/path/to/deepclust/clust_index_RowGroup.parquet"
+sequences = "/path/to/deepclust/joined_with_index_RowGroupFinal.parquet"
+sequence_map = "/path/to/deepclust/SeqIdMapClustId.parquet"
+
+# Optional reviewed data; TSV and Parquet are supported.
+# taxonomy columns: sequence_id, species, taxon_id; optional mapping_status=REVIEWED.
+# identifier_bridge columns: input_id, sequence_id. One-to-many mappings are allowed.
+taxonomy = ""
+identifier_bridge = ""
+# Build with the taxonomy_index job; copy the resulting absolute path here.
+cluster_taxonomy = ""
+identifier_prefixes = ["UNIPROT_", "NR_"]
+
+# All executable fields accept an installed name or absolute path.
+diamond = "diamond"
+mafft = "mafft"
+fasttree = "FastTree"
+interproscan = "interproscan.sh"
+emapper = "emapper.py"
+eggnog_data = ""
+# Optional global representative DIAMOND .dmnd database for homology searches.
+centroid_database = ""
+
+threads = 4
+memory_gb = 4
+max_sequences = 8000000
+max_alignment_sequences = 5000
+max_alignment_cells = 25000000
+command_timeout = 86400
+
+# Optional custom Hugging Face/dedicated ESMFold endpoint; no public HF provider is assumed.
+esm_endpoint = ""
+esm_token_env = "HF_TOKEN"
+esm_model_revision = "b76edc1c2b414f99056aff1e5d91d24a3ea8ba86"
+endpoint_max_length = 400
+local_fold_max_length = 1024
+# Required only for explicit remote EMBL-EBI InterProScan submissions.
+email = ""
+# Optional self-hosted Auspice, browser-accessible (or an approved proxy URL).
+auspice_url = ""

@@ -15,6 +15,7 @@ from e3app.config import AppConfig, validate_config
 from e3app.data import list_relations, open_read_only, open_resource
 from e3app.errors import AppError
 from e3app.pocket_review import load_pocket_review
+from e3app.research.common import ResearchError, load_config
 from e3app.taxonomy import load_taxonomy_authority
 
 
@@ -40,6 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--research-config", type=Path,
+                        help="Optional generic protein research TOML profile")
     parser.add_argument("--validate-only", action="store_true")
     return parser
 
@@ -113,6 +116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         validate_config(config)
+        if args.research_config:
+            load_config(path=args.research_config)
         if args.validate_only:
             relations = validate_deployment_resources(config)
             print(
@@ -121,6 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
         environment = os.environ.copy()
+        if args.research_config:
+            environment["E3_RESEARCH_CONFIG"] = str(args.research_config.expanduser().resolve())
         for name in (
             "E3_RESOURCE_DUCKDB",
             "E3_RESOURCE_PARQUET",
@@ -159,7 +166,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         )
         return subprocess.run(streamlit_command(args), env=environment, check=False).returncode
-    except AppError as exc:
+    except (AppError, ResearchError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

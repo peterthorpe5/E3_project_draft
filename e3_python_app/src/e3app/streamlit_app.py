@@ -5338,7 +5338,12 @@ def render_app() -> None:
         with open_resource(config) as connection:
             relations = list_relations(connection)
             validate_navigation()
+            from e3app.research.ui import render_research_workbench
+
             page_renderers = {
+                "Protein research workbench": lambda: render_research_workbench(
+                    connection=connection,
+                ),
                 "Overview": lambda: _render_overview(
                     connection=connection,
                     config=config,

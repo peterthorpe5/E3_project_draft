@@ -1,0 +1,4 @@
+# Built third-party viewers are checksummed assets; inspect frontend sources for changes.
+src/e3app/resources/research_viewers/*.js binary linguist-vendored
+src/e3app/resources/research_viewers/*.css binary linguist-vendored
+src/e3app/resources/research_viewers/THIRD_PARTY_NOTICES.txt binary linguist-vendored

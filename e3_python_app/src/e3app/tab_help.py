@@ -19,6 +19,17 @@ class TabHelpEntry:
 
 
 TOP_LEVEL_TAB_HELP = {
+    "Protein research workbench": TabHelpEntry(
+        instruction=(
+            "Link exact E3 member/seed accessions or generic protein inputs to global "
+            "DeepClust clusters, then queue family analysis on a configured research worker."
+        ),
+        yields=(
+            "Audited mappings and complete indexed cluster retrieval; stricter subclusters; "
+            "alignments, trees and statistics; optional ESMFold and InterProScan/eggNOG "
+            "predictions with checksummed downloadable evidence."
+        ),
+    ),
     "Overview": TabHelpEntry(
         instruction=(
             "Review the release-wide counts and evidence scope first; counts describe "
