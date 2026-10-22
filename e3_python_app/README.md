@@ -288,11 +288,7 @@ terminal-disorder sensitivity, external Mol* hand-offs, taxonomy selectors,
 motif analysis, incremental updates and standalone OrthoFinder ownership is recorded in
 [`docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md`](docs/E3_SCIENTIFIC_EXTENSION_ROADMAP.md).
 
-Two detailed follow-on implementation briefs are supplied separately:
 
-- [`docs/HANDOVER_E3_FAMILY_SIGNATURES_20260909.txt`](docs/HANDOVER_E3_FAMILY_SIGNATURES_20260909.txt)
-  for the proposed sibling motif, profile and structural-signature workflow;
-- [`docs/HANDOVER_ORTHOFINDER_SELECTION_COVERAGE_TREE_20260909.txt`](docs/HANDOVER_ORTHOFINDER_SELECTION_COVERAGE_TREE_20260909.txt)
   for the generic selection-coverage tree in the standalone
   `orthofinder-results` repository.
 
