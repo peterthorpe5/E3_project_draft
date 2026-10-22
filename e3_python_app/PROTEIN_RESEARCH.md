@@ -1,4 +1,32 @@
-# Protein research workbench — v0.19.1
+# Protein research workbench — v0.20.0
+
+## Using the workbench
+
+Open **Start here** to choose your input. In the full E3 app, the recommended
+route is **Start from E3 groups**. The standalone workbench accepts protein IDs,
+known global centroids, exported clusters and unaligned protein FASTA. E3 remains
+an optional adapter; the analysis engine and general guidance are project-independent.
+
+The core workflow is **Discover → Family analysis → Alignments and trees**.
+Use **Jobs** throughout to track progress and download complete files. Models
+and Annotations are optional and can start directly from FASTA. Each page has
+an aim, expandable instructions, native question-mark help beside its controls,
+and an explicit next step. **Help & glossary** includes FASTA examples,
+identifier definitions, troubleshooting and a downloadable user guide.
+
+Start with one family. E3 preparation collects source/member IDs and linked
+seeds; it does not calculate a medoid. Exact mapping finds global membership,
+then retrieval collects sequences. Select mapped/ranked clusters and use the
+handoff button to populate retrieval without copying IDs. From a completed
+retrieval/import job, **Analyse this family** carries its FASTA into analysis.
+From a completed subclustering job, choose its audited subcluster before aligning.
+These handoffs select inputs; they never submit a second job automatically.
+
+Job choices show their task, UTC time and job ID. Alignment pages lead with
+protein/position counts and gaps. Raw JSON, parameters and logs are available
+in technical expanders. Optional provider controls show missing setup before
+submission, and external sequence submission is still explicit. Configuration
+checks do not establish remote service availability or a live worker heartbeat.
 
 This adds a generic protein-family research engine inside **e3_python_app**. It is
 available in stage 3 as **Protein research workbench**, and independently through

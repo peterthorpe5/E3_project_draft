@@ -156,7 +156,10 @@ def test_ui_helpers_and_corrupt_manifest(research_config):
 def test_generic_app_all_empty_sections_and_real_queue(research_config, tmp_path, monkeypatch):
     """Every generic page renders without E3 data and explicit clicks submit work."""
     config = tmp_path / "profile.toml"
-    config.write_text(f'workspace="{research_config.workspace}"\nindex="{research_config.index}"\n')
+    config.write_text(
+        f'workspace="{research_config.workspace}"\nindex="{research_config.index}"\n'
+        f'sequences="{research_config.sequences}"\nsequence_map="{research_config.sequence_map}"\n'
+    )
     monkeypatch.setenv("E3_RESEARCH_CONFIG", str(config))
     from e3app.research import ui
 
@@ -174,7 +177,7 @@ def test_generic_app_all_empty_sections_and_real_queue(research_config, tmp_path
     ):
         app.radio[0].set_value(section).run()
         assert not app.exception
-    app.text_area[1].set_value("GLOBAL_A").run()
+    app.text_area(key="research_retrieve_ids").set_value("GLOBAL_A").run()
     next(
         button for button in app.button if button.label == "Queue complete cluster retrieval"
     ).click().run()

@@ -1,7 +1,16 @@
 # ARIA plant E3 Python reporter
 
-Version 0.18.8 is the Streamlit companion to `E3_shiny_app`. Its **C-terminal
-conservation** page presents a compact selectable group summary, reviewed
+Version **0.20.0** refines the **Protein research workbench** with a Start here
+page, a generic three-step workflow, optional E3 entry point, contextual
+question-mark help, FASTA examples, a glossary and downloadable guidance.
+Mapping-to-retrieval and result-to-analysis buttons carry exact selections
+between pages. Jobs now explains status and next steps; technical JSON and logs
+sit inside expanders. Optional model/annotation forms explain missing setup and
+show only relevant controls. The installed research profile and existing jobs
+remain compatible. See [the workbench guide](PROTEIN_RESEARCH.md).
+
+Version 0.18.8 introduced the Streamlit companion's **C-terminal
+conservation** page. It presents a compact selectable group summary, reviewed
 taxonomy filters, species and sequence-coverage evidence, available E3/seed
 annotations and independently filterable member detail. The orthology-first
 screen retains the default of terminal asparagine (`N`) in at least 80% of

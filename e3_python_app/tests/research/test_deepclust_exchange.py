@@ -254,6 +254,7 @@ def test_import_page_defaults_to_selected_export_without_database(
         str(Path(ui.__file__).with_name("standalone.py")), default_timeout=10
     ).run()
     assert not app.exception
+    app.radio(key="research_section").set_value("Discover").run()
     assert app.radio[1].value == "Import extracted cluster"
     next(item for item in app.text_input if item.label == "Exact DeepClust centroid ID").set_value(
         "NR_UGC79169.1"
@@ -298,6 +299,7 @@ def test_import_form_reports_invalid_inputs_before_queueing(tmp_path, monkeypatc
     app = AppTest.from_file(
         str(Path(ui.__file__).with_name("standalone.py")), default_timeout=10
     ).run()
+    app.radio(key="research_section").set_value("Discover").run()
     next(item for item in app.text_input if item.label == "Exact DeepClust centroid ID").set_value(
         "" if case == "missing_centroid" else "NR_X"
     )
