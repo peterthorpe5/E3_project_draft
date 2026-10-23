@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protein-pocket-workbench"
+version = "1.2.0"
+description = "Local sequence, structure and pocket comparison for any protein project"
+requires-python = ">=3.11"
+readme = "README.md"
+license = "MIT"
+authors = [{name = "Peter Thorpe and collaborators"}]
+dependencies = [
+  "numpy>=1.26,<3", "scipy>=1.12,<2", "pandas>=2.2,<3",
+  "biopython>=1.85,<2", "pyfamsa>=0.6,<1", "gemmi>=0.7,<0.8", "duckdb>=1.4,<2",
+  "streamlit>=1.66,<2", "plotly>=6,<7", "openpyxl>=3.1,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruff>=0.11,<1", "playwright>=1.50,<2"]
+
+[project.scripts]
+pocket-workbench = "pocket_workbench.cli:main"
+pocket-workbench-predict = "pocket_workbench._pipeline.cli:main"
+pocket-workbench-rerun = "pocket_workbench.quality_rerun:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pocket_workbench = ["assets/*", "content/*"]
+"pocket_workbench._pipeline" = ["resources/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.coverage.run]
+branch = true
+source = ["pocket_workbench"]
+omit = ["*/ui.py", "*/_pipeline/*", "*/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true

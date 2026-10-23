@@ -1,0 +1,74 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Pocket-annotated sequence alignment</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui;color:#17394c;background:#f2f6fa}
+header{padding:16px 20px;background:#12394e;color:white}h1{font-size:20px;margin:0 0 8px}
+main{padding:16px}h2{font-size:16px}.note{font-size:12px;line-height:1.5;color:#526c7c}
+.card{background:white;border:1px solid #d9e5ee;padding:14px;border-radius:9px;margin-bottom:12px}
+.controls{display:flex;gap:15px;flex-wrap:wrap;align-items:center}button,select,input{padding:5px;border:1px solid #b3c5d2;border-radius:4px;font:inherit}
+input[type=number]{width:85px}input[type=checkbox]{width:auto}button{background:white;cursor:pointer}label{font-size:12px}
+.track{display:grid;grid-template-columns:260px minmax(200px,1fr);align-items:center;gap:12px;margin:8px 0}
+.id{font-size:11px;overflow-wrap:anywhere}.track svg{width:100%;height:25px;background:#e6eef3;border-radius:8px}
+#overview{max-height:400px;overflow:auto}.alignment{overflow:auto;background:#0b202e;color:#e6f3fb;padding:10px;border-radius:5px;max-height:510px}
+.aline{display:flex;white-space:pre;font:13px/1.7 ui-monospace,monospace}.aline .name{display:inline-block;min-width:290px;width:290px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:#0b202e;color:#afd5e9}
+.aa{display:inline-block;width:11px;text-align:center}.aa.mark{color:#0b202e;border-radius:2px;font-weight:bold;cursor:pointer}.aa.gap{color:#617686}
+#selection{white-space:pre-wrap;font-size:12px;line-height:1.55}.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;margin:10px 0}.swatch{display:inline-block;width:12px;height:12px;vertical-align:middle;margin-right:4px}
+@media(max-width:700px){.track{grid-template-columns:160px minmax(150px,1fr)}.aline .name{min-width:180px;width:180px}}
+</style></head><body><header><h1>Pocket-annotated FASTA alignment</h1>
+<div>Position overview · original pocket ranks · exact residue audit</div></header>
+<main><section class="card"><div class="controls">
+<label>Find model or sequence <input id="search" type="search" placeholder="Identifier"></label>
+<label>Maximum review rank <select id="rank" aria-label="Maximum review rank"></select></label>
+<label><input id="confident" type="checkbox">Only locally confident pockets</label>
+<button id="download">Download annotation TSV</button></div>
+<div id="legend" class="legend"></div>
+<p class="note">Each model replicate has its own row. Pocket markers use mapped FASTA positions and alignment columns. Gaps are retained; unmapped residues remain in the audit TSV. A shared alignment column is sequence correspondence, not proof of the same 3D pocket.</p>
+<div id="status" role="status"></div></section>
+<section class="card"><h2>Interactive linear pocket-position overview</h2>
+<p class="note">Tracks span the full alignment. Hover for residue details. Click a marker to show that region below.</p>
+<div id="overview"></div></section>
+<section class="card"><h2>Residue-level alignment with pocket highlights</h2>
+<div class="controls"><label>First alignment column <input id="start" type="number" value="1" min="1"></label>
+<label>Columns to show <select id="width"><option>80</option><option selected>120</option><option>240</option><option>500</option></select></label>
+<button id="previous">Previous region</button><button id="next">Next region</button></div>
+<p class="note" id="region"></p><div class="alignment" id="alignment"></div></section>
+<section class="card"><h2>Selected pocket residue</h2><div id="selection">Click a pocket marker or a highlighted amino acid.</div></section></main>
+<script id="annotation-data" type="application/json">@@DATA@@</script><script>
+"use strict";
+const d=JSON.parse(document.getElementById('annotation-data').textContent),el=id=>document.getElementById(id),colours=['#38ceae','#e875ad','#a69af7','#f3bd60','#68b8ec','#fa8b69','#c4dd63','#ca9fda'];
+const ns='http://www.w3.org/2000/svg';
+function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
+for(let i=1;i<=d.top_k;i++){const o=node('option',i);o.value=i;el('rank').append(o);}el('rank').value=Math.min(5,d.top_k);el('start').max=Math.max(1,d.alignment_length);
+for(let i=1;i<=Math.min(8,d.top_k);i++){const s=node('span'),dot=node('i',undefined,'swatch');dot.style.background=colours[(i-1)%colours.length];s.append(dot,document.createTextNode('Rank '+i));el('legend').append(s);}
+function picked(list){el('selection').textContent=list.map(a=>a.sample_id+'\nPocket '+a.pocket_id+' · review rank '+a.review_rank+' · '+(a.confidence_status||'confidence unreported')+'\nTool residue '+a.residue_key+' · original '+(a.author_chain||'?')+':'+(a.author_residue_number??'?')+(a.insertion_code||'')+'\nFASTA position '+a.sequence_position+' · alignment column '+a.alignment_column+(a.plddt!==null&&a.plddt!==undefined?' · pLDDT '+a.plddt:'')).join('\n\n');}
+function selectedAnnotations(){return d.annotations.filter(a=>a.review_rank<=Number(el('rank').value)&&(!el('confident').checked||a.confidence_status==='meets_local_confidence_rule'));}
+function render(){
+  const query=el('search').value.toLowerCase(),rows=d.rows.filter(r=>(r.sample_id+' '+r.sequence_id).toLowerCase().includes(query));
+  const selected=selectedAnnotations(),byModel=new Map();
+  selected.forEach(a=>{if(!byModel.has(a.sample_id))byModel.set(a.sample_id,[]);byModel.get(a.sample_id).push(a);});
+  const start=Math.max(1,Math.min(d.alignment_length,Number(el('start').value)||1)),end=Math.min(d.alignment_length,start+Number(el('width').value)-1);el('start').value=start;
+  el('region').textContent='Alignment columns '+start+'–'+end+' of '+d.alignment_length+'. Hover over highlights to inspect overlapping pockets.';
+  el('overview').replaceChildren();el('alignment').replaceChildren();
+  rows.forEach(r=>{
+    const aa=byModel.get(r.sample_id)||[],mapped=aa.filter(a=>a.alignment_column),track=node('div',undefined,'track');
+    const id=node('div',(r.sample_id||r.sequence_id)+' · '+(r.sample_id?r.sequence_id+' · ':'')+r.mapped+'/'+r.expected+' annotations mapped','id');id.title=r.mapping_status;track.append(id);
+    const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 1000 25');svg.setAttribute('preserveAspectRatio','none');
+    mapped.forEach(a=>{const c=document.createElementNS(ns,'circle');c.setAttribute('cx',5+990*(a.alignment_column-1)/Math.max(1,d.alignment_length-1));c.setAttribute('cy',12);c.setAttribute('r',3.5);c.setAttribute('fill',colours[(a.review_rank-1)%colours.length]);c.setAttribute('stroke','#385467');c.setAttribute('stroke-width','.4');c.style.cursor='pointer';
+      const title=document.createElementNS(ns,'title');title.textContent='Pocket '+a.pocket_id+' · rank '+a.review_rank+' · '+a.residue_key+' · FASTA '+a.sequence_position+' · alignment '+a.alignment_column;c.append(title);
+      c.onclick=()=>{el('start').value=Math.max(1,a.alignment_column-30);picked([a]);render();};svg.append(c);
+    });track.append(svg);el('overview').append(track);
+    const line=node('div',undefined,'aline'),name=node('span',(r.sample_id||r.sequence_id)+' ','name');name.title=(r.sample_id||r.sequence_id)+' · '+r.mapping_status;line.append(name);
+    const positions=new Map();mapped.forEach(a=>{if(!positions.has(a.alignment_column))positions.set(a.alignment_column,[]);positions.get(a.alignment_column).push(a);});
+    for(let c=start;c<=end;c++){const letter=r.aligned[c-1],span=node('span',letter,'aa'+(letter==='-'? ' gap':'')),hits=positions.get(c);
+      if(hits){hits.sort((a,b)=>a.review_rank-b.review_rank);span.classList.add('mark');span.style.background=colours[(hits[0].review_rank-1)%colours.length];span.title=hits.map(a=>'Pocket '+a.pocket_id+' · rank '+a.review_rank+' · FASTA '+a.sequence_position+' · column '+c).join('\n');span.onclick=()=>picked(hits);}line.append(span);}
+    el('alignment').append(line);
+  });
+  el('status').textContent=rows.length+' model/sequence rows · '+selected.filter(a=>a.alignment_column).length+' mapped annotations · '+selected.filter(a=>!a.alignment_column).length+' unmapped annotations in this rank/confidence selection';
+  window.pocketAlignmentReady=true;
+}
+['rank','confident','start','width'].forEach(id=>el(id).onchange=render);el('search').oninput=render;
+el('previous').onclick=()=>{el('start').value=Math.max(1,Number(el('start').value)-Number(el('width').value));render();};
+el('next').onclick=()=>{el('start').value=Math.min(d.alignment_length,Number(el('start').value)+Number(el('width').value));render();};
+el('download').onclick=()=>{const rows=selectedAnnotations(),keys=Object.keys(d.annotations[0]||{sample_id:0,alignment_column:0});const safe=v=>String(v??'').replace(/[\t\r\n]/g,' ');const text=[keys.join('\t'),...rows.map(r=>keys.map(k=>safe(r[k])).join('\t'))].join('\n')+'\n';const a=node('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/tab-separated-values'}));a.download='pocket_alignment_annotations.tsv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
+render();
+</script></body></html>

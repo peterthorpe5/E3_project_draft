@@ -1,0 +1,6 @@
+.block-container {padding-top:2rem;max-width:1900px}
+h1 {letter-spacing:-.04em}
+div[data-testid=stMetric] {border:1px solid #dce5eb;border-radius:10px;padding:14px}
+section[data-testid=stSidebar] {background:#edf3f6}
+iframe {border-radius:10px}
+div[data-testid=stTabs] {margin-top:1rem}

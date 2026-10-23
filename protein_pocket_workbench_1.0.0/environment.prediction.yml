@@ -1,0 +1,13 @@
+name: pocket_workbench
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pip
+  - usalign=20241201
+  - tmalign=20240303
+  - mafft>=7.5
+  - fpocket=4.2.2
+  - openjdk=17

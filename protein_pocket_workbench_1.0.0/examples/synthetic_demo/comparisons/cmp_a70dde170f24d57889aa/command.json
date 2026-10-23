@@ -1,0 +1,1 @@
+{"argv":["/workspace/scratch/ac856b3127f2/validation_tools/USalign/USalign","mobile_fit.pdb","reference_fit.pdb","-m","matrix.txt"],"cwd":"/workspace/scratch/ac856b3127f2/validation_final_demo/comparisons/cmp_a70dde170f24d57889aa","timeout":600,"executable_sha256":"3af847dadc41458660d95bded7b11dcd1d3902fbc94c4d3859e744ae8e929f77"}

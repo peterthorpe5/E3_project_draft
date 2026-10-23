@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Protein pocket explorer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:#f2f6fa;color:#18384c}
+header{padding:15px 18px;background:#12394e;color:white;border-radius:12px 12px 0 0}
+h1{font-size:20px;margin:0 0 5px}h2{font-size:14px;margin:0 0 10px}p{line-height:1.5}
+.sub{font-size:12px;opacity:.85}.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:12px}
+.stage{min-width:0;background:#071722;border-radius:10px;overflow:hidden}
+#viewer{height:650px;position:relative;width:100%}.toolbar{display:flex;gap:7px;flex-wrap:wrap;padding:10px;background:#e5edf3}
+button,select,input[type=number]{font:inherit;border:1px solid #b1c4d0;border-radius:5px;background:white;padding:6px 8px;color:#18384c}
+button{cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #43b6df}
+aside{height:710px;overflow:auto;padding-right:4px}.card{background:white;border:1px solid #d8e3eb;border-radius:8px;padding:12px;margin-bottom:10px}
+label{display:block;font-size:12px;margin:7px 0}select{max-width:100%;width:100%;font-size:12px}
+input[type=range]{width:100%}.row{display:flex;gap:8px}.row label{flex:1}.row input{width:100%}
+.model-name{overflow-wrap:anywhere;font-weight:600;font-size:12px;margin-bottom:8px}
+.help{font-size:11px;color:#516b7c;line-height:1.45}.count{font-size:11px;background:#eaf3f7;padding:6px;border-radius:4px;margin:7px 0}
+details{font-size:12px;margin-top:9px}summary{cursor:pointer}.pocket-info{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+#picked{overflow-wrap:anywhere;font-size:12px;white-space:pre-wrap}#status{padding:0 18px 8px;font-size:12px}
+.note{margin:0;padding:6px 18px 14px;font-size:12px}
+.layout:fullscreen{background:#f2f6fa;padding:15px}.layout:fullscreen #viewer{height:calc(100vh - 90px)}.layout:fullscreen aside{height:calc(100vh - 30px)}
+@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}#viewer{height:480px}aside{height:auto;max-height:550px}}
+</style></head><body>
+<header><h1 id="title">Protein pocket explorer</h1><div class="sub">3Dmol.js · bundled offline viewer · click a residue to inspect its original numbering</div></header>
+<div class="layout" id="explorer"><section class="stage">
+<div id="viewer" aria-label="Interactive molecular structure"></div>
+<div class="toolbar"><button id="focus">Focus pockets</button><button id="reset">Show whole models</button><button id="spin">Rotate</button><button id="fullscreen">Full screen</button><button id="png">Download PNG</button></div>
+</section><aside aria-label="Structure and pocket controls">
+<div class="card"><h2>Display controls <span title="Display changes do not rerun the fit, alter pocket ranks or change any evidence metrics.">ⓘ</span></h2>
+<label for="representation">Backbone representation</label><select id="representation"><option value="trace">Cα trace</option><option value="cartoon">Cartoon</option></select>
+<label><input id="quality" type="checkbox">Colour by pLDDT</label>
+<label><input id="pockets" type="checkbox" checked>Pocket sticks</label>
+<label><input id="markers" type="checkbox" checked>Pocket Cα markers</label>
+<label><input id="surface" type="checkbox">Lining-atom surfaces</label>
+<label for="opacity">Surface opacity <output id="opacity-value">0.30</output></label><input id="opacity" type="range" min="0.05" max="0.8" step="0.05" value="0.3">
+<label for="background">Background</label><select id="background"><option value="#071722">Dark</option><option value="white">White</option></select>
+<p class="help">Markers show lining Cα atoms. Surfaces cover lining atoms; neither is a calculated cavity volume.</p>
+</div><div id="model-controls"></div>
+<div class="card"><h2>Selected residue</h2><div id="picked">Click an atom or Cα marker.</div></div>
+<div class="card help"><h2>Reading this view</h2>Drag to rotate; scroll to zoom. Filters hide residues only in this view. Changing a pocket here does not change the metrics above the viewer.</div>
+</aside></div><div id="status" role="status"></div>
+<p class="note">@@SUMMARY@@</p>
+<script id="structure-data" type="application/json">@@DATA@@</script><script>@@LIBRARY@@</script>
+<script>
+"use strict";
+const data=JSON.parse(document.getElementById('structure-data').textContent);
+const models=data.models,palette=['#38ceae','#e875ad','#a69af7','#f3bd60','#68b8ec','#fa8b69','#c4dd63','#ca9fda'];
+const backbone=['#55b8ed','#efaa5f'],status=document.getElementById('status');
+let viewer,spinning=false,focused=[];
+const state=[];
+const el=id=>document.getElementById(id);
+function node(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));return n;}
+function selectOptions(select,options){for(const [v,t] of options)select.append(node('option',t,{value:v}));}
+function rank(p){return Number(p.review_rank||p.rank||p.pocket_id||99999);}
+function keyNumber(key){return Number(String(key).substring(String(key).lastIndexOf('_')+1));}
+function control(i,model){
+  const card=node('div',undefined,{class:'card'}),title=node('h2',models.length===1?'Model':i===0?'Reference':'Mobile');
+  card.append(title,node('div',model.label,{class:'model-name'}));
+  const check=node('input',undefined,{type:'checkbox',id:i===0?'ref':'mob'});check.checked=true;
+  const label=node('label',models.length===1?' Show model':i===0?' Reference':' Mobile');label.prepend(check);card.append(label);
+  const uniqueMethods=[...new Set((model.pockets||[]).map(p=>p.method))];
+  const method=node('select',undefined,{'aria-label':model.label+' pocket method'});
+  selectOptions(method,uniqueMethods.map(x=>[x,x]));if(uniqueMethods.includes('fpocket'))method.value='fpocket';if(uniqueMethods.includes(model.initial_method))method.value=model.initial_method;
+  if(!uniqueMethods.length)selectOptions(method,[['fpocket','Pocket data unavailable']]);
+  card.append(node('label','Pocket evidence'),method);
+  const choice=node('select',undefined,{'aria-label':model.label+' pocket selection'});card.append(node('label','Pocket display'),choice);
+  const confident=node('input',undefined,{type:'checkbox'}),cl=node('label',' Only locally confident pockets');cl.prepend(confident);card.append(cl);
+  const details=node('details');details.append(node('summary','Hide low-confidence / terminal regions'));
+  const threshold=node('input',undefined,{type:'range',min:0,max:100,step:1,value:0,'aria-label':model.label+' minimum displayed pLDDT'});
+  const thresholdLabel=node('label','Minimum displayed pLDDT: 0');details.append(thresholdLabel,threshold);
+  if(model.confidence==='none'){threshold.disabled=true;thresholdLabel.textContent='pLDDT unavailable for this model';}
+  const maximum=Math.max(1,...(model.residues||[]).map(r=>r.model_position||0));
+  const start=node('input',undefined,{type:'number',min:1,max:maximum,value:1,'aria-label':model.label+' first displayed model position'});
+  const end=node('input',undefined,{type:'number',min:1,max:maximum,value:maximum,'aria-label':model.label+' last displayed model position'});
+  const row=node('div',undefined,{class:'row'}),sl=node('label','First model position'),en=node('label','Last model position');sl.append(start);en.append(end);row.append(sl,en);details.append(row);
+  const clear=node('button','Reset display filters',{type:'button'});details.append(clear,node('p','Positions count residues in the prepared model, before alignment. These controls do not change the fit or sequence alignment.',{class:'help'}));card.append(details);
+  const count=node('div','',{class:'count'}),info=node('div','',{class:'pocket-info'});card.append(count,info);el('model-controls').append(card);
+  const st={model,check,method,choice,confident,threshold,thresholdLabel,start,end,count,info,visible:[],selected:[]};state.push(st);
+  function choices(){const prior=choice.value;choice.replaceChildren();selectOptions(choice,[['top1','Rank 1'],['top3','Top 3'],['top5','Top 5'],['top10','Top 10'],['all','All pockets'],['none','Hide pockets']]);
+    const ps=(model.pockets||[]).filter(p=>p.method===method.value).sort((a,b)=>rank(a)-rank(b));
+    ps.forEach(p=>selectOptions(choice,[['p:'+p.pocket_id,'Rank '+rank(p)+' · pocket '+p.pocket_id]]));
+    choice.value=[...choice.options].some(o=>o.value===prior)?prior:'top5';}
+  choices();
+  if(model.initial_pocket!==undefined&&model.initial_pocket!==null&&[...choice.options].some(o=>o.value==='p:'+model.initial_pocket))choice.value='p:'+model.initial_pocket;
+  method.onchange=()=>{choices();apply();};
+  [check,choice,confident,start,end].forEach(n=>n.addEventListener('change',apply));
+  threshold.oninput=()=>{thresholdLabel.textContent='Minimum displayed pLDDT: '+threshold.value;apply();};
+  clear.onclick=()=>{threshold.value=0;start.value=1;end.value=maximum;thresholdLabel.textContent='Minimum displayed pLDDT: 0';apply();};
+}
+function chosen(st){let ps=(st.model.pockets||[]).filter(p=>p.method===st.method.value&&(!st.confident.checked||p.confidence_status==='meets_local_confidence_rule')).sort((a,b)=>rank(a)-rank(b));
+  const v=st.choice.value;if(v==='none')return [];
+  if(v.startsWith('p:'))return ps.filter(p=>String(p.pocket_id)===v.substring(2));
+  if(v.startsWith('top'))return ps.slice(0,Number(v.substring(3)));return ps;
+}
+function visible(st){return (st.model.residues||[]).filter(r=>(r.model_position||r.tool_residue_number)>=Number(st.start.value)&&(r.model_position||r.tool_residue_number)<=Number(st.end.value)&&(Number(st.threshold.value)===0||(r.plddt!==null&&r.plddt!==undefined&&r.plddt>=Number(st.threshold.value)))).map(r=>r.tool_residue_number||keyNumber(r.residue_key));}
+function colourQuality(a){return a.b>=90?'#1253d9':a.b>=70?'#65c9e9':a.b>=50?'#f3db51':'#ef8a3c';}
+function apply(){if(!viewer)return;viewer.removeAllSurfaces();viewer.removeAllLabels();viewer.setStyle({},{});focused=[];
+  viewer.setBackgroundColor(el('background').value);el('opacity-value').textContent=Number(el('opacity').value).toFixed(2);
+  state.forEach((st,i)=>{
+    if(!st.check.checked)return;st.visible=visible(st);const keys=new Set(st.visible);
+    const selection=st.model.residues?.length?{model:i,resi:st.visible}:{model:i};
+    const cartoon={color:backbone[i%2],opacity:1};
+    if(el('representation').value==='trace'){cartoon.style='trace';cartoon.thickness=0.3;}
+    if(el('quality').checked&&st.model.confidence!=='none'){delete cartoon.color;cartoon.colorfunc=colourQuality;}
+    viewer.addStyle(selection,{cartoon});
+    st.selected=chosen(st);const pocketNumbers=new Set();
+    st.selected.forEach((p,j)=>{
+      const nums=(p.residues||[]).map(keyNumber).filter(n=>!st.model.residues?.length||keys.has(n));nums.forEach(n=>pocketNumbers.add(n));
+      const col=palette[(rank(p)-1)%palette.length]||palette[j%palette.length];const sel={model:i,resi:nums};
+      if(el('pockets').checked)viewer.addStyle(sel,{stick:{radius:0.18,color:col}});
+      if(el('markers').checked)viewer.addStyle({...sel,atom:'CA'},{sphere:{radius:0.8,color:col}});
+      if(el('surface').checked&&nums.length)viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:Number(el('opacity').value),color:col},sel);
+    });
+    if(!st.selected.length&&st.model.initial_residues?.length&&!(st.model.pockets||[]).length){
+      const nums=st.model.initial_residues.map(keyNumber);nums.forEach(n=>pocketNumbers.add(n));viewer.addStyle({model:i,resi:nums},{sphere:{radius:0.8,color:palette[i]}});
+    }
+    if(pocketNumbers.size)focused.push({model:i,resi:[...pocketNumbers]});
+    st.count.textContent=(st.model.residues?.length?st.visible.length+' / '+st.model.residues.length+' residues visible · ':'')+st.selected.length+' pockets · '+pocketNumbers.size+' lining residues shown';
+    st.info.textContent=st.selected.slice(0,10).map(p=>'Rank '+rank(p)+' · pocket '+p.pocket_id+'\n'+(p.confidence_status||'Confidence unreported')+(p.mean_plddt!==undefined&&p.mean_plddt!==null?' · pLDDT '+Number(p.mean_plddt).toFixed(1):'')+(p.druggability_score!==null&&p.druggability_score!==undefined?' · fpocket druggability '+Number(p.druggability_score).toFixed(3):'')).join('\n\n');
+  });viewer.render();window.pocketDisplayState=state.map(s=>({visible:s.visible.length,pockets:s.selected.map(p=>p.pocket_id)}));
+}
+function focus(){if(focused.length)viewer.zoomTo({or:focused});else viewer.zoomTo();viewer.render();}
+try{
+  viewer=$3Dmol.createViewer(el('viewer'),{backgroundColor:'#071722',antialias:true});
+  models.forEach((m,i)=>{viewer.addModel(m.pdb,'pdb');control(i,m);});
+  viewer.setClickable({},true,a=>{
+    const m=models[a.model],r=(m.residues||[]).find(r=>(r.tool_residue_number||keyNumber(r.residue_key))===a.resi);
+    const original=r?(r.author_chain||r.tool_chain||a.chain)+':'+(r.author_residue_number??r.author_number??r.tool_residue_number)+(r.author_insertion_code||r.insertion_code||''):'unavailable';
+    el('picked').textContent=m.label+'\n'+a.resn+' · tool '+a.chain+'_'+a.resi+'\nOriginal residue: '+original+(r?.sequence_position?'\nFASTA position: '+r.sequence_position:'')+(r?.plddt!==null&&r?.plddt!==undefined?'\npLDDT: '+Number(r.plddt).toFixed(1):'');
+    viewer.removeAllLabels();viewer.addLabel(a.resn+' '+a.chain+'_'+a.resi,{position:a,backgroundColor:'#17384d',fontSize:12});viewer.render();
+  });
+  apply();viewer.zoomTo();viewer.render();status.textContent=models.map(m=>m.label).join(' · ')+' · Ready. Whole models shown; use Focus pockets for a close view.';
+  el('title').textContent=models.length===1?'Model and predicted pockets':'Aligned structures and pocket positions';
+  ['quality','pockets','markers','surface','representation','opacity','background'].forEach(id=>el(id).addEventListener('change',apply));
+  el('focus').onclick=focus;el('reset').onclick=()=>{viewer.zoomTo();viewer.render();};
+  el('spin').onclick=()=>{spinning=!spinning;viewer.spin('y',spinning);el('spin').textContent=spinning?'Stop rotation':'Rotate';};
+  el('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else el('explorer').requestFullscreen().catch(()=>{status.textContent='Full screen is unavailable here; download and open the offline page.';});};
+  document.addEventListener('fullscreenchange',()=>setTimeout(()=>{viewer.resize();viewer.render();},100));
+  el('png').onclick=()=>{const a=node('a');a.href=viewer.pngURI();a.download='protein_pockets.png';a.click();};
+  new ResizeObserver(()=>{viewer.resize();viewer.render();}).observe(el('viewer'));
+  window.pocketViewer=viewer;
+}catch(e){status.textContent='The 3D viewer could not start: '+e.message+'. Enable WebGL or download the prepared PDB files.';}
+</script></body></html>
