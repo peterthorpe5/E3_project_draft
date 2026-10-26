@@ -1,4 +1,8 @@
 module	function	tests
+e3app.result_queries	validated_terms; search_predicate; build_result_query; build_search_queries; query_count; preview_query; summarise_search_queries	test_result_queries.py; test_resource_browser.py
+e3app.protein_dossier	link_columns; identifier_tokens; _query_link_keys; _link_predicates; linked_relation_query; resolve_search_groups; group_ranking_query; canonical_group_ranks; build_group_dossier; dossier_inventory	test_protein_dossier.py; test_resource_browser.py
+e3app.complete_exports	iter_query_batches; query_schema; _export_notes; _validate_export; complete_tsv_archive; _write_excel_row; complete_excel_workbook	test_complete_exports.py; test_resource_browser.py
+e3app.resource_browser	source_identity; _show_table; render_complete_export; _preview_fields; render_all_results; _render_group_dossier; render_resource_search	test_resource_browser.py; test_streamlit_app.py
 e3app.alphafold_confidence	retrieve_alphafold_confidence; parse_alphafold_pdb_confidence	test_alphafold_confidence.py; test_pocket_review.py
 e3app.taxonomy	taxonomy_filters; load_taxonomy_nodes; load_taxonomy_authority; compile_taxonomy_filters; taxonomy_choice_labels; custom species/variety/cultivar lineage validation	test_taxonomy.py; test_orthology.py; test_streamlit_app.py
 e3app.config	parse_positive_integer; config_from_environment; validate_config	test_config.py

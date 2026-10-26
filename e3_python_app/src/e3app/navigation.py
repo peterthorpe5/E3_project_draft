@@ -41,6 +41,17 @@ class NavigationStage:
 
 NAVIGATION_STAGES = (
     NavigationStage(
+        label="🔎 Search & results",
+        description=(
+            "Find a protein or HOG across the complete loaded resource, inspect its "
+            "rankings and linked evidence, and download complete results."
+        ),
+        pages=(
+            NavigationPage("Protein & HOG search"),
+            NavigationPage("All results"),
+        ),
+    ),
+    NavigationStage(
         label="🔵 1 · Information",
         description=(
             "Release scope, workflow, definitions and the provenance needed "
@@ -69,7 +80,6 @@ NAVIGATION_STAGES = (
                 method_annotation=True,
             ),
             NavigationPage("Within-HOG ranking", method_annotation=True),
-            NavigationPage("All results"),
             NavigationPage("Candidates"),
             NavigationPage("E3 seed catalogue"),
             NavigationPage("Domains", method_annotation=True),
@@ -124,12 +134,10 @@ NAVIGATION_STAGES = (
     NavigationStage(
         label="🔴 6 · Chemistry & outputs",
         description=(
-            "Structure-guided chemistry evidence and cross-resource search for "
-            "review, export and downstream follow-up."
+            "Structure-guided chemistry evidence for review and downstream follow-up."
         ),
         pages=(
             NavigationPage("Computational chemistry", method_annotation=True),
-            NavigationPage("Search"),
         ),
     ),
 )

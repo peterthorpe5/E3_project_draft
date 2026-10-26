@@ -19,8 +19,9 @@ from e3app.tab_help import TOP_LEVEL_TAB_HELP
 
 
 def test_navigation_groups_every_helped_page_once() -> None:
-    """Six ordered stages cover every maintained top-level page exactly once."""
+    """Search/results and six ordered stages cover every page exactly once."""
     assert list(navigation_stage_labels()) == [
+        "🔎 Search & results",
         "🔵 1 · Information",
         "🟢 2 · Candidate discovery",
         "🟣 3 · E3 orthology context",

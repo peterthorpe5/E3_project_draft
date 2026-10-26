@@ -306,26 +306,29 @@ TOP_LEVEL_TAB_HELP = {
             "chemistry review."
         ),
     ),
-    "Search": TabHelpEntry(
+    "Protein & HOG search": TabHelpEntry(
         instruction=(
-            "Paste one or several HOG IDs, seeds, accessions or names; smart search reports every "
-            "matching relation and matched column, so one term may return several rows."
+            "Paste HOG/OG IDs, protein accessions, gene names or name fragments. Search the full "
+            "resource, select a discovered group and inspect its original ranks and "
+            "evidence dossier."
         ),
         yields=(
-            "A term-level match summary and bounded exact source rows carrying the matched value, "
-            "relation and field provenance, with downloadable summary and result tables."
+            "Complete match counts, group-level ranks and members, and raw evidence linked through "
+            "recorded group, cluster and protein IDs. Download every matching row and field as a "
+            "TSV archive or Excel workbook, independently of the screen preview."
         ),
     ),
     "All results": TabHelpEntry(
         instruction=(
             "Use the enriched HOG overview for one row per HOG, member detail for every HOG member "
-            "and raw relations for exact source-level audit."
+            "and raw relations for exact source-level audit. An optional HOG/protein/name filter "
+            "runs before the preview limit; leave it blank to export every row in the chosen view."
         ),
         yields=(
             "Joined HOG overview and member-detail views containing rankings, human and "
             "Arabidopsis, rice and barley representatives, membership, species context and an "
             "auditable within-HOG structural-readiness order, plus every raw DuckDB relation "
-            "under bounded preview and download controls."
+            "with bounded screen previews and separate complete downloads of all rows and fields."
         ),
     ),
     "Provenance and QC": TabHelpEntry(

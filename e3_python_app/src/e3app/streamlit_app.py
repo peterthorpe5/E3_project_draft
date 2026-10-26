@@ -190,11 +190,7 @@ from e3app.terminal_sequences import (
     terminal_member_fasta_frame,
     terminal_sequence_capability,
 )
-from e3app.unified_search import (
-    collect_unified_search,
-    parse_search_terms,
-    summarise_unified_search,
-)
+from e3app.resource_browser import render_all_results, render_resource_search
 from e3app.visualisations import (
     ALL_FINAL_GATE_GROUPS,
     CANDIDATE_METRIC_LABELS,
@@ -3833,121 +3829,9 @@ def _render_human_plant_structural_review(
         )
 
 
-def _render_search(*, connection: object, max_rows: int) -> None:
-    """Render batch-capable cross-relation identifier and name search."""
-    st.subheader("Multi-field E3 resource search")
-    st.caption(
-        "Paste one or several names, N0.HOG… IDs, OG… IDs, E3 seeds, UniProt "
-        "accessions, gene names, entries or DeepClust identifiers. The result "
-        "records the matched term, source relation and matched field before "
-        "returning every available column from that source row."
-    )
-    with st.form("unified_resource_search"):
-        query = st.text_area(
-            "Search term(s)",
-            value="",
-            placeholder=(
-                "One item per line, or separated by commas/semicolons\n"
-                "Q9SA03\nN0.HOG0002084\nFB27"
-            ),
-            height=150,
-        )
-        match_mode = st.radio(
-            "Matching method",
-            options=("smart", "exact", "contains"),
-            format_func=lambda value: {
-                "smart": "Smart: exact identifiers plus partial name matching",
-                "exact": "Exact identifiers or semicolon-list tokens only",
-                "contains": "Literal contains matching across identifiers and names",
-            }[value],
-            horizontal=True,
-        )
-        maximum_rows_per_relation = int(
-            st.number_input(
-                "Maximum matching rows per source relation",
-                min_value=1,
-                max_value=min(10_000, max(1, max_rows)),
-                value=min(250, max(1, max_rows)),
-            )
-        )
-        submitted = st.form_submit_button("Search the complete loaded resource")
-    if submitted:
-        try:
-            terms = parse_search_terms(value=query)
-            matches = collect_unified_search(
-                connection=connection,
-                search_terms=terms,
-                mode=match_mode,
-                maximum_rows_per_relation=maximum_rows_per_relation,
-                maximum_total_rows=min(100_000, max(10_000, max_rows)),
-            )
-        except AppError as exc:
-            st.warning(str(exc))
-            return
-        st.session_state["unified_search_matches"] = matches
-        st.session_state["unified_search_term_count"] = len(terms)
-    elif "unified_search_matches" not in st.session_state:
-        return
-    matches = st.session_state["unified_search_matches"]
-    term_count = int(st.session_state.get("unified_search_term_count", 0))
-    if matches.empty:
-        st.warning("No identifier or name match was found in recognised fields.")
-        return
-    summary = summarise_unified_search(matches=matches)
-    matched_terms = summary["search_term"].nunique()
-    matched_relations = summary["relation"].nunique()
-    metrics = st.columns(3)
-    metrics[0].metric("Entered terms matched", f"{matched_terms:,} / {term_count:,}")
-    metrics[1].metric("Source relations", f"{matched_relations:,}")
-    metrics[2].metric("Matching source rows", f"{len(matches):,}")
-    st.markdown("#### Match summary")
-    _display_dataframe(frame=summary, height=360)
-    render_table_downloads(
-        frame=summary,
-        file_stem="unified_search_summary",
-        tsv_label="Download search summary as TSV",
-        excel_label="Download search summary as Excel",
-        key="unified_search_summary_download",
-    )
-    st.markdown("#### Complete matching rows")
-    available = list(matches.columns)
-    selector_key = "unified_search_selected_columns"
-    existing = [
-        column
-        for column in st.session_state.get(selector_key, [])
-        if column in available
-    ]
-    if selector_key not in st.session_state:
-        existing = list(available[: min(18, len(available))])
-    st.session_state[selector_key] = existing
-    actions = st.columns(3)
-    if actions[0].button("Select all columns", key="search_select_all"):
-        st.session_state[selector_key] = available
-    if actions[1].button("First 18 columns", key="search_select_first"):
-        st.session_state[selector_key] = available[: min(18, len(available))]
-    if actions[2].button("Clear columns", key="search_select_none"):
-        st.session_state[selector_key] = []
-    selected_columns = st.multiselect(
-        "Columns to display and download",
-        available,
-        key=selector_key,
-        help=(
-            "All columns returned by every matching source relation are "
-            "available. Choose a focused subset or select all for audit."
-        ),
-    )
-    if not selected_columns:
-        st.warning("Select at least one matching-row column.")
-        return
-    displayed_matches = matches.loc[:, selected_columns]
-    _display_dataframe(frame=displayed_matches, height=650)
-    render_table_downloads(
-        frame=displayed_matches,
-        file_stem="unified_search_matches",
-        tsv_label="Download selected matching columns as TSV",
-        excel_label="Download selected matching columns as Excel",
-        key="unified_search_matches_download",
-    )
+def _render_search(*, connection: object, config: AppConfig) -> None:
+    """Render top-level full-resource search and complete group dossiers."""
+    render_resource_search(connection=connection, config=config)
 
 
 def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> None:
@@ -4373,165 +4257,10 @@ def _render_within_hog_ranking(
 
 
 def _render_all_results(
-    *,
-    connection: object,
-    config: AppConfig,
-    relations: Sequence[str],
+    *, connection: object, config: AppConfig, relations: Sequence[str],
 ) -> None:
-    """Render enriched HOG results and raw resource relations."""
-    st.subheader("All results and complete HOG information")
-    st.caption(
-        "The enriched HOG views join membership; human, Arabidopsis, rice and "
-        "barley representatives; explicit 3D-position and 3D-conservation status; "
-        "druggability evidence; both ranking stages; and every field from the "
-        "strongest HOG-linked ranking result. Raw relations remain "
-        "available for exact source-level audit. Queries are bounded in DuckDB."
-    )
-    if not relations:
-        st.info("No relations are available to browse.")
-        return
-
-    capability = enriched_hog_capability(connection=connection)
-    virtual_results: list[str] = []
-    if capability["available"]:
-        virtual_results.append(ENRICHED_HOG_OVERVIEW)
-    if capability["membership_available"]:
-        virtual_results.append(ENRICHED_HOG_MEMBERS)
-    result_choices = [*virtual_results, *relations]
-    relation = st.selectbox(
-        "Result view",
-        result_choices,
-        format_func=lambda value: ENRICHED_HOG_LABELS.get(value, value),
-        key="all_results_relation",
-        help=(
-            "Choose an enriched joined view for complete HOG-level information, "
-            "or a raw relation for its exact stored rows."
-        ),
-    )
-    is_enriched = relation in ENRICHED_HOG_LABELS
-    if is_enriched:
-        available = enriched_hog_columns(
-            connection=connection,
-            result=relation,
-        )
-        if relation == ENRICHED_HOG_OVERVIEW:
-            st.info(
-                "One row represents one root HOG. Both canonical rank columns and "
-                "the original source ranking fields are selectable. The first fields "
-                "foreground strict pocket-position support, strict 3D conservation "
-                "and group-level druggability; canonical ranks use the strongest "
-                "compatible field available in this release. Same-position support "
-                "alone does not establish conserved pocket chemistry. Blank support "
-                "flags mean unavailable or not assessed; interpret group scores with "
-                "their assessment-status fields."
-            )
-        else:
-            st.info(
-                "One row represents one HOG member. HOG-level annotations and "
-                "rankings repeat so each exported member row remains interpretable. "
-                "The structural-readiness rank is calculated separately within each "
-                "HOG: joined structure/pocket evidence comes first, followed in order "
-                "by druggability, mapping, pocket pLDDT, predictor agreement and stable "
-                "member identifiers. It is an auditable review order, not an E3-function "
-                "score. A member with no joined selected-pocket row is explicitly "
-                "unassessed, not a zero-scoring pocket."
-            )
-    else:
-        available = relation_columns(connection=connection, relation=relation)
-        st.info(
-            "This is a raw source relation. ‘Select all fields’ includes every "
-            "stored field in this relation, but does not join other relations."
-        )
-
-    selector_key = f"all_results_columns_{relation}"
-    current_selection = [
-        column
-        for column in st.session_state.get(selector_key, [])
-        if column in available
-    ]
-    if not current_selection and selector_key not in st.session_state:
-        if relation == ENRICHED_HOG_MEMBERS:
-            member_defaults = (
-                "hog_id",
-                "hog_prestructure_rank",
-                "hog_poststructure_rank",
-                "member_structural_readiness_rank",
-                "member_structural_readiness_status",
-                "member_species",
-                "member_parsed_accession",
-                "member_parsed_entry",
-                "member_raw_identifier",
-                "member_structure_assessed",
-                "member_druggability_score",
-                "member_pocket_mapping_fraction",
-                "member_pocket_plddt_fraction",
-                "member_predictor_agreement",
-                "member_structural_evidence_status",
-            )
-            current_selection = [
-                column for column in member_defaults if column in available
-            ]
-        else:
-            current_selection = list(available[: min(18, len(available))])
-    st.session_state[selector_key] = current_selection
-    actions = st.columns(3)
-    if actions[0].button(
-        "Select all fields",
-        key=f"all_results_select_all_{relation}",
-    ):
-        st.session_state[selector_key] = list(available)
-    if actions[1].button(
-        "First 18 fields",
-        key=f"all_results_select_first_{relation}",
-    ):
-        st.session_state[selector_key] = list(available[: min(18, len(available))])
-    if actions[2].button(
-        "Clear fields",
-        key=f"all_results_select_none_{relation}",
-    ):
-        st.session_state[selector_key] = []
-    selected = st.multiselect(
-        "Columns to display",
-        available,
-        key=selector_key,
-        help=(
-            "Select all fields for a complete export. The first fields in enriched "
-            "views include both ranking stages, four lineage representatives and "
-            "the decision-facing structural and druggability evidence."
-        ),
-    )
-    requested = st.number_input(
-        "Rows to display",
-        min_value=1,
-        max_value=config.max_rows,
-        value=min(100, config.max_rows),
-        key="all_results_rows",
-    )
-    if selected:
-        if is_enriched:
-            result = collect_enriched_hog_results(
-                connection=connection,
-                result=relation,
-                selected_columns=selected,
-                maximum_rows=int(requested),
-            )
-        else:
-            result = preview_selected_columns(
-                connection=connection,
-                relation=relation,
-                columns=selected,
-                limit=int(requested),
-            )
-        _display_dataframe(frame=result)
-        render_table_downloads(
-            frame=result,
-            file_stem=f"all_results_{relation.strip('_')}",
-            tsv_label="Download displayed rows as TSV",
-            excel_label="Download displayed rows as Excel",
-            key="all_results_download",
-        )
-    else:
-        st.warning("Select at least one column.")
+    """Render independently bounded previews and complete result downloads."""
+    render_all_results(connection=connection, config=config)
 
 
 def _candidate_expression_link_column(
@@ -5288,7 +5017,7 @@ def render_app() -> None:
     st.title("ARIA plant E3 discovery and ligandability resource")
     st.caption(
         "Read-only Python companion to the R Shiny reporter. DuckDB performs "
-        "bounded relational queries; pandas receives only displayed results."
+        "bounded screen previews and complete, on-demand evidence exports."
     )
     try:
         config = config_from_environment()
@@ -5324,7 +5053,7 @@ def render_app() -> None:
         )
     else:
         st.sidebar.caption("Human + plant structural extension is not configured.")
-    st.sidebar.caption(f"Maximum rows per query: {config.max_rows:,}")
+    st.sidebar.caption(f"Maximum screen-preview rows: {config.max_rows:,}")
     if config.taxonomy_map:
         st.sidebar.success(f"Custom taxonomy mapping: {config.taxonomy_map}")
     else:
@@ -5461,14 +5190,15 @@ def render_app() -> None:
                     config=config,
                     section="computational_chemistry",
                 ),
-                "Search": lambda: _render_search(
+                "Protein & HOG search": lambda: _render_search(
                     connection=connection,
-                    max_rows=config.max_rows,
+                    config=config,
                 ),
             }
             selected_stage_label = st.radio(
                 "Analysis section",
                 options=navigation_stage_labels(),
+                index=1,
                 horizontal=True,
                 key="e3_navigation_stage",
                 help=(

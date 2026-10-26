@@ -762,12 +762,16 @@ def _build_enriched_hog_query(
     connection: object,
     result: str,
     selected_columns: Sequence[str],
-    maximum_rows: int,
+    maximum_rows: int | None,
     hog_ids: Sequence[str] = (),
 ) -> tuple[str, list[object]]:
-    """Build one bounded enriched HOG overview or member-detail query."""
+    """Build a HOG query, with no row cap only for explicit complete exports."""
     selected_result = validate_enriched_hog_result(result=result)
-    if not 1 <= maximum_rows <= 100_000:
+    if maximum_rows is not None and (
+        not isinstance(maximum_rows, int)
+        or isinstance(maximum_rows, bool)
+        or not 1 <= maximum_rows <= 100_000
+    ):
         raise AppError("maximum enriched HOG rows must be between 1 and 100000")
     available = enriched_hog_columns(
         connection=connection,
@@ -882,8 +886,10 @@ def _build_enriched_hog_query(
         parameters.extend(selected_hog_ids)
     query = (
         f"{enriched_cte} SELECT {selected_sql} FROM {source}{where_sql} "
-        f"ORDER BY {order} LIMIT {int(maximum_rows)}"
+        f"ORDER BY {order}"
     )
+    if maximum_rows is not None:
+        query += f" LIMIT {int(maximum_rows)}"
     return query, parameters
 
 

@@ -37,7 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
             "and complete lineages"
         ),
     )
-    parser.add_argument("--max-rows", type=int, default=1000)
+    parser.add_argument(
+        "--max-rows", type=int, default=1000,
+        help="Screen-preview row limit; complete Search/All results downloads are uncapped",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument("--headless", action="store_true")

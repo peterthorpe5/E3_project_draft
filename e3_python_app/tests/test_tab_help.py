@@ -37,7 +37,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Human & plant 3D alignment",
         "HOG model comparison",
         "Computational chemistry",
-        "Search",
+        "Protein & HOG search",
         "All results",
         "Provenance and QC",
     }

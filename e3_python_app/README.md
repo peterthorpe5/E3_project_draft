@@ -1,5 +1,13 @@
 # ARIA plant E3 Python reporter
 
+Version **0.21.0** adds a top-level **🔎 Search & results** section. **Protein &
+HOG search** searches the complete loaded resource, resolves proteins to their
+recorded groups, shows original ranks with their source fields, and exports a
+complete linked evidence dossier. **All results** now filters before preview
+limiting and offers separate complete TSV/Excel downloads containing every
+matching row and field, regardless of `--max-rows` or hidden preview columns.
+See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
+
 Version **0.20.0** refines the **Protein research workbench** with a Start here
 page, a generic three-step workflow, optional E3 entry point, contextual
 question-mark help, FASTA examples, a glossary and downloadable guidance.
@@ -33,10 +41,12 @@ Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
 
-The 28 pages are organised into six colour-marked scientific stages:
+The 29 pages include a top-level **Search & results** section and six
+colour-marked scientific stages:
 information, candidate discovery, E3 orthology context, structural
-prioritisation, structural comparison, and chemistry and outputs. Existing
-page names, help, methods and data queries are preserved. Only the selected
+prioritisation, structural comparison, and chemistry and outputs. Search and
+All results are available directly, without entering the chemistry section.
+Only the selected
 section and page are queried and rendered, so an interaction no longer executes
 every application page. Immutable structural-review bundles are fully validated
 once per application process and then reused; explicit deployment validation is
@@ -78,8 +88,11 @@ columns, expression identifiers accept pasted lists with direct value-table
 downloads, and expression heatmaps use a white-to-red low-to-high scale.
 
 The app is read-only. It opens a completed DuckDB directly or registers Parquet
-files as views in an in-memory DuckDB. Every table query has a hard row cap and
-only the selected, bounded result is collected into pandas. The Python app uses
+files as views in an in-memory DuckDB. Screen previews have a row cap and only
+bounded preview tables are collected into pandas. Explicit complete exports
+stream every matching row in batches and include every field. The final
+download is held by Streamlit until the session/download cache is released;
+large exports should therefore be requested deliberately. The Python app uses
 the native `duckdb` Python client for SQL execution; it does not use `duckplyr`,
 which is an R-specific dplyr translation layer.
 
@@ -133,8 +146,8 @@ fail-closed review rules are documented in
 
 The reporter provides:
 
-- six ordered, colour-marked navigation stages containing the 28 maintained
-  scientific pages, so the analysis can be followed from release information
+- a top-level Search & results section and six ordered, colour-marked
+  scientific stages covering 29 maintained pages, from release information
   through discovery, orthology, structure and outputs;
 - a responsive Workflow schematic tracing the complete method from validated
   inputs through sequence discovery, OrthoFinder reconciliation, biological
@@ -254,6 +267,10 @@ The reporter provides:
   recognise names, root HOG IDs, legacy OG IDs, E3 seeds, accessions, entries,
   genes and DeepClust identifiers; every hit retains the input term, relation,
   matched fields and all source columns, with TSV and Excel downloads;
+- complete selected-group dossiers following recorded group, contributing-cluster
+  and protein identifiers. Rankings, members, annotation and other linked raw
+  evidence retain separate source tables and linking-column provenance. Original
+  group ranks are resolved independently for each stage, with their exact source;
 - an **All results** browser whose default enriched overview joins one row per
   root HOG to human and Arabidopsis representatives, canonical pre-structure
   and post-structure ranks, complete source-ranking fields and membership
@@ -275,8 +292,12 @@ The reporter provides:
   approximate TM-score 0.50 fold-similarity boundary;
 - on-demand vector-PDF downloads for every native application graph. These use
   the packaged Kaleido renderer and are prepared only when requested; and
-- paired TSV and formatted Excel downloads of every downloadable result table.
-  Excel contains the same bounded rows and selected columns, with visible cell
+- separate complete TSV archives and Excel workbooks on Search and All results;
+  these include every matching row and field, have count manifests and field
+  dictionaries, and split Excel tables across worksheets rather than dropping
+  excess rows. Excel refuses overlong cells with guidance to use TSV;
+- paired TSV and formatted Excel downloads of other displayed result tables.
+  These preview exports contain the same bounded rows and selected columns, with visible cell
   gridlines, explicit borders, filter arrows, frozen headers, banded rows,
   centred body values, 10-point wrapped narrative text, bounded readable widths
   and capped long-text row heights, plus data-appropriate display formats. A

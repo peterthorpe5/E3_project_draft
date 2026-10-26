@@ -4,6 +4,29 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.0
+
+- Moves Protein & HOG search and All results into a top-level Search & results
+  section, independent of chemistry and the six scientific stages.
+- Searches every recognised identifier/name field in the full loaded resource,
+  reports complete counts and resolves direct protein/name matches to recorded
+  groups before applying any screen-preview limit.
+- Adds complete group evidence dossiers with membership, rankings, raw
+  annotation/structural/expression evidence and release provenance. Group,
+  contributing-cluster and protein links remain explicit; shared identifiers
+  retain their original source/group context rather than implying new orthology.
+- Exposes all recorded group-linked ranking fields and resolves authoritative
+  pre/post-structural ranks independently for the inspected group and stage.
+  No ranks are recomputed and cluster/member ranks remain source-specific.
+- Separates complete all-row/all-field downloads from preview rows and columns.
+  Exports stream in batches, include row counts and field definitions, split
+  Excel sheets at its row limit and reject overlong Excel cells rather than
+  silently truncating values. TSV retains long sequences and annotations.
+- Invalidates prepared exports on source, filter, group, result or format
+  changes. Source/read failures do not return an apparently complete partial export.
+- Adds backend and full-application regression tests, including groups beyond
+  the first 1,000 rows and exports above the former 100,000-row ceiling.
+
 ## v0.18.8
 
 - Replaces the wide C-terminal summary with a compact selectable group table,

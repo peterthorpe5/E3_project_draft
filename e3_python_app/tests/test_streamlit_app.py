@@ -14,6 +14,7 @@ from e3app.taxonomy import load_taxonomy_authority
 from test_pocket_review import make_pocket_review
 
 STAGE_TAB_LABELS = [
+    "🔎 Search & results",
     "🔵 1 · Information",
     "🟢 2 · Candidate discovery",
     "🟣 3 · E3 orthology context",
@@ -154,8 +155,8 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
 
     _navigate(
         app,
-        stage="🔴 6 · Chemistry & outputs",
-        page="Search",
+        stage="🔎 Search & results",
+        page="Protein & HOG search",
     )
     assert not app.exception
     search_area = next(

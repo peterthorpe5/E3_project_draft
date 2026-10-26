@@ -31,7 +31,9 @@ def test_retrieval_mapping_and_downstream_artifact_flow(research_config):
     assert get_job(workspace=config.workspace, job_id=job)["status"] == "COMPLETE"
     directory = job_directory(workspace=config.workspace, job_id=job)
     manifest = json.loads((directory / "manifest.json").read_text())
-    assert manifest["runtime"]["application"] == "0.19.1"
+    from e3app import __version__
+
+    assert manifest["runtime"]["application"] == __version__
     assert manifest["data_sources"]["sequences"]["bytes"] > 0
     fasta_name = next(key for key in manifest["artifacts"] if key.endswith("fasta"))
     assert (

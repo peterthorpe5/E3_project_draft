@@ -128,14 +128,14 @@ def searchable_columns(*, columns: Sequence[str]) -> tuple[list[str], list[str]]
 
 
 def _exact_condition(*, column: str, term_expression: str) -> str:
-    """Build a case-insensitive scalar or semicolon-token match."""
+    """Build a case-insensitive identifier, list-token or FASTA-header match."""
     quoted = quote_identifier(column)
     value = f"upper(trim(coalesce(CAST({quoted} AS VARCHAR), '')))"
     term = f"upper(trim({term_expression}))"
     return (
         f"({value} = {term} OR "
-        f"instr(';' || replace({value}, '; ', ';') || ';', "
-        f"';' || {term} || ';') > 0)"
+        f"list_contains(list_transform(regexp_split_to_array({value}, '[;|,]'), "
+        f"token -> trim(token)), {term}))"
     )
 
 
@@ -154,7 +154,7 @@ def _relation_search_sql(
     columns: Sequence[str],
     terms: Sequence[str],
     mode: SearchMode,
-    maximum_rows: int,
+    maximum_rows: int | None,
 ) -> tuple[str, list[object]] | None:
     """Build one bound search query for a single relation."""
     exact_columns, text_columns = searchable_columns(columns=columns)
@@ -196,9 +196,10 @@ def _relation_search_sql(
         f"concat_ws(';', {', '.join(labels)}) AS _matched_columns, source.* "
         f"FROM {quote_identifier(relation)} source CROSS JOIN search_terms t "
         f"WHERE {' OR '.join(conditions)} "
-        "ORDER BY t.search_order "
-        f"LIMIT {int(maximum_rows)}"
+        "ORDER BY t.search_order"
     )
+    if maximum_rows is not None:
+        sql += f" LIMIT {int(maximum_rows)}"
     return sql, parameters
 
 
