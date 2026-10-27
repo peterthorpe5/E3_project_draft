@@ -184,9 +184,7 @@ def enriched_hog_capability(*, connection: object) -> dict[str, object]:
             connection=connection,
             relation=HIERARCHICAL_RELATION,
         )
-        membership_available = HOG_MEMBERSHIP_REQUIRED_COLUMNS.issubset(
-            membership_columns
-        )
+        membership_available = HOG_MEMBERSHIP_REQUIRED_COLUMNS.issubset(membership_columns)
     ranking_relation = select_hog_ranking_relation(connection=connection)
     ranking_columns = (
         relation_columns(connection=connection, relation=ranking_relation)
@@ -223,9 +221,7 @@ def enriched_hog_capability(*, connection: object) -> dict[str, object]:
     }
 
 
-def _ranking_column_mapping(
-    *, ranking_columns: Sequence[str]
-) -> tuple[tuple[str, str], ...]:
+def _ranking_column_mapping(*, ranking_columns: Sequence[str]) -> tuple[tuple[str, str], ...]:
     """Map every source ranking field to a collision-free output field."""
     reserved = set(HOG_OVERVIEW_COLUMNS)
     mapping: list[tuple[str, str]] = []
@@ -245,20 +241,14 @@ def _ranking_column_mapping(
     return tuple(mapping)
 
 
-def _member_column_mapping(
-    *, membership_columns: Sequence[str]
-) -> tuple[tuple[str, str], ...]:
+def _member_column_mapping(*, membership_columns: Sequence[str]) -> tuple[tuple[str, str], ...]:
     """Map every membership source field to an explicit member field."""
     return tuple(
-        (column, f"member_{column}")
-        for column in membership_columns
-        if column != "group_id"
+        (column, f"member_{column}") for column in membership_columns if column != "group_id"
     )
 
 
-def enriched_hog_columns(
-    *, connection: object, result: str
-) -> list[str]:
+def enriched_hog_columns(*, connection: object, result: str) -> list[str]:
     """Return every selectable field for a virtual enriched HOG result.
 
     Args:
@@ -300,8 +290,28 @@ def _nullable_text_expression(*, columns: set[str], column: str) -> str:
     return f"CAST({quote_identifier(column)} AS VARCHAR)"
 
 
+def _hog_source_filter(*, column: str, hog_ids: Sequence[str]) -> tuple[str, list[object]]:
+    """Constrain a source before group aggregation without changing stored ranks.
+
+    Args:
+        column: Trusted source group-ID field.
+        hog_ids: Explicit selected groups; empty means the full source.
+
+    Returns:
+        An AND predicate and its bound identifier array.
+    """
+    if not hog_ids:
+        return "", []
+    return (
+        f" AND upper(trim(CAST({quote_identifier(column)} AS VARCHAR))) " "IN (SELECT unnest(?))",
+        [[hog.upper() for hog in hog_ids]],
+    )
+
+
 def _membership_ctes(
-    *, capability: dict[str, object]
+    *,
+    capability: dict[str, object],
+    hog_ids: Sequence[str] = (),
 ) -> tuple[str, list[object]]:
     """Build root-HOG membership and summary CTEs."""
     if not capability["membership_available"]:
@@ -348,11 +358,7 @@ def _membership_ctes(
     column_set = set(membership_columns)
     selected = [
         "CAST(group_id AS VARCHAR) AS hog_id",
-        *(
-            quote_identifier(column)
-            for column in membership_columns
-            if column != "group_id"
-        ),
+        *(quote_identifier(column) for column in membership_columns if column != "group_id"),
     ]
     representative = (
         "coalesce(nullif(trim("
@@ -406,12 +412,13 @@ def _membership_ctes(
     if not plants:
         raise AppError("The packaged taxonomy manifest contains no target plants")
     plant_values = ", ".join("(?)" for _ in plants)
+    scope, scope_parameters = _hog_source_filter(column="group_id", hog_ids=hog_ids)
     query = (
         "membership AS (SELECT "
         + ", ".join(selected)
         + f" FROM {quote_identifier(HIERARCHICAL_RELATION)} "
         "WHERE group_id IS NOT NULL AND "
-        "starts_with(trim(CAST(group_id AS VARCHAR)), 'N0.HOG')), "
+        "starts_with(trim(CAST(group_id AS VARCHAR)), 'N0.HOG')" + scope + "), "
         f"target_plants(species) AS (VALUES {plant_values}), "
         "member_classes AS (SELECT m.*, "
         "CAST(species AS VARCHAR) = 'Homo_sapiens' AS is_human, "
@@ -504,17 +511,22 @@ def _membership_ctes(
         "AS hog_gene_tree_parent_clades, "
         f"{membership_summary_sql} FROM member_classes GROUP BY hog_id)"
     )
-    return query, list(plants)
+    return query, [*scope_parameters, *plants]
 
 
-def _ranking_cte(*, capability: dict[str, object]) -> str:
+def _ranking_cte(
+    *,
+    capability: dict[str, object],
+    hog_ids: Sequence[str] = (),
+) -> tuple[str, list[object]]:
     """Build a deterministic complete source-ranking row per HOG."""
     relation = capability["ranking_relation"]
     if relation is None:
         return (
             "ranking_rows AS (SELECT CAST(NULL AS VARCHAR) "
             "AS primary_group_id, CAST(NULL AS BIGINT) "
-            "AS _e3_hog_ranking_source_row_count WHERE FALSE)"
+            "AS _e3_hog_ranking_source_row_count WHERE FALSE)",
+            [],
         )
     columns = list(capability["ranking_columns"])
     order_columns = [
@@ -528,9 +540,9 @@ def _ranking_cte(*, capability: dict[str, object]) -> str:
         if column in columns
     ]
     order_sql = ", ".join(
-        f"{quote_identifier(column)} NULLS LAST"
-        for column in dict.fromkeys(order_columns)
+        f"{quote_identifier(column)} NULLS LAST" for column in dict.fromkeys(order_columns)
     )
+    scope, parameters = _hog_source_filter(column="primary_group_id", hog_ids=hog_ids)
     return (
         "rank_source AS (SELECT *, count(*) OVER (PARTITION BY "
         "CAST(primary_group_id AS VARCHAR)) "
@@ -538,13 +550,18 @@ def _ranking_cte(*, capability: dict[str, object]) -> str:
         f"CAST(primary_group_id AS VARCHAR) ORDER BY {order_sql}) "
         f"AS _e3_hog_ranking_row FROM {quote_identifier(str(relation))} "
         "WHERE primary_group_id IS NOT NULL AND "
-        "starts_with(trim(CAST(primary_group_id AS VARCHAR)), 'N0.HOG')), "
+        "starts_with(trim(CAST(primary_group_id AS VARCHAR)), 'N0.HOG')" + scope + "), "
         "ranking_rows AS (SELECT * EXCLUDE (_e3_hog_ranking_row) "
-        "FROM rank_source WHERE _e3_hog_ranking_row = 1)"
+        "FROM rank_source WHERE _e3_hog_ranking_row = 1)",
+        parameters,
     )
 
 
-def _member_structural_cte(*, capability: dict[str, object]) -> str:
+def _member_structural_cte(
+    *,
+    capability: dict[str, object],
+    hog_ids: Sequence[str] = (),
+) -> tuple[str, list[object]]:
     """Build one strict selected-pocket evidence row per HOG member."""
     relation = capability["member_structural_relation"]
     if relation is None:
@@ -558,7 +575,8 @@ def _member_structural_cte(*, capability: dict[str, object]) -> str:
             "CAST(NULL AS DOUBLE) AS pocket_plddt_fraction, "
             "CAST(NULL AS DOUBLE) AS predictor_agreement, "
             "CAST(NULL AS BOOLEAN) AS component_selected, "
-            "CAST(NULL AS VARCHAR) AS structural_evidence_status WHERE FALSE)"
+            "CAST(NULL AS VARCHAR) AS structural_evidence_status WHERE FALSE)",
+            [],
         )
     columns = set(capability["member_structural_columns"])
 
@@ -581,12 +599,16 @@ def _member_structural_cte(*, capability: dict[str, object]) -> str:
         )
         if column in columns
     ]
-    order_sql = ", ".join(
-        f"{quote_identifier(column)} "
-        + ("DESC" if column == "is_strict_selected" else "ASC")
-        + " NULLS LAST"
-        for column in order_columns
-    ) or "candidate_accession"
+    order_sql = (
+        ", ".join(
+            f"{quote_identifier(column)} "
+            + ("DESC" if column == "is_strict_selected" else "ASC")
+            + " NULLS LAST"
+            for column in order_columns
+        )
+        or "candidate_accession"
+    )
+    scope, parameters = _hog_source_filter(column="primary_group_id", hog_ids=hog_ids)
     return (
         "member_structural_source AS (SELECT "
         "CAST(primary_group_id AS VARCHAR) AS hog_id, "
@@ -607,24 +629,22 @@ def _member_structural_cte(*, capability: dict[str, object]) -> str:
         "CAST(primary_group_id AS VARCHAR), "
         "upper(trim(CAST(candidate_accession AS VARCHAR))) "
         f"ORDER BY {order_sql}) "
-        f"AS _e3_member_structural_row FROM {quote_identifier(str(relation))}), "
+        f"AS _e3_member_structural_row FROM {quote_identifier(str(relation))} "
+        f"WHERE TRUE{scope}), "
         "member_structural_rows AS (SELECT * EXCLUDE (_e3_member_structural_row) "
-        "FROM member_structural_source WHERE _e3_member_structural_row = 1)"
+        "FROM member_structural_source WHERE _e3_member_structural_row = 1)",
+        parameters,
     )
 
 
-def _overview_expressions(
-    *, capability: dict[str, object]
-) -> list[str]:
+def _overview_expressions(*, capability: dict[str, object]) -> list[str]:
     """Return canonical HOG-level enrichment expressions."""
     ranking_relation = capability["ranking_relation"]
     source = "" if ranking_relation is None else str(ranking_relation)
     safe_source = source.replace("'", "''")
     ranking_columns = set(capability["ranking_columns"])
 
-    def value_expression(
-        *, candidates: Sequence[str], sql_type: str
-    ) -> str:
+    def value_expression(*, candidates: Sequence[str], sql_type: str) -> str:
         """Return the first available typed ranking expression."""
         column = next(
             (candidate for candidate in candidates if candidate in ranking_columns),
@@ -678,24 +698,18 @@ def _overview_expressions(
 
     return [
         "u.hog_id AS hog_id",
-        f"{rank_expression(candidates=PRESTRUCTURE_RANK_COLUMNS)} "
-        "AS hog_prestructure_rank",
-        f"{rank_expression(candidates=POSTSTRUCTURE_RANK_COLUMNS)} "
-        "AS hog_poststructure_rank",
-        "coalesce(s.human_hog_representatives, '') "
-        "AS human_hog_representatives",
-        "coalesce(s.arabidopsis_hog_representatives, '') "
-        "AS arabidopsis_hog_representatives",
+        f"{rank_expression(candidates=PRESTRUCTURE_RANK_COLUMNS)} " "AS hog_prestructure_rank",
+        f"{rank_expression(candidates=POSTSTRUCTURE_RANK_COLUMNS)} " "AS hog_poststructure_rank",
+        "coalesce(s.human_hog_representatives, '') " "AS human_hog_representatives",
+        "coalesce(s.arabidopsis_hog_representatives, '') " "AS arabidopsis_hog_representatives",
         "coalesce(s.rice_hog_representatives, '') AS rice_hog_representatives",
         "coalesce(s.barley_hog_representatives, '') AS barley_hog_representatives",
         f"{position_status} AS hog_three_dimensional_position_status",
         f"{alignment_status} AS hog_three_dimensional_alignment_status",
         f"{value_expression(candidates=('conservation_status',), sql_type='VARCHAR')} "
         "AS hog_conservation_status",
-        f"{same_position_supported} "
-        "AS hog_same_3d_pocket_position_supported",
-        f"{conserved_pocket_supported} "
-        "AS hog_conserved_3d_pocket_supported",
+        f"{same_position_supported} " "AS hog_same_3d_pocket_position_supported",
+        f"{conserved_pocket_supported} " "AS hog_conserved_3d_pocket_supported",
         f"{value_expression(candidates=('minimum_druggability_score',), sql_type='DOUBLE')} "
         "AS hog_minimum_druggability_score",
         f"{all_members_druggable} AS hog_all_assessed_members_pass_druggability",
@@ -711,13 +725,10 @@ def _overview_expressions(
         f"{chemical_conservation} AS hog_mean_structural_chemical_group_conservation",
         "coalesce(s.human_hog_accessions, '') AS human_hog_accessions",
         "coalesce(s.human_hog_entries, '') AS human_hog_entries",
-        "coalesce(s.human_hog_raw_identifiers, '') "
-        "AS human_hog_raw_identifiers",
-        "coalesce(s.arabidopsis_hog_accessions, '') "
-        "AS arabidopsis_hog_accessions",
+        "coalesce(s.human_hog_raw_identifiers, '') " "AS human_hog_raw_identifiers",
+        "coalesce(s.arabidopsis_hog_accessions, '') " "AS arabidopsis_hog_accessions",
         "coalesce(s.arabidopsis_hog_entries, '') AS arabidopsis_hog_entries",
-        "coalesce(s.arabidopsis_hog_raw_identifiers, '') "
-        "AS arabidopsis_hog_raw_identifiers",
+        "coalesce(s.arabidopsis_hog_raw_identifiers, '') " "AS arabidopsis_hog_raw_identifiers",
         "coalesce(s.rice_hog_accessions, '') AS rice_hog_accessions",
         "coalesce(s.rice_hog_entries, '') AS rice_hog_entries",
         "coalesce(s.rice_hog_raw_identifiers, '') AS rice_hog_raw_identifiers",
@@ -727,33 +738,26 @@ def _overview_expressions(
         "coalesce(s.hog_member_count, 0) AS hog_member_count",
         "coalesce(s.hog_species_count, 0) AS hog_species_count",
         "coalesce(s.hog_human_member_count, 0) AS hog_human_member_count",
-        "coalesce(s.hog_arabidopsis_member_count, 0) "
-        "AS hog_arabidopsis_member_count",
+        "coalesce(s.hog_arabidopsis_member_count, 0) " "AS hog_arabidopsis_member_count",
         "coalesce(s.hog_rice_member_count, 0) AS hog_rice_member_count",
         "coalesce(s.hog_barley_member_count, 0) AS hog_barley_member_count",
-        "coalesce(s.hog_target_plant_member_count, 0) "
-        "AS hog_target_plant_member_count",
-        "coalesce(s.hog_target_plant_species_count, 0) "
-        "AS hog_target_plant_species_count",
+        "coalesce(s.hog_target_plant_member_count, 0) " "AS hog_target_plant_member_count",
+        "coalesce(s.hog_target_plant_species_count, 0) " "AS hog_target_plant_species_count",
         "coalesce(s.hog_species_present, '') AS hog_species_present",
-        "coalesce(s.hog_target_plant_species_present, '') "
-        "AS hog_target_plant_species_present",
+        "coalesce(s.hog_target_plant_species_present, '') " "AS hog_target_plant_species_present",
         "coalesce(s.hog_orthogroup_ids, '') AS hog_orthogroup_ids",
-        "coalesce(s.hog_gene_tree_parent_clades, '') "
-        "AS hog_gene_tree_parent_clades",
+        "coalesce(s.hog_gene_tree_parent_clades, '') " "AS hog_gene_tree_parent_clades",
         "coalesce(s.hog_record_types, '') AS hog_record_types",
         "coalesce(s.hog_review_statuses, '') AS hog_review_statuses",
         "coalesce(s.hog_mapping_statuses, '') AS hog_mapping_statuses",
         "coalesce(s.hog_mapping_reasons, '') AS hog_mapping_reasons",
         "coalesce(s.hog_identifier_formats, '') AS hog_identifier_formats",
-        "coalesce(s.hog_membership_source_files, '') "
-        "AS hog_membership_source_files",
+        "coalesce(s.hog_membership_source_files, '') " "AS hog_membership_source_files",
         "s.hog_id IS NOT NULL AS hog_membership_available",
         "r.primary_group_id IS NOT NULL AS hog_ranking_available",
         f"CASE WHEN r.primary_group_id IS NULL THEN '' ELSE '{safe_source}' END "
         "AS hog_ranking_source",
-        "coalesce(r._e3_hog_ranking_source_row_count, 0) "
-        "AS hog_ranking_source_row_count",
+        "coalesce(r._e3_hog_ranking_source_row_count, 0) " "AS hog_ranking_source_row_count",
     ]
 
 
@@ -784,9 +788,20 @@ def _build_enriched_hog_query(
     if missing:
         raise AppError("Unknown enriched HOG columns: " + ", ".join(missing))
     capability = enriched_hog_capability(connection=connection)
-    membership_ctes, parameters = _membership_ctes(capability=capability)
-    ranking_ctes = _ranking_cte(capability=capability)
-    member_structural_ctes = _member_structural_cte(capability=capability)
+    selected_hog_ids = normalise_hog_ids(hog_ids=hog_ids)
+    membership_ctes, parameters = _membership_ctes(
+        capability=capability,
+        hog_ids=selected_hog_ids,
+    )
+    ranking_ctes, ranking_parameters = _ranking_cte(
+        capability=capability,
+        hog_ids=selected_hog_ids,
+    )
+    member_structural_ctes, structural_parameters = _member_structural_cte(
+        capability=capability,
+        hog_ids=selected_hog_ids,
+    )
+    parameters.extend([*ranking_parameters, *structural_parameters])
     universe = (
         "hog_universe AS (SELECT hog_id FROM membership_summary UNION "
         "SELECT CAST(primary_group_id AS VARCHAR) AS hog_id FROM ranking_rows)"
@@ -835,10 +850,7 @@ def _build_enriched_hog_query(
         )
     )
     selected_sql = ", ".join(quote_identifier(column) for column in selected)
-    order = (
-        "hog_poststructure_rank NULLS LAST, "
-        "hog_prestructure_rank NULLS LAST, hog_id"
-    )
+    order = "hog_poststructure_rank NULLS LAST, " "hog_prestructure_rank NULLS LAST, hog_id"
     if selected_result == ENRICHED_HOG_MEMBERS:
         order += ", member_structural_readiness_rank NULLS LAST"
         member_species = next(
@@ -856,9 +868,7 @@ def _build_enriched_hog_query(
     enriched_cte = (
         f"WITH {membership_ctes}, {ranking_ctes}, {member_structural_ctes}, "
         f"{universe}, enriched AS ("
-        "SELECT "
-        + ", ".join(expressions)
-        + f" {from_sql})"
+        "SELECT " + ", ".join(expressions) + f" {from_sql})"
     )
     source = "enriched"
     if selected_result == ENRICHED_HOG_MEMBERS:
@@ -878,16 +888,12 @@ def _build_enriched_hog_query(
             "AS member_structural_readiness_status FROM enriched)"
         )
         source = "member_ranked"
-    selected_hog_ids = normalise_hog_ids(hog_ids=hog_ids)
     where_sql = ""
     if selected_hog_ids:
         placeholders = ", ".join("?" for _ in selected_hog_ids)
         where_sql = f" WHERE hog_id IN ({placeholders})"
         parameters.extend(selected_hog_ids)
-    query = (
-        f"{enriched_cte} SELECT {selected_sql} FROM {source}{where_sql} "
-        f"ORDER BY {order}"
-    )
+    query = f"{enriched_cte} SELECT {selected_sql} FROM {source}{where_sql} " f"ORDER BY {order}"
     if maximum_rows is not None:
         query += f" LIMIT {int(maximum_rows)}"
     return query, parameters

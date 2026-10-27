@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import Path
-from typing import Sequence
+from time import perf_counter
+from typing import Mapping, Sequence
 
 import duckdb
 import pandas as pd
@@ -22,6 +23,12 @@ from e3app.enriched_hogs import (
     enriched_hog_columns,
 )
 from e3app.errors import AppError
+from e3app.group_lookup import (
+    exact_group_terms,
+    find_exact_groups,
+    group_match_queries,
+    quick_group_profile,
+)
 from e3app.exports import (
     EXCEL_MIME_TYPE,
     dataframe_display_formats,
@@ -30,9 +37,7 @@ from e3app.exports import (
     safe_file_stem,
 )
 from e3app.protein_dossier import (
-    RECORDED_GROUP_RANKINGS,
     build_group_dossier,
-    canonical_group_ranks,
     dossier_inventory,
     resolve_search_groups,
 )
@@ -42,6 +47,7 @@ from e3app.result_queries import (
     build_search_queries,
     preview_query,
     query_count,
+    resource_schema,
     summarise_search_queries,
 )
 from e3app.unified_search import parse_search_terms
@@ -97,6 +103,8 @@ def render_complete_export(
     source: str,
     key: str,
     file_stem: str,
+    prepare_label: str = "Prepare complete download",
+    download_subject: str = "all matching rows and fields",
 ) -> None:
     """Prepare complete downloads explicitly and invalidate stale prepared payloads.
 
@@ -107,6 +115,8 @@ def render_complete_export(
         source: Current source fingerprint.
         key: Unique widget/cache key for this export panel.
         file_stem: Download filename stem.
+        prepare_label: Explicit preparation action label for this page.
+        download_subject: Human-readable scope of the complete download.
     """
     export_format = st.radio(
         "Complete download format",
@@ -128,10 +138,10 @@ def render_complete_export(
     if prepared is not None and prepared[0] != signature:
         st.session_state.pop(payload_key)
         prepared = None
-    if st.button("Prepare complete download", key=f"{key}_prepare", disabled=not queries):
+    if st.button(prepare_label, key=f"{key}_prepare", disabled=not queries):
         try:
             exporter = complete_tsv_archive if export_format == "tsv" else complete_excel_workbook
-            with st.spinner("Preparing every matching row and field…"):
+            with st.spinner("Preparing every matching row and field…", show_time=True):
                 payload = exporter(connection=connection, queries=queries, description=description)
             prepared = (signature, payload)
             st.session_state[payload_key] = prepared
@@ -145,7 +155,7 @@ def render_complete_export(
         extension = "zip" if export_format == "tsv" else "xlsx"
         label = "TSV ZIP" if export_format == "tsv" else "Excel"
         st.download_button(
-            label=f"Download all matching rows and fields ({label})",
+            label=f"Download {download_subject} ({label})",
             data=prepared[1],
             file_name=f"{safe_file_stem(value=file_stem)}.{extension}",
             mime="application/zip" if export_format == "tsv" else EXCEL_MIME_TYPE,
@@ -217,6 +227,11 @@ def render_all_results(
         key="all_results_relation",
         format_func=lambda value: ENRICHED_HOG_LABELS.get(value, value),
         help="Choose joined HOG results with rankings, or an exact raw source relation.",
+        index=(
+            [*virtual, *relations].index("candidate_master_results")
+            if "candidate_master_results" in relations
+            else 0
+        ),
     )
     filter_text = st.text_area(
         "Find within this complete result (optional)",
@@ -237,15 +252,39 @@ def render_all_results(
     )
     try:
         terms = parse_search_terms(value=filter_text)
-        complete = build_result_query(connection=connection, result=result, terms=terms, mode=mode)
-        count = query_count(connection=connection, query=complete)
+        group_scope = exact_group_terms(terms=terms, mode=mode)
+        complete = build_result_query(
+            connection=connection,
+            result=result,
+            terms=terms,
+            mode=mode,
+            hog_ids=group_scope if result in ENRICHED_HOG_LABELS else (),
+        )
+        source = source_identity(config=config)
+        signature = hashlib.sha256(repr((source, complete)).encode()).hexdigest()
+        cache_key = "all_results_data_cache"
+        if st.session_state.get(cache_key, {}).get("signature") != signature:
+            st.session_state[cache_key] = {"signature": signature, "previews": {}}
+        cached = st.session_state[cache_key]
+        load_preview = True
+        if result in ENRICHED_HOG_LABELS:
+            load_preview = st.checkbox(
+                "Load joined HOG preview and counts",
+                value=False,
+                key="all_results_joined_preview",
+                help="Complete downloads are available without preparing this joined preview.",
+            )
+        if load_preview and "count" not in cached:
+            with st.spinner("Counting complete results…", show_time=True):
+                cached["count"] = query_count(connection=connection, query=complete)
+        count = cached.get("count")
         available = (
             enriched_hog_columns(connection=connection, result=result)
             if result in ENRICHED_HOG_LABELS
             else relation_columns(connection, result)
         )
-        st.metric("Complete matching rows", f"{count:,}")
-        st.caption(f"Complete result: {count:,} rows × {len(available):,} fields.")
+        st.metric("Complete matching rows", "On request" if count is None else f"{count:,}")
+        st.caption(f"Complete download: all matching rows × {len(available):,} fields.")
         st.markdown("#### Complete download")
         st.caption(
             "Leave the filter empty to download every row in this result view. Each raw relation "
@@ -255,14 +294,21 @@ def render_all_results(
         render_complete_export(
             connection=connection,
             queries=(complete,),
-            source=source_identity(config=config),
+            source=source,
             description=(
                 f"Source: {config.source_path}; result: {result}; "
                 f"terms: {terms!r}; mode: {mode}"
             ),
             key="all_results_complete",
             file_stem=f"complete_{result.strip('_')}",
+            prepare_label="Prepare all results download",
+            download_subject="all results",
         )
+        if not load_preview:
+            st.info(
+                "Prepare the complete download above, or enable the joined preview to inspect it."
+            )
+            return
         st.markdown("#### Screen preview")
         selected = _preview_fields(columns=available, key=f"all_results_columns_{result}")
         rows = st.number_input(
@@ -280,7 +326,14 @@ def render_all_results(
                 "Choose preview fields to show a table. The complete download remains available."
             )
             return
-        preview = preview_query(connection=connection, query=complete, maximum_rows=int(rows))
+        if int(rows) not in cached["previews"]:
+            frame = preview_query(
+                connection=connection,
+                query=complete,
+                maximum_rows=int(rows),
+            )
+            cached["previews"] = {int(rows): frame}
+        preview = cached["previews"][int(rows)]
         preview = preview.loc[:, selected]
         st.caption(
             f"Showing {len(preview):,} of {count:,} matching rows; "
@@ -303,31 +356,31 @@ def _render_group_dossier(
     connection: duckdb.DuckDBPyConnection,
     config: AppConfig,
     group_id: str,
+    cache: dict[str, object] | None = None,
+    schema: Mapping[str, Sequence[str]] | None = None,
 ) -> None:
-    """Show rankings, inventory, source previews and a complete selected-group export.
+    """Show the small group profile first and load full evidence only on request.
 
     Args:
         connection: Open resource connection.
         config: Current source and preview configuration.
-        group_id: Exact recorded group selected from complete search results.
+        group_id: Exact recorded group selected by the user.
+        cache: Per-search cache of profiles, dossiers and bounded source previews.
+        schema: Source catalogue already read for this submitted search.
     """
+    cache = {} if cache is None else cache
+    group_cache = cache.setdefault(group_id, {})
     st.markdown(f"#### Evidence dossier: {group_id}")
-    queries = build_group_dossier(connection=connection, group_id=group_id)
-    inventory = dossier_inventory(connection=connection, queries=queries)
-    available = inventory.loc[inventory["complete_rows"] > 0]
-    if available.empty:
-        st.info("No linked evidence is available for this group in the loaded resource.")
-        return
-    overview = next((query for query in queries if query.name == ENRICHED_HOG_OVERVIEW), None)
-    members = None
-    if overview is not None:
-        frame = preview_query(connection=connection, query=overview, maximum_rows=1)
-        if not frame.empty:
-            members = frame.iloc[0]["hog_member_count"]
-    ranks = canonical_group_ranks(
-        connection=connection,
-        query=next((query for query in queries if query.name == RECORDED_GROUP_RANKINGS), None),
-    )
+    if "profile" not in group_cache:
+        with st.spinner("Reading this group's stored ranks and members…", show_time=True):
+            group_cache["profile"] = quick_group_profile(
+                connection=connection,
+                group_id=group_id,
+                maximum_rows=min(config.max_rows, 100),
+                schema=schema,
+            )
+    profile = group_cache["profile"]
+    ranks = profile["ranks"]
     metrics = st.columns(3)
     for column, (label, stage) in zip(
         metrics[:2],
@@ -339,32 +392,75 @@ def _render_group_dossier(
     ):
         rank = ranks.loc[ranks["rank_stage"] == stage]
         column.metric(label, "Unavailable" if rank.empty else f"{rank.iloc[0]['numeric_rank']:g}")
-    metrics[2].metric(
-        "Recorded HOG members", "Unavailable" if pd.isna(members) else f"{int(members):,}"
+    members = profile["member_count"]
+    metrics[2].metric("Recorded HOG members", "Unavailable" if members is None else f"{members:,}")
+    st.caption(
+        "These are original resource-wide ranks. The full evidence dossier and its "
+        "source counts are loaded when requested; preview limits do not limit its downloads."
     )
     if not ranks.empty:
         _show_table(frame=ranks.drop(columns="numeric_rank"), height=150)
-    st.caption(
-        "Ranks are the recorded resource-wide ranks, not positions within this search. A blank "
-        "rank means unavailable. Source tables retain every original ranking/evidence field."
+    if not profile["members"].empty:
+        st.caption(
+            f"Member preview from {profile['membership_source']}: "
+            f"{len(profile['members']):,} of {members:,} recorded members."
+        )
+        _show_table(frame=profile["members"], height=220)
+    source_id = source_identity(config=config)
+    active = (source_id, group_id)
+    if st.session_state.get("active_dossier_identity") != active:
+        st.session_state.pop("group_dossier_complete_prepared", None)
+        st.session_state["active_dossier_identity"] = active
+    load_label = (
+        "Reload complete evidence dossier"
+        if "dossier" in group_cache
+        else "Load complete evidence dossier"
     )
+    if st.button(
+        load_label,
+        key="group_dossier_load",
+        help=(
+            "Find all recorded group, cluster and protein links, then count every source. "
+            "The completed dossier is reused while you inspect sources or prepare downloads."
+        ),
+    ):
+        with st.status("Loading complete group evidence…", expanded=True) as status:
+            st.write("Finding recorded member and contributing-cluster links…")
+            queries = build_group_dossier(
+                connection=connection,
+                group_id=group_id,
+                schema=schema,
+            )
+            st.write("Counting complete evidence sources…")
+            inventory = dossier_inventory(connection=connection, queries=queries)
+            group_cache["dossier"] = {"queries": queries, "inventory": inventory, "previews": {}}
+            st.session_state.pop("group_dossier_complete_prepared", None)
+            status.update(label="Complete evidence dossier ready", state="complete", expanded=False)
+    if "dossier" not in group_cache:
+        st.info(
+            "Load the complete evidence dossier to inspect and download all linked source records."
+        )
+        return
+    dossier = group_cache["dossier"]
+    queries = dossier["queries"]
+    inventory = dossier["inventory"]
+    available = inventory.loc[inventory["complete_rows"] > 0]
+    if available.empty:
+        st.info("No linked evidence is available for this group in the loaded resource.")
+        return
     st.markdown("**Complete evidence inventory**")
     _show_table(frame=available, height=300)
     with st.expander("❓ What does this dossier include?"):
         st.markdown(
-            "The joined HOG overview and members, plus raw rows connected through recorded HOG, "
-            "contributing-cluster and protein identifiers: rankings, domains, expression, "
-            "structure/pocket evidence and other linked annotations present in this release. "
-            "Raw rows include the linking fields for audit. Shared identifiers may retain "
-            "context from another recorded group; this does not assert identical membership. "
-            "External records and structure files in separate review bundles are not embedded. "
-            "Missing annotation remains unavailable. The archive manifest also lists "
-            "zero-row sources."
+            "Every linked raw source row, the joined HOG overview/members, all recorded "
+            "group ranking fields and release provenance. Links use recorded group, cluster "
+            "and protein identifiers. Shared identifiers retain their original group context. "
+            "Separate model/review files and external databases are not embedded."
         )
     render_complete_export(
         connection=connection,
         queries=queries,
-        source=source_identity(config=config),
+        source=source_id,
         description=f"Source: {config.source_path}; complete linked group dossier: {group_id}",
         key="group_dossier_complete",
         file_stem=f"dossier_{group_id}",
@@ -373,145 +469,78 @@ def _render_group_dossier(
     sources = available["source"].tolist()
     if st.session_state.get(selected_key) not in sources:
         st.session_state.pop(selected_key, None)
-    source = st.selectbox(
+    selected = st.selectbox(
         "Inspect an evidence source",
         sources,
         key=selected_key,
         format_func=lambda value: ENRICHED_HOG_LABELS.get(value, value),
-        help="Every source listed in the inventory is included in the complete dossier download.",
+        help="Every source listed is included in the complete dossier download.",
     )
-    query = next(query for query in queries if query.name == source)
-    frame = preview_query(
-        connection=connection, query=query, maximum_rows=min(config.max_rows, 100)
-    )
+    if selected not in dossier["previews"]:
+        query = next(query for query in queries if query.name == selected)
+        dossier["previews"][selected] = preview_query(
+            connection=connection,
+            query=query,
+            maximum_rows=min(config.max_rows, 100),
+        )
+    frame = dossier["previews"][selected]
     st.caption(
-        f"Source preview: first {len(frame):,} rows. The dossier contains its "
-        "complete rows and fields."
+        f"Source preview: first {len(frame):,} rows; complete rows and fields are downloadable."
     )
     _show_table(frame=frame, height=500)
 
 
-def render_resource_search(
+def _render_direct_matches(
     *,
     connection: duckdb.DuckDBPyConnection,
     config: AppConfig,
+    state: dict[str, object],
 ) -> None:
-    """Find proteins/groups across the complete resource and inspect full evidence.
+    """Render cached direct matches, deferring a group search's full source scan.
 
     Args:
         connection: Open resource connection.
         config: Current source and preview configuration.
+        state: Submitted search, catalogue, matching queries and cached previews.
     """
-    st.subheader("Protein & HOG search")
-    st.markdown(
-        "**1. Find a protein or group. 2. Inspect its HOG and ranks. "
-        "3. Download the complete evidence dossier.**"
-    )
-    with st.expander("❓ Which inputs can I use, and what will I get?"):
-        st.markdown(
-            "Paste HOG/OG IDs, protein accessions, gene names, FASTA identifiers, seed IDs, "
-            "DeepClust identifiers or protein-name fragments, one per line. Smart matching uses "
-            "exact identifiers and partial descriptive names. Exact matching is useful for a "
-            "specific HOG; contains can find incomplete IDs. Search covers every recognised field "
-            "in every loaded relation before any preview limit. Select a discovered group to see "
-            "its recorded ranks, complete membership and linked evidence. A direct-match export "
-            "retains the original matching rows; a group dossier also follows identifier links."
-        )
-    source = source_identity(config=config)
-    with st.form("unified_resource_search"):
-        text = st.text_area(
-            "Search term(s)",
-            placeholder="Q9SA03\nN0.HOG0004891\nF-box protein",
-            help="Paste up to 50 terms, separated by newlines, commas, semicolons or tabs.",
-            height=130,
-        )
-        mode = st.radio(
-            "Matching method",
-            ("smart", "exact", "contains"),
-            horizontal=True,
-            help=(
-                "Smart: exact IDs and partial names. Exact: whole identifiers/list tokens. "
-                "Contains: literal text."
-            ),
-        )
-        submitted = st.form_submit_button("Search the complete loaded resource")
-    state_key = "complete_resource_search"
-    state = st.session_state.get(state_key)
-    if state is not None and state["source"] != source:
-        st.session_state.pop(state_key)
-        state = None
-    if submitted:
-        st.session_state.pop(state_key, None)
-        try:
-            terms = parse_search_terms(value=text)
-            with st.spinner("Searching the full resource and resolving group links…"):
-                queries = build_search_queries(connection=connection, terms=terms, mode=mode)
-                summary = summarise_search_queries(connection=connection, queries=queries)
-                matching_sources = set(summary["relation"])
-                matching = tuple(query for query in queries if query.name in matching_sources)
-                groups = resolve_search_groups(connection=connection, queries=matching)
-            state = {
-                "source": source,
-                "queries": matching,
-                "summary": summary,
-                "groups": groups,
-                "terms": terms,
-                "mode": mode,
-            }
-            st.session_state[state_key] = state
-        except AppError as exc:
-            st.warning(str(exc))
-            return
-    if state is None:
-        return
-    summary = state["summary"]
-    if summary.empty:
-        st.warning("No identifier or name match was found in the loaded resource.")
-        return
-    st.caption(f"Applied search: {'; '.join(state['terms'])} · matching: {state['mode']}")
-    metrics = st.columns(3)
-    metrics[0].metric(
-        "Entered terms matched", f"{summary['search_term'].nunique():,} / {len(state['terms']):,}"
-    )
-    metrics[1].metric("Source relations", f"{summary['relation'].nunique():,}")
-    metrics[2].metric("Complete matching source rows", f"{int(summary['matched_rows'].sum()):,}")
-    st.caption(
-        "Counts include a separate match for each entered term; complete downloads "
-        "retain that provenance."
-    )
-    if state["groups"]:
-        group_key = "search_dossier_group"
-        if st.session_state.get(group_key) not in state["groups"]:
-            st.session_state.pop(group_key, None)
-        group_id = st.selectbox(
-            "Inspect a HOG or group",
-            state["groups"],
-            key=group_key,
-            help=(
-                "All discovered groups are available, including those beyond the "
-                "screen preview limit."
-            ),
-        )
-        try:
-            _render_group_dossier(connection=connection, config=config, group_id=group_id)
-        except AppError as exc:
-            st.error(str(exc))
-    else:
-        st.info(
-            "Direct matches were found, but this release has no recorded group link for them. "
-            "Their complete source rows remain available below."
-        )
     with st.expander(
         "Direct matching rows and complete search downloads", expanded=not state["groups"]
     ):
+        if state["summary"] is None:
+            if not st.button(
+                "Load direct matching rows",
+                key="search_direct_load",
+                help=(
+                    "Search group-ID fields across every source and count complete matches. "
+                    "This does not limit the HOG lookup or full dossier download."
+                ),
+            ):
+                st.caption("Direct source counts and previews are loaded on request.")
+                return
+            with st.spinner("Counting direct group-ID matches across all sources…", show_time=True):
+                queries = group_match_queries(
+                    connection=connection,
+                    terms=state["terms"],
+                    schema=state["schema"],
+                )
+                summary = summarise_search_queries(connection=connection, queries=queries)
+                matching_sources = set(summary["relation"])
+                state["queries"] = tuple(
+                    query for query in queries if query.name in matching_sources
+                )
+                state["summary"] = summary
+        summary = state["summary"]
+        if summary.empty:
+            st.info("No direct matching source rows were found.")
+            return
         _show_table(frame=summary, height=280)
         render_complete_export(
             connection=connection,
             queries=state["queries"],
-            source=source,
+            source=state["source"],
             description=(
                 f"Source: {config.source_path}; direct search: {state['terms']!r}; "
-                f"mode: {state['mode']}"
+                f"mode: {state['mode']}; group_only: {state['group_only']}"
             ),
             key="search_direct_complete",
             file_stem="complete_search_matches",
@@ -522,18 +551,187 @@ def render_resource_search(
             st.session_state.pop(selected_key, None)
         relation = st.selectbox("Preview a direct-match source", sources, key=selected_key)
         query = next(query for query in state["queries"] if query.name == relation)
-        rows = st.number_input(
-            "Rows in search preview",
-            min_value=1,
-            max_value=config.max_rows,
-            value=min(100, config.max_rows),
-            key="search_preview_rows",
-            help=(
-                "Preview only. Search counts, discovered groups and complete downloads "
-                "remain uncapped."
-            ),
+        rows = int(
+            st.number_input(
+                "Rows in search preview",
+                min_value=1,
+                max_value=config.max_rows,
+                value=min(100, config.max_rows),
+                key="search_preview_rows",
+                help="Preview only; complete downloads retain every matching row and field.",
+            )
         )
-        frame = preview_query(connection=connection, query=query, maximum_rows=int(rows))
+        preview_key = (relation, rows)
+        previews = state.setdefault("direct_previews", {})
+        if preview_key not in previews:
+            previews[preview_key] = preview_query(
+                connection=connection, query=query, maximum_rows=rows
+            )
+        frame = previews[preview_key]
         selected = _preview_fields(columns=frame.columns.tolist(), key=f"search_columns_{relation}")
         if selected:
             _show_table(frame=frame.loc[:, selected], height=480)
+
+
+def render_resource_search(
+    *,
+    connection: duckdb.DuckDBPyConnection,
+    config: AppConfig,
+) -> None:
+    """Open exact HOG/OG profiles promptly and defer complete evidence expansion.
+
+    Args:
+        connection: Open resource connection.
+        config: Current source and preview configuration.
+    """
+    st.subheader("Protein & HOG search")
+    st.markdown(
+        "**1. Find a protein or group. 2. Inspect original ranks and members. "
+        "3. Load the complete evidence dossier to download every linked record.**"
+    )
+    with st.expander("❓ Which inputs can I use, and what will I get?"):
+        st.markdown(
+            "Paste complete HOG/OG IDs for a direct group lookup, or protein accessions, "
+            "gene names, seed/DeepClust IDs and name fragments for a wider resource search. "
+            "Exact group lookups open ranks and members first. Full source counts, linked "
+            "evidence and downloads are loaded explicitly and cached for the current release. "
+            "Contains matching and the wider-search option inspect all recognised fields."
+        )
+    source = source_identity(config=config)
+    with st.form("unified_resource_search"):
+        text = st.text_area(
+            "Search term(s)",
+            placeholder="Q9SA03\nN0.HOG0004891\nF-box protein",
+            help="Up to 50 terms, separated by newlines, commas, semicolons or tabs.",
+            height=130,
+        )
+        mode = st.radio(
+            "Matching method",
+            ("smart", "exact", "contains"),
+            horizontal=True,
+            help="Smart uses exact IDs and partial names; contains supports incomplete IDs.",
+        )
+        wider = st.checkbox(
+            "Search names and all identifier fields as well",
+            key="search_wider_fields",
+            help="For complete HOG/OG IDs, the default reads group records directly. "
+            "Enable this to also search references in other recognised fields.",
+        )
+        submitted = st.form_submit_button("Search the complete loaded resource")
+    state_key = "complete_resource_search"
+    state = st.session_state.get(state_key)
+    required = {"source", "group_only", "group_cache", "schema", "elapsed_seconds"}
+    if state is not None and (not required.issubset(state) or state["source"] != source):
+        st.session_state.pop(state_key)
+        state = None
+    if submitted:
+        st.session_state.pop(state_key, None)
+        try:
+            terms = parse_search_terms(value=text)
+            if not terms:
+                raise AppError("Enter at least one search term")
+            start = perf_counter()
+            catalogue = resource_schema(connection=connection)
+            group_terms = () if wider else exact_group_terms(terms=terms, mode=mode)
+            if group_terms:
+                with st.spinner("Finding the recorded HOG / group…", show_time=True):
+                    groups = find_exact_groups(
+                        connection=connection, terms=group_terms, schema=catalogue
+                    )
+                queries, summary = (), None
+                terms = group_terms
+            else:
+                with st.spinner(
+                    "Searching identifiers and names across the full resource…", show_time=True
+                ):
+                    queries = build_search_queries(
+                        connection=connection,
+                        terms=terms,
+                        mode=mode,
+                        schema=catalogue,
+                    )
+                    summary = summarise_search_queries(connection=connection, queries=queries)
+                    matching_sources = set(summary["relation"])
+                    queries = tuple(query for query in queries if query.name in matching_sources)
+                    groups = resolve_search_groups(
+                        connection=connection, queries=queries, schema=catalogue
+                    )
+            elapsed = perf_counter() - start
+            state = {
+                "source": source,
+                "queries": queries,
+                "summary": summary,
+                "groups": groups,
+                "terms": terms,
+                "mode": mode,
+                "group_only": bool(group_terms),
+                "schema": catalogue,
+                "group_cache": {},
+                "elapsed_seconds": elapsed,
+            }
+            st.session_state[state_key] = state
+            LOGGER.info(
+                "Resource search group_only=%s groups=%d elapsed_seconds=%.3f",
+                bool(group_terms),
+                len(groups),
+                elapsed,
+            )
+        except AppError as exc:
+            st.warning(str(exc))
+            return
+    if state is None:
+        return
+    summary = state["summary"]
+    st.caption(f"Applied search: {'; '.join(state['terms'])} · matching: {state['mode']}")
+    st.caption(
+        f"Lookup completed in {state['elapsed_seconds']:.2f} seconds. "
+        "Full evidence loads on request."
+    )
+    if state["group_only"]:
+        missing = [term for term in state["terms"] if term not in state["groups"]]
+        if missing:
+            st.warning("No recorded group found for: " + "; ".join(missing))
+        metrics = st.columns(2)
+        metrics[0].metric(
+            "Entered terms matched", f"{len(state['groups']):,} / {len(state['terms']):,}"
+        )
+        metrics[1].metric("Recorded groups", f"{len(state['groups']):,}")
+    else:
+        if summary.empty:
+            st.warning("No identifier or name match was found in the loaded resource.")
+            return
+        metrics = st.columns(3)
+        metrics[0].metric(
+            "Entered terms matched",
+            f"{summary['search_term'].nunique():,} / {len(state['terms']):,}",
+        )
+        metrics[1].metric("Source relations", f"{summary['relation'].nunique():,}")
+        metrics[2].metric(
+            "Complete matching source rows", f"{int(summary['matched_rows'].sum()):,}"
+        )
+    if state["groups"]:
+        group_key = "search_dossier_group"
+        if st.session_state.get(group_key) not in state["groups"]:
+            st.session_state.pop(group_key, None)
+        group_id = st.selectbox(
+            "Inspect a HOG or group",
+            state["groups"],
+            key=group_key,
+            help="Every discovered group is available, independently of preview limits.",
+        )
+        try:
+            _render_group_dossier(
+                connection=connection,
+                config=config,
+                group_id=group_id,
+                cache=state["group_cache"],
+                schema=state["schema"],
+            )
+        except AppError as exc:
+            st.error(str(exc))
+    elif not state["group_only"]:
+        st.info("Direct matches were found, but this release has no recorded group link for them.")
+    try:
+        _render_direct_matches(connection=connection, config=config, state=state)
+    except AppError as exc:
+        st.error(str(exc))

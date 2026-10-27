@@ -2,6 +2,8 @@
 
 Use the top-level **🔎 Search & results** section. It contains **Protein & HOG
 search** and **All results**; search is no longer inside Chemistry & outputs.
+**All results is also available under Candidate discovery.** Both entries open
+the same page, source selection and complete-download controls.
 The six scientific stages and the generic Protein research workbench remain
 available. Opening a page does not launch a new analysis or contact DeepClust.
 
@@ -14,9 +16,14 @@ available. Opening a page does not launch a new analysis or contact DeepClust.
 2. Use **smart** for exact identifiers and partial descriptive names, **exact**
    for whole identifiers/list tokens, or **contains** for incomplete identifiers
    and literal substrings. Percent signs and quotes are literal text, not SQL.
-3. Press **Search the complete loaded resource**. All recognised fields in all
-   loaded relations are searched. Summary counts cover the full result;
-   repeated hits for different entered terms remain separate for provenance.
+3. Press **Search the complete loaded resource**. Complete HOG/OG IDs in smart
+   or exact mode use a direct lookup in recorded group fields, with stored ranks
+   and member metadata shown first. Surrounding whitespace is removed. Full
+   dossier inventories are not calculated before the initial result. Names,
+   proteins, incomplete IDs in contains mode and the explicit **Search names
+   and all identifier fields as well** option use the broader recognised-field
+   search. Timed spinners show when work is running. Broad match counts cover
+   all source rows; repeated hits for different entered terms retain provenance.
 4. Select **Inspect a HOG or group**. A protein may map to several recorded
    groups, including an OG and a root HOG. Choose the group appropriate to the
    biological question. The selector is not derived from the first preview rows.
@@ -25,7 +32,12 @@ available. Opening a page does not launch a new analysis or contact DeepClust.
    and each stage using the maintained source preference. A short final
    shortlist cannot hide an earlier full-resource ranking. Missing ranks are
    unavailable; a cluster or member rank is not promoted to a group rank.
-6. Inspect the evidence inventory and select any source to preview its records.
+6. Press **Load complete evidence dossier**, then inspect the inventory and
+   select any source to preview its records. The app shows link discovery and
+   counting phases. The completed graph, inventory and bounded source previews
+   are cached for this search and source, so changing download format or preview
+   source does not repeat the whole operation. Use **Reload complete evidence
+   dossier** to request an explicit refresh.
    It includes the available enriched HOG overview/members, all group-linked
    recorded ranks and raw source evidence linked by group, contributing-cluster
    or protein identifiers. Release metadata/provenance is included when present.
@@ -38,18 +50,29 @@ the original search hits, with entered term, source relation and matched fields.
 That export retains direct matches; the selected-group dossier additionally
 follows recorded identifier links. A direct match without a recorded group link
 remains downloadable without an invented HOG or ranking.
+For a direct HOG/OG lookup, press **Load direct matching rows** to calculate
+the full per-source match counts. This scans group fields, not every descriptive
+name or protein field. The wider-search option is available for references in
+those other fields.
 
 ## Download all results
 
-1. Open **All results** and choose an enriched HOG view or a raw relation.
+1. Open **All results** from **Candidate discovery** or **Search & results**.
+   The published `candidate_master_results` relation is selected by default
+   when available. Choose another raw relation or an enriched HOG view as needed.
 2. Leave **Find within this complete result** empty to include every row in that
    view. To find an arbitrary HOG or protein beyond the first 1,000 rows, enter
    its identifier. Filtering runs before preview limiting and also searches
    recognised fields hidden from the preview.
-3. Check **Complete matching rows** and the complete field count.
-4. In **Complete download**, select a format, prepare and download. These
+3. Raw-result counts are cached independently of the preview. Joined HOG
+   previews/counts are optional: enable **Load joined HOG preview and counts**
+   to inspect them. A complete joined download is available without doing this.
+4. In **Complete download**, select a format, press **Prepare all results
+   download**, then **Download all results**. These
    controls export all matching rows and fields. They ignore **Rows to display**,
    **Preview fields** and the command-line `--max-rows` screen limit.
+   Its manifest reports the actual exported row count, including when the joined
+   preview/count was not requested.
 5. Use **Screen preview** for a compact table. Its separately labelled preview
    downloads contain only the rows/fields displayed. Clearing every preview
    field does not disable the complete download.
@@ -86,6 +109,11 @@ can require substantial database work. Request large downloads deliberately.
 Changing the source, selected group/result, applied filter or export format
 invalidates its prepared payload. A source failure does not yield a silently
 partial “complete” export. No source rows are written or reranked.
+Selected-HOG source predicates run before membership aggregation and within-HOG
+window functions; whole HOG partitions are retained, so stored and within-HOG
+rank meanings are preserved. Exact group lookups do not build the complete
+evidence graph automatically. Shared-key matching uses vector/list predicates
+instead of a correlated loop through every target key for every source row.
 
 ## Evidence scope
 

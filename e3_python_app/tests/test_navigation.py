@@ -48,6 +48,18 @@ def test_navigation_selects_one_stage_and_page_for_lazy_rendering() -> None:
         navigation_page(stage=stage, title="missing")
 
 
+def test_all_results_has_two_explicit_shortcuts_to_the_same_page() -> None:
+    """Candidate discovery and search retain the identical complete-results page."""
+    discovery = navigation_stage(label="🟢 2 · Candidate discovery")
+    search = navigation_stage(label="🔎 Search & results")
+    first = navigation_page(stage=discovery, title="All results")
+    second = navigation_page(stage=search, title="All results")
+    assert first == second
+    assert first.shared
+    assert navigation_page_titles().count("All results") == 1
+    validate_navigation()
+
+
 @pytest.mark.parametrize(
     ("stages", "message"),
     [

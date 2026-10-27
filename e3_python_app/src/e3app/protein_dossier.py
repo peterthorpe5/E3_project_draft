@@ -10,7 +10,7 @@ import duckdb
 import pandas as pd
 
 from e3app.complete_exports import iter_query_batches, query_schema
-from e3app.data import list_relations, quote_identifier, relation_columns
+from e3app.data import quote_identifier
 from e3app.enriched_hogs import (
     ENRICHED_HOG_MEMBERS,
     ENRICHED_HOG_OVERVIEW,
@@ -18,8 +18,7 @@ from e3app.enriched_hogs import (
 )
 from e3app.errors import AppError
 from e3app.human_hogs import RANKING_RELATION_PREFERENCE
-from e3app.result_queries import ResourceQuery, build_result_query
-from e3app.unified_search import _exact_condition
+from e3app.result_queries import ResourceQuery, build_result_query, resource_schema
 
 LOGGER = logging.getLogger(__name__)
 LinkKeys = dict[str, set[str]]
@@ -154,24 +153,30 @@ def _query_link_keys(
     *,
     connection: duckdb.DuckDBPyConnection,
     query: ResourceQuery,
+    columns: Sequence[str] | None = None,
 ) -> LinkKeys:
     """Read only relationship fields from all matching rows, in bounded batches.
 
     Args:
         connection: Open resource connection.
         query: Complete matched-row query.
+        columns: Known source fields, avoiding repeated DESCRIBE queries.
 
     Returns:
         Identifier keys grouped by relationship type.
     """
     fields = link_columns(
-        columns=[
-            name
-            for name, _ in query_schema(
-                connection=connection,
-                query=query,
-            )
-        ]
+        columns=(
+            columns
+            if columns is not None
+            else [
+                name
+                for name, _ in query_schema(
+                    connection=connection,
+                    query=query,
+                )
+            ]
+        )
     )
     selected = [(kind, field) for kind, columns in fields.items() for field in columns]
     keys: LinkKeys = {"group": set(), "cluster": set(), "protein": set()}
@@ -212,16 +217,17 @@ def _link_predicates(
         if not values:
             continue
         for column in selected:
-            condition = _exact_condition(column=column, term_expression="target.value")
-            if kind == "group":
-                condition = (
-                    f"({condition} OR upper(trim(regexp_replace(CAST("
-                    f"{quote_identifier(column)} AS VARCHAR), '^[A-Za-z_]+[:|]+', ''))) "
-                    "= upper(target.value))"
-                )
-            predicates.append(
-                (column, f"EXISTS (SELECT 1 FROM unnest(?) target(value) " f"WHERE {condition})")
+            value = f"upper(trim(coalesce(CAST({quote_identifier(column)} AS VARCHAR), '')))"
+            tokens = (
+                f"list_transform(regexp_split_to_array({value}, '[;|,]'), " "token -> trim(token))"
             )
+            candidates = f"list_concat([{value}], {tokens})"
+            if kind == "group":
+                candidates = (
+                    f"list_concat({candidates}, "
+                    f"[regexp_replace({value}, '^[A-Za-z_]+[:|]+', '')])"
+                )
+            predicates.append((column, f"list_has_any({candidates}, ?)"))
             parameters.append(values)
     return predicates, tuple(parameters)
 
@@ -232,6 +238,7 @@ def linked_relation_query(
     relation: str,
     keys: Mapping[str, set[str]],
     group_id: str = "",
+    schema: Mapping[str, Sequence[str]] | None = None,
 ) -> ResourceQuery | None:
     """Select complete rows through recorded group, cluster or protein links.
 
@@ -240,6 +247,7 @@ def linked_relation_query(
         relation: Existing relation to inspect.
         keys: Explicit target identifiers, without recursive graph expansion.
         group_id: Optional inspected group for exported row provenance.
+        schema: Optional catalogue for this same resource connection.
 
     Returns:
         Query with linking-column provenance, or None for an incompatible schema.
@@ -247,9 +255,10 @@ def linked_relation_query(
     Raises:
         AppError: If the requested relation is absent.
     """
-    if relation not in list_relations(connection=connection):
+    catalogue = resource_schema(connection=connection) if schema is None else schema
+    if relation not in catalogue:
         raise AppError(f"Unknown dossier relation: {relation}")
-    columns = relation_columns(connection=connection, relation=relation)
+    columns = catalogue[relation]
     conditions, parameters = _link_predicates(columns=columns, keys=keys)
     if not conditions:
         return None
@@ -270,32 +279,44 @@ def resolve_search_groups(
     *,
     connection: duckdb.DuckDBPyConnection,
     queries: Sequence[ResourceQuery],
+    schema: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[str, ...]:
     """Resolve direct matches to recorded groups through identifier-bearing rows.
 
     Args:
         connection: Open resource connection.
         queries: Complete direct-match queries, never preview data frames.
+        schema: Optional catalogue already read for the submitted search.
 
     Returns:
         All discovered group IDs, without a display-derived row limit.
         Matching proteins can belong to more than one recorded group.
     """
     direct: LinkKeys = {"group": set(), "cluster": set(), "protein": set()}
+    catalogue = resource_schema(connection=connection) if schema is None else schema
     for query in queries:
-        found = _query_link_keys(connection=connection, query=query)
+        found = _query_link_keys(
+            connection=connection, query=query, columns=catalogue.get(query.name)
+        )
         for kind in direct:
             direct[kind].update(found[kind])
     groups = set(direct["group"])
     # One explicit bridge from the original hits resolves accession-only and
     # cluster-only evidence. Do not recursively walk shared members into unrelated HOGs.
-    for relation in list_relations(connection=connection):
-        fields = link_columns(columns=relation_columns(connection, relation))
+    for relation, columns in catalogue.items():
+        fields = link_columns(columns=columns)
         if not fields["group"]:
             continue
-        query = linked_relation_query(connection=connection, relation=relation, keys=direct)
+        query = linked_relation_query(
+            connection=connection,
+            relation=relation,
+            keys=direct,
+            schema=catalogue,
+        )
         if query is not None:
-            groups.update(_query_link_keys(connection=connection, query=query)["group"])
+            groups.update(
+                _query_link_keys(connection=connection, query=query, columns=columns)["group"]
+            )
     # Prefer the actual group field rather than displaying a typed-key duplicate.
     typed_duplicates = {
         value
@@ -311,12 +332,16 @@ def group_ranking_query(
     *,
     connection: duckdb.DuckDBPyConnection,
     group_id: str,
+    schema: Mapping[str, Sequence[str]] | None = None,
+    canonical_only: bool = False,
 ) -> ResourceQuery | None:
     """Retain original group-linked ranks from every source, with stage provenance.
 
     Args:
         connection: Open resource connection.
         group_id: Exact inspected group identifier.
+        schema: Optional catalogue for the same resource connection.
+        canonical_only: Read only established group-rank sources for a quick profile.
 
     Returns:
         All original group-linked ranking values, or None if no ranked source
@@ -326,8 +351,10 @@ def group_ranking_query(
     selects: list[str] = []
     parameters: list[object] = []
     keys = {"group": identifier_tokens(value=group_id, kind="group")}
-    for relation in list_relations(connection=connection):
-        columns = relation_columns(connection=connection, relation=relation)
+    catalogue = resource_schema(connection=connection) if schema is None else schema
+    for relation, columns in catalogue.items():
+        if canonical_only and relation not in RANKING_RELATION_PREFERENCE:
+            continue
         conditions, values = _link_predicates(columns=columns, keys=keys)
         ranks = [column for column in columns if re.search(r"(^|_)rank$", column, re.I)]
         if not conditions or not ranks:
@@ -339,6 +366,11 @@ def group_ranking_query(
         )
         where = " OR ".join(condition for _, condition in conditions)
         for rank in ranks:
+            if canonical_only and rank not in (
+                *PRESTRUCTURE_GROUP_RANKS,
+                *POSTSTRUCTURE_GROUP_RANKS,
+            ):
+                continue
             stage = "Source-specific rank"
             if relation in RANKING_RELATION_PREFERENCE:
                 if rank in PRESTRUCTURE_GROUP_RANKS:
@@ -407,12 +439,14 @@ def build_group_dossier(
     *,
     connection: duckdb.DuckDBPyConnection,
     group_id: str,
+    schema: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[ResourceQuery, ...]:
     """Collect query plans for all evidence linked to one selected group.
 
     Args:
         connection: Open resource connection.
         group_id: Exact recorded HOG or other group ID selected by the user.
+        schema: Optional catalogue read once for the same source.
 
     Returns:
         Complete overview, member and linked raw-source queries. Empty sources
@@ -432,26 +466,49 @@ def build_group_dossier(
         "protein": set(),
     }
     keys = {kind: set(values) for kind, values in group_keys.items()}
-    relations = list_relations(connection=connection)
+    catalogue = resource_schema(connection=connection) if schema is None else schema
+    relations = tuple(catalogue)
     for relation in relations:
-        query = linked_relation_query(connection=connection, relation=relation, keys=group_keys)
+        query = linked_relation_query(
+            connection=connection,
+            relation=relation,
+            keys=group_keys,
+            schema=catalogue,
+        )
         if query is not None:
-            found = _query_link_keys(connection=connection, query=query)
+            found = _query_link_keys(
+                connection=connection, query=query, columns=catalogue[relation]
+            )
             keys["cluster"].update(found["cluster"])
             keys["protein"].update(found["protein"])
     # Capture protein identifiers present only on contributing-cluster evidence.
     cluster_keys = {"cluster": keys["cluster"]}
     for relation in relations:
-        query = linked_relation_query(connection=connection, relation=relation, keys=cluster_keys)
+        query = linked_relation_query(
+            connection=connection,
+            relation=relation,
+            keys=cluster_keys,
+            schema=catalogue,
+        )
         if query is not None:
-            keys["protein"].update(_query_link_keys(connection=connection, query=query)["protein"])
+            keys["protein"].update(
+                _query_link_keys(
+                    connection=connection,
+                    query=query,
+                    columns=catalogue[relation],
+                )["protein"]
+            )
     queries: list[ResourceQuery] = []
     capability = enriched_hog_capability(connection=connection)
     if capability["available"]:
         for result in (ENRICHED_HOG_OVERVIEW, ENRICHED_HOG_MEMBERS):
             if result == ENRICHED_HOG_MEMBERS and not capability["membership_available"]:
                 continue
-            base = build_result_query(connection=connection, result=result)
+            base = build_result_query(
+                connection=connection,
+                result=result,
+                hog_ids=(group_id.upper(),),
+            )
             queries.append(
                 ResourceQuery(
                     name=result,
@@ -459,7 +516,7 @@ def build_group_dossier(
                     parameters=(*base.parameters, group_id.upper()),
                 )
             )
-    rank_query = group_ranking_query(connection=connection, group_id=group_id)
+    rank_query = group_ranking_query(connection=connection, group_id=group_id, schema=catalogue)
     if rank_query is not None:
         queries.append(rank_query)
     for relation in relations:
@@ -468,6 +525,7 @@ def build_group_dossier(
             relation=relation,
             keys=keys,
             group_id=group_id,
+            schema=catalogue,
         )
         if relation in RELEASE_CONTEXT_RELATIONS:
             query = ResourceQuery(

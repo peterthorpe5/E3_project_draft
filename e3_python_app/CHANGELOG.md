@@ -4,6 +4,29 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.1
+
+- Restores **All results** under Candidate discovery and keeps the Search &
+  results shortcut. Both routes open the same complete download page.
+- Defaults All results to the published candidate-master relation when present.
+  Complete downloads remain uncapped and independent of preview rows/fields;
+  preparation and download buttons explicitly say **all results**.
+- Defers joined HOG previews/counts until requested, while keeping complete
+  downloads available immediately. Reuses result counts and previews on reruns.
+- Routes complete HOG/OG identifiers directly to recorded group sources and
+  stored ranks/membership, instead of searching every name/accession field.
+  Contains matching and the explicit wider-search option retain broad searches.
+- Loads complete evidence graphs, inventories and direct source matches on
+  request, then caches them per submitted search/source/group. Download-format
+  and source-preview changes do not rebuild or recount the dossier.
+- Replaces correlated row-by-key scans with vector/list identifier predicates,
+  reads relation schemas once per operation, and scopes selected-HOG sources
+  before membership aggregation. Original ranks and complete exports are preserved.
+- Adds visible elapsed-time spinners, full-dossier loading phases, source-aware
+  cache invalidation and migration of pre-hotfix Streamlit session state.
+- Adds both-route download tests and structural performance regressions that
+  prevent eager full scans, repeated inventory work and nested-loop key joins.
+
 ## v0.21.0
 
 - Moves Protein & HOG search and All results into a top-level Search & results

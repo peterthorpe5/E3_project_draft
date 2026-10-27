@@ -18,10 +18,12 @@ class NavigationPage:
     Attributes:
         title: Exact maintained page title used by help and render registries.
         method_annotation: Whether to show the recorded methods panel.
+        shared: Whether this exact page is deliberately reachable in several stages.
     """
 
     title: str
     method_annotation: bool = False
+    shared: bool = False
 
 
 @dataclass(frozen=True)
@@ -48,7 +50,7 @@ NAVIGATION_STAGES = (
         ),
         pages=(
             NavigationPage("Protein & HOG search"),
-            NavigationPage("All results"),
+            NavigationPage("All results", shared=True),
         ),
     ),
     NavigationStage(
@@ -80,6 +82,7 @@ NAVIGATION_STAGES = (
                 method_annotation=True,
             ),
             NavigationPage("Within-HOG ranking", method_annotation=True),
+            NavigationPage("All results", shared=True),
             NavigationPage("Candidates"),
             NavigationPage("E3 seed catalogue"),
             NavigationPage("Domains", method_annotation=True),
@@ -133,12 +136,8 @@ NAVIGATION_STAGES = (
     ),
     NavigationStage(
         label="🔴 6 · Chemistry & outputs",
-        description=(
-            "Structure-guided chemistry evidence for review and downstream follow-up."
-        ),
-        pages=(
-            NavigationPage("Computational chemistry", method_annotation=True),
-        ),
+        description=("Structure-guided chemistry evidence for review and downstream follow-up."),
+        pages=(NavigationPage("Computational chemistry", method_annotation=True),),
     ),
 )
 
@@ -154,7 +153,7 @@ def navigation_page_titles(
     Returns:
         Ordered page titles.
     """
-    return tuple(page.title for stage in stages for page in stage.pages)
+    return tuple(dict.fromkeys(page.title for stage in stages for page in stage.pages))
 
 
 def navigation_stage_labels(
@@ -210,15 +209,11 @@ def navigation_page(*, stage: NavigationStage, title: str) -> NavigationPage:
     for page in stage.pages:
         if page.title == title:
             return page
-    raise AppError(
-        f"Unknown application page for stage {stage.label}: {title}"
-    )
+    raise AppError(f"Unknown application page for stage {stage.label}: {title}")
 
 
-def validate_navigation(
-    *, stages: Sequence[NavigationStage] = NAVIGATION_STAGES
-) -> None:
-    """Validate stage labels, descriptions and globally unique page titles.
+def validate_navigation(*, stages: Sequence[NavigationStage] = NAVIGATION_STAGES) -> None:
+    """Validate stage labels, descriptions and explicitly shared page shortcuts.
 
     Args:
         stages: Navigation stages to validate.
@@ -241,8 +236,12 @@ def validate_navigation(
     page_titles = navigation_page_titles(stages=stages)
     if any(not title.strip() for title in page_titles):
         raise AppError("Application navigation page titles must not be blank")
-    if len(page_titles) != len(set(page_titles)):
-        raise AppError("Application navigation page titles must be unique")
+    for title in page_titles:
+        matching = [page for stage in stages for page in stage.pages if page.title == title]
+        if len(matching) > 1 and (
+            not all(page.shared for page in matching) or len(set(matching)) != 1
+        ):
+            raise AppError("Application navigation page titles must be unique or explicitly shared")
     LOGGER.debug(
         "Validated application navigation stages=%d pages=%d",
         len(stages),

@@ -1,4 +1,8 @@
 module	function	tests
+e3app.group_lookup	exact_group_terms; find_exact_groups; group_match_queries; quick_group_profile	test_group_lookup.py; test_search_performance.py; test_resource_browser.py
+e3app.resource_browser	lazy exact-group rendering; dossier/inventory and preview cache; complete downloads from both navigation routes; source/session invalidation	test_search_performance.py; test_resource_browser.py
+e3app.result_queries	resource_schema; shared catalogue; source-scoped enriched queries	test_group_lookup.py; test_search_performance.py; test_result_queries.py
+e3app.enriched_hogs	_hog_source_filter; selected-HOG predicates before aggregation and rank windows	test_search_performance.py; test_enriched_hogs.py
 e3app.result_queries	validated_terms; search_predicate; build_result_query; build_search_queries; query_count; preview_query; summarise_search_queries	test_result_queries.py; test_resource_browser.py
 e3app.protein_dossier	link_columns; identifier_tokens; _query_link_keys; _link_predicates; linked_relation_query; resolve_search_groups; group_ranking_query; canonical_group_ranks; build_group_dossier; dossier_inventory	test_protein_dossier.py; test_resource_browser.py
 e3app.complete_exports	iter_query_batches; query_schema; _export_notes; _validate_export; complete_tsv_archive; _write_excel_row; complete_excel_workbook	test_complete_exports.py; test_resource_browser.py

@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from numbers import Integral
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import duckdb
 import pandas as pd
 
-from e3app.data import list_relations, quote_identifier, relation_columns
+from e3app.data import IDENTIFIER_PATTERN, list_relations, quote_identifier, relation_columns
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
     _build_enriched_hog_query,
@@ -27,6 +27,26 @@ from e3app.unified_search import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def resource_schema(*, connection: duckdb.DuckDBPyConnection) -> dict[str, tuple[str, ...]]:
+    """Read the resource's relation/field catalogue in one metadata query.
+
+    Args:
+        connection: Open resource connection.
+
+    Returns:
+        Trusted relation names and fields in their published order.
+    """
+    rows = connection.execute(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = 'main' ORDER BY lower(table_name), table_name, ordinal_position"
+    ).fetchall()
+    schema: dict[str, list[str]] = {}
+    for relation, column in rows:
+        if IDENTIFIER_PATTERN.fullmatch(relation):
+            schema.setdefault(relation, []).append(column)
+    return {relation: tuple(columns) for relation, columns in schema.items()}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -117,6 +137,7 @@ def build_result_query(
     columns: Sequence[str] | None = None,
     terms: Sequence[str] = (),
     mode: SearchMode = "smart",
+    hog_ids: Sequence[str] = (),
 ) -> ResourceQuery:
     """Build a complete raw or enriched query, filtering before any preview limit.
 
@@ -126,6 +147,7 @@ def build_result_query(
         columns: Output fields, or every field when omitted.
         terms: Optional identifiers or names to match in all source fields.
         mode: Matching method for the optional filter.
+        hog_ids: Optional exact HOG scope, applied before joined aggregation.
 
     Returns:
         Complete query; HOG and member ranks retain their resource-wide meaning.
@@ -140,6 +162,7 @@ def build_result_query(
             result=result,
             selected_columns=available,
             maximum_rows=None,
+            hog_ids=hog_ids,
         )
     else:
         if result not in list_relations(connection=connection):
@@ -167,6 +190,7 @@ def build_search_queries(
     connection: duckdb.DuckDBPyConnection,
     terms: Sequence[str],
     mode: SearchMode = "smart",
+    schema: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[ResourceQuery, ...]:
     """Build uncapped direct-match queries with term and source provenance.
 
@@ -174,6 +198,7 @@ def build_search_queries(
         connection: Open resource connection.
         terms: Explicit identifiers or name fragments.
         mode: Identifier/name matching method.
+        schema: Optional previously read catalogue for this same resource.
 
     Returns:
         One complete query for each searchable relation.
@@ -186,10 +211,11 @@ def build_search_queries(
     if not clean:
         raise AppError("Enter at least one search term")
     queries = []
-    for relation in list_relations(connection=connection):
+    catalogue = resource_schema(connection=connection) if schema is None else schema
+    for relation, columns in catalogue.items():
         built = _relation_search_sql(
             relation=relation,
-            columns=relation_columns(connection, relation),
+            columns=columns,
             terms=clean,
             mode=mode,
             maximum_rows=None,

@@ -1,5 +1,13 @@
 # ARIA plant E3 Python reporter
 
+Version **0.21.1** restores **All results** under **Candidate discovery** and
+keeps its **Search & results** shortcut. Both locations provide identical
+complete downloads. Complete HOG/OG searches now open stored ranks and member
+metadata directly; full evidence dossiers/counts are loaded on request and
+cached while you inspect them. Timed spinners show work in progress. All results
+defaults to the published candidate table, with joined previews/counts optional;
+complete downloads always include every matching row and field.
+
 Version **0.21.0** adds a top-level **🔎 Search & results** section. **Protein &
 HOG search** searches the complete loaded resource, resolves proteins to their
 recorded groups, shows original ranks with their source fields, and exports a

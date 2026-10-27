@@ -126,6 +126,8 @@ def test_protein_search_shows_original_ranks_and_complete_linked_dossier(
         metric.label == "Rank after structural analysis" and metric.value == "1"
         for metric in app.metric
     )
+    app.button(key="group_dossier_load").click().run()
+    assert not app.exception
     app.button(key="group_dossier_complete_prepare").click().run()
     assert not app.exception
     with ZipFile(BytesIO(app.session_state["group_dossier_complete_prepared"][1])) as archive:
