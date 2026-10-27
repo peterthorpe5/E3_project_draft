@@ -105,7 +105,7 @@ class PocketSequenceCoordinate:
 
 @dataclass(frozen=True)
 class USAlignResult:
-    """Parsed global alignment metrics and transformation."""
+    """Parsed alignment metrics and transformation, retaining legacy API naming."""
 
     aligned_length: int
     rmsd_angstrom: float
@@ -114,3 +114,6 @@ class USAlignResult:
     tm_score_reference_normalised: float
     transform: Transform
     version: str
+    alignment_scope: str = "global"
+    lol_normalised_score: float | None = None
+    lol_homology_probability: float | None = None

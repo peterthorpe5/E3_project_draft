@@ -4,7 +4,11 @@ This package tests whether selected predicted pockets occupy a comparable three-
 position after protein-structure superposition. It is a separate component of the ARIA E3
 workflow, not an extension hidden inside a shell script.
 
-The package uses both US-align and TM-align for global protein superposition. For each candidate
+By default the package uses US-align and TM-align for global protein superposition. Version
+`0.7.0` also supports local LoL-align correspondence through Foldseek, with optional execution
+alongside or in place of the existing methods. See the
+[workflow integration guide](../e3_end_to_end_workflow/docs/LOLALIGN.md).
+For each candidate
 group it selects a deterministic best-evidence reference structure, aligns every other compatible
 model to that reference with both tools, reads each rotation/translation matrix and transforms the
 mobile pocket C-alpha coordinates into the reference frame. It answers two related but distinct

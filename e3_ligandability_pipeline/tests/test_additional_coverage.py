@@ -316,6 +316,7 @@ class AlphaFoldCoverageTests(unittest.TestCase):
                 }
             ],
             "Q1",
+            require_exact_accession_f1=False,
         )
         self.assertEqual(
             prediction["selection_rule"],

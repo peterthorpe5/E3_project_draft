@@ -13,6 +13,15 @@ human_plant_extension:
   ligandability_conda_environment: e3_ligandability
   structural_alignment_conda_environment: e3_structural_alignment
 
+  # Optional method overrides apply only to this extension. Keep the completed
+  # parent configuration unchanged and select a new extension output_root.
+  # structural_alignment:
+  #   run_usalign: true
+  #   run_tmalign: true
+  #   run_lolalign: true
+  #   foldseek_executable: /absolute/path/to/foldseek
+  #   lolalign_multidomain: true
+
   # These are per-job requests. At most --max-jobs tasks run concurrently.
   resources:
     preparation_memory_mb: 8000

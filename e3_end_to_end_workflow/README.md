@@ -1,5 +1,11 @@
 # E3 end-to-end workflow
 
+Version `0.17.0` adds configurable LoL-align comparisons alongside or in place of TM-align,
+including both plant-only and human/plant structural tasks. See
+[LoL-align configuration, installation and score interpretation](docs/LOLALIGN.md).
+The [release validation record](docs/LOLALIGN_VALIDATION_v0_17_0_20261027.md) documents
+the real-tool checks and component quality gates.
+
 This package is the orchestration and evidence-integration layer above the existing E3 project
 packages. Snakemake controls dependencies; each component package remains responsible for its
 detailed scientific analysis, while the master package enforces shared manifests, missing-data

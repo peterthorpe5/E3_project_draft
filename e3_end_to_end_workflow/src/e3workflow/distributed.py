@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 import duckdb
 
+from e3workflow.alignment_options import structural_method_arguments
 from e3workflow.config import WorkflowConfig
 from e3workflow.errors import StageError
 from e3workflow.io_utils import (
@@ -903,7 +904,7 @@ def run_structural_alignment_shard(
         "--minimum-group-support-fraction",
         str(settings.minimum_group_support_fraction),
         "--resume",
-    )
+    ) + structural_method_arguments(settings=settings)
     try:
         _run_component(
             argv=argv,

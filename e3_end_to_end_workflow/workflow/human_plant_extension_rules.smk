@@ -1,8 +1,10 @@
 """Shared Snakemake rules for the human-and-plant structural extension."""
 
 from pathlib import Path
+import json
 
 from e3workflow.config import load_config
+from e3workflow.alignment_options import resolve_structural_methods
 from e3workflow.io_utils import read_tsv
 
 
@@ -55,6 +57,13 @@ HUMAN_STRUCTURAL_ENV = str(
     )
 )
 HUMAN_RESOURCES = dict(_extension_value("resources", default={}))
+HUMAN_STRUCTURAL_METHOD_OPTIONS = json.dumps(
+    HUMAN_PLANT_EXTENSION.get("structural_alignment", {}), sort_keys=True
+)
+HUMAN_STRUCTURAL_SETTINGS = resolve_structural_methods(
+    settings=HUMAN_PARENT.analysis.structural_alignment,
+    options=HUMAN_STRUCTURAL_METHOD_OPTIONS,
+)
 
 
 def _resource(name, default):
@@ -334,7 +343,8 @@ rule run_human_plant_structural_extension_task:
             --ligandability-manifest {input.ligandability_manifest:q} \
             --output-root {params.output_root:q} \
             --task-index {params.task_index} \
-            --conda-environment {params.conda_environment:q} 2>&1 | tee {log:q}
+            --conda-environment {params.conda_environment:q} \
+            --structural-method-options {HUMAN_STRUCTURAL_METHOD_OPTIONS:q} 2>&1 | tee {log:q}
         """
 
 

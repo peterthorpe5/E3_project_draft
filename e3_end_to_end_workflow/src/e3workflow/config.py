@@ -443,6 +443,19 @@ class StructuralAlignmentAnalysisConfig:
     use_for_prioritisation: bool
     require_for_final_recommendation: bool
     prioritisation_weight: float
+    run_usalign: bool = True
+    run_tmalign: bool = True
+    run_lolalign: bool = False
+    foldseek_executable: str = "foldseek"
+    lolalign_multidomain: bool = True
+
+    def __post_init__(self) -> None:
+        """Reject invalid aligner selections before launching scientific jobs."""
+        for name in ("run_usalign", "run_tmalign", "run_lolalign", "lolalign_multidomain"):
+            if not isinstance(getattr(self, name), bool):
+                raise ConfigurationError(f"analysis.structural_alignment.{name} must be boolean")
+        if not any((self.run_usalign, self.run_tmalign, self.run_lolalign)):
+            raise ConfigurationError("At least one structural aligner must be enabled")
 
 
 @dataclass(frozen=True)
@@ -705,6 +718,24 @@ def _positive_integer(value: Any, label: str) -> int:
     """Validate one positive integer setting."""
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise ConfigurationError(f"{label} must be a positive integer")
+    return value
+
+
+def _boolean(*, value: Any, label: str) -> bool:
+    """Validate one boolean without coercing strings such as 'false'.
+
+    Args:
+        value: Candidate configuration value.
+        label: Configuration field for the error message.
+
+    Returns:
+        The validated boolean.
+
+    Raises:
+        ConfigurationError: If the value is not a boolean.
+    """
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{label} must be boolean")
     return value
 
 
@@ -1041,6 +1072,26 @@ def _analysis_config(root: Mapping[str, Any], base: Path) -> AnalysisConfig:
             ),
         ),
         structural_alignment=StructuralAlignmentAnalysisConfig(
+            run_usalign=_boolean(
+                value=structural_alignment.get("run_usalign", True),
+                label="analysis.structural_alignment.run_usalign",
+            ),
+            run_tmalign=_boolean(
+                value=structural_alignment.get("run_tmalign", True),
+                label="analysis.structural_alignment.run_tmalign",
+            ),
+            run_lolalign=_boolean(
+                value=structural_alignment.get("run_lolalign", False),
+                label="analysis.structural_alignment.run_lolalign",
+            ),
+            foldseek_executable=_non_empty_string(
+                structural_alignment.get("foldseek_executable", "foldseek"),
+                "analysis.structural_alignment.foldseek_executable",
+            ),
+            lolalign_multidomain=_boolean(
+                value=structural_alignment.get("lolalign_multidomain", True),
+                label="analysis.structural_alignment.lolalign_multidomain",
+            ),
             conda_environment=_non_empty_string(
                 structural_alignment.get(
                     "conda_environment",

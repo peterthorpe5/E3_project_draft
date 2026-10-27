@@ -11,3 +11,7 @@ class InputValidationError(StructuralAlignmentError):
 
 class ToolExecutionError(StructuralAlignmentError):
     """Raised when a structural aligner cannot execute or returns invalid output."""
+
+
+class NoAlignmentFoundError(ToolExecutionError):
+    """Raised when a successful local-alignment command returns no correspondence."""

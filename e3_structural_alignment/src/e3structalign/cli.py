@@ -67,6 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--tmalign-executable", default="TMalign")
     run.add_argument("--skip-usalign", action="store_true")
     run.add_argument("--skip-tmalign", action="store_true")
+    run.add_argument("--run-lolalign", action="store_true")
+    run.add_argument("--foldseek-executable", default="foldseek")
+    run.add_argument("--lolalign-single-domain", action="store_true")
     run.add_argument("--threads", type=positive_integer, default=4)
     run.add_argument("--member-pocket-top-k", type=positive_integer, default=1)
     run.add_argument(
@@ -133,6 +136,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 tmalign_executable=args.tmalign_executable,
                 run_usalign=not args.skip_usalign,
                 run_tmalign=not args.skip_tmalign,
+                run_lolalign=args.run_lolalign,
+                foldseek_executable=args.foldseek_executable,
+                lolalign_multidomain=not args.lolalign_single_domain,
                 threads=args.threads,
                 member_pocket_top_k=args.member_pocket_top_k,
                 distance_threshold_angstrom=args.distance_threshold_angstrom,

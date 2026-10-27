@@ -130,6 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     human_structural.add_argument("--output-root", type=Path, required=True)
     human_structural.add_argument("--task-index", type=int, required=True)
     human_structural.add_argument("--conda-environment", required=True)
+    human_structural.add_argument("--structural-method-options")
     human_structural_aggregate = subparsers.add_parser(
         "aggregate-human-plant-structural-extension"
     )
@@ -396,6 +397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_root=args.output_root,
                 task_index=args.task_index,
                 conda_environment=args.conda_environment,
+                structural_method_options=args.structural_method_options,
             )
             payload = {"status": "complete", "marker": str(marker)}
         elif args.command == "aggregate-human-plant-structural-extension":

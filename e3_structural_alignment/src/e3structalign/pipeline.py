@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from e3structalign import __version__
-from e3structalign.errors import InputValidationError, StructuralAlignmentError
+from e3structalign.errors import (
+    InputValidationError, NoAlignmentFoundError, StructuralAlignmentError,
+)
 from e3structalign.io_utils import (
     atomic_write_json,
     close_logger,
@@ -37,6 +39,7 @@ from e3structalign.models import (
     SelectedPocket,
     StructureAsset,
 )
+from e3structalign.lolalign import foldseek_version, run_lolalign
 from e3structalign.structure_io import (
     mutual_nearest_matches,
     parse_ca_atoms,
@@ -72,6 +75,9 @@ ALIGNMENT_SCHEMA = (
     ("alignment_tool", "VARCHAR"),
     ("status", "VARCHAR"),
     ("tool_version", "VARCHAR"),
+    ("alignment_scope", "VARCHAR"),
+    ("lol_normalised_score", "DOUBLE"),
+    ("lol_homology_probability", "DOUBLE"),
     ("aligned_length", "BIGINT"),
     ("rmsd_angstrom", "DOUBLE"),
     ("sequence_identity", "DOUBLE"),
@@ -210,6 +216,7 @@ SENSITIVITY_MEMBER_SCHEMA = (
     ("alignment_tools", "VARCHAR"),
     ("alignment_tool_count", "BIGINT"),
     ("both_aligners_assessed", "BOOLEAN"),
+    ("all_enabled_aligners_assessed", "BOOLEAN"),
     ("same_pocket_position_supported", "BOOLEAN"),
     ("pocket_structure_conserved", "BOOLEAN"),
     ("strict_same_pocket_position_supported", "BOOLEAN"),
@@ -253,6 +260,9 @@ class AlignmentSettings:
     tmalign_executable: str = "TMalign"
     run_usalign: bool = True
     run_tmalign: bool = True
+    run_lolalign: bool = False
+    foldseek_executable: str = "foldseek"
+    lolalign_multidomain: bool = True
     threads: int = 4
     member_pocket_top_k: int = 1
     distance_threshold_angstrom: float = 4.0
@@ -265,12 +275,17 @@ class AlignmentSettings:
 
     def validate(self) -> None:
         """Validate all settings before any output is created."""
-        if not self.run_usalign and not self.run_tmalign:
+        if not self.run_usalign and not self.run_tmalign and not self.run_lolalign:
             raise InputValidationError("At least one structural aligner must be enabled")
         if self.run_usalign and not self.usalign_executable.strip():
             raise InputValidationError("US-align executable must be non-empty")
         if self.run_tmalign and not self.tmalign_executable.strip():
             raise InputValidationError("TM-align executable must be non-empty")
+        if self.run_lolalign and not self.foldseek_executable.strip():
+            raise InputValidationError("Foldseek executable must be non-empty")
+        for label in ("run_usalign", "run_tmalign", "run_lolalign", "lolalign_multidomain"):
+            if not isinstance(getattr(self, label), bool):
+                raise InputValidationError(f"{label} must be boolean")
         if self.threads < 1:
             raise InputValidationError("threads must be a positive integer")
         if not 1 <= self.member_pocket_top_k <= 20:
@@ -950,6 +965,9 @@ def _reference_rows(
         "alignment_tool": alignment_tool,
         "status": "REFERENCE",
         "tool_version": version,
+        "alignment_scope": "reference",
+        "lol_normalised_score": None,
+        "lol_homology_probability": None,
         "aligned_length": None,
         "rmsd_angstrom": 0.0,
         "sequence_identity": 1.0,
@@ -1096,6 +1114,54 @@ def _assess_pocket_pair(
     return comparison, residue_rows
 
 
+def _no_alignment_rows(
+    *, reference: SelectedPocket, mobile: SelectedPocket,
+    reference_asset: StructureAsset, mobile_asset: StructureAsset,
+    stdout_path: Path, output_root: Path, version: str, reason: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Record a local no-hit result without inventing a transform or measured scores.
+
+    Args:
+        reference: Reference selected pocket.
+        mobile: Mobile selected pocket.
+        reference_asset: Checksum-bound reference model.
+        mobile_asset: Checksum-bound mobile model.
+        stdout_path: Successful tool's diagnostic log.
+        output_root: Root for relative provenance paths.
+        version: Foldseek version.
+        reason: Explicit no-alignment reason.
+
+    Returns:
+        Alignment and pocket records whose unmeasured fields remain null.
+    """
+    identity = {
+        "cluster_id": reference.cluster_id,
+        "primary_group_type": reference.primary_group_type,
+        "primary_group_id": reference.primary_group_id,
+        "reference_accession": reference.accession,
+        "mobile_accession": mobile.accession,
+        "reference_species": reference.species,
+        "mobile_species": mobile.species,
+        "alignment_tool": "LoL-align", "status": "NO_ALIGNMENT_FOUND",
+    }
+    alignment = dict.fromkeys(name for name, _kind in ALIGNMENT_SCHEMA)
+    alignment.update(
+        identity,
+        reference_model_path=str(reference_asset.path), mobile_model_path=str(mobile_asset.path),
+        reference_model_sha256=reference_asset.sha256, mobile_model_sha256=mobile_asset.sha256,
+        tool_version=version, alignment_scope="local", matrix_relative_path="",
+        stdout_relative_path=str(stdout_path.relative_to(output_root)),
+        interactive_view_relative_path="",
+    )
+    comparison = dict.fromkeys(name for name, _kind in POCKET_COMPARISON_SCHEMA)
+    comparison.update(
+        identity, reference_pocket_number=reference.pocket_number,
+        mobile_pocket_number=mobile.pocket_number, reason=reason,
+    )
+    LOGGER.warning("No LoL-align correspondence for %s/%s", reference.accession, mobile.accession)
+    return alignment, comparison
+
+
 def _align_pair(
     *,
     reference: SelectedPocket,
@@ -1141,15 +1207,40 @@ def _align_pair(
     pair_root = raw_root / tool_slug / group_slug
     matrix_path = pair_root / f"{pair_slug}.matrix.txt"
     stdout_path = pair_root / f"{pair_slug}.stdout.txt"
-    result = run_usalign(
-        executable=executable,
-        mobile_path=mobile_asset.path,
-        reference_path=reference_asset.path,
-        matrix_path=matrix_path,
-        stdout_path=stdout_path,
-        version=version,
-        tool_name=alignment_tool,
-    )
+    if alignment_tool == "LoL-align":
+        for accession in (reference.accession, mobile.accession):
+            chains = {(atom.label_chain, atom.auth_chain) for atom in all_atoms[accession]}
+            if len(chains) != 1:
+                raise InputValidationError(
+                    f"LoL-align requires an explicitly selected single-chain model: {accession}"
+                )
+        try:
+            result = run_lolalign(
+                executable=executable,
+                mobile_path=mobile_asset.path,
+                reference_path=reference_asset.path,
+                matrix_path=matrix_path,
+                stdout_path=stdout_path,
+                version=version,
+                multidomain=settings.lolalign_multidomain,
+            )
+        except NoAlignmentFoundError as exc:
+            alignment, comparison = _no_alignment_rows(
+                reference=reference, mobile=mobile,
+                reference_asset=reference_asset, mobile_asset=mobile_asset,
+                stdout_path=stdout_path, output_root=output_root, version=version, reason=str(exc),
+            )
+            return alignment, comparison, [], [], []
+    else:
+        result = run_usalign(
+            executable=executable,
+            mobile_path=mobile_asset.path,
+            reference_path=reference_asset.path,
+            matrix_path=matrix_path,
+            stdout_path=stdout_path,
+            version=version,
+            tool_name=alignment_tool,
+        )
     minimum_tm_score = min(
         result.tm_score_mobile_normalised,
         result.tm_score_reference_normalised,
@@ -1187,6 +1278,9 @@ def _align_pair(
         "alignment_tool": alignment_tool,
         "status": "COMPLETE",
         "tool_version": result.version,
+        "alignment_scope": result.alignment_scope,
+        "lol_normalised_score": result.lol_normalised_score,
+        "lol_homology_probability": result.lol_homology_probability,
         "aligned_length": result.aligned_length,
         "rmsd_angstrom": result.rmsd_angstrom,
         "sequence_identity": result.sequence_identity,
@@ -1329,6 +1423,12 @@ def _group_summary(
     by_mobile: dict[str, list[Mapping[str, Any]]] = {}
     for row in assessed:
         by_mobile.setdefault(str(row["mobile_accession"]), []).append(row)
+    completely_assessed = {
+        accession for accession, rows in by_mobile.items() if len(rows) == len(alignment_tools)
+    }
+    aligned_accessions = completely_assessed | (
+        {reference.accession} if reference is not None else set()
+    )
     supported_mobile = {
         accession
         for accession, rows in by_mobile.items()
@@ -1360,7 +1460,6 @@ def _group_summary(
         for accession in supported_accessions
         if record_by_accession[accession].species
     }
-    eligible_species = {record.species for record in eligible if record.species}
     support_fraction = (
         len(supported_accessions) / len(eligible) if eligible else 0.0
     )
@@ -1417,12 +1516,15 @@ def _group_summary(
         "alignment_tool_count": len(alignment_tools),
         "selected_accession_count": len(records),
         "model_available_accession_count": len(eligible),
-        "aligned_accession_count": len(eligible),
+        "aligned_accession_count": len(aligned_accessions),
         "supported_accession_count": len(supported_accessions),
         "position_supported_accession_count": len(
             position_supported_accessions
         ),
-        "aligned_species_count": len(eligible_species),
+        "aligned_species_count": len({
+            record_by_accession[accession].species for accession in aligned_accessions
+            if record_by_accession[accession].species
+        }),
         "supported_species_count": len(supported_species),
         "group_support_fraction": support_fraction,
         "group_position_support_fraction": position_support_fraction,
@@ -1605,6 +1707,7 @@ def _sensitivity_member_summaries(
                 "alignment_tools": ";".join(alignment_tools),
                 "alignment_tool_count": len(alignment_tools),
                 "both_aligners_assessed": best["all_assessed"],
+                "all_enabled_aligners_assessed": best["all_assessed"],
                 "same_pocket_position_supported": best["position_supported"],
                 "pocket_structure_conserved": best["structure_conserved"],
                 "strict_same_pocket_position_supported": strict_position,
@@ -1744,8 +1847,13 @@ def run_analysis(
         tools.append(("US-align", settings.usalign_executable))
     if settings.run_tmalign:
         tools.append(("TM-align", settings.tmalign_executable))
+    if settings.run_lolalign:
+        tools.append(("LoL-align", settings.foldseek_executable))
     versions = {
-        name: tool_version(executable, tool_name=name)
+        name: (
+            foldseek_version(executable=executable)
+            if name == "LoL-align" else tool_version(executable, tool_name=name)
+        )
         for name, executable in tools
     }
     atoms: dict[str, Any] = {}

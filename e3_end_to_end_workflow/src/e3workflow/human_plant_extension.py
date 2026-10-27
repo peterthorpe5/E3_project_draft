@@ -9,15 +9,18 @@ output root.
 from __future__ import annotations
 
 import html
+import json
 import logging
 import os
 import shutil
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import duckdb
 
+from e3workflow.alignment_options import resolve_structural_methods, structural_method_arguments
 from e3workflow.config import WorkflowConfig, load_config
 from e3workflow.distributed import (
     STRUCTURAL_DATASETS,
@@ -1173,6 +1176,7 @@ def run_human_plant_structural_task(
     output_root: Path,
     task_index: int,
     conda_environment: str,
+    structural_method_options: str | None = None,
 ) -> Path:
     """Run one combined human-and-plant group through structural alignment.
 
@@ -1183,6 +1187,7 @@ def run_human_plant_structural_task(
         output_root: Separate extension output root.
         task_index: Zero-based group task index.
         conda_environment: Conda environment containing the structural package.
+        structural_method_options: Optional JSON method overrides for this extension only.
 
     Returns:
         Stable task-completion marker path.
@@ -1190,12 +1195,18 @@ def run_human_plant_structural_task(
     config = load_config(parent_config_path)
     group_source = Path(group_manifest).expanduser().resolve()
     aggregate_source = Path(ligandability_manifest).expanduser().resolve()
+    settings = resolve_structural_methods(
+        settings=config.analysis.structural_alignment, options=structural_method_options,
+    )
+    method_digest = config.digest
+    if settings != config.analysis.structural_alignment:
+        method_digest += "|structural_methods=" + json.dumps(obj=asdict(settings), sort_keys=True)
     row = _group_record(path=group_source, task_index=task_index)
     entity_id = f"{row['primary_group_type']}:{row['primary_group_id']}"
     digest = _task_digest(
         group_source,
         aggregate_source,
-        parent_digest=config.digest,
+        parent_digest=method_digest,
     )
     task_root = (
         Path(output_root).expanduser().resolve()
@@ -1227,7 +1238,6 @@ def run_human_plant_structural_task(
         group=row,
         destination=staging / "inputs",
     )
-    settings = config.analysis.structural_alignment
     argv = (
         "conda",
         "run",
@@ -1275,7 +1285,7 @@ def run_human_plant_structural_task(
         "--minimum-group-support-fraction",
         str(settings.minimum_group_support_fraction),
         "--resume",
-    )
+    ) + structural_method_arguments(settings=settings)
     try:
         _run_component(
             argv=argv,

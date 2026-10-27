@@ -154,6 +154,7 @@ class AlphaFoldDefensiveTests(unittest.TestCase):
                 },
             ],
             "Q1",
+            require_exact_accession_f1=False,
         )
         self.assertEqual(selected["selection_exact_accession_count"], 0)
         self.assertEqual(selected["selection_canonical_monomer_count"], 0)
@@ -570,7 +571,7 @@ class PipelineDefensiveTests(unittest.TestCase):
                         payload=[
                             {
                                 "uniprotAccession": "Q1",
-                                "cifUrl": "https://x/model_v6.cif",
+                                "cifUrl": "https://x/AF-Q1-F1-model_v6.cif",
                             }
                         ]
                     )

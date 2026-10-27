@@ -4,6 +4,17 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.7.0
+
+- Add Foldseek LoL-align with feature preflight, exhaustive reference-to-mobile comparison,
+  bounded execution and explicit validation of local correspondence and rigid transforms.
+- Retain raw TSV/logs and separate normalised LoL score, estimated homology probability,
+  alignment scope and TM metrics derived from the LoL correspondence.
+- Support all-three-method and LoL-only consensus through existing pocket geometry, residue
+  conservation and global-TM gates; add `all_enabled_aligners_assessed` alongside the legacy alias.
+- Add a checksum- and revision-pinned Linux AVX2 installer, offline installation support,
+  parser/command tests and a real-binary rotation/translation and full-pipeline integration test.
+
 ## v0.6.0
 
 - Retains explicitly identified residue-level pLDDT from ModelCIF local quality

@@ -4,6 +4,15 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.1.2
+
+- Require exact-accession F1 API models by default, using a complete filename match and
+  numeric model-version selection. Reject mismatched, non-F1 or unidentified records before download.
+- Record unresolved selection as `MISSING_MODEL` with a reason. Explicit local inputs retain
+  their input-record path; legacy API fallback requires an explicit boolean override.
+- Add selection-policy provenance, regression tests and refreshed function/test traceability.
+- Preserve frozen legacy reference scripts and previously generated analysis outputs.
+
 ## v0.1.1
 
 <!-- source: RELEASE_NOTES_v0_1_1.md; sha256: 6a9b8564000524fb9548b2eadd6c6455b90d52041e0da9daa9f7b20fbf6df5f4 -->

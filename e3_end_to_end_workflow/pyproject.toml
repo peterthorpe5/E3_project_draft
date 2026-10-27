@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-end-to-end-workflow"
-version = "0.16.2"
+version = "0.17.0"
 description = "Restartable Snakemake orchestration for the ARIA plant E3 discovery resource"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,7 @@ dev = [
 
 [project.scripts]
 e3-workflow = "e3workflow.cli:main"
+e3-workflow-prepare-lolalign = "e3workflow.lolalign_config:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

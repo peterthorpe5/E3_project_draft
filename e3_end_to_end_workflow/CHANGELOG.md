@@ -4,6 +4,17 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.17.0
+
+- Add optional LoL-align execution in both structural workflow routes, with explicit
+  US-align/TM-align enablement and LoL-only support.
+- Add `e3-workflow-prepare-lolalign` to prepare a validated isolated-run configuration;
+  retain source YAML, input paths and non-structural thresholds.
+- Add an all-1,972 comparison configuration derived from the reviewed corrected-expression
+  v0.14.0 configuration. This is a new campaign definition, not the September run's provenance.
+- Record method settings in the existing configuration digest and retain all per-method metrics
+  when structural shard tables are aggregated.
+
 ## v0.16.2
 
 - Makes Stage 10 generate every named Top-N review shortlist declared by the

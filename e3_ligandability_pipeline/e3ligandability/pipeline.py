@@ -110,6 +110,7 @@ def metadata_from_input(accession: str, record: dict[str, str]) -> dict[str, Any
         "selection_exact_accession_count": None,
         "selection_canonical_monomer_count": None,
         "selection_rule": "input_record",
+        "selection_policy": "explicit_input_record",
     }
 
 
@@ -146,7 +147,13 @@ def resolve_alphafold_metadata(
                 config["alphafold"]["request_timeout_seconds"]
             ),
         )
-        selected = select_prediction(predictions, accession)
+        selected = select_prediction(
+            predictions=predictions,
+            accession=accession,
+            require_exact_accession_f1=(
+                config["alphafold"]["require_exact_accession_f1"]
+            ),
+        )
         return normalise_prediction_metadata(accession, selected)
     return metadata_from_input(accession, input_record)
 

@@ -1,6 +1,13 @@
 # E3 Ligandability Pipeline
 
-Version 0.1.1
+Version 0.1.2
+
+Automatic API model selection now requires both an exact requested/returned UniProt accession
+match and an exact `AF-<accession>-F1-model_vN.cif` filename. An unavailable acceptable model is
+recorded as `MISSING_MODEL` at the metadata stage, with the selection reason, before downloading.
+Explicit local input records remain supported. The legacy fallback policy requires the explicit
+configuration override `alphafold.require_exact_accession_f1: false`; its use is logged and
+recorded in `selection_policy`. Existing validated results are not rewritten.
 
 A defensive, auditable replacement for the inherited AlphaFold, FPocket,
 P2Rank and pocket-pLDDT scripts used in the ARIA plant E3/PROTAC project.

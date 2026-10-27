@@ -650,11 +650,23 @@ def _fake_structural_component(*, argv: tuple[str, ...], **_kwargs: Any) -> None
     )
 
 
+@pytest.mark.parametrize("run_lolalign", [False, True])
 def test_structural_scatter_and_aggregate_preserve_browser_assets(
     structural_config: WorkflowConfig,
     monkeypatch: pytest.MonkeyPatch,
+    run_lolalign: bool,
 ) -> None:
     """Group shards must aggregate tables and retain complete offline browsers."""
+    structural_config = replace(
+        structural_config,
+        analysis=replace(
+            structural_config.analysis,
+            structural_alignment=replace(
+                structural_config.analysis.structural_alignment,
+                run_lolalign=run_lolalign, foldseek_executable="/tools/foldseek",
+            ),
+        ),
+    )
     tables = structural_config.run_root / "09_ligandability" / "tables"
     _write_parquet(
         tables / "selected_pockets.parquet",
@@ -682,14 +694,21 @@ def test_structural_scatter_and_aggregate_preserve_browser_assets(
         "accession VARCHAR, path VARCHAR",
         [("Q00001", "/model/1.cif"), ("Q00002", "/model/2.cif")],
     )
-    monkeypatch.setattr(
-        "e3workflow.distributed._run_component",
-        _fake_structural_component,
-    )
+    calls = []
+
+    def component(**kwargs):
+        """Capture method flags while preserving the existing component fixture."""
+        calls.append(kwargs["argv"])
+        _fake_structural_component(**kwargs)
+
+    monkeypatch.setattr("e3workflow.distributed._run_component", component)
     assert run_structural_alignment_shard(
         config=structural_config,
         task_index=0,
     )["status"] == "complete"
+    assert ("--run-lolalign" in calls[0]) == run_lolalign
+    if run_lolalign:
+        assert "/tools/foldseek" in calls[0]
     assert run_structural_alignment_shard(
         config=structural_config,
         task_index=0,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -22,6 +23,10 @@ _LOGGER = logging.getLogger("e3ligandability.alphafold")
 
 class AlphaFoldNotFoundError(RuntimeError):
     """Raised when AlphaFold Database has no prediction for an accession."""
+
+
+class AlphaFoldSelectionError(AlphaFoldNotFoundError):
+    """Raised when no API prediction satisfies the configured selection policy."""
 
 
 class DownloadValidationError(RuntimeError):
@@ -117,6 +122,8 @@ def query_prediction_metadata(
 def select_prediction(
     predictions: list[dict[str, Any]],
     accession: str,
+    *,
+    require_exact_accession_f1: bool = True,
 ) -> dict[str, Any]:
     """Select one monomeric AlphaFold prediction deterministically.
 
@@ -124,39 +131,55 @@ def select_prediction(
     structural workflow is designed for a single protein chain, so records with
     the canonical ``AF-<accession>-F1-model_vN.cif`` filename are preferred.
     Within that set, an exact ``uniprotAccession`` match and the highest numeric
-    model version are preferred. If canonical filename metadata is unavailable,
-    exact accession records are used before a documented final fallback.
+    model version are preferred. Automatic selection requires both identifiers
+    by default; documented legacy fallback requires an explicit override.
 
     Args:
         predictions: Non-empty API metadata records.
         accession: Requested accession.
+        require_exact_accession_f1: Require matching UniProt metadata and an
+            exact F1 CIF filename. False explicitly enables legacy fallbacks.
 
     Returns:
         Selected metadata record with selection provenance fields added.
 
     Raises:
         ValueError: If predictions are empty.
+        AlphaFoldSelectionError: If strict selection finds no exact F1 match.
     """
 
     if not predictions:
         raise ValueError("At least one AlphaFold prediction is required.")
+    if not all(isinstance(record, dict) for record in predictions):
+        raise ValueError("AlphaFold predictions must be metadata dictionaries.")
+    if not isinstance(require_exact_accession_f1, bool):
+        raise ValueError("require_exact_accession_f1 must be a boolean.")
     safe_accession = validate_accession(accession)
     exact_candidates = [
         item
         for item in predictions
-        if str(item.get("uniprotAccession", "")).strip() == safe_accession
+        if isinstance(item.get("uniprotAccession"), str)
+        and item["uniprotAccession"].strip() == safe_accession
     ]
-    canonical_prefix = f"AF-{safe_accession}-F1-model_v"
+    canonical_name = re.compile(
+        rf"AF-{re.escape(safe_accession)}-F1-model_v[0-9]+\.cif(?:\.gz)?"
+    )
     monomer_candidates = [
         item
         for item in predictions
-        if Path(urlparse(str(item.get("cifUrl", ""))).path).name.startswith(
-            canonical_prefix
+        if canonical_name.fullmatch(
+            Path(urlparse(str(item.get("cifUrl", ""))).path).name
         )
     ]
     exact_monomers = [
         item for item in monomer_candidates if item in exact_candidates
     ]
+    if require_exact_accession_f1 and not exact_monomers:
+        raise AlphaFoldSelectionError(
+            f"No exact-accession F1 AlphaFold model for {safe_accession}; "
+            f"predictions={len(predictions)}, exact_accession={len(exact_candidates)}, "
+            f"canonical_f1={len(monomer_candidates)}. Selection remains unresolved."
+        )
     if exact_monomers:
         candidates = exact_monomers
         selection_rule = "exact_accession_canonical_monomer_highest_version"
@@ -187,6 +210,16 @@ def select_prediction(
     selected["selection_exact_accession_count"] = len(exact_candidates)
     selected["selection_canonical_monomer_count"] = len(monomer_candidates)
     selected["selection_rule"] = selection_rule
+    selected["selection_policy"] = (
+        "require_exact_accession_f1"
+        if require_exact_accession_f1 else "allow_documented_fallback"
+    )
+    if not exact_monomers:
+        _LOGGER.warning(
+            "Explicit legacy AlphaFold fallback for %s: %s",
+            safe_accession,
+            selection_rule,
+        )
     return selected
 
 
@@ -237,6 +270,7 @@ def normalise_prediction_metadata(
             "selection_canonical_monomer_count"
         ),
         "selection_rule": metadata.get("selection_rule"),
+        "selection_policy": metadata.get("selection_policy"),
     }
 
 

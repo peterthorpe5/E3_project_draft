@@ -27,6 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "download_plddt_json": True,
         "reuse_valid_files": True,
         "query_api_for_local_models": True,
+        "require_exact_accession_f1": True,
     },
     "external_tools": {
         "run_fpocket_p2rank": True,
@@ -300,6 +301,7 @@ def validate_config(config: dict[str, Any]) -> None:
         "download_plddt_json",
         "reuse_valid_files",
         "query_api_for_local_models",
+        "require_exact_accession_f1",
     ):
         _require_boolean(
             config["alphafold"].get(field_name),
