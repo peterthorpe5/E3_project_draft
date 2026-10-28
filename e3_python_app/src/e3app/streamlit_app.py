@@ -74,6 +74,7 @@ from e3app.protein_imager import (
     prepare_protein_imager_data,
     protein_imager_member_rows,
 )
+from e3app.protein_imager_pockets import PocketSource, load_pocket_source
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
     ENRICHED_HOG_MEMBERS,
@@ -406,9 +407,50 @@ def _protein_imager_source_choice(
     return str(group_id), cache["members"], identity
 
 
+def _protein_imager_pocket_source(
+    *, config: AppConfig | None, bundle: PocketReviewBundle | None, group_page: str,
+    group_id: str, selected: list[str], key_prefix: str,
+) -> PocketSource | None:
+    """Select an exact matching recorded group, keeping plant/human review sources explicit."""
+    if bundle is not None:
+        return load_pocket_source(bundle=bundle, group_page=group_page)
+    choices = {}
+    if config is not None and selected:
+        seen = set()
+        for label, review in (
+            ("Plant review", prepare_pocket_review(config)),
+            ("Human & plant review", prepare_human_plant_review(config)),
+        ):
+            if not review.available:
+                continue
+            for row in review.index.to_dict(orient="records"):
+                page = str(row["group_review_html"])
+                identity = (str(review.path), page)
+                if identity in seen:
+                    continue
+                if normalise_uniprot_accession(value=group_id) is not None:
+                    members = selected_group_members(review, int(row["review_rank"]), "structure")
+                    matches = members["candidate_accession"].astype(str).isin(selected).any()
+                else:
+                    matches = str(row["primary_group_id"]) == group_id
+                if matches:
+                    title = f"{label} · {row['primary_group_id']} · rank {row['review_rank']}"
+                    choices[title] = (review, page)
+                    seen.add(identity)
+    if not choices:
+        return None
+    choice = st.selectbox(
+        "Recorded pocket evidence", options=list(choices), key=f"{key_prefix}_pocket_source",
+        help="Uses this exact review group and its recorded model/pocket coordinates.",
+    )
+    review, page = choices[choice]
+    return load_pocket_source(bundle=review, group_page=page)
+
+
 def _render_protein_imager_link(
     *, key_prefix: str, members: pd.DataFrame | None = None, group_id: str = "",
     context_identity: str = "", connection: object | None = None, config: AppConfig | None = None,
+    pocket_bundle: PocketReviewBundle | None = None, pocket_group_page: str = "",
 ) -> None:
     """Prepare selected full coordinate files, download them and open Protein Imager."""
     st.markdown("#### Protein Imager — prepare upload data")
@@ -435,7 +477,46 @@ def _render_protein_imager_link(
     )
     if not labels:
         st.caption("Select a canonical UniProt accession; local identifiers are not guessed.")
-    fingerprint = (context_identity, group_id, tuple(selected))
+    pocket_source = None
+    pocket_error = ""
+    try:
+        pocket_source = _protein_imager_pocket_source(
+            config=config, bundle=pocket_bundle, group_page=pocket_group_page,
+            group_id=group_id, selected=selected, key_prefix=key_prefix,
+        )
+    except AppError as exc:
+        pocket_error = str(exc)
+        st.warning(pocket_error)
+    original_models = ()
+    if pocket_source is not None:
+        st.caption(
+            "Recorded pocket residues, scores and native coordinates will be included. "
+            "Full atoms require the exact original prediction model. Otherwise files are "
+            "labelled CA_only and show pocket locations only."
+        )
+        with st.expander("Original pocket prediction models for atom-level inspection"):
+            uploads = st.file_uploader(
+                "Original prediction mmCIF files (optional)", type=["cif", "mmcif"],
+                accept_multiple_files=True, key=f"{key_prefix}_original_models",
+                help="Optional: exact original files from the E3 run. Their SHA-256 must match "
+                     "the review. Current downloads are also checked for an exact match.",
+            )
+            original_models = tuple(upload.getvalue() for upload in uploads)
+            st.caption(
+                "These files are checked locally against the report's original model checksum. "
+                "Upload the prepared files to Protein Imager manually after downloading."
+            )
+    else:
+        st.info(
+            "No matching recorded pocket review is available here. This preparation contains "
+            "protein structures only. Configure the matching plant or human/plant pocket "
+            "review to include pocket residues, scores and geometry."
+        )
+    fingerprint = (
+        context_identity, group_id, tuple(selected), pocket_error,
+        pocket_source.document_sha256 if pocket_source is not None else "",
+        tuple(hashlib.sha256(model).hexdigest() for model in original_models),
+    )
     state_key = f"{key_prefix}_prepared_data"
     stored = st.session_state.get(state_key)
     if isinstance(stored, dict) and stored.get("fingerprint") != fingerprint:
@@ -443,12 +524,12 @@ def _render_protein_imager_link(
     if len(selected) > MAX_BUNDLE_MODELS:
         st.warning(f"Select at most {MAX_BUNDLE_MODELS:,} models for one preparation.")
     st.caption(
-        "1. Select proteins. 2. Prepare data to download their full AlphaFold mmCIF files. "
+        "1. Select proteins. 2. Prepare data, including recorded pockets when available. "
         "3. Download a .cif or ZIP below, then open Protein Imager and upload the .cif files."
     )
     if st.button(
         "Prepare Protein Imager data", key=f"{key_prefix}_prepare", type="primary",
-        disabled=not selected or len(selected) > MAX_BUNDLE_MODELS,
+        disabled=not selected or len(selected) > MAX_BUNDLE_MODELS or bool(pocket_error),
         help="Downloads full coordinate models from AlphaFold Database; PAE is not required.",
     ):
         st.session_state.pop(state_key, None)
@@ -458,6 +539,7 @@ def _render_protein_imager_link(
             ):
                 prepared = prepare_protein_imager_data(
                     group_id=group_id, accessions=selected, species_by_accession=species,
+                    pocket_source=pocket_source, original_models=original_models,
                 )
             st.session_state[state_key] = {"fingerprint": fingerprint, "prepared": prepared}
         except AppError as exc:
@@ -467,15 +549,17 @@ def _render_protein_imager_link(
     if isinstance(prepared, ProteinImagerPreparation):
         audit = pd.DataFrame(asdict(record) for record in prepared.records)
         _display_dataframe(frame=audit, height=220)
-        if prepared.files:
+        if prepared.files or prepared.pocket_files:
             st.success(
-                f"Ready: {len(prepared.files):,} of {len(prepared.records):,} requested models."
+                f"Ready: {len(prepared.files):,} current models and "
+                f"{len(prepared.pocket_files):,} recorded pocket inspection files."
             )
             st.download_button(
                 "Download Protein Imager upload files (ZIP)", data=prepared.payload,
                 file_name=f"{safe_file_stem(value=group_id)}_protein_imager_files.zip",
                 mime="application/zip", key=f"{key_prefix}_zip_download",
             )
+        if prepared.files:
             files = {file.accession: file for file in prepared.files}
             chosen = st.selectbox(
                 "Structure file to download", options=list(files),
@@ -489,7 +573,7 @@ def _render_protein_imager_link(
             st.caption(
                 "Extract the ZIP and load its models/*.cif files, or upload the direct mmCIF."
             )
-        else:
+        elif not prepared.pocket_files:
             st.warning(
                 "No requested model was available. The retrieval audit records each outcome."
             )
@@ -501,11 +585,45 @@ def _render_protein_imager_link(
         skipped = [record.accession for record in prepared.records if record.status != "included"]
         if skipped and prepared.files:
             st.warning("Unavailable models: " + ", ".join(skipped) + ". See the audit above.")
+        if prepared.pocket_audit:
+            _display_dataframe(frame=pd.DataFrame(prepared.pocket_audit), height=220)
+            if any(row["representation"] == "CA_trace_only" for row in prepared.pocket_audit):
+                st.warning(
+                    "CA_only files contain recorded C-alpha positions only. They show pocket "
+                    "locations; side chains, atomic surfaces and cavity volumes require the "
+                    "exact original prediction model. Do not overlay unchecked current models."
+                )
+            if any(row["representation"] in {"not_recorded", "no_recorded_coordinates"}
+                   for row in prepared.pocket_audit):
+                st.info("Some selected proteins lack recorded pocket coordinates; see the audit.")
+            if any(row["exported_pockets"] < row["recorded_pockets"]
+                   for row in prepared.pocket_audit):
+                st.warning(
+                    "Some recorded pockets have no mapped coordinates. Their scores remain "
+                    "in pocket_scores.tsv; the audit records how many pockets were exported."
+                )
+        if prepared.pocket_files:
+            pocket_files = {file.filename: file for file in prepared.pocket_files}
+            chosen_pocket = st.selectbox(
+                "Pocket inspection file to download", options=list(pocket_files),
+                key=f"{key_prefix}_download_pocket",
+            )
+            file = pocket_files[chosen_pocket]
+            st.download_button(
+                "Download selected pocket inspection file (mmCIF)", data=file.data,
+                file_name=file.filename, mime="chemical/x-mmcif", key=f"{key_prefix}_pocket_cif",
+            )
+            st.caption(
+                "Extract the ZIP. Load a pockets/*_protein.cif and its matching pocket files "
+                "together without separate alignment. Select each pocket structure in Protein "
+                "Imager to colour it or show sticks. Pocket scores and residue IDs are in the "
+                "supplementary TSV files; the website does not import those scores."
+            )
     st.link_button("Open Protein Imager", PROTEIN_IMAGER_URL)
     st.caption(
-        "Prepared files are current AlphaFold DB downloads. For recorded pocket residues, use the "
-        "original retained PDB/mmCIF model; current models can differ. This link does not transfer "
-        "files or pocket annotations automatically. Select pocket residues manually after upload."
+        "The link opens Protein Imager for manual file upload. Current AlphaFold models are "
+        "under models/; recorded pocket inspection files are under pockets/ when available. "
+        "Pocket exports keep their recorded native coordinates; no E3 superposition is applied."
     )
 
 
@@ -647,7 +765,7 @@ def _render_external_links(*, connection: object, config: AppConfig) -> None:
         group_id, members, identity = context
         _render_protein_imager_link(
             key_prefix="external_pi", members=members, group_id=group_id,
-            context_identity=identity,
+            context_identity=identity, config=config,
         )
     with st.expander("Tool start pages and preparation notes", expanded=False):
         st.caption("These generic links open each service without a selected protein or HOG.")
@@ -3941,6 +4059,7 @@ def _render_selected_pocket_review(
         _render_protein_imager_link(
             key_prefix=f"{key_prefix}_pi", members=upload_members,
             group_id=str(row["primary_group_id"]), context_identity=repr((context, stamps)),
+            pocket_bundle=bundle, pocket_group_page=group_page,
         )
     st.caption(
         f"Review rank {int(row['review_rank'])} | evolutionary group "

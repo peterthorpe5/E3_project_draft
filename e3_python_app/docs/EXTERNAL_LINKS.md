@@ -2,6 +2,60 @@
 
 ## Protein Imager: prepare and download at every entry point
 
+### Recorded pocket inspection (0.21.5)
+
+Preparation includes recorded pocket files when a matching portable review is
+configured. Selected plant and human/plant reviews supply their current group.
+On External links and Ligandability the app finds exact matching review groups;
+for an individual protein it offers its recorded groups explicitly. A protein
+without pocket evidence is listed as not recorded, independently of model availability.
+If both configured reviews contain the group, select which recorded evidence to use.
+
+The ZIP contains:
+
+- `pockets/*_protein.cif` and `pockets/*_rankN_pocketM.cif`: the matching protein
+  and separate pocket residue structures in their original native coordinates.
+  Rank one is the primary result; other retained ranks remain sensitivity evidence.
+- `pocket_scores.tsv`: recorded pocket number/rank, druggability, mapping and
+  available pLDDT fractions, predictor agreement and evidence status.
+- `pocket_residues.tsv`: exact recorded chain/residue identifiers, residue names,
+  C-alpha coordinates and available pLDDT for each pocket membership.
+- `pocket_status.tsv` and `pocket_files.tsv`: original report/model checksums,
+  exported representation, missing-coordinate counts and upload file checksums.
+- `models/`: the separate current AlphaFold downloads, with their retrieval audit.
+
+Extract the ZIP. In Protein Imager load one `pockets/*_protein.cif` and its
+matching pocket files **together, without separately aligning them**. Use the
+Structures/Selections controls to choose the pocket structure and colour it,
+show sticks or adjust representations. Individual mmCIF downloads are also
+available. The TSVs are supplementary inspection/audit data: the website does
+not automatically display their scores. Styles/colours are chosen manually.
+
+**Atom-level inspection requires the original model.** A full current AlphaFold
+download is eligible only if its SHA-256 exactly matches the model recorded in
+the review, and every recorded C-alpha locator, identity and coordinate agrees.
+Alternatively expand **Original pocket prediction models for atom-level inspection**
+and supply the original `.cif`/`.mmcif` files from the E3 run. These are checked
+locally against the recorded checksum. All available original atoms are retained
+for the protein; pocket files contain the original atoms of the mapped pocket residues.
+
+**If the original model is unavailable**, `*_CA_only_*` files retain the report's
+original C-alpha trace and mapped pocket positions. These are useful for locating
+pockets but lack side chains and cannot support atomic-surface or cavity-volume
+inspection. Their B factors are zero placeholders; confidence values are preserved
+in the residue TSV when present. Do not overlay these files with unchecked current
+models from `models/`. The app never transfers historical pockets onto a newer
+model by accession or sequence similarity alone.
+
+No cavity spheres/mesh, ligand poses, new predictions, recalculated scores or
+automatic `.3dpi` project styling are supplied. A missing mapped pocket keeps its
+score record and explicit export count. Without the matching embedded review data,
+the UI says that only current protein structures are included; a legacy report
+may need regenerating from its recorded run outputs. Changing source/report/member
+selection or original models removes old prepared downloads.
+
+### Protein structures and manual upload
+
 Use **Prepare Protein Imager data** directly on External links, Ligandability,
 3D structures & pockets or the structure/pocket part of Human & plant 3D alignment.
 There is no need to navigate to HOG model comparison for these upload files.
@@ -21,9 +75,9 @@ this upload; the existing Inspector preparation retains its normal PAE route.
 Missing proteins are recorded in the manifest. An all-missing request produces
 an audit download, without claiming to provide uploadable structures.
 
-Files are current AlphaFold DB downloads, not reconstructed C-alpha traces or
-guaranteed copies of historical E3 models. For a recorded pocket, use the model
-that generated its chain/residue IDs. Pocket highlighting remains manual.
+The `models/` files are current AlphaFold DB downloads and may differ from historical
+E3 models. The distinct `pockets/` files and their audited original-model or
+`CA_only` representation are described above.
 
 Open **Information → External links** or **Structural prioritisation → External
 links**. Both routes open the same working preparation page. Existing links and
@@ -74,12 +128,10 @@ the exploratory pair does not change the chosen model set.
 PDB/mmCIF loading and residue selections. The new individual model download
 supplies a full coordinate file, with its checksum verified against the ZIP audit.
 
-Prepared files are current AlphaFold Database downloads. For inspection of a
-recorded E3 pocket, use the same retained model that generated that prediction
-and its exact pocket chain/residue identifiers. A current model may differ from
-the historical model. The app does not transfer pocket annotations to Protein
-Imager or import its results. A portable HTML/C-alpha view is not the complete
-atomic coordinate file.
+The older **Prepared model for Protein Imager** control supplies current structure
+files only. Use the dedicated **Prepare Protein Imager data** panel to include
+recorded pocket files. No website link transfers files automatically or imports
+results into E3. A portable HTML/C-alpha view alone is not a complete atomic model.
 
 ## Missing data and generic start pages
 

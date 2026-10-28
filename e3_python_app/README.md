@@ -1,5 +1,15 @@
 # ARIA plant E3 Python reporter
 
+Version **0.21.5** includes **recorded pocket inspection files** in Protein
+Imager preparation when the matching plant or human/plant review is configured.
+Download separate protein/pocket mmCIFs and exact residue/score TSVs, then load
+the matching protein and pocket files together. Protein Imager can colour or
+style each pocket as a separate structure. An exact original-model checksum
+and trace match are required for atom-level export; supply the original mmCIF
+if the current download differs. Otherwise files are clearly marked `CA_only`:
+these show pocket location but lack side chains and atomic surface detail.
+See [the upload and pocket guide](docs/EXTERNAL_LINKS.md).
+
 Version **0.21.4** adds **Prepare Protein Imager data** beside each relevant
 link: External links, Ligandability, and the plant and human/plant structure
 reviews. Choose a HOG or protein, prepare the files, download an individual

@@ -4,6 +4,24 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.5
+
+- Includes recorded pocket residue sets, numbers, selection ranks, scores,
+  available pLDDT and native coordinates in Protein Imager preparation when
+  the matching portable review is configured. All entry points use the same exporter.
+- Provides separate protein and pocket mmCIF downloads plus TSV evidence and
+  checksum manifests. Pocket files retain coordinates for joint manual loading
+  and styling in Protein Imager; supplementary scores are not imported by that website.
+- Requires the exact recorded model SHA-256 and agreement with the complete
+  recorded C-alpha trace before exporting original-model pocket atoms. A matching
+  current download or optional original mmCIF upload can supply that model.
+- Clearly labels C-alpha-only fallback files when the original atomic model
+  is absent. These preserve pocket location but cannot support side-chain,
+  atomic-surface or cavity-volume inspection. No unchecked newer-model mapping,
+  cavity mesh, new prediction or score recalculation is performed.
+- Invalidates prepared downloads when report contents or supplied models change;
+  inconsistent indexed group evidence disables preparation with an explanation.
+
 ## v0.21.4
 
 - Adds a dedicated Prepare Protein Imager data action, HOG ZIP and individual

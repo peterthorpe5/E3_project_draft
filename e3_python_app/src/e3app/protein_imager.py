@@ -15,11 +15,15 @@ import pandas as pd
 from e3app.alphafold_hog_bundle import (
     AlphaFoldBundleRecord,
     HttpReader,
+    MAX_BUNDLE_BYTES,
+    MAX_MODEL_BYTES,
     build_alphafold_hog_bundle,
 )
 from e3app.errors import AppError
 from e3app.exports import safe_file_stem
 from e3app.external_hog import prepared_hog_model
+from e3app.external_actions import normalise_uniprot_accession
+from e3app.protein_imager_pockets import PocketSource, PocketUploadFile, export_recorded_pockets
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +44,8 @@ class ProteinImagerPreparation:
     payload: bytes
     files: tuple[ProteinImagerFile, ...]
     records: tuple[AlphaFoldBundleRecord, ...]
+    pocket_files: tuple[PocketUploadFile, ...] = ()
+    pocket_audit: tuple[dict, ...] = ()
 
 
 def protein_imager_member_rows(*, rows: pd.DataFrame) -> pd.DataFrame:
@@ -78,6 +84,7 @@ def prepare_protein_imager_data(
     *, group_id: str, accessions: Sequence[str],
     species_by_accession: Mapping[str, str] | None = None,
     reader: HttpReader | None = None,
+    pocket_source: PocketSource | None = None, original_models: Sequence[bytes] = (),
 ) -> ProteinImagerPreparation:
     """Download selected full mmCIF models and package files accepted by Protein Imager.
 
@@ -86,6 +93,8 @@ def prepare_protein_imager_data(
         accessions: Selected canonical UniProt accessions.
         species_by_accession: Published species labels, when available.
         reader: Optional bounded HTTPS reader for deterministic offline testing.
+        pocket_source: Original pocket evidence from the selected portable report.
+        original_models: Optional original mmCIF bytes, matched by recorded SHA-256.
 
     Returns:
         Individual complete coordinate files, a ZIP and per-protein retrieval records.
@@ -94,6 +103,15 @@ def prepare_protein_imager_data(
     Raises:
         AppError: If the request, model archive or checksum verification is invalid.
     """
+    if pocket_source is not None and pocket_source.group_id != group_id and not (
+        len(accessions) == 1 and accessions[0] == group_id
+        and normalise_uniprot_accession(value=group_id) == group_id
+    ):
+        raise AppError("Recorded pocket group does not match the requested group")
+    if any(len(model) > MAX_MODEL_BYTES for model in original_models) or sum(
+        len(model) for model in original_models
+    ) > MAX_BUNDLE_BYTES:
+        raise AppError("Original model inputs exceed the permitted size limits")
     options = {"reader": reader} if reader is not None else {}
     bundle = build_alphafold_hog_bundle(
         hog_id=group_id, accessions=accessions, species_by_accession=species_by_accession,
@@ -105,6 +123,14 @@ def prepare_protein_imager_data(
             data=prepared_hog_model(bundle=bundle, accession=record.accession),
         ) for record in bundle.records if record.status == "included"
     )
+    pockets = export_recorded_pockets(
+        source=pocket_source, accessions=accessions,
+        models=(*original_models, *(file.data for file in files)),
+    ) if pocket_source is not None else None
+    if sum(len(file.data) for file in files) + sum(
+        len(file.data) for file in (pockets.files if pockets is not None else ())
+    ) > MAX_BUNDLE_BYTES:
+        raise AppError("Protein Imager upload files exceed the 512 MiB limit")
     audit = StringIO(newline="")
     writer = csv.writer(audit, delimiter="\t", lineterminator="\n")
     writer.writerow((
@@ -121,6 +147,11 @@ def prepare_protein_imager_data(
     with ZipFile(output, mode="w", compression=ZIP_DEFLATED) as archive:
         for model in files:
             archive.writestr(f"models/{model.filename}", model.data)
+        if pockets is not None:
+            for file in pockets.files:
+                archive.writestr(f"pockets/{file.filename}", file.data)
+            for filename, data in pockets.tables.items():
+                archive.writestr(filename, data)
         archive.writestr("manifest.tsv", audit.getvalue())
         archive.writestr("README.txt", (
             f"Protein Imager upload files: {safe_file_stem(value=group_id)}\n\n"
@@ -134,11 +165,40 @@ def prepare_protein_imager_data(
             "for this upload and was not requested. Models retain their native coordinates; "
             "the recorded E3 superposition is not applied. For recorded E3 pocket residue IDs, use "
             "the original prediction model; current models can differ. Pocket selections "
-            "must be made manually in Protein Imager. No results are written back to E3.\n"
+            "must be styled manually in Protein Imager. No results are written back to E3.\n\n"
+            + (
+                "RECORDED POCKETS INCLUDED\n"
+                "Use a matching *_protein.cif and its *_rankN_pocketM.cif files from pockets/. "
+                "Load these together without separate alignment; they share native coordinates. "
+                "Select the pocket as a separate structure and colour it uniformly or show sticks. "
+                "pocket_scores.tsv preserves the recorded pocket number, rank and scores; "
+                "pocket_residues.tsv lists exact recorded chain/residue IDs, C-alpha positions "
+                "and available pLDDT. Scores are supplementary tables and are not read by the "
+                "external viewer. Rank one is the primary pocket; other ranks are sensitivity "
+                "evidence. Predictions do not establish ligand binding.\n"
+                "IMPORTANT: *_CA_only_* files contain only recorded C-alpha atoms, with zero "
+                "B factors as placeholders. They show pocket locations but cannot support "
+                "side-chain, atomic-surface or cavity-volume inspection. Do not combine them "
+                "with an unchecked current model from models/. For atomistic inspection, "
+                "supply the exact original prediction mmCIF in the app. Only matching SHA-256 "
+                "and original trace coordinates permit an original-model/pocket export. "
+                "The app never maps historical pockets onto an unchecked newer model. "
+                "pocket_status.tsv and pocket_files.tsv record representation, missing "
+                "coordinates, file checksums and the original report checksum. No cavity "
+                "spheres, mesh, docking results or automatic project colours are generated.\n"
+                if pockets is not None else
+                "NO RECORDED POCKET DATA INCLUDED. This package contains current protein "
+                "structures only. Load the matching portable pocket review in the app to "
+                "prepare recorded pocket inspection files.\n"
+            )
         ))
     LOGGER.info(
         "Prepared Protein Imager data group=%s requested=%d included=%d bytes=%d sha256=%s",
         group_id, len(bundle.records), len(files), len(output.getvalue()),
         sha256(output.getvalue()).hexdigest(),
     )
-    return ProteinImagerPreparation(payload=output.getvalue(), files=files, records=bundle.records)
+    return ProteinImagerPreparation(
+        payload=output.getvalue(), files=files, records=bundle.records,
+        pocket_files=pockets.files if pockets is not None else (),
+        pocket_audit=pockets.audit if pockets is not None else (),
+    )

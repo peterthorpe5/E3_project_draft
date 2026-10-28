@@ -236,8 +236,8 @@ def test_protein_imager_is_available_beside_pocket_predictions(
     assert not app.exception
     links = {button.label: button.proto.url for button in app.get("link_button")}
     assert links["Open Protein Imager"] == PROTEIN_IMAGER_URL
-    assert any("retained PDB/mmCIF model" in item.value for item in app.caption)
-    assert any("does not transfer" in item.value for item in app.caption)
+    assert any("manual file upload" in item.value for item in app.caption)
+    assert any("protein structures only" in item.value for item in app.info)
     if not with_evidence:
         assert any("recognised relation" in item.value for item in app.info)
 
