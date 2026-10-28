@@ -4,6 +4,20 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.4
+
+- Adds a dedicated Prepare Protein Imager data action, HOG ZIP and individual
+  mmCIF downloads to External links, Ligandability, plant review and human/plant
+  review. Current review groups and their member inventories are preselected.
+- Supports an explicit individual UniProt accession or a HOG in Ligandability;
+  fetching models remains an explicit button action.
+- Packages full current AlphaFold mmCIF files, a retrieval/checksum manifest
+  and instructions for manual upload. Missing models stay visible in the audit.
+- Retrieves coordinates without PAE for Protein Imager; existing Inspector
+  preparations continue to include available PAE by default.
+- Invalidates prepared files when the source/group/member selection changes
+  or a retry fails. Existing scientific results and other links remain available.
+
 ## v0.21.3
 
 - Adds HOG selection, species-labelled protein/pair choices and populated

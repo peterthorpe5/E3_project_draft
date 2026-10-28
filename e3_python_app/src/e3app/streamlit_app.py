@@ -59,6 +59,7 @@ from e3app.external_actions import (
     build_alphafold_entry_url,
     build_molstar_alphafold_url,
     external_pair_actions,
+    normalise_uniprot_accession,
     selected_pair_fasta_bytes,
 )
 from e3app.external_resources import EXTERNAL_RESOURCES, PROTEIN_IMAGER_URL
@@ -67,6 +68,11 @@ from e3app.external_hog import (
     collect_external_hogs,
     external_hog_pair_fasta,
     prepared_hog_model,
+)
+from e3app.protein_imager import (
+    ProteinImagerPreparation,
+    prepare_protein_imager_data,
+    protein_imager_member_rows,
 )
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
@@ -350,17 +356,156 @@ def _render_method_annotation(*, tab_name: str) -> None:
         st.markdown(method_annotation_markdown(tab_name=tab_name))
 
 
-def _render_protein_imager_link() -> None:
-    """Offer manual pocket inspection using the retained full coordinate model."""
-    st.link_button(
-        "Open Protein Imager",
-        PROTEIN_IMAGER_URL,
-        help="Opens the external viewer in a new tab for manual model loading.",
+def _protein_imager_source_choice(
+    *, connection: object | None, config: AppConfig | None, key_prefix: str,
+) -> tuple[str, pd.DataFrame, str]:
+    """Choose one explicit protein or a complete published HOG for upload preparation."""
+    identity = source_identity(config=config) if config is not None else "manual_protein"
+    has_hogs = connection is not None and enriched_hog_capability(
+        connection=connection,
+    )["membership_available"]
+    mode = st.radio(
+        "Prepare Protein Imager data for",
+        options=("One protein", "HOG members") if has_hogs else ("One protein",),
+        horizontal=True, key=f"{key_prefix}_input_mode",
     )
+    if mode == "One protein":
+        entered = st.text_input(
+            "UniProt accession for Protein Imager", key=f"{key_prefix}_accession",
+            placeholder="For example Q9SA03; use the accession from the result table",
+        )
+        accession = normalise_uniprot_accession(value=entered)
+        if entered and accession is None:
+            st.info("Enter one exact canonical UniProt accession for an AlphaFold model download.")
+        members = pd.DataFrame({
+            "member_parsed_accession": [accession] if accession else [],
+            "member_species": [""] if accession else [],
+        })
+        return accession or "one_protein", members, identity
+    cache_key = f"{key_prefix}_hog_context"
+    cache = st.session_state.get(cache_key, {})
+    if cache.get("source") != identity:
+        cache = {"source": identity}
+        st.session_state[cache_key] = cache
+    if "hogs" not in cache:
+        with st.spinner("Loading HOG choices…", show_time=True):
+            cache["hogs"] = collect_external_hogs(connection=connection)
+    choices = within_hog_choice_labels(hogs=cache["hogs"])
+    if not choices:
+        st.info(
+            "No HOG with member records is available. Choose One protein to enter an accession."
+        )
+        return "no_hog", pd.DataFrame(), identity
+    group_id = st.selectbox(
+        "HOG for Protein Imager", options=list(choices), format_func=choices.__getitem__,
+        key=f"{key_prefix}_hog",
+    )
+    if cache.get("hog_id") != group_id:
+        cache["members"] = collect_external_hog_members(connection=connection, hog_id=str(group_id))
+        cache["hog_id"] = group_id
+    return str(group_id), cache["members"], identity
+
+
+def _render_protein_imager_link(
+    *, key_prefix: str, members: pd.DataFrame | None = None, group_id: str = "",
+    context_identity: str = "", connection: object | None = None, config: AppConfig | None = None,
+) -> None:
+    """Prepare selected full coordinate files, download them and open Protein Imager."""
+    st.markdown("#### Protein Imager — prepare upload data")
+    if members is None:
+        try:
+            group_id, members, context_identity = _protein_imager_source_choice(
+                connection=connection, config=config, key_prefix=key_prefix,
+            )
+        except AppError as exc:
+            st.warning(str(exc))
+            members = pd.DataFrame()
+    else:
+        st.caption(f"Prepare proteins from the current selection: {group_id}")
+    try:
+        candidates = hog_model_candidates(members=protein_imager_member_rows(rows=members))
+    except AppError as exc:
+        st.warning(str(exc))
+        candidates = ()
+    labels = {candidate.accession: candidate.label for candidate in candidates}
+    species = {candidate.accession: candidate.species for candidate in candidates}
+    selected = st.multiselect(
+        "Proteins to prepare for Protein Imager", options=list(labels), default=list(labels),
+        format_func=labels.__getitem__, key=f"{key_prefix}_members_{group_id}",
+    )
+    if not labels:
+        st.caption("Select a canonical UniProt accession; local identifiers are not guessed.")
+    fingerprint = (context_identity, group_id, tuple(selected))
+    state_key = f"{key_prefix}_prepared_data"
+    stored = st.session_state.get(state_key)
+    if isinstance(stored, dict) and stored.get("fingerprint") != fingerprint:
+        st.session_state.pop(state_key, None)
+    if len(selected) > MAX_BUNDLE_MODELS:
+        st.warning(f"Select at most {MAX_BUNDLE_MODELS:,} models for one preparation.")
     st.caption(
-        "For detailed pocket inspection, load the retained PDB/mmCIF model used in this "
-        "analysis and select the recorded pocket chain and residue identifiers. This link "
-        "does not transfer the model or pocket annotations, or recalculate pocket predictions."
+        "1. Select proteins. 2. Prepare data to download their full AlphaFold mmCIF files. "
+        "3. Download a .cif or ZIP below, then open Protein Imager and upload the .cif files."
+    )
+    if st.button(
+        "Prepare Protein Imager data", key=f"{key_prefix}_prepare", type="primary",
+        disabled=not selected or len(selected) > MAX_BUNDLE_MODELS,
+        help="Downloads full coordinate models from AlphaFold Database; PAE is not required.",
+    ):
+        st.session_state.pop(state_key, None)
+        try:
+            with st.spinner(
+                "Downloading structures and preparing Protein Imager files…", show_time=True,
+            ):
+                prepared = prepare_protein_imager_data(
+                    group_id=group_id, accessions=selected, species_by_accession=species,
+                )
+            st.session_state[state_key] = {"fingerprint": fingerprint, "prepared": prepared}
+        except AppError as exc:
+            st.error(f"Protein Imager preparation failed: {exc}")
+    stored = st.session_state.get(state_key, {})
+    prepared = stored.get("prepared") if stored.get("fingerprint") == fingerprint else None
+    if isinstance(prepared, ProteinImagerPreparation):
+        audit = pd.DataFrame(asdict(record) for record in prepared.records)
+        _display_dataframe(frame=audit, height=220)
+        if prepared.files:
+            st.success(
+                f"Ready: {len(prepared.files):,} of {len(prepared.records):,} requested models."
+            )
+            st.download_button(
+                "Download Protein Imager upload files (ZIP)", data=prepared.payload,
+                file_name=f"{safe_file_stem(value=group_id)}_protein_imager_files.zip",
+                mime="application/zip", key=f"{key_prefix}_zip_download",
+            )
+            files = {file.accession: file for file in prepared.files}
+            chosen = st.selectbox(
+                "Structure file to download", options=list(files),
+                key=f"{key_prefix}_download_model",
+            )
+            model = files[chosen]
+            st.download_button(
+                "Download selected structure for Protein Imager (mmCIF)", data=model.data,
+                file_name=model.filename, mime="chemical/x-mmcif", key=f"{key_prefix}_cif_download",
+            )
+            st.caption(
+                "Extract the ZIP and load its models/*.cif files, or upload the direct mmCIF."
+            )
+        else:
+            st.warning(
+                "No requested model was available. The retrieval audit records each outcome."
+            )
+            st.download_button(
+                "Download Protein Imager retrieval audit (ZIP)", data=prepared.payload,
+                file_name=f"{safe_file_stem(value=group_id)}_protein_imager_audit.zip",
+                mime="application/zip", key=f"{key_prefix}_audit_download",
+            )
+        skipped = [record.accession for record in prepared.records if record.status != "included"]
+        if skipped and prepared.files:
+            st.warning("Unavailable models: " + ", ".join(skipped) + ". See the audit above.")
+    st.link_button("Open Protein Imager", PROTEIN_IMAGER_URL)
+    st.caption(
+        "Prepared files are current AlphaFold DB downloads. For recorded pocket residues, use the "
+        "original retained PDB/mmCIF model; current models can differ. This link does not transfer "
+        "files or pocket annotations automatically. Select pocket residues manually after upload."
     )
 
 
@@ -428,7 +573,9 @@ def _render_external_hog_pair(*, members: pd.DataFrame, selected_hog: str) -> No
         )
 
 
-def _render_external_hog_context(*, connection: object, config: AppConfig) -> None:
+def _render_external_hog_context(
+    *, connection: object, config: AppConfig,
+) -> tuple[str, pd.DataFrame, str] | None:
     """Select a complete HOG context and prepare the chosen external-tool inputs."""
     if not enriched_hog_capability(connection=connection)["membership_available"]:
         st.info(
@@ -481,6 +628,7 @@ def _render_external_hog_context(*, connection: object, config: AppConfig) -> No
         selected_hog=str(selected_hog), members=members, key_prefix="external_links",
         context_identity=identity, include_protein_imager=True,
     )
+    return str(selected_hog), members, identity
 
 
 def _render_external_links(*, connection: object, config: AppConfig) -> None:
@@ -490,10 +638,22 @@ def _render_external_links(*, connection: object, config: AppConfig) -> None:
         "Choose a HOG and proteins here to open populated links or prepare exact input files. "
         "Existing links and preparation controls also remain on their original E3 pages."
     )
-    _render_external_hog_context(connection=connection, config=config)
+    context = _render_external_hog_context(connection=connection, config=config)
+    if context is None:
+        _render_protein_imager_link(
+            key_prefix="external_pi", connection=connection, config=config,
+        )
+    else:
+        group_id, members, identity = context
+        _render_protein_imager_link(
+            key_prefix="external_pi", members=members, group_id=group_id,
+            context_identity=identity,
+        )
     with st.expander("Tool start pages and preparation notes", expanded=False):
         st.caption("These generic links open each service without a selected protein or HOG.")
         for resource in EXTERNAL_RESOURCES:
+            if resource.url == PROTEIN_IMAGER_URL:
+                continue
             with st.container(border=True):
                 st.markdown(f"#### {resource.name}")
                 st.write(resource.purpose)
@@ -520,7 +680,9 @@ def _render_section(
         st.subheader(str(specification["title"]))
         st.caption(str(specification["description"]))
     if section == "ligandability":
-        _render_protein_imager_link()
+        _render_protein_imager_link(
+            key_prefix="ligandability_pi", connection=connection, config=config,
+        )
     relations = relations_for_section(connection, section)
     if not relations:
         st.info(
@@ -3756,9 +3918,30 @@ def _render_selected_pocket_review(
         key_prefix: Unique prefix for Streamlit widget state.
         include_evidence_matrix: Whether to offer the release-wide matrix.
     """
-    if focus == "structure":
-        _render_protein_imager_link()
     row = selected_group_row(bundle, group_page)
+    if focus == "structure":
+        model_members = selected_group_members(bundle, int(row["review_rank"]), "structure")
+        sequence_members = selected_group_members(bundle, int(row["review_rank"]), "alignment")
+        supplementary = selected_group_supplementary_sequences(
+            bundle=bundle, review_rank=int(row["review_rank"]),
+        )
+        parts = [protein_imager_member_rows(rows=part)
+                 for part in (model_members, sequence_members, supplementary) if not part.empty]
+        upload_members = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+        context = (str(bundle.path), str(row["primary_group_id"]), int(row["review_rank"]))
+        stamps = []
+        if bundle.path is not None:
+            for filename in (
+                "review_report_index.tsv", "protein_model_inventory.tsv",
+                "prioritised_group_sequences.tsv", "supplementary_group_sequences.tsv",
+            ):
+                path = bundle.path / "tables" / filename
+                if path.is_file():
+                    stamps.append((filename, path.stat().st_mtime_ns, path.stat().st_size))
+        _render_protein_imager_link(
+            key_prefix=f"{key_prefix}_pi", members=upload_members,
+            group_id=str(row["primary_group_id"]), context_identity=repr((context, stamps)),
+        )
     st.caption(
         f"Review rank {int(row['review_rank'])} | evolutionary group "
         f"{row['primary_group_id']} | lead DeepClust cluster "

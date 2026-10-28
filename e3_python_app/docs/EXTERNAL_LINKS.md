@@ -1,5 +1,30 @@
 # External tools: choose a HOG and prepare its inputs
 
+## Protein Imager: prepare and download at every entry point
+
+Use **Prepare Protein Imager data** directly on External links, Ligandability,
+3D structures & pockets or the structure/pocket part of Human & plant 3D alignment.
+There is no need to navigate to HOG model comparison for these upload files.
+
+- On a selected review, the current group and its published members are supplied
+  automatically. Choose the proteins to prepare.
+- In Ligandability, choose One protein and enter its canonical UniProt accession,
+  or choose HOG members and select the HOG and its proteins.
+- Click Prepare Protein Imager data. This contacts AlphaFold Database and obtains
+  complete mmCIF coordinate models for the exact selected canonical accessions.
+- Download an individual mmCIF to upload directly, or download the HOG ZIP,
+  extract it and choose the files under models/ in Protein Imager's structural
+  file chooser. The ZIP includes a manifest and an upload README.
+
+The dedicated preparation downloads coordinates only. PAE is unnecessary for
+this upload; the existing Inspector preparation retains its normal PAE route.
+Missing proteins are recorded in the manifest. An all-missing request produces
+an audit download, without claiming to provide uploadable structures.
+
+Files are current AlphaFold DB downloads, not reconstructed C-alpha traces or
+guaranteed copies of historical E3 models. For a recorded pocket, use the model
+that generated its chain/residue IDs. Pocket highlighting remains manual.
+
 Open **Information → External links** or **Structural prioritisation → External
 links**. Both routes open the same working preparation page. Existing links and
 controls also remain on their original pages.

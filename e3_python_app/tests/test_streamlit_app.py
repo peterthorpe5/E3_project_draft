@@ -203,7 +203,10 @@ def test_external_links_has_hog_context_without_automatic_remote_preparation(
     assert not app.exception
     links = {button.label: button.proto.url for button in app.get("link_button")}
     for resource in EXTERNAL_RESOURCES:
-        assert links[f"Open {resource.name} (start page)"] == resource.url
+        label = "Open Protein Imager" if resource.name == "Protein Imager" else (
+            f"Open {resource.name} (start page)"
+        )
+        assert links[label] == resource.url
     assert links["Open first protein in Mol*"].endswith("?afdb=Q9SA03")
     assert links["Open second protein in Mol*"].endswith("?afdb=P38398")
     assert any(selector.label == "HOG for external tools" for selector in app.selectbox)

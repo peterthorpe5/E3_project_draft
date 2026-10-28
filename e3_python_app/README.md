@@ -1,6 +1,13 @@
 # ARIA plant E3 Python reporter
 
-Version **0.21.3** makes **External links** a working HOG-based preparation page.
+Version **0.21.4** adds **Prepare Protein Imager data** beside each relevant
+link: External links, Ligandability, and the plant and human/plant structure
+reviews. Choose a HOG or protein, prepare the files, download an individual
+mmCIF or a HOG ZIP, then load its `.cif` files in Protein Imager. Selected
+reviews supply their current group automatically. Preparation retrieves full
+AlphaFold coordinate files without fetching unnecessary PAE data.
+
+Version 0.21.3 makes **External links** a working HOG-based preparation page.
 Choose a HOG, select proteins, open populated Mol*/AlphaFold/EMERALD links,
 download an exact pair FASTA, or explicitly prepare selected-member models.
 The prepared models can be downloaded as an Inspector ZIP or an individual

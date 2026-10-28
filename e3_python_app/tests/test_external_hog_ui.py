@@ -195,7 +195,7 @@ def test_missing_membership_retains_manual_tool_entry_points(
     assert not app.exception
     assert not any(item.label == "HOG for external tools" for item in app.selectbox)
     assert any("root-level membership" in item.value for item in app.info)
-    assert any(item.label == "Open Protein Imager (start page)" for item in app.get("link_button"))
+    assert any(item.label == "Open Protein Imager" for item in app.get("link_button"))
 
 
 def test_hog_context_queries_are_cached_across_pair_reruns(

@@ -345,7 +345,9 @@ def _validate_model(*, payload: bytes) -> None:
         raise AppError("AlphaFold model did not start with an mmCIF data block")
 
 
-def _retrieve_model(*, accession: str, reader: HttpReader) -> _RetrievedModel:
+def _retrieve_model(
+    *, accession: str, reader: HttpReader, include_pae: bool = True,
+) -> _RetrievedModel:
     """Retrieve one model and optional PAE while containing per-model errors."""
     try:
         metadata = reader(
@@ -371,9 +373,9 @@ def _retrieve_model(*, accession: str, reader: HttpReader) -> _RetrievedModel:
         )
 
     pae = None
-    pae_status = "not_available"
+    pae_status = "not_available" if include_pae else "not_requested"
     detail = ""
-    if reference.pae_url is not None:
+    if include_pae and reference.pae_url is not None:
         try:
             pae_payload = reader(reference.pae_url, MAX_PAE_BYTES)
             pae = convert_alphafold_pae_for_inspector(payload=pae_payload)
@@ -424,6 +426,7 @@ def _retrieve_models_in_order(
     accessions: tuple[str, ...],
     reader: HttpReader,
     maximum_workers: int,
+    include_pae: bool = True,
 ) -> Iterable[_RetrievedModel]:
     """Yield ordered retrieval results while retaining only a bounded window."""
     worker_count = min(maximum_workers, len(accessions))
@@ -433,6 +436,7 @@ def _retrieve_models_in_order(
                 _retrieve_model,
                 accession=accession,
                 reader=reader,
+                include_pae=include_pae,
             )
             for index, accession in enumerate(accessions[:worker_count])
         }
@@ -444,6 +448,7 @@ def _retrieve_models_in_order(
                     _retrieve_model,
                     accession=accessions[next_index],
                     reader=reader,
+                    include_pae=include_pae,
                 )
                 next_index += 1
             yield result
@@ -539,6 +544,7 @@ def build_alphafold_hog_bundle(
     reader: HttpReader = _read_https,
     maximum_workers: int = MAX_DOWNLOAD_WORKERS,
     maximum_bundle_bytes: int = MAX_BUNDLE_BYTES,
+    include_pae: bool = True,
 ) -> AlphaFoldHogBundle:
     """Build an Inspector-compatible ZIP from available HOG-member models.
 
@@ -549,6 +555,7 @@ def build_alphafold_hog_bundle(
         reader: Bounded HTTPS reader, injectable for deterministic tests.
         maximum_workers: Bounded concurrent retrieval limit.
         maximum_bundle_bytes: Maximum uncompressed model and PAE payload total.
+        include_pae: Fetch PAE for the Inspector; False prepares coordinate models only.
 
     Returns:
         ZIP bytes plus complete per-accession audit records.
@@ -558,6 +565,8 @@ def build_alphafold_hog_bundle(
     """
     stem = _safe_stem(value=hog_id)
     canonical = _normalise_accessions(values=accessions)
+    if not isinstance(include_pae, bool):
+        raise AppError("include_pae must be boolean")
     if (
         isinstance(maximum_workers, bool)
         or not isinstance(maximum_workers, int)
@@ -589,6 +598,7 @@ def build_alphafold_hog_bundle(
         accessions=canonical,
         reader=reader,
         maximum_workers=maximum_workers,
+        include_pae=include_pae,
     )
 
     output = BytesIO()
