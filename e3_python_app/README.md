@@ -1,6 +1,13 @@
 # ARIA plant E3 Python reporter
 
-Version **0.21.2** adds **Protein Imager** to Ligandability and the selected
+Version **0.21.3** makes **External links** a working HOG-based preparation page.
+Choose a HOG, select proteins, open populated Mol*/AlphaFold/EMERALD links,
+download an exact pair FASTA, or explicitly prepare selected-member models.
+The prepared models can be downloaded as an Inspector ZIP or an individual
+mmCIF for manual Protein Imager loading. Source, HOG and selection changes
+invalidate prepared downloads. Existing links remain in place.
+
+Version 0.21.2 adds **Protein Imager** to Ligandability and the selected
 structure/pocket reviews. A shared **External links** page under Information
 and Structural prioritisation lists the existing tools and explains their
 required inputs. Pair-specific links and model-bundle preparation remain on

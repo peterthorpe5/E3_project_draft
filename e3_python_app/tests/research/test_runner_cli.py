@@ -81,6 +81,23 @@ def test_retrieval_mapping_and_downstream_artifact_flow(research_config):
     assert run_next_job(config=config) is None
 
 
+def test_runtime_application_version_uses_executing_code(
+    *, research_config, monkeypatch: pytest.MonkeyPatch,
+):
+    """An editable upgrade cannot report stale distribution metadata as its executing version."""
+    from e3app import __version__
+
+    monkeypatch.setattr(runner, "version", Mock(return_value="stale-installed-metadata"))
+    job = submit_job(
+        workspace=research_config.workspace, operation="retrieve",
+        parameters={"cluster_ids": ["GLOBAL_A"]},
+    )
+    run_next_job(config=research_config, job_id=job)
+    directory = job_directory(workspace=research_config.workspace, job_id=job)
+    manifest = json.loads((directory / "manifest.json").read_text())
+    assert manifest["runtime"]["application"] == __version__
+
+
 def test_input_integrity_dispatch_and_failures(
     research_config, protein_fasta, tmp_path, monkeypatch
 ):

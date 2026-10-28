@@ -56,10 +56,18 @@ from e3app.data import (
 )
 from e3app.errors import AppError
 from e3app.external_actions import (
+    build_alphafold_entry_url,
+    build_molstar_alphafold_url,
     external_pair_actions,
     selected_pair_fasta_bytes,
 )
 from e3app.external_resources import EXTERNAL_RESOURCES, PROTEIN_IMAGER_URL
+from e3app.external_hog import (
+    collect_external_hog_members,
+    collect_external_hogs,
+    external_hog_pair_fasta,
+    prepared_hog_model,
+)
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
     ENRICHED_HOG_MEMBERS,
@@ -74,6 +82,7 @@ from e3app.exports import (
     dataframe_display_widths,
     render_plotly_pdf_download,
     render_table_downloads,
+    safe_file_stem,
 )
 from e3app.glossary import (
     SLIDER_HELP,
@@ -191,7 +200,7 @@ from e3app.terminal_sequences import (
     terminal_member_fasta_frame,
     terminal_sequence_capability,
 )
-from e3app.resource_browser import render_all_results, render_resource_search
+from e3app.resource_browser import render_all_results, render_resource_search, source_identity
 from e3app.visualisations import (
     ALL_FINAL_GATE_GROUPS,
     CANDIDATE_METRIC_LABELS,
@@ -355,21 +364,142 @@ def _render_protein_imager_link() -> None:
     )
 
 
-def _render_external_links() -> None:
-    """Render service start pages while preserving selection-specific source controls."""
+def _render_external_protein_links(*, identifier: str, role: str) -> None:
+    """Open an explicitly selected canonical accession without guessing a local alias."""
+    molstar = build_molstar_alphafold_url(accession=identifier)
+    alphafold = build_alphafold_entry_url(accession=identifier)
+    if molstar is None:
+        st.caption(f"The {role} protein has no canonical UniProt link; use its exact input files.")
+        return
+    columns = st.columns(2)
+    columns[0].link_button(f"Open {role} protein in Mol*", molstar)
+    columns[1].link_button(f"Open {role} protein in AlphaFold DB", alphafold)
+
+
+def _render_external_hog_pair(*, members: pd.DataFrame, selected_hog: str) -> None:
+    """Render selected HOG-member links and an exact, species-bound pair FASTA."""
+    labels = dict(zip(members["member_key"], members["label"], strict=True))
+    first = st.selectbox(
+        "First protein for external tools", options=list(labels),
+        format_func=labels.__getitem__, key="external_links_first_member",
+    )
+    by_key = members.set_index("member_key", drop=False)
+    first_row = by_key.loc[first]
+    st.code(f"{first_row['identifier']} | {first_row['member_species']}")
+    _render_external_protein_links(identifier=str(first_row["identifier"]), role="first")
+    if len(labels) < 2:
+        st.info("This HOG has one member. Model preparation is available below.")
+        return
+    second = st.selectbox(
+        "Second protein for pairwise tools", options=[key for key in labels if key != first],
+        format_func=labels.__getitem__, key="external_links_second_member",
+    )
+    second_row = by_key.loc[second]
+    st.code(f"{second_row['identifier']} | {second_row['member_species']}")
+    st.caption(
+        "This is your exploratory external pair. It does not change the recorded "
+        "structural reference, alignments or rankings."
+    )
+    actions = external_pair_actions(
+        reference_accession=first_row["identifier"],
+        comparison_accession=second_row["identifier"],
+    )
+    _render_external_protein_links(identifier=str(second_row["identifier"]), role="second")
+    if actions.emerald_url is not None and (
+        actions.reference_accession != actions.comparison_accession
+    ):
+        st.link_button("Open selected pair in EMERALD", actions.emerald_url)
+    else:
+        st.caption(
+            "For local, isoform or shared accessions, load the exact pair FASTA "
+            "into EMERALD manually."
+        )
+    try:
+        fasta = external_hog_pair_fasta(
+            members=members, first_member_key=str(first), second_member_key=str(second),
+        )
+    except AppError as exc:
+        st.caption(f"Exact pair FASTA is unavailable: {exc}")
+    else:
+        st.download_button(
+            "Download selected HOG pair FASTA", data=fasta,
+            file_name=f"{safe_file_stem(value=selected_hog)}_external_pair.fasta",
+            mime="text/x-fasta", key="external_links_pair_fasta",
+        )
+
+
+def _render_external_hog_context(*, connection: object, config: AppConfig) -> None:
+    """Select a complete HOG context and prepare the chosen external-tool inputs."""
+    if not enriched_hog_capability(connection=connection)["membership_available"]:
+        st.info(
+            "HOG selection needs root-level membership. Tool start pages remain available below."
+        )
+        return
+    identity = source_identity(config=config)
+    cache = st.session_state.get("external_links_context", {})
+    if cache.get("source") != identity:
+        cache = {"source": identity}
+        st.session_state["external_links_context"] = cache
+        for key in (
+            "external_links_selected_hog", "external_links_first_member",
+            "external_links_second_member", "external_links_alphafold_bundle",
+        ):
+            st.session_state.pop(key, None)
+    try:
+        if "hogs" not in cache:
+            with st.spinner("Loading HOG choices…", show_time=True):
+                cache["hogs"] = collect_external_hogs(connection=connection)
+        choices = within_hog_choice_labels(hogs=cache["hogs"])
+        if not choices:
+            st.info("No root HOG with member records is available in this resource.")
+            return
+        selected_hog = st.selectbox(
+            "HOG for external tools", options=list(choices),
+            format_func=choices.__getitem__, key="external_links_selected_hog",
+            help="Search by exact HOG identifier or recorded pre/post-structure rank.",
+        )
+        if cache.get("hog_id") != selected_hog:
+            members = collect_external_hog_members(connection=connection, hog_id=str(selected_hog))
+            cache.update(hog_id=selected_hog, members=members)
+            st.session_state.pop("external_links_alphafold_bundle", None)
+            st.session_state.pop("external_links_first_member", None)
+            st.session_state.pop("external_links_second_member", None)
+        members = cache["members"]
+    except AppError as exc:
+        st.warning(str(exc))
+        return
+    st.caption(
+        f"Selected {selected_hog}: {len(members):,} published member rows. "
+        "Choices include members without structural evidence and do not use the preview-row cap."
+    )
+    with st.expander("Selected HOG members and exact-sequence availability"):
+        _display_dataframe(frame=members[[
+            "identifier", "member_species", "member_raw_identifier", "sequence_status",
+        ]])
+    _render_external_hog_pair(members=members, selected_hog=str(selected_hog))
+    _render_hog_model_bundle(
+        selected_hog=str(selected_hog), members=members, key_prefix="external_links",
+        context_identity=identity, include_protein_imager=True,
+    )
+
+
+def _render_external_links(*, connection: object, config: AppConfig) -> None:
+    """Render HOG-specific hand-offs with a separate directory of service start pages."""
     st.subheader("External links")
     st.markdown(
-        "Open a tool below for further inspection. These are service start pages: "
-        "they do not carry a selected protein, pocket, pair or HOG. The existing "
-        "links and preparation controls remain on their original E3 pages."
+        "Choose a HOG and proteins here to open populated links or prepare exact input files. "
+        "Existing links and preparation controls also remain on their original E3 pages."
     )
-    for resource in EXTERNAL_RESOURCES:
-        with st.container(border=True):
-            st.markdown(f"#### {resource.name}")
-            st.write(resource.purpose)
-            st.markdown("**Prepare in the E3 app:** " + ", ".join(resource.source_pages))
-            st.caption(resource.preparation)
-            st.link_button(f"Open {resource.name} (start page)", resource.url)
+    _render_external_hog_context(connection=connection, config=config)
+    with st.expander("Tool start pages and preparation notes", expanded=False):
+        st.caption("These generic links open each service without a selected protein or HOG.")
+        for resource in EXTERNAL_RESOURCES:
+            with st.container(border=True):
+                st.markdown(f"#### {resource.name}")
+                st.write(resource.purpose)
+                st.markdown("**Prepare in the E3 app:** " + ", ".join(resource.source_pages))
+                st.caption(resource.preparation)
+                st.link_button(f"Open {resource.name} (start page)", resource.url)
     st.caption(
         "External results do not change the recorded E3 predictions or rankings. "
         "Remote prediction/annotation jobs still use the explicit submission controls "
@@ -3875,7 +4005,37 @@ def _render_search(*, connection: object, config: AppConfig) -> None:
     render_resource_search(connection=connection, config=config)
 
 
-def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> None:
+def _render_prepared_hog_model(
+    *, bundle: AlphaFoldHogBundle, selected_hog: str, key_prefix: str,
+) -> None:
+    """Download one audited full model for manual Protein Imager loading."""
+    included = [row.accession for row in bundle.records if row.status == "included"]
+    accession = st.selectbox(
+        "Prepared model for Protein Imager", options=included,
+        key=f"{key_prefix}_protein_imager_model_{selected_hog}",
+    )
+    try:
+        model = prepared_hog_model(bundle=bundle, accession=str(accession))
+    except AppError as exc:
+        st.error(str(exc))
+        return
+    st.download_button(
+        "Download selected model for Protein Imager (mmCIF)", data=model,
+        file_name=f"{safe_file_stem(value=selected_hog)}__{accession}_alphafold.cif",
+        mime="chemical/x-mmcif", key=f"{key_prefix}_protein_imager_download",
+    )
+    st.link_button("Open Protein Imager for the downloaded model", PROTEIN_IMAGER_URL)
+    st.caption(
+        "Load the downloaded mmCIF manually. These are current AlphaFold Database models; "
+        "use the original pipeline-retained model when inspecting recorded pocket residue IDs. "
+        "The source URL and checksum are in the bundle audit. Pocket annotations are not uploaded."
+    )
+
+
+def _render_hog_model_bundle(
+    *, selected_hog: str, members: pd.DataFrame, key_prefix: str = "within_hog",
+    context_identity: str = "", include_protein_imager: bool = False,
+) -> None:
     """Render the selected-member AlphaFold DB compatibility hand-off."""
     st.markdown("#### AlphaFold models for this HOG")
     st.info(
@@ -3902,7 +4062,7 @@ def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> Non
         candidate.accession: candidate.species for candidate in candidates
     }
     accessions = tuple(labels)
-    selection_key = f"within_hog_alphafold_members_{selected_hog}"
+    selection_key = f"{key_prefix}_alphafold_members_{selected_hog}"
     selected_accessions = st.multiselect(
         "HOG members to include in the model ZIP",
         options=accessions,
@@ -3922,13 +4082,20 @@ def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> Non
         "pTM, ipTM, ranking, contact or chain-pair values as zero."
     )
 
-    bundle_state_key = "within_hog_alphafold_bundle"
-    fingerprint = (selected_hog, tuple(selected_accessions))
+    bundle_state_key = f"{key_prefix}_alphafold_bundle"
+    fingerprint = (context_identity, selected_hog, tuple(selected_accessions))
+    stored = st.session_state.get(bundle_state_key)
+    if isinstance(stored, dict) and stored.get("fingerprint") != fingerprint:
+        st.session_state.pop(bundle_state_key, None)
+    if len(selected_accessions) > MAX_BUNDLE_MODELS:
+        st.warning(f"Select at most {MAX_BUNDLE_MODELS:,} models for one prepared ZIP.")
     if st.button(
-        "Prepare Inspector ZIP for selected members",
+        "Prepare models for external tools" if include_protein_imager else (
+            "Prepare Inspector ZIP for selected members"
+        ),
         type="primary",
-        disabled=not selected_accessions,
-        key=f"within_hog_prepare_alphafold_{selected_hog}",
+        disabled=not selected_accessions or len(selected_accessions) > MAX_BUNDLE_MODELS,
+        key=f"{key_prefix}_prepare_alphafold_{selected_hog}",
         help=(
             "Downloads available mmCIF models and PAE documents from AlphaFold "
             "Database, then creates one ZIP for manual upload."
@@ -3995,7 +4162,7 @@ def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> Non
                 f"e3_{selected_hog}_alphafold_models_for_af3_inspector.zip"
             ),
             mime="application/zip",
-            key=f"within_hog_alphafold_zip_{selected_hog}",
+            key=f"{key_prefix}_alphafold_zip_{selected_hog}",
             disabled=bundle.included_count == 0,
         )
     with action_columns[1]:
@@ -4008,6 +4175,10 @@ def _render_hog_model_bundle(*, selected_hog: str, members: pd.DataFrame) -> Non
         "Manual hand-off: download the ZIP, open the Inspector, choose the ZIP, "
         "and use manifest.tsv to map its Model numbers back to accessions and species."
     )
+    if include_protein_imager and bundle.included_count:
+        _render_prepared_hog_model(
+            bundle=bundle, selected_hog=selected_hog, key_prefix=key_prefix,
+        )
 
 
 def _render_hog_model_comparison(
@@ -5119,7 +5290,9 @@ def render_app() -> None:
                     config=config,
                 ),
                 "Workflow schematic": _render_workflow_schematic,
-                "External links": _render_external_links,
+                "External links": lambda: _render_external_links(
+                    connection=connection, config=config,
+                ),
                 "Glossary": lambda: _render_glossary(connection=connection),
                 "Provenance and QC": lambda: _render_section(
                     connection=connection,

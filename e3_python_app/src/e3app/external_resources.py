@@ -36,9 +36,10 @@ EXTERNAL_RESOURCES = (
         purpose=(
             "Inspect a protein structure, highlight pocket residues and prepare molecular views."
         ),
-        source_pages=("Ligandability", "3D structures & pockets"),
+        source_pages=("External links", "Ligandability", "3D structures & pockets"),
         preparation=(
-            "Load the retained PDB/mmCIF model used for the E3 analysis, then select the "
+            "Prepare and download an individual model above, or load the retained "
+            "PDB/mmCIF model used for the E3 analysis, then select the "
             "recorded pocket chain and residue identifiers manually. The link opens a blank "
             "workspace; it does not transfer the model or pocket annotations. A rendered "
             "HTML/C-alpha view is not a replacement for the full coordinate file."
@@ -48,10 +49,11 @@ EXTERNAL_RESOURCES = (
         name="Mol* Viewer",
         url=MOLSTAR_VIEWER_BASE_URL,
         purpose="Explore molecular structures and residue-level model confidence.",
-        source_pages=("3D alignment", "Human & plant 3D alignment"),
+        source_pages=("External links", "3D alignment", "Human & plant 3D alignment"),
         preparation=(
-            "Use the existing reference/comparison links on the source pages to open a "
-            "selected canonical UniProt accession directly. This directory opens the empty "
+            "Choose proteins above or use the existing reference/comparison links on the "
+            "source pages to open a canonical UniProt accession directly. This start-page "
+            "shortcut opens the empty "
             "viewer, where you can load your own coordinate file or choose a database entry."
         ),
     ),
@@ -59,7 +61,7 @@ EXTERNAL_RESOURCES = (
         name="AlphaFold Database",
         url="https://alphafold.ebi.ac.uk/",
         purpose="Inspect available predicted models and their confidence evidence.",
-        source_pages=("3D alignment", "Human & plant 3D alignment"),
+        source_pages=("External links", "3D alignment", "Human & plant 3D alignment"),
         preparation=(
             "Use the selected accession links on the source pages, or search by an exact "
             "accession here. A current database model can differ from the version retained "
@@ -70,10 +72,10 @@ EXTERNAL_RESOURCES = (
         name="EMERALD",
         url=EMERALD_BASE_URL,
         purpose="Explore pairwise sequence alignments and alignment-safe windows.",
-        source_pages=("3D alignment", "Human & plant 3D alignment"),
+        source_pages=("External links", "3D alignment", "Human & plant 3D alignment"),
         preparation=(
             "Select the reference/comparison pair on a source page for the pre-populated "
-            "UniProt link or exact pair FASTA download. This directory supplies no pair; "
+            "UniProt link or exact pair FASTA download. This start-page shortcut supplies no pair; "
             "enter the intended accessions or sequences manually. Alignment-safe windows "
             "are not direct biological-disorder calls."
         ),
@@ -82,11 +84,11 @@ EXTERNAL_RESOURCES = (
         name="AlphaFold 3 Multi-Model Inspector",
         url=AF3_INSPECTOR_URL,
         purpose="Compare selected HOG-member models in the external Inspector.",
-        source_pages=("HOG model comparison",),
+        source_pages=("External links", "HOG model comparison"),
         preparation=(
-            "Prepare and download the selected-member ZIP in HOG model comparison, then "
+            "Prepare and download the selected-member ZIP above or in HOG model comparison, then "
             "upload that ZIP manually to the Inspector. Read the bundle audit for missing "
-            "models or PAE. This directory neither prepares a ZIP nor transfers selected models."
+            "models or PAE. This start-page link neither prepares a ZIP nor transfers models."
         ),
     ),
 )

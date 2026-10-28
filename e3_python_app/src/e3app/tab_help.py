@@ -21,14 +21,14 @@ class TabHelpEntry:
 TOP_LEVEL_TAB_HELP = {
     "External links": TabHelpEntry(
         instruction=(
-            "Choose an external tool and read its preparation notes first. For a selected "
-            "protein pair, pocket or HOG-model ZIP, use the existing controls on its source "
-            "page; directory links open service start pages without carrying that selection."
+            "Choose a HOG and its proteins here for populated Mol*/AlphaFold/EMERALD links "
+            "and exact pair FASTA. Select members and explicitly prepare models for the "
+            "Inspector ZIP or an individual Protein Imager mmCIF download."
         ),
         yields=(
-            "A directory of structure viewers and sequence-comparison tools, including "
-            "Protein Imager, with the required files or identifiers and the E3 page where "
-            "they are prepared. Existing contextual links remain available on their pages."
+            "Selected-HOG protein/pair links and auditable model/sequence downloads, plus "
+            "generic tool start pages. External uploads remain manual, and changing the "
+            "source, HOG or model selection invalidates prepared downloads. Existing links remain."
         ),
     ),
     "Protein research workbench": TabHelpEntry(

@@ -1,42 +1,75 @@
-# External tools and pocket inspection
+# External tools: choose a HOG and prepare its inputs
 
-The External links page is available from both Information and Structural
-prioritisation. It is a directory of service start pages. Existing EMERALD,
-Mol*, AlphaFold DB and Inspector links remain on their original pages, where
-the app can supply the selected protein pair or prepare the intended model ZIP.
+Open **Information → External links** or **Structural prioritisation → External
+links**. Both routes open the same working preparation page. Existing links and
+controls also remain on their original pages.
 
-| Tool | Preparation in the E3 app | What the directory opens |
-|---|---|---|
-| Protein Imager | Ligandability or 3D structures & pockets; retain the analysed full PDB/mmCIF model and pocket chain/residue IDs | A blank workspace for manual structure loading and residue selection |
-| Mol* | 3D alignment or Human & plant 3D alignment; choose the reference/comparison pair for direct accession links | The generic viewer for manual model loading |
-| AlphaFold DB | 3D alignment or Human & plant 3D alignment; retain the intended accession and model identity | The database home page |
-| EMERALD | 3D alignment or Human & plant 3D alignment; select a pair and use its direct link or exact pair FASTA | The tool start page, without an automatically selected pair |
-| AlphaFold 3 Multi-Model Inspector | HOG model comparison; prepare and download the selected-member ZIP | The Inspector, ready for manual ZIP upload |
+## Select the HOG and proteins here
 
-## Why a directory is appropriate
+1. Choose **HOG for external tools**. Search by its exact HOG identifier or
+   recorded pre/post-structure rank. Choices cover every published root HOG
+   with member records in the loaded resource, independently of preview-row limits.
+2. Choose the first protein and, when available, a second protein. Labels show
+   accessions, species and original identifiers. Unassessed members remain available.
+3. Use the populated Mol*/AlphaFold links for a canonical UniProt accession,
+   or **Open selected pair in EMERALD** for a supported two-accession pair.
+4. Download **selected HOG pair FASTA** when exact source sequences are available.
+   Local/isoform/shared accessions use this manual sequence route rather than
+   guessing an accession-based URL.
 
-A directory makes the tools discoverable without duplicating protein/pair/HOG
-selection workflows. Its preparation notes explain where context is obtained.
-It does not guess a selection from another page or offer an unprepared bundle.
-Remote ESMFold/InterProScan jobs still require the workbench's explicit submission
-controls; raw API endpoints are not offered as browser shortcuts. The previously
-withheld RCSB computed-model pair hand-off is not reintroduced.
+This is an exploratory selection for external follow-up. It does not change the
+recorded E3 structural reference or recompute a ranking or pocket prediction.
 
-## Protein Imager
+## Prepare models on this page
 
-[Protein Imager](https://3dproteinimaging.com/protein-imager/) supports local
-PDB/mmCIF structure loading and residue selections. The action is available on
-Ligandability, including when that release has no compatible pocket table, and
-on selected structure/pocket reviews in the plant and human/plant routes.
+Select **HOG members to include in the model ZIP**, then click **Prepare models
+for external tools**. This explicit action contacts AlphaFold Database and
+retains the existing approved-host, size and model-count checks. Opening the
+page or changing a protein does not fetch structures automatically.
 
-Use the full coordinate model retained for the E3 analysis. Pocket chain and
-residue identifiers must refer to that same model. Load it manually in Protein
-Imager, select the recorded pocket residues and choose the desired molecular
-representation. A portable HTML/C-alpha view does not supply the full atomic
-coordinate file. A newer model downloaded by accession may differ from the
-model used to generate the recorded pockets.
+After preparation, the page offers:
 
-The app supplies a link and guidance. It does not upload coordinates, transfer
-pocket annotations, predict new pockets or import external results. E3 model
-evidence, predictions and rankings remain as recorded. The directory and pocket
-links work without contacting an external service during app rendering.
+- The audited **Inspector ZIP**, plus a link to the AlphaFold 3 Multi-Model Inspector.
+  Download the ZIP and upload it there manually.
+- **Prepared model for Protein Imager**: choose an included accession, download
+  its complete mmCIF, then open Protein Imager and load that file manually.
+- The retrieval audit, including included/missing accessions, source URLs,
+  model checksums and PAE availability.
+
+Models represent different HOG members, not alternative AF3 conformers of one
+protein. Absent AF3-specific confidence fields are not zero-valued evidence.
+Changing the source, HOG or model selection removes prepared downloads until
+the new selection is explicitly prepared. Retrieval failures clear prior bundles.
+Pair choices and model-ZIP selections are separate, labelled controls: changing
+the exploratory pair does not change the chosen model set.
+
+## Protein Imager and recorded pockets
+
+[Protein Imager](https://3dproteinimaging.com/protein-imager/) accepts manual
+PDB/mmCIF loading and residue selections. The new individual model download
+supplies a full coordinate file, with its checksum verified against the ZIP audit.
+
+Prepared files are current AlphaFold Database downloads. For inspection of a
+recorded E3 pocket, use the same retained model that generated that prediction
+and its exact pocket chain/residue identifiers. A current model may differ from
+the historical model. The app does not transfer pocket annotations to Protein
+Imager or import its results. A portable HTML/C-alpha view is not the complete
+atomic coordinate file.
+
+## Missing data and generic start pages
+
+Exact sequences are joined by HOG, species and original member identifier.
+Another HOG, orthogroup or species cannot supply a substitute. Conflicting,
+invalid and unavailable sequences are labelled explicitly and do not produce
+an apparently valid pair FASTA. Missing canonical accessions disable only the
+unsupported database/model actions.
+
+The **Tool start pages and preparation notes** expander retains the generic
+directory. These links open blank service entry points. If root membership is
+absent from a release, the page explains that HOG selection is unavailable and
+keeps these manual entry points accessible. The HOG metadata cache is bound to
+the loaded source and avoids repeated full-resource queries on widget reruns.
+
+Remote ESMFold/InterProScan jobs retain their explicit workbench submission
+controls. Raw API URLs and the previously withheld RCSB computed-model pair
+hand-off are not introduced as browser shortcuts.

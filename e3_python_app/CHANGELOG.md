@@ -4,6 +4,20 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.3
+
+- Adds HOG selection, species-labelled protein/pair choices and populated
+  Mol*, AlphaFold DB and EMERALD links directly to External links.
+- Uses exact HOG/species/raw-identifier sequence joins for pair FASTA;
+  conflicting, invalid and unavailable sequences remain explicit.
+- Reuses bounded model preparation for the Inspector ZIP and adds an audited
+  individual mmCIF download for manual Protein Imager loading.
+- Invalidates model downloads when the source, HOG or selected models change,
+  and caches scoped HOG context independently of screen-preview limits.
+- Keeps the generic start-page directory and all existing contextual links.
+- Records the executing application version in research-job provenance,
+  avoiding stale editable-install distribution metadata during an upgrade.
+
 ## v0.21.2
 
 - Adds Protein Imager beside ligandability/pocket evidence and selected

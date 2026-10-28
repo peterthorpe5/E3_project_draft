@@ -182,12 +182,12 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     "stage",
     ("🔵 1 · Information", "🟠 4 · Structural prioritisation"),
 )
-def test_external_links_directory_needs_no_selection_or_remote_preparation(
+def test_external_links_has_hog_context_without_automatic_remote_preparation(
     resource_db: Path,
     monkeypatch: pytest.MonkeyPatch,
     stage: str,
 ) -> None:
-    """Both directory routes render manual entry points without preparing remote inputs."""
+    """Both routes provide scoped inputs while model preparation remains an explicit action."""
     monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
     monkeypatch.setattr(
         "e3app.alphafold_hog_bundle.build_alphafold_hog_bundle",
@@ -202,15 +202,17 @@ def test_external_links_directory_needs_no_selection_or_remote_preparation(
     _navigate(app, stage=stage, page="External links")
     assert not app.exception
     links = {button.label: button.proto.url for button in app.get("link_button")}
-    assert links == {
-        f"Open {resource.name} (start page)": resource.url
-        for resource in EXTERNAL_RESOURCES
-    }
-    assert not app.get("download_button")
-    assert not app.selectbox
-    assert any("do not carry a selected protein" in item.value for item in app.markdown)
+    for resource in EXTERNAL_RESOURCES:
+        assert links[f"Open {resource.name} (start page)"] == resource.url
+    assert links["Open first protein in Mol*"].endswith("?afdb=Q9SA03")
+    assert links["Open second protein in Mol*"].endswith("?afdb=P38398")
+    assert any(selector.label == "HOG for external tools" for selector in app.selectbox)
+    assert any(button.label == "Download selected HOG pair FASTA"
+               for button in app.get("download_button"))
+    assert not any(button.label == "Download ZIP for manual Inspector upload"
+                   for button in app.get("download_button"))
     assert any("HOG model comparison" in item.value for item in app.markdown)
-    assert any("exact pair FASTA" in item.value for item in app.caption)
+    assert any("generic links" in item.value for item in app.caption)
 
 
 @pytest.mark.parametrize("with_evidence", (True, False))

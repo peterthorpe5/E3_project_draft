@@ -14,6 +14,8 @@ from typing import Mapping
 
 import duckdb
 
+from e3app import __version__
+
 from .analysis import REALIGN_FIELDS, align_family, index_fasta, run_command, subcluster
 from .catalogue import (
     build_cluster_taxonomy,
@@ -364,7 +366,7 @@ def run_next_job(*, config: ResearchConfig, job_id: str | None = None) -> str | 
             "artifacts": {},
             "runtime": {
                 "python": sys.version.split()[0],
-                "application": version("e3-python-app"),
+                "application": __version__,
                 "duckdb": version("duckdb"),
                 "pyarrow": version("pyarrow"),
                 "biopython": version("biopython"),
