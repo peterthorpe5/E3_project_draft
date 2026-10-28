@@ -1,3 +1,29 @@
+# 1.3.0 — 28 October 2026
+
+- Reworked 3D defaults around one selected pocket: pale background, muted local
+  protein context, bright lining surfaces/sticks/markers, rank labels, score and
+  confidence cards, and clear focus/whole-model/pockets-only views.
+- Added distinct reference/mobile colours and offset labels. Local context and
+  label placement use the displayed transformed PDB, not pre-fit metadata.
+- Kept original ranks across filters; unreported ranks stay unknown. Context
+  display filtering leaves selected lining visible and does not alter analyses.
+- Sorted pocket tables by rank and shortened model display labels with collision
+  handling. Full identifiers are retained in evidence and downloads.
+- Replaced long fit names with model/analysis selectors and a larger directional
+  similarity matrix, keeping missing values and fit scopes explicit.
+- Corrected evidence-plot presentation: rank-one and best-tested-member views
+  now pair the appropriate saved overlap with its own position decision. Scope
+  selectors apply consistently to cards, plots and tables.
+- Added confidence summaries for original resources, streamlined model-group
+  tables and direct links from group/evidence records to saved 3D fits.
+- Made pocket-marked alignments compact by sequence/range, with all-replicate
+  mode, larger text, a column ruler, active-rank legends and filtered downloads.
+- Added viewer guidance and help/glossary explanations. Existing 1.0–1.2 native
+  resources remain readable without recomputing evidence or rebuilding DuckDB.
+- Prediction, preparation, fitting and sequence-analysis implementations and
+  Slurm scripts are unchanged. Keep active/resumable HPC jobs on their existing
+  release; install this update on the viewing machine.
+
 # 1.2.0 — 23 October 2026
 
 - Added a complete quality-aware batch rerun: contiguous confidence/PAE region

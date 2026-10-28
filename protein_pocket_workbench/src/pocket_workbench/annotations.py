@@ -7,6 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from .core import WorkbenchError, inside
+from .presentation import model_labels
 from .viewers import json_for_html, sequence_position_columns
 
 
@@ -24,6 +25,7 @@ def pocket_alignment_data(
     Returns:
         Display rows, residue-level audit annotations and mapping completeness.
     """
+    labels = model_labels(identifiers=[m["sample_id"] for m in data["models"]])
     lengths = {len(sequence) for sequence in aligned_records.values()}
     if len(lengths) != 1 or not 1 <= top_k <= 100:
         raise WorkbenchError("Use an equal-length alignment and top_k in [1, 100]")
@@ -80,6 +82,11 @@ def pocket_alignment_data(
                         "amino_acid": residue.get("amino_acid"),
                         "plddt": residue.get("plddt"),
                         "confidence_status": pocket.get("confidence_status"),
+                        "quality_screen_pass": pocket.get("quality_screen_pass"),
+                        "near_cut_boundary": pocket.get("near_cut_boundary"),
+                        "near_very_low_confidence": pocket.get(
+                            "near_very_low_confidence"
+                        ),
                         "druggability_score": pocket.get("druggability_score"),
                         "mapping_status": "mapped" if column else "unmapped",
                     }
@@ -87,6 +94,15 @@ def pocket_alignment_data(
         rows.append(
             {
                 "sample_id": model["sample_id"],
+                "display_label": labels[model["sample_id"]],
+                "scope_key": json.dumps(
+                    [
+                        identifier,
+                        model.get("input_scope", "full_model"),
+                        model.get("original_start"),
+                        model.get("original_end"),
+                    ]
+                ),
                 "sequence_id": identifier,
                 "aligned": aligned_records[identifier],
                 "pocket_count": pocket_count,
@@ -113,6 +129,7 @@ def pocket_alignment_data(
         "annotations": annotations,
         "alignment_length": next(iter(lengths)),
         "top_k": top_k,
+        "has_preparation_screen": bool(data.get("quality_preparation")),
     }
 
 

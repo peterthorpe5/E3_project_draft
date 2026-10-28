@@ -32,6 +32,16 @@ from pocket_workbench.groups import AF3_INSPECTOR_URL, inspector_bundle, source_
 from pocket_workbench.help_content import field_help, glossary_rows, methods_text
 from pocket_workbench.importing import import_project, read_fasta
 from pocket_workbench.jobs import start_job
+from pocket_workbench.presentation import (
+    METHOD_LABELS,
+    analysis_label,
+    dataset_summary,
+    evidence_figure,
+    model_labels,
+    pocket_rank,
+    ranked_pockets,
+    similarity_figure,
+)
 from pocket_workbench.runtime import available_cpus, execution_info
 from pocket_workbench.viewers import (
     alignment_document,
@@ -92,13 +102,16 @@ def upload_file(*, uploaded, directory: Path) -> Path:
     return path
 
 
-def show_table(*, rows: list[dict], key: str, glossary_term: str = "") -> None:
+def show_table(
+    *, rows: list[dict], key: str, glossary_term: str = "", readable_ids: bool = True
+) -> None:
     """Show a searchable evidence table with matching TSV/Excel downloads.
 
     Args:
         rows: Table records.
         key: Unique widget prefix.
         glossary_term: Optional shared metric explanation.
+        readable_ids: Shorten identifiers on screen; downloads retain exact IDs.
     """
     if not rows:
         st.info("No records match this selection.")
@@ -119,11 +132,66 @@ def show_table(*, rows: list[dict], key: str, glossary_term: str = "") -> None:
         f"{len(frame):,} displayed records"
         + (" · " + field_help(term=glossary_term) if glossary_term else "")
     )
+    displayed = frame.copy()
+    if readable_ids:
+        for column in ("sample_id", "reference", "mobile", "parent_sample_id"):
+            if column in displayed:
+                labels = model_labels(
+                    identifiers=[v for v in displayed[column] if isinstance(v, str)]
+                )
+                displayed[column] = displayed[column].map(lambda v: labels.get(v, v))
+    decisions = (
+        "position_supported",
+        "fold_supported",
+        "complete_mapping",
+        "rank_one_position_and_fold",
+        "rank_one_conserved",
+        "rank_one_both_aligners",
+        "rank_one_conserved_both_aligners",
+        "top_k_both_aligners",
+        "quality_screen_pass",
+    )
+    for column in decisions:
+        if column in displayed:
+            displayed[column] = displayed[column].map(
+                lambda v: "Yes" if v is True else "No" if v is False else "Not assessed"
+            )
+    for column in ("rank_one_position", "top_k_position", "confidence_status"):
+        if column in displayed:
+            displayed[column] = displayed[column].map(
+                lambda v: v.replace("_", " ").capitalize() if isinstance(v, str) else v
+            )
     st.dataframe(
-        frame,
+        displayed,
         width="stretch",
         hide_index=True,
         column_config={
+            "sample_id": "Model",
+            "reference": "Reference model",
+            "mobile": "Compared model",
+            "sequence_id": "Representative FASTA ID",
+            "pocket_id": "Pocket ID",
+            "rank": "Method rank",
+            "method": "Evidence source",
+            "confidence_status": "Local pocket confidence",
+            "rank_one_position": "Rank-one position",
+            "rank_one_position_and_fold": "Rank-one position + fold",
+            "rank_one_conserved": st.column_config.TextColumn(
+                "Rank-one lining + fold",
+                help=(
+                    "Requires the saved position, fold, residue-match and chemical"
+                    " thresholds. Missing evidence remains not assessed."
+                ),
+            ),
+            "top_k_position": "Any tested member position",
+            "best_tested_member_rank": "Best-overlap member rank",
+            "best_tested_mobile_pocket": "Best-overlap member pocket ID",
+            "rank_one_overlap": st.column_config.NumberColumn(
+                "Rank-one overlap", format="%.3f"
+            ),
+            "best_tested_overlap": st.column_config.NumberColumn(
+                "Best tested overlap", format="%.3f"
+            ),
             "mean_plddt": st.column_config.NumberColumn(
                 "Mean pLDDT", help=field_help(term="pLDDT"), format="%.2f"
             ),
@@ -162,13 +230,29 @@ def show_table(*, rows: list[dict], key: str, glossary_term: str = "") -> None:
                 help=field_help(term="Mutual-nearest match fraction"),
                 format="%.3f",
             ),
-            "position_supported": st.column_config.CheckboxColumn(
+            "rmsd": st.column_config.NumberColumn("RMSD (Å)", format="%.2f"),
+            "tm_reference": st.column_config.NumberColumn(
+                "Reference TM-score", format="%.3f"
+            ),
+            "tm_mobile": st.column_config.NumberColumn(
+                "Compared TM-score", format="%.3f"
+            ),
+            "minimum_tm": st.column_config.NumberColumn(
+                "Minimum TM-score", format="%.3f"
+            ),
+            "reference_coverage": st.column_config.NumberColumn(
+                "Reference coverage fraction", format="%.3f"
+            ),
+            "mobile_coverage": st.column_config.NumberColumn(
+                "Compared coverage fraction", format="%.3f"
+            ),
+            "position_supported": st.column_config.TextColumn(
                 "Position supported", help=field_help(term="Position supported")
             ),
-            "fold_supported": st.column_config.CheckboxColumn(
+            "fold_supported": st.column_config.TextColumn(
                 "Region fold supported", help=field_help(term="Fold support")
             ),
-            "complete_mapping": st.column_config.CheckboxColumn(
+            "complete_mapping": st.column_config.TextColumn(
                 "Complete residue mapping", help=field_help(term="Complete mapping")
             ),
         },
@@ -334,6 +418,7 @@ def model_page(*, root: Path, data: dict) -> None:
         data: Loaded project.
     """
     st.header("Models and pockets")
+    summary = dataset_summary(data=data)
     a, b, c, d = st.columns(4)
     a.metric("Models", len(data["models"]))
     b.metric(
@@ -344,7 +429,12 @@ def model_page(*, root: Path, data: dict) -> None:
         sum(row["method"] == "fpocket" for row in data["pockets"]),
     )
     d.metric("Representative sequences", len(data["sequences"]))
-    with st.expander("How to read these results", expanded=True):
+    st.caption(
+        f"{summary['represented_sequences']} representative sequences have models; "
+        f"{summary['fasta_only_sequences']} are FASTA-only. Choose a model and inspect "
+        "one pocket first. The viewer opens at its lining residues."
+    )
+    with st.expander("How to read these results", expanded=False):
         st.markdown(
             "Select a model to inspect its pockets. Review rank applies **within that"
             " model**. Use **Compare structures** to assess whether pockets occupy"
@@ -358,10 +448,12 @@ def model_page(*, root: Path, data: dict) -> None:
                 " AlphaFold model ZIPs."
             )
     choices = ["All models"] + [row["sample_id"] for row in data["models"]]
+    labels = model_labels(identifiers=choices)
     selected = st.selectbox(
         "Model",
         choices,
         index=1 if len(choices) > 1 else 0,
+        format_func=lambda name: labels[name],
         help=field_help(term="Model replicate"),
     )
     methods = sorted({row["method"] for row in data["pockets"]})
@@ -395,22 +487,24 @@ def model_page(*, root: Path, data: dict) -> None:
             "unchanged when the quality screen hides a pocket. See Input quality for "
             "the parent models, sequence coordinates and rejected regions."
         )
-    pockets = [
-        row
-        for row in data["pockets"]
-        if row["method"] == method
-        and (selected == "All models" or row["sample_id"] == selected)
-        and (not quality_only or row.get("quality_screen_pass") is True)
-        and (
-            not confident
-            or row.get("confidence_status") == "meets_local_confidence_rule"
-        )
-    ]
+    pockets = ranked_pockets(
+        pockets=[
+            row
+            for row in data["pockets"]
+            if row["method"] == method
+            and (selected == "All models" or row["sample_id"] == selected)
+            and (not quality_only or row.get("quality_screen_pass") is True)
+            and (
+                not confident
+                or row.get("confidence_status") == "meets_local_confidence_rule"
+            )
+        ]
+    )
     columns = [
         "sample_id",
-        "pocket_id",
         "review_rank",
-        "ranking_basis",
+        "rank",
+        "pocket_id",
         "score",
         "druggability_score",
         "p2rank_rescore_score",
@@ -418,7 +512,9 @@ def model_page(*, root: Path, data: dict) -> None:
         "volume_a3",
         "mean_plddt",
         "confidence_status",
-        "residue_ids",
+    ]
+    columns = [
+        key for key in columns if any(row.get(key) is not None for row in pockets)
     ]
     if data.get("quality_preparation"):
         columns.extend(
@@ -432,20 +528,19 @@ def model_page(*, root: Path, data: dict) -> None:
         )
     if selected != "All models":
         model = next(row for row in data["models"] if row["sample_id"] == selected)
+        st.caption(f"Full model identifier: {selected}")
+        if model.get("mean_plddt") is not None and model["mean_plddt"] < 50:
+            st.warning(
+                f"Mean model pLDDT is {model['mean_plddt']:.1f}. Much of this input "
+                "may be uncertain. Inspect each pocket's local confidence and the "
+                "scope/coverage of any structural fit before interpreting its position."
+            )
         if model.get("prepared_model"):
             st.subheader("3D model and predicted pockets")
             metadata = model_viewer_records(
                 root=root,
                 model=model,
-                pockets=[
-                    p
-                    for p in data["pockets"]
-                    if (not quality_only or p.get("quality_screen_pass") is True)
-                    and (
-                        not confident
-                        or p.get("confidence_status") == "meets_local_confidence_rule"
-                    )
-                ],
+                pockets=pockets,
             )
             metadata["initial_method"] = method
             document = structure_document(
@@ -478,6 +573,12 @@ def model_page(*, root: Path, data: dict) -> None:
         key="pockets",
         glossary_term="Review rank",
     )
+    st.caption(
+        "Rows follow original within-model ranks. Full identifiers and numeric values"
+        " remain in the downloads."
+    )
+    with st.expander("Complete pocket records and residue memberships"):
+        show_table(rows=pockets, key="pocket_raw", readable_ids=False)
     with st.expander("Model checks and FASTA mapping"):
         show_table(
             rows=[
@@ -741,99 +842,133 @@ def comparison_page(*, root: Path, data: dict) -> None:
                     st.error(str(error))
     completed = data["comparisons"]
     if not completed:
+        st.info("This resource has no saved structural comparisons yet.")
         return
-    with st.expander("Comparison overview and similarity matrix"):
-        fits = query_table(root=root, table="structure_alignments")
-        overview = [
-            {
-                key: row.get(key)
-                for key in (
-                    "reference",
-                    "mobile",
-                    "engine",
-                    "status",
-                    "rmsd",
-                    "aligned_atoms",
-                    "reference_coverage",
-                    "mobile_coverage",
-                    "tm_reference",
-                    "tm_mobile",
-                )
-            }
-            for row in fits
-        ]
-        show_table(rows=overview, key="structure_overview", glossary_term="Coverage")
-        valid = [row for row in fits if row["status"] == "complete"]
-        if valid:
-            groups = list(
-                dict.fromkeys((row["engine"], row["settings"]) for row in valid)
-            )
-            descriptions = []
-            for index, (method, raw_settings) in enumerate(groups):
-                settings = json.loads(raw_settings)
-                region = (
-                    f"{settings['start']}–{settings['end']}"
-                    if settings.get("start")
-                    else "whole-model selection"
-                )
-                descriptions.append(
-                    f"{index + 1}. {method} · pLDDT ≥{settings['min_plddt']} · {region}"
-                )
-            group_index = st.selectbox(
-                "Settings for this matrix",
-                range(len(groups)),
-                format_func=lambda i: descriptions[i],
-                help=(
-                    "Each matrix uses one engine and one complete set of recorded"
-                    " analysis settings."
-                ),
-            )
-            valid = [
-                row
-                for row in valid
-                if (row["engine"], row["settings"]) == groups[group_index]
-            ]
-            metric = st.radio(
-                "Matrix metric", ["RMSD", "Minimum TM-score"], horizontal=True
-            )
-            labels = sorted(
-                {row[key] for row in valid for key in ("reference", "mobile")}
-            )
-            matrix = pd.DataFrame(float("nan"), index=labels, columns=labels)
-            for row in valid:
-                value = (
-                    row["rmsd"]
-                    if metric == "RMSD"
-                    else (
-                        min(row["tm_reference"], row["tm_mobile"])
-                        if row["tm_reference"] is not None
-                        else float("nan")
-                    )
-                )
-                matrix.loc[row["reference"], row["mobile"]] = value
-                matrix.loc[row["mobile"], row["reference"]] = value
-            figure = px.imshow(
-                matrix,
-                labels={"color": metric},
-                color_continuous_scale="Viridis_r" if metric == "RMSD" else "Viridis",
-                title="Completed pairwise fits; blank cells have no value",
-            )
-            st.plotly_chart(figure, width="stretch")
-    choice = st.selectbox(
-        "Completed comparison",
-        range(len(completed)),
-        format_func=lambda i: (
-            f"{completed[i]['reference']} ← {completed[i]['mobile']} ·"
-            f" {completed[i]['status']} · {completed[i]['comparison_id']}"
+    labels = model_labels(identifiers=[m["sample_id"] for m in data["models"]])
+    fits = query_table(root=root, table="structure_alignments")
+    model_by_id = {m["sample_id"]: m for m in data["models"]}
+    for fit in fits:
+        if all(
+            model_by_id.get(fit[k], {}).get("input_scope") == "cleaned_region"
+            for k in ("reference", "mobile")
+        ):
+            fit["scope"] = "cleaned_region"
+    fit_by_id = {r["comparison_id"]: r for r in fits}
+    pending = st.session_state.pop("requested_comparison", None)
+    if pending:
+        for index, saved in enumerate(completed):
+            if saved["comparison_id"] == pending:
+                st.session_state["comparison_reference"] = saved["reference"]
+                st.session_state["comparison_mobile"] = saved["mobile"]
+                st.session_state["comparison_analysis"] = index
+                break
+    references = sorted({r["reference"] for r in completed})
+    if st.session_state.get("comparison_reference") not in references:
+        st.session_state["comparison_reference"] = references[0]
+    left, right = st.columns(2)
+    reference = left.selectbox(
+        "Reference model in saved fit",
+        references,
+        format_func=lambda name: labels.get(name, name),
+        key="comparison_reference",
+        help=(
+            "Uses the orientation already saved by the aligner. No new fitting is run."
         ),
     )
+    mobiles = sorted({r["mobile"] for r in completed if r["reference"] == reference})
+    if st.session_state.get("comparison_mobile") not in mobiles:
+        st.session_state["comparison_mobile"] = mobiles[0]
+    mobile = right.selectbox(
+        "Compared model",
+        mobiles,
+        format_func=lambda name: labels.get(name, name),
+        key="comparison_mobile",
+    )
+    candidates = [
+        i
+        for i, r in enumerate(completed)
+        if r["reference"] == reference and r["mobile"] == mobile
+    ]
+    if st.session_state.get("comparison_analysis") not in candidates:
+        st.session_state["comparison_analysis"] = candidates[0]
+    choice = st.selectbox(
+        "Saved analysis",
+        candidates,
+        format_func=lambda i: analysis_label(
+            engine=completed[i].get("engine", "unreported"),
+            settings=fit_by_id.get(completed[i]["comparison_id"], {}).get(
+                "settings", {}
+            ),
+            scope=fit_by_id.get(completed[i]["comparison_id"], {}).get("scope", ""),
+        )
+        + " · "
+        + completed[i]["status"],
+        key="comparison_analysis",
+    )
+    st.caption(f"Saved orientation: {reference} ← {mobile}")
+    with st.expander("Similarity matrix and all saved fits", expanded=False):
+        valid = [row for row in fits if row["status"] == "complete"]
+        if valid:
+            scopes = list(
+                dict.fromkeys(
+                    (r["engine"], r["settings"], r.get("scope", "")) for r in valid
+                )
+            )
+            selected_scope = st.selectbox(
+                "Settings for this matrix",
+                range(len(scopes)),
+                format_func=lambda i: analysis_label(
+                    engine=scopes[i][0], settings=scopes[i][1], scope=scopes[i][2]
+                ),
+                help="One complete saved analysis scope is shown at a time.",
+            )
+            selected_fits = [
+                r
+                for r in valid
+                if (r["engine"], r["settings"], r.get("scope", ""))
+                == scopes[selected_scope]
+            ]
+            metrics = ["RMSD"]
+            if any(
+                r.get("tm_reference") is not None and r.get("tm_mobile") is not None
+                for r in selected_fits
+            ):
+                metrics.insert(0, "Minimum TM-score")
+            metric = st.radio("Matrix metric", metrics, horizontal=True)
+            st.plotly_chart(
+                similarity_figure(fits=selected_fits, metric=metric), width="stretch"
+            )
+            st.caption(
+                "Rows are reference models; columns are compared models. Blank cells"
+                " have no saved value. Full identifiers are shown on hover."
+                " TM-scores refer to each fit's input region; RMSD also depends on"
+                " aligned length."
+            )
+        with st.expander("Saved fit table"):
+            columns = [
+                "reference",
+                "mobile",
+                "engine",
+                "status",
+                "rmsd",
+                "aligned_atoms",
+                "reference_coverage",
+                "mobile_coverage",
+                "tm_reference",
+                "tm_mobile",
+            ]
+            show_table(
+                rows=[{k: r.get(k) for k in columns} for r in fits],
+                key="structure_overview",
+                glossary_term="Coverage",
+            )
     result = json.loads(
         inside(root=root, relative=completed[choice]["result_path"]).read_text()
     )
     if result["status"] != "complete":
         st.error(result.get("error", "Comparison failed; inspect Jobs."))
         return
-    a, b, c = st.columns(3)
+    a, b, c, d = st.columns(4)
     a.metric("RMSD (Å)", f"{result['rmsd']:.3f}", help=field_help(term="RMSD"))
     b.metric("Aligned CA atoms", result["aligned_atoms"])
     c.metric(
@@ -845,12 +980,47 @@ def comparison_page(*, root: Path, data: dict) -> None:
         ),
         help=field_help(term="TM-score"),
     )
+    d.metric(
+        "Lower input CA coverage",
+        f"{min(result['reference_coverage'], result['mobile_coverage']):.1%}",
+        help=(
+            "The smaller fraction of input residues included in the structural"
+            " alignment. For a region fit the denominator is that region."
+        ),
+    )
     st.caption(
         f"Method: {result['engine']}; scope: {result['scope']}. Input-model CA"
         f" coverage: reference {result['reference_coverage']:.1%}, mobile"
         f" {result['mobile_coverage']:.1%}."
     )
-    matches = result["pocket_matches"]
+    if (
+        result.get("tm_reference") is not None
+        and result.get("tm_mobile") is not None
+        and min(result["tm_reference"], result["tm_mobile"])
+        < result.get("settings", {}).get("min_tm", 0.5)
+    ):
+        st.warning(
+            "This fit does not meet its saved fold-support threshold. Inspect its"
+            " aligned coverage and the input confidence before interpreting a nearby"
+            " pocket as conserved."
+        )
+    ranks = {
+        (p["sample_id"], p["pocket_id"]): pocket_rank(pocket=p)
+        for p in data["pockets"]
+        if p["method"] == "fpocket"
+    }
+    matches = sorted(
+        result["pocket_matches"],
+        key=lambda m: (
+            not (
+                ranks.get((result["reference"], m["reference_pocket"]))
+                == ranks.get((result["mobile"], m["mobile_pocket"]))
+                == 1
+            ),
+            -m.get("symmetric_overlap", 0),
+            m.get("centroid_distance", float("inf")),
+        ),
+    )
     compact = [
         {
             key: row.get(key)
@@ -876,17 +1046,38 @@ def comparison_page(*, root: Path, data: dict) -> None:
         )
     match = None
     if matches:
+        if not any(
+            ranks.get((result["reference"], m["reference_pocket"]))
+            == ranks.get((result["mobile"], m["mobile_pocket"]))
+            == 1
+            for m in matches
+        ):
+            st.info(
+                "The original rank-one pair is unavailable in this saved fit. Available"
+                " alternatives retain their original ranks."
+            )
+        pair_labels = []
+        for row in matches:
+            ref_rank = ranks.get((result["reference"], row["reference_pocket"])) or "?"
+            mob_rank = ranks.get((result["mobile"], row["mobile_pocket"])) or "?"
+            pair_labels.append(
+                f"Ref rank {ref_rank} (pocket {row['reference_pocket']}) / "
+                f"compared rank {mob_rank} (pocket {row['mobile_pocket']}) · "
+                f"overlap {row['symmetric_overlap']:.2f} · "
+                f"{row['centroid_distance']:.2f} Å"
+            )
         index = st.selectbox(
             "Pocket pair to inspect in 3D",
             range(len(matches)),
-            format_func=lambda i: (
-                f"Reference pocket {matches[i]['reference_pocket']} / mobile pocket"
-                f" {matches[i]['mobile_pocket']} · overlap"
-                f" {matches[i]['symmetric_overlap']:.2f} ·"
-                f" {matches[i]['centroid_distance']:.2f} Å"
-            ),
+            format_func=lambda i: pair_labels[i],
         )
         match = matches[index]
+    else:
+        st.info(
+            "This saved fit contains no tested pocket pair. The structures can still be"
+            " inspected; choosing an independent pocket for display does not create"
+            " comparison evidence."
+        )
     reference_model = next(
         row for row in data["models"] if row["sample_id"] == result["reference"]
     )
@@ -905,10 +1096,12 @@ def comparison_page(*, root: Path, data: dict) -> None:
         match=match,
         reference_metadata=model_viewer_records(
             root=root, model=reference_model, pockets=data["pockets"]
-        ),
+        )
+        | ({"initial_display": "none"} if not match else {}),
         mobile_metadata=model_viewer_records(
             root=root, model=mobile_model, pockets=data["pockets"]
-        ),
+        )
+        | ({"initial_display": "none"} if not match else {}),
         summary=(
             f"{result['engine']}; RMSD {result['rmsd']:.3f} Å over"
             f" {result['aligned_atoms']} CA atoms. Pocket overlap uses lining CA"
@@ -1102,9 +1295,13 @@ def sequence_page(*, root: Path, data: dict, workspace: Path) -> None:
         )
         document = pocket_alignment_document(payload=payload)
         st.download_button(
-            "Download complete pocket annotation TSV",
+            "Download all prepared pocket annotation rows (TSV)",
             tsv_bytes(rows=payload["annotations"]),
             file_name=analysis["analysis_id"] + "_pocket_annotations.tsv",
+        )
+        st.caption(
+            "Pocket tracks include original review ranks 1–10. This download contains"
+            " all prepared tracks, regardless of the viewer's display filters."
         )
     else:
         document = alignment_document(
@@ -1272,63 +1469,155 @@ def evidence_page(*, root: Path, data: dict) -> None:
     if not rows:
         st.info("Load a resource with precomputed structural comparisons.")
         return
-    a, b, c = st.columns(3)
-    a.metric("Saved comparisons", len(rows))
-    b.metric(
-        "Rank-one position + fold",
-        sum(r["rank_one_position_and_fold"] is True for r in rows),
-    )
-    c.metric(
-        "Rank-one not assessed",
-        sum(r["rank_one_position"] == "not_assessed" for r in rows),
-    )
-    frame = pd.DataFrame(rows)
-    scopes = list(dict.fromkeys(zip(frame.engine, frame.settings)))
-    labels = [
-        f"{engine} · {json.loads(settings).get('fit_scope', 'paired')} · "
-        f"pLDDT ≥ {json.loads(settings).get('min_plddt', 0):g} · "
-        f"region {json.loads(settings).get('start')}–{json.loads(settings).get('end')}"
-        for engine, settings in scopes
-    ]
+    scopes = list(dict.fromkeys((r["engine"], r["settings"], r["scope"]) for r in rows))
     selected = st.selectbox(
         "Evidence map scope",
         range(len(scopes)),
-        format_func=lambda i: f"{i+1}. {labels[i]}",
-        help="Each plot uses one aligner and one complete set of settings.",
+        format_func=lambda i: analysis_label(
+            engine=scopes[i][0], settings=scopes[i][1], scope=scopes[i][2]
+        ),
+        help=(
+            "Plots, counts and the summary table below use this same saved analysis"
+            " scope."
+        ),
     )
-    engine, settings = scopes[selected]
-    plotted = frame.loc[(frame.engine == engine) & (frame.settings == settings)]
-    plotted = plotted.loc[
-        plotted.minimum_tm.notna() & plotted.best_tested_overlap.notna()
+    engine, settings, scope = scopes[selected]
+    scoped = [
+        r
+        for r in rows
+        if (r["engine"], r["settings"], r["scope"]) == (engine, settings, scope)
     ]
-    if not plotted.empty:
-        figure = px.scatter(
-            plotted,
-            x="minimum_tm",
-            y="best_tested_overlap",
-            color="rank_one_position",
-            hover_data=["reference", "mobile", "scope"],
-            labels={
-                "minimum_tm": "Minimum length-normalised TM-score",
-                "best_tested_overlap": "Best tested top-k pocket overlap",
-            },
-        )
-        figure.update_xaxes(range=[0, 1])
-        figure.update_yaxes(range=[0, 1])
+    a, b, c, d = st.columns(4)
+    a.metric("Fits in selected scope", len(scoped))
+    b.metric(
+        "Rank-one position + fold",
+        sum(r["rank_one_position_and_fold"] is True for r in scoped),
+    )
+    c.metric(
+        "Rank-one position unassessed",
+        sum(r["rank_one_position"] == "not_assessed" for r in scoped),
+    )
+    d.metric(
+        "Top-k position support",
+        sum(r["top_k_position"] == "supported" for r in scoped),
+        help=(
+            "Number of saved fits with any position-supported tested member pocket"
+            " among original ranks 1 through k. This includes member rank one."
+        ),
+    )
+    st.caption(
+        f"This dataset contains {len(rows):,} saved fits across"
+        f" {len({(r['reference'],r['mobile']) for r in rows}):,} model pairs. Counts"
+        " above use the selected scope only. No support under a threshold is not"
+        " experimental evidence of no binding."
+    )
+    view = st.radio(
+        "Pocket evidence to plot",
+        ["Original rank-one pair", "Best tested member pocket"],
+        horizontal=True,
+        help=(
+            "The second view keeps reference rank one fixed and tests member ranks 1"
+            " through the selected limit. It does not replace the rank-one conclusion."
+        ),
+    )
+    figure, omitted = evidence_figure(
+        rows=scoped,
+        view="rank_one" if view == "Original rank-one pair" else "alternatives",
+    )
+    if omitted < len(scoped):
         st.plotly_chart(figure, width="stretch")
+    else:
+        st.info(
+            "No fits in this scope have both the required TM-score and pocket overlap"
+            " for this plot. Sequence-guided Kabsch does not report a TM-score."
+            " Inspect saved pocket-position evidence in the table or 3D view, or"
+            " choose another available saved analysis scope."
+        )
+    st.caption(
+        f"{omitted:,} fits omitted from the plot because a required TM-score or pocket"
+        " overlap is unavailable. The overlap threshold alone is insufficient:"
+        " centroid distance and complete mapping also affect the position rule."
+    )
+    if view == "Best tested member pocket":
+        st.caption(
+            "The plotted pair has the highest overlap. It can fail another position"
+            " rule even when a different tested pocket passes; the top-k card counts"
+            " any passing pair."
+        )
     with st.expander("How to read strict and sensitivity evidence", expanded=True):
         st.markdown(
-            "**Rank-one position** reports the saved geometric pocket test. "
-            "**Rank-one position + fold** also requires the saved TM threshold. "
-            "**Not assessed** means the requested rank pair was unavailable or "
-            "excluded by that run's filters. A top-k supported alternative does not "
-            "change the rank-one result. Separate aligners are shown independently."
+            "**Rank-one position** tests the two original rank-one cavities. "
+            "**Position + fold** also requires the saved TM-score threshold. "
+            "**Not assessed** means the requested pair was absent or excluded by "
+            "the saved filters. **Best tested member pocket** shows the highest "
+            "overlap among original member ranks 1 through the selected limit, "
+            "with reference rank one fixed. Point colour describes that plotted "
+            "pocket pair. The vertical line marks the fold threshold; the horizontal "
+            "line marks the overlap threshold. A supported alternative does not "
+            "change the original rank-one result."
         )
-    show_table(rows=rows, key="structural_audit", glossary_term="Fold support")
+    summary_columns = [
+        "reference",
+        "mobile",
+        "rank_one_position",
+        "rank_one_position_and_fold",
+        "rank_one_conserved",
+        "minimum_tm",
+        "rank_one_overlap",
+        "best_tested_overlap",
+        "best_tested_member_rank",
+        "best_tested_mobile_pocket",
+        "top_k_position",
+        "reference_coverage",
+        "mobile_coverage",
+    ]
+    show_table(
+        rows=[{k: r.get(k) for k in summary_columns} for r in scoped],
+        key="structural_audit",
+        glossary_term="Fold support",
+    )
+    labels = model_labels(
+        identifiers=[r[k] for r in scoped for k in ("reference", "mobile")]
+    )
+    selected_fit = st.selectbox(
+        "Saved fit to open in 3D",
+        range(len(scoped)),
+        format_func=lambda i: (
+            labels[scoped[i]["reference"]] + " ← " + labels[scoped[i]["mobile"]]
+        ),
+    )
+    if st.button("Open this fit in Compare structures", key="evidence_open_fit"):
+        st.session_state["requested_comparison"] = scoped[selected_fit]["comparison_id"]
+        st.session_state["pending_navigation"] = "Compare structures"
+        st.rerun()
+    with st.expander("Complete audit records and settings"):
+        show_table(rows=scoped, key="structural_audit_raw", readable_ids=False)
     with st.expander(
-        "USalign / TMalign agreement on the same member pocket", expanded=True
+        "USalign / TMalign agreement on the same member pocket", expanded=False
     ):
-        show_table(rows=aligner_agreement(rows=rows), key="aligner_agreement")
+        agreement = aligner_agreement(rows=rows)
+        st.caption(
+            "Agreement requires both tools and the same member pocket. Missing tool"
+            " evidence remains not assessed."
+        )
+        show_table(
+            rows=[
+                {
+                    k: r.get(k)
+                    for k in (
+                        "reference",
+                        "mobile",
+                        "available_aligners",
+                        "rank_one_both_aligners",
+                        "rank_one_conserved_both_aligners",
+                        "top_k_same_member_pockets",
+                        "top_k_both_aligners",
+                    )
+                }
+                for r in agreement
+            ],
+            key="aligner_agreement",
+        )
 
 
 def group_page(*, root: Path, data: dict) -> None:
@@ -1352,29 +1641,44 @@ def group_page(*, root: Path, data: dict) -> None:
         for m in data["models"]
         if (m.get("hog_id") or m.get("group_id") or "Ungrouped") == selected
     ]
+    labels = model_labels(identifiers=[m["sample_id"] for m in members])
+    a, b = st.columns(2)
+    a.metric("Models in this group", len(members))
+    b.metric(
+        "Mapped representative sequences",
+        len({m.get("sequence_id") for m in members if m.get("sequence_id")}),
+    )
+    if not any(m.get("hog_id") for m in members):
+        st.info(
+            "This is a supplied model group. No explicit HOG membership was provided."
+            " Replicates remain separate models."
+        )
     st.caption(
         "HOG membership is used only when supplied explicitly. Generic group_id "
         "values do not establish orthology. An optional mapping TSV can provide "
         "hog_id, group_id, source_accession and source_url."
     )
+    member_columns = [
+        "sample_id",
+        "sequence_id",
+        "residue_count",
+        "mean_plddt",
+        "mapping_status",
+    ]
+    member_columns += [
+        k
+        for k in (
+            "hog_id",
+            "parent_sample_id",
+            "original_start",
+            "original_end",
+            "source_accession",
+            "source_url",
+        )
+        if any(m.get(k) not in (None, "") for m in members)
+    ]
     show_table(
-        rows=[
-            {
-                k: m.get(k)
-                for k in (
-                    "sample_id",
-                    "sequence_id",
-                    "hog_id",
-                    "group_id",
-                    "residue_count",
-                    "mean_plddt",
-                    "mapping_status",
-                    "source_accession",
-                    "source_url",
-                )
-            }
-            for m in members
-        ],
+        rows=[{k: m.get(k) for k in member_columns} for m in members],
         key="group_members",
     )
     names = {m["sample_id"] for m in members}
@@ -1384,17 +1688,59 @@ def group_page(*, root: Path, data: dict) -> None:
         if row["reference"] in names and row["mobile"] in names
     ]
     with st.expander("Precomputed comparisons in this group", expanded=True):
-        show_table(rows=comparisons, key="group_comparisons")
+        group_fits = [
+            r
+            for r in query_table(root=root, table="structure_alignments")
+            if r["reference"] in names and r["mobile"] in names
+        ]
+        show_table(
+            rows=[
+                {
+                    k: r.get(k)
+                    for k in (
+                        "reference",
+                        "mobile",
+                        "engine",
+                        "status",
+                        "rmsd",
+                        "aligned_atoms",
+                        "tm_reference",
+                        "tm_mobile",
+                        "reference_coverage",
+                        "mobile_coverage",
+                    )
+                }
+                for r in group_fits
+            ],
+            key="group_comparisons",
+        )
         if comparisons:
-            st.caption(
-                "Use Compare structures to select one of these saved fits in 3D."
+            fit_labels = [
+                labels[r["reference"]]
+                + " ← "
+                + labels[r["mobile"]]
+                + " · "
+                + METHOD_LABELS.get(r.get("engine"), r.get("engine", "unreported"))
+                for r in comparisons
+            ]
+            selected_fit = st.selectbox(
+                "Group fit to inspect",
+                range(len(comparisons)),
+                format_func=lambda i: fit_labels[i],
             )
+            if st.button("Open this fit in Compare structures", key="group_open_fit"):
+                st.session_state["requested_comparison"] = comparisons[selected_fit][
+                    "comparison_id"
+                ]
+                st.session_state["pending_navigation"] = "Compare structures"
+                st.rerun()
     st.subheader("Open the external model comparison source")
     st.link_button("Open AlphaFold 3 Multi-Model Inspector", AF3_INSPECTOR_URL)
     selected_models = st.multiselect(
         "Local models for manual Inspector upload",
         [m["sample_id"] for m in members],
         default=[m["sample_id"] for m in members if m.get("prepared_model")],
+        format_func=lambda name: labels.get(name, name),
         help="Includes local prepared chains. No model download or alignment is run.",
     )
     fingerprint = (str(root), data.get("revision", 0), tuple(selected_models))
@@ -1436,10 +1782,60 @@ def quality_page(*, root: Path, data: dict) -> None:
         data: Loaded project metadata.
     """
     st.header("Input quality and retained regions")
+    summary = dataset_summary(data=data)
+    a, b, c, d = st.columns(4)
+    a.metric("Models", summary["models"])
+    b.metric(
+        "Median model mean pLDDT",
+        (
+            f"{summary['median_model_plddt']:.1f}"
+            if summary["median_model_plddt"] is not None
+            else "Unavailable"
+        ),
+    )
+    c.metric("Locally confident cavities", summary["locally_confident_cavities"])
+    d.metric("FASTA records without models", summary["fasta_only_sequences"])
+    st.caption(
+        "These summaries use the stored input and pocket confidence. A model-wide "
+        "mean does not replace assessment of a local pocket or domain orientation."
+    )
+    records = [
+        {
+            key: m.get(key)
+            for key in (
+                "sample_id",
+                "sequence_id",
+                "residue_count",
+                "mean_plddt",
+                "fraction_ge_threshold",
+                "mapping_status",
+                "status",
+                "warnings",
+            )
+        }
+        for m in data["models"]
+    ]
+    available = [r for r in records if r["mean_plddt"] is not None]
+    if available:
+        confidence = px.histogram(
+            pd.DataFrame(available),
+            x="mean_plddt",
+            nbins=15,
+            labels={"mean_plddt": "Mean pLDDT of each input model"},
+            title="Distribution of stored model confidence",
+            color_discrete_sequence=["#0072B2"],
+        )
+        confidence.update_xaxes(range=[0, 100])
+        confidence.update_layout(height=300, margin={"t": 45, "b": 40})
+        st.plotly_chart(confidence, width="stretch")
+    with st.expander("Model confidence and exact FASTA mapping", expanded=True):
+        show_table(rows=records, key="input_model_confidence", glossary_term="pLDDT")
     if not data.get("quality_preparation"):
         st.info(
-            "This resource has no region-preparation audit. Existing predictions remain"
-            " available."
+            "This resource contains imported input models and confidence annotations. "
+            "A separate region-preparation audit was not supplied. The summaries above "
+            "remain available; a completed quality-rerun resource also includes the "
+            "retained/rejected region and cut-boundary audit here."
         )
         return
     st.markdown(
@@ -1489,6 +1885,34 @@ def documentation_page() -> None:
         show_table(rows=glossary_rows(), key="glossary")
     with questions:
         for title, explanation in [
+            (
+                "How can I make a pocket stand out?",
+                (
+                    "Choose one pocket and use Focus pockets. The default muted local"
+                    " protein context makes its bright lining surface easier to see."
+                    " Expand Pocket appearance to adjust the surface, markers and"
+                    " labels. For an aligned pair, toggle either model to inspect an"
+                    " obscured site."
+                ),
+            ),
+            (
+                "Is the coloured surface the empty cavity?",
+                (
+                    "It follows atoms of the selected lining residues. It is not an"
+                    " empty cavity volume or the geometric overlap used by the saved"
+                    " comparison. Read Lining-atom surface and Symmetric overlap in"
+                    " the glossary for those distinctions."
+                ),
+            ),
+            (
+                "Why does a pocket remain visible after filtering the protein?",
+                (
+                    "Context pLDDT and position filters hide background protein only."
+                    " Selected lining remains available for inspection. Use Only"
+                    " locally confident pockets to filter the pockets themselves."
+                    " These display choices do not change predictions or fits."
+                ),
+            ),
             (
                 "Why can I see tables but no structures?",
                 (
@@ -1630,6 +2054,13 @@ def main() -> None:
     workspace.mkdir(parents=True, exist_ok=True)
     if "resource" not in st.session_state:
         st.session_state["resource"] = os.getenv("POCKET_WORKBENCH_RESOURCE", "")
+    if "navigation_page" not in st.session_state:
+        st.session_state["navigation_page"] = (
+            "Models & pockets" if st.session_state["resource"] else "Start / import"
+        )
+    pending_navigation = st.session_state.pop("pending_navigation", None)
+    if pending_navigation:
+        st.session_state["navigation_page"] = pending_navigation
     with st.sidebar:
         st.title("Pocket workbench")
         st.caption("Sequence · structure · pocket evidence")
@@ -1665,9 +2096,15 @@ def main() -> None:
                 "Methods & glossary",
                 "Downloads",
             ],
+            key="navigation_page",
         )
-        st.caption(f"Project workspace: {workspace}")
-        st.caption(f"App host: {execution_info()['hostname']}")
+        with st.expander("Project and host details"):
+            st.caption("Open resource")
+            st.code(
+                st.session_state["resource"] or "No resource selected", language=None
+            )
+            st.caption(f"Project workspace: {workspace}")
+            st.caption(f"App host: {execution_info()['hostname']}")
     root, data = None, None
     if st.session_state["resource"]:
         try:

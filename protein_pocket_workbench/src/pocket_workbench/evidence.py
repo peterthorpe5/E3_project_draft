@@ -103,7 +103,22 @@ def comparison_audit(*, root: Path, data: dict, top_k: int = 5) -> list[dict]:
                 ),
                 "rmsd": result.get("rmsd"),
                 "minimum_tm": minimum_tm,
+                "rank_one_overlap": strict.get("symmetric_overlap") if strict else None,
+                "rank_one_centroid_distance": (
+                    strict.get("centroid_distance") if strict else None
+                ),
                 "best_tested_overlap": best["symmetric_overlap"] if best else None,
+                "best_tested_position_supported": (
+                    best.get("position_supported") if best else None
+                ),
+                "best_tested_mobile_pocket": (
+                    best.get("mobile_pocket") if best else None
+                ),
+                "best_tested_member_rank": (
+                    ranks.get((result["mobile"], best["mobile_pocket"]))
+                    if best
+                    else None
+                ),
                 "reference_coverage": result.get("reference_coverage"),
                 "mobile_coverage": result.get("mobile_coverage"),
             }

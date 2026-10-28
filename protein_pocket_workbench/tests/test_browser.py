@@ -76,6 +76,7 @@ def test_viewer_initialises_offline_in_chromium(project, kind):
             page.get_by_label("Mobile", exact=True).uncheck()
             page.get_by_label("Mobile", exact=True).check()
             page.get_by_role("button", name="Focus pockets").click()
+            page.get_by_text("Protein context and background", exact=True).click()
             page.get_by_label("Colour by pLDDT").check()
             assert (
                 page.locator("#status").inner_text().startswith("synthetic_reference")

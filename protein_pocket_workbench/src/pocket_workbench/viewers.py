@@ -11,6 +11,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from .core import WorkbenchError, inside
+from .presentation import model_label, model_labels
 
 
 def model_viewer_records(*, root: Path, model: dict, pockets: list[dict]) -> dict:
@@ -30,6 +31,8 @@ def model_viewer_records(*, root: Path, model: dict, pockets: list[dict]) -> dic
         else []
     )
     return {
+        "short_label": model_label(identifier=model["sample_id"]),
+        "input_scope": model.get("input_scope", "full_model"),
         "residues": residues,
         "pockets": [p for p in pockets if p["sample_id"] == model["sample_id"]],
         "confidence": model.get("confidence", "plddt"),
@@ -174,6 +177,9 @@ def structure_document(
             if pdb
         ],
     }
+    labels = model_labels(identifiers=[m["label"] for m in payload["models"]])
+    for model in payload["models"]:
+        model["short_label"] = labels[model["label"]]
     library = re.sub(
         r"</script", r"<\\/script", viewer_asset(name="3Dmol-min.js"), flags=re.I
     )

@@ -4,141 +4,269 @@
 <title>Protein pocket explorer</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:#f2f6fa;color:#18384c}
-header{padding:15px 18px;background:#12394e;color:white;border-radius:12px 12px 0 0}
-h1{font-size:20px;margin:0 0 5px}h2{font-size:14px;margin:0 0 10px}p{line-height:1.5}
-.sub{font-size:12px;opacity:.85}.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:12px}
-.stage{min-width:0;background:#071722;border-radius:10px;overflow:hidden}
-#viewer{height:650px;position:relative;width:100%}.toolbar{display:flex;gap:7px;flex-wrap:wrap;padding:10px;background:#e5edf3}
-button,select,input[type=number]{font:inherit;border:1px solid #b1c4d0;border-radius:5px;background:white;padding:6px 8px;color:#18384c}
-button{cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #43b6df}
-aside{height:710px;overflow:auto;padding-right:4px}.card{background:white;border:1px solid #d8e3eb;border-radius:8px;padding:12px;margin-bottom:10px}
-label{display:block;font-size:12px;margin:7px 0}select{max-width:100%;width:100%;font-size:12px}
-input[type=range]{width:100%}.row{display:flex;gap:8px}.row label{flex:1}.row input{width:100%}
-.model-name{overflow-wrap:anywhere;font-weight:600;font-size:12px;margin-bottom:8px}
-.help{font-size:11px;color:#516b7c;line-height:1.45}.count{font-size:11px;background:#eaf3f7;padding:6px;border-radius:4px;margin:7px 0}
-details{font-size:12px;margin-top:9px}summary{cursor:pointer}.pocket-info{font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
-#picked{overflow-wrap:anywhere;font-size:12px;white-space:pre-wrap}#status{padding:0 18px 8px;font-size:12px}
-.note{margin:0;padding:6px 18px 14px;font-size:12px}
-.layout:fullscreen{background:#f2f6fa;padding:15px}.layout:fullscreen #viewer{height:calc(100vh - 90px)}.layout:fullscreen aside{height:calc(100vh - 30px)}
-@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}#viewer{height:480px}aside{height:auto;max-height:550px}}
+header{padding:14px 18px;background:#12394e;color:white;border-radius:10px 10px 0 0}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:0 0 9px}.sub{font-size:12px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:12px}
+.stage{min-width:0;border:1px solid #d6e1e9;border-radius:8px;overflow:hidden;background:#f8fafc}
+#viewer{height:620px;position:relative;width:100%}
+.toolbar{display:flex;gap:7px;flex-wrap:wrap;padding:10px;background:#e6eef4}
+button,select,input[type=number]{font:inherit;border:1px solid #aebfcb;border-radius:5px;background:white;padding:7px 9px;color:#18384c}
+button{cursor:pointer}button.primary{background:#124e6b;color:white;border-color:#124e6b}
+button:hover{filter:brightness(.95)}button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #1098cf;outline-offset:2px}
+aside{height:720px;overflow:auto;padding-right:4px}.card{background:white;border:1px solid #d8e3eb;border-radius:8px;padding:12px;margin-bottom:10px}
+label{display:block;font-size:12px;margin:8px 0 4px}label.check{display:flex;align-items:center;gap:7px}
+select{width:100%;font-size:12px}input[type=range]{width:100%}.row{display:flex;gap:8px}.row label{flex:1}.row input{width:100%}
+.model-name{overflow-wrap:anywhere;font-size:12px;font-weight:600;margin-bottom:6px}
+.help{font-size:12px;color:#526b7a;line-height:1.5;margin:7px 0}.count{font-size:12px;background:#edf3f7;padding:7px;border-radius:4px;margin-top:9px}
+details{font-size:12px;margin-top:10px}summary{cursor:pointer;font-weight:600}details label{font-weight:400}
+.summary{display:flex;gap:9px;flex-wrap:wrap;padding:12px 12px 0}
+.selection-card{flex:1;min-width:220px;background:white;border:1px solid #cfdae4;border-radius:7px;padding:10px 13px;line-height:1.6}
+.selection-title{font-size:14px;font-weight:650}.swatch{display:inline-block;width:13px;height:13px;border-radius:50%;border:1px solid #394d60;vertical-align:middle;margin-right:6px}
+.badge{display:inline-block;font-size:11px;border-radius:4px;padding:1px 6px;background:#eef2f6;margin-right:6px}
+.badge.good{color:#145744;background:#e2f3ed}.badge.low{color:#7b3e03;background:#fff0dc}
+#picked{white-space:pre-wrap;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+#status{padding:2px 16px 7px;font-size:12px;line-height:1.5}
+.note{margin:0;padding:4px 16px 12px;font-size:12px;line-height:1.5}
+#display-warning{margin:0 12px;padding:8px 12px;background:#fff1d9;border:1px solid #e5c58b;border-radius:5px;font-size:12px}
+[hidden]{display:none!important}.legend{font-size:12px;line-height:1.7}
+.layout:fullscreen{background:#f2f6fa;padding:15px}.layout:fullscreen #viewer{height:calc(100vh - 92px)}.layout:fullscreen aside{height:calc(100vh - 30px)}
+@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}#viewer{height:480px}aside{height:auto;max-height:500px}}
 </style></head><body>
-<header><h1 id="title">Protein pocket explorer</h1><div class="sub">3Dmol.js · bundled offline viewer · click a residue to inspect its original numbering</div></header>
+<header><h1 id="title">Protein pocket explorer</h1><div class="sub">Choose a pocket, inspect its lining and compare its position in the saved coordinate frame.</div></header>
+<div id="selection-summary" class="summary" aria-live="polite"></div>
+<div id="display-warning" role="status" hidden></div>
 <div class="layout" id="explorer"><section class="stage">
 <div id="viewer" aria-label="Interactive molecular structure"></div>
-<div class="toolbar"><button id="focus">Focus pockets</button><button id="reset">Show whole models</button><button id="spin">Rotate</button><button id="fullscreen">Full screen</button><button id="png">Download PNG</button></div>
-</section><aside aria-label="Structure and pocket controls">
-<div class="card"><h2>Display controls <span title="Display changes do not rerun the fit, alter pocket ranks or change any evidence metrics.">ⓘ</span></h2>
+<div class="toolbar">
+<button id="focus" class="primary">Focus pockets</button><button id="reset">Show whole models</button>
+<button id="spin">Rotate</button><button id="fullscreen">Full screen</button><button id="png">Download PNG</button>
+</div></section>
+<aside aria-label="Structure and pocket controls">
+<div class="card"><h2>View</h2>
+<label for="view-mode">View preset</label><select id="view-mode">
+<option value="detail">Pocket detail with local protein context</option>
+<option value="whole">Whole model with highlighted pockets</option>
+<option value="pockets">Pockets only</option>
+</select>
+<label for="context-radius">Local context radius (Å)</label><input id="context-radius" type="number" value="12" min="4" max="30" step="2">
+<p class="help">The protein is muted so selected pockets stand out. These are display controls; the prediction and saved fit stay unchanged.</p>
+</div><details class="card" id="pocket-appearance"><summary>Pocket appearance</summary>
+<label class="check"><input id="surface" type="checkbox" checked>Pocket lining surface</label>
+<label class="check"><input id="pockets" type="checkbox" checked>Lining-residue sticks</label>
+<label class="check"><input id="markers" type="checkbox" checked>Lining Cα markers</label>
+<label class="check"><input id="labels" type="checkbox" checked>Pocket labels</label>
+<label for="opacity">Lining surface opacity <output id="opacity-value">0.75</output></label>
+<input id="opacity" type="range" min="0.15" max="0.95" step="0.05" value="0.75">
+<label for="colour-by">Pocket colours identify</label><select id="colour-by"><option value="rank">Original rank</option><option value="model">Reference or mobile model</option></select>
+<p class="help">The surface covers atoms lining the predicted site. It is not a calculated empty cavity volume.</p>
+</details>
+<div id="model-controls"></div>
+<details class="card"><summary>Protein context and background</summary>
 <label for="representation">Backbone representation</label><select id="representation"><option value="trace">Cα trace</option><option value="cartoon">Cartoon</option></select>
-<label><input id="quality" type="checkbox">Colour by pLDDT</label>
-<label><input id="pockets" type="checkbox" checked>Pocket sticks</label>
-<label><input id="markers" type="checkbox" checked>Pocket Cα markers</label>
-<label><input id="surface" type="checkbox">Lining-atom surfaces</label>
-<label for="opacity">Surface opacity <output id="opacity-value">0.30</output></label><input id="opacity" type="range" min="0.05" max="0.8" step="0.05" value="0.3">
-<label for="background">Background</label><select id="background"><option value="#071722">Dark</option><option value="white">White</option></select>
-<p class="help">Markers show lining Cα atoms. Surfaces cover lining atoms; neither is a calculated cavity volume.</p>
-</div><div id="model-controls"></div>
-<div class="card"><h2>Selected residue</h2><div id="picked">Click an atom or Cα marker.</div></div>
-<div class="card help"><h2>Reading this view</h2>Drag to rotate; scroll to zoom. Filters hide residues only in this view. Changing a pocket here does not change the metrics above the viewer.</div>
-</aside></div><div id="status" role="status"></div>
+<label for="protein-opacity">Protein opacity <output id="protein-opacity-value">0.35</output></label>
+<input id="protein-opacity" type="range" min="0.05" max="1" step="0.05" value="0.35">
+<label class="check"><input id="quality" type="checkbox">Colour by pLDDT</label>
+<div id="quality-legend" class="legend" hidden>Protein confidence: <span style="color:#1454d9">≥90</span> · <span style="color:#1681a1">70–89</span> · <span style="color:#967900">50–69</span> · <span style="color:#b55b00">&lt;50</span>. Pocket colours remain separate.</div>
+<label for="background">Background</label><select id="background"><option value="#f8fafc">Light</option><option value="#071722">Dark</option><option value="white">White</option></select>
+</details>
+<div class="card"><h2>Selected residue</h2><div id="picked">Click a lining residue or a Cα marker. Drag to rotate; scroll to zoom.</div></div>
+</aside></div>
+<div id="status" role="status"></div>
 <p class="note">@@SUMMARY@@</p>
 <script id="structure-data" type="application/json">@@DATA@@</script><script>@@LIBRARY@@</script>
 <script>
 "use strict";
 const data=JSON.parse(document.getElementById('structure-data').textContent);
-const models=data.models,palette=['#38ceae','#e875ad','#a69af7','#f3bd60','#68b8ec','#fa8b69','#c4dd63','#ca9fda'];
-const backbone=['#55b8ed','#efaa5f'],status=document.getElementById('status');
-let viewer,spinning=false,focused=[];
+const models=data.models,el=id=>document.getElementById(id);
+const palette=['#D55E00','#0072B2','#009E73','#9B3C86','#A36F00','#CC4778','#386A20','#5947B1'];
+const modelColours=['#0072B2','#D55E00'];
+let viewer,spinning=false,focused=[],pickedLabel=null,renderToken=0;
 const state=[];
-const el=id=>document.getElementById(id);
-function node(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));return n;}
-function selectOptions(select,options){for(const [v,t] of options)select.append(node('option',t,{value:v}));}
-function rank(p){return Number(p.review_rank||p.rank||p.pocket_id||99999);}
+function node(tag,text,attrs={}){
+  const n=document.createElement(tag);
+  if(text!==undefined)n.textContent=text;
+  Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));
+  return n;
+}
+function options(select,values){for(const [value,text] of values)select.append(node('option',text,{value}));}
+function number(value){return value===null||value===undefined||typeof value==='boolean'||value===''||!Number.isFinite(Number(value))?null:Number(value);}
+/** Keep unreported ranks unknown; a cavity ID is never substituted for rank. */
+function rank(p){for(const key of ['review_rank','rank']){const value=number(p[key]);if(value!==null&&Number.isInteger(value)&&value>0)return value;}return null;}
 function keyNumber(key){return Number(String(key).substring(String(key).lastIndexOf('_')+1));}
+function rankText(p){const r=number(p.review_rank),review=r!==null&&r>0&&Number.isInteger(r);return rank(p)===null?'Rank unreported':(review?'Review rank ':'Method rank ')+rank(p);}
+function colour(p,i){return el('colour-by').value==='model'?modelColours[i%modelColours.length]:rank(p)===null?'#596E80':palette[(rank(p)-1)%palette.length];}
+function confidence(p){return p.confidence_status==='meets_local_confidence_rule'?'Locally confident':p.confidence_status==='low_local_confidence'?'Low local confidence':'Local confidence unassessed';}
+function methodName(name){return {fpocket:'fpocket cavities',p2rank:'Independent P2Rank sites',p2rank_rescore:'P2Rank cavity rescoring'}[name]||name;}
+function sortedPockets(st){return (st.model.pockets||[]).filter(p=>p.method===st.method.value).sort((a,b)=>(rank(a)??Infinity)-(rank(b)??Infinity)||Number(a.pocket_id)-Number(b.pocket_id));}
+function eligible(st){return sortedPockets(st).filter(p=>!st.confident.checked||p.confidence_status==='meets_local_confidence_rule');}
+function chosen(st){
+  const pockets=eligible(st),value=st.choice.value;
+  if(value==='none')return [];
+  if(value.startsWith('p:'))return pockets.filter(p=>String(p.pocket_id)===value.substring(2));
+  if(value.startsWith('top'))return pockets.filter(p=>rank(p)!==null&&rank(p)<=Number(value.substring(3)));
+  return pockets;
+}
+function choices(st,initial=false){
+  const prior=st.choice.value,available=eligible(st);
+  st.choice.replaceChildren();
+  options(st.choice,available.map(p=>['p:'+p.pocket_id,rankText(p)+' · pocket '+p.pocket_id]));
+  options(st.choice,[['top1','Original rank 1 only'],['top3','Original ranks 1–3'],['top5','Original ranks 1–5'],['top10','Original ranks 1–10'],['all','All available pockets'],['none','Hide pockets']]);
+  let requested=initial&&st.model.initial_display==='none'?'none':initial&&st.model.initial_pocket!==null&&st.model.initial_pocket!==undefined?'p:'+st.model.initial_pocket:prior;
+  if(requested.startsWith('p:')&&!available.some(p=>'p:'+p.pocket_id===requested)){
+    st.choice.prepend(node('option','Selected pocket hidden by the confidence filter',{value:requested}));
+  }
+  st.choice.value=[...st.choice.options].some(o=>o.value===requested)?requested:(available.length?'p:'+available[0].pocket_id:'none');
+}
 function control(i,model){
-  const card=node('div',undefined,{class:'card'}),title=node('h2',models.length===1?'Model':i===0?'Reference':'Mobile');
-  card.append(title,node('div',model.label,{class:'model-name'}));
+  const card=node('div',undefined,{class:'card'});
+  card.append(node('h2',models.length===1?'Model':i===0?'Reference':'Mobile'),node('div',model.short_label||model.label,{class:'model-name',title:model.label}));
   const check=node('input',undefined,{type:'checkbox',id:i===0?'ref':'mob'});check.checked=true;
-  const label=node('label',models.length===1?' Show model':i===0?' Reference':' Mobile');label.prepend(check);card.append(label);
-  const uniqueMethods=[...new Set((model.pockets||[]).map(p=>p.method))];
+  const checkLabel=node('label',models.length===1?' Show model':i===0?' Reference':' Mobile',{class:'check'});checkLabel.prepend(check);card.append(checkLabel);
   const method=node('select',undefined,{'aria-label':model.label+' pocket method'});
-  selectOptions(method,uniqueMethods.map(x=>[x,x]));if(uniqueMethods.includes('fpocket'))method.value='fpocket';if(uniqueMethods.includes(model.initial_method))method.value=model.initial_method;
-  if(!uniqueMethods.length)selectOptions(method,[['fpocket','Pocket data unavailable']]);
-  card.append(node('label','Pocket evidence'),method);
-  const choice=node('select',undefined,{'aria-label':model.label+' pocket selection'});card.append(node('label','Pocket display'),choice);
-  const confident=node('input',undefined,{type:'checkbox'}),cl=node('label',' Only locally confident pockets');cl.prepend(confident);card.append(cl);
-  const details=node('details');details.append(node('summary','Hide low-confidence / terminal regions'));
+  const methods=[...new Set((model.pockets||[]).map(p=>p.method))];
+  options(method,methods.length?methods.map(m=>[m,methodName(m)]):[['fpocket','No pocket evidence available']]);
+  method.value=methods.includes(model.initial_method)?model.initial_method:methods.includes('fpocket')?'fpocket':methods[0]||'fpocket';
+  const choice=node('select',undefined,{'aria-label':model.label+' pocket selection'});
+  card.append(node('label','Pocket evidence'),method,node('label','Selected pocket'),choice);
+  const confident=node('input',undefined,{type:'checkbox'}),confidenceLabel=node('label',' Only locally confident pockets',{class:'check'});confidenceLabel.prepend(confident);card.append(confidenceLabel);
+  const details=node('details');details.append(node('summary','Filter protein context'));
   const threshold=node('input',undefined,{type:'range',min:0,max:100,step:1,value:0,'aria-label':model.label+' minimum displayed pLDDT'});
-  const thresholdLabel=node('label','Minimum displayed pLDDT: 0');details.append(thresholdLabel,threshold);
-  if(model.confidence==='none'){threshold.disabled=true;thresholdLabel.textContent='pLDDT unavailable for this model';}
-  const maximum=Math.max(1,...(model.residues||[]).map(r=>r.model_position||0));
+  const thresholdLabel=node('label','Context pLDDT threshold: 0');details.append(thresholdLabel,threshold);
+  if(model.confidence==='none'){threshold.disabled=true;thresholdLabel.textContent='pLDDT unavailable';}
+  const maximum=Math.max(1,...model.residues.map(r=>r.model_position||r.tool_residue_number||0));
   const start=node('input',undefined,{type:'number',min:1,max:maximum,value:1,'aria-label':model.label+' first displayed model position'});
   const end=node('input',undefined,{type:'number',min:1,max:maximum,value:maximum,'aria-label':model.label+' last displayed model position'});
-  const row=node('div',undefined,{class:'row'}),sl=node('label','First model position'),en=node('label','Last model position');sl.append(start);en.append(end);row.append(sl,en);details.append(row);
-  const clear=node('button','Reset display filters',{type:'button'});details.append(clear,node('p','Positions count residues in the prepared model, before alignment. These controls do not change the fit or sequence alignment.',{class:'help'}));card.append(details);
-  const count=node('div','',{class:'count'}),info=node('div','',{class:'pocket-info'});card.append(count,info);el('model-controls').append(card);
-  const st={model,check,method,choice,confident,threshold,thresholdLabel,start,end,count,info,visible:[],selected:[]};state.push(st);
-  function choices(){const prior=choice.value;choice.replaceChildren();selectOptions(choice,[['top1','Rank 1'],['top3','Top 3'],['top5','Top 5'],['top10','Top 10'],['all','All pockets'],['none','Hide pockets']]);
-    const ps=(model.pockets||[]).filter(p=>p.method===method.value).sort((a,b)=>rank(a)-rank(b));
-    ps.forEach(p=>selectOptions(choice,[['p:'+p.pocket_id,'Rank '+rank(p)+' · pocket '+p.pocket_id]]));
-    choice.value=[...choice.options].some(o=>o.value===prior)?prior:'top5';}
-  choices();
-  if(model.initial_pocket!==undefined&&model.initial_pocket!==null&&[...choice.options].some(o=>o.value==='p:'+model.initial_pocket))choice.value='p:'+model.initial_pocket;
-  method.onchange=()=>{choices();apply();};
-  [check,choice,confident,start,end].forEach(n=>n.addEventListener('change',apply));
-  threshold.oninput=()=>{thresholdLabel.textContent='Minimum displayed pLDDT: '+threshold.value;apply();};
-  clear.onclick=()=>{threshold.value=0;start.value=1;end.value=maximum;thresholdLabel.textContent='Minimum displayed pLDDT: 0';apply();};
+  const row=node('div',undefined,{class:'row'}),sl=node('label','Context first position'),en=node('label','Context last position');sl.append(start);en.append(end);row.append(sl,en);details.append(row);
+  const clear=node('button','Reset display filters',{type:'button'});
+  details.append(clear,node('p','These filters affect protein context only. Selected pocket lining remains visible so it can be inspected. Use the pocket confidence checkbox to exclude pockets. Positions refer to the prepared model.',{class:'help'}));
+  const count=node('div','',{class:'count'});
+  card.append(details,count);el('model-controls').append(card);
+  const ca=viewer.getModel(i).selectedAtoms({atom:'CA'}),atoms=new Map(ca.map(a=>[a.resi,a]));
+  const st={model,check,method,choice,confident,threshold,thresholdLabel,start,end,count,atoms,visible:[],selected:[],lining:[]};
+  state.push(st);choices(st,true);
+  method.onchange=()=>{st.choice.value='';choices(st);apply(true);};
+  choice.onchange=()=>apply(true);
+  confident.onchange=()=>{choices(st);apply(true);};
+  check.onchange=()=>apply(true);
+  [start,end].forEach(n=>n.onchange=()=>apply(false));
+  threshold.oninput=()=>{thresholdLabel.textContent='Context pLDDT threshold: '+threshold.value;apply(false);};
+  clear.onclick=()=>{threshold.value=0;start.value=1;end.value=maximum;thresholdLabel.textContent='Context pLDDT threshold: 0';apply(true);};
 }
-function chosen(st){let ps=(st.model.pockets||[]).filter(p=>p.method===st.method.value&&(!st.confident.checked||p.confidence_status==='meets_local_confidence_rule')).sort((a,b)=>rank(a)-rank(b));
-  const v=st.choice.value;if(v==='none')return [];
-  if(v.startsWith('p:'))return ps.filter(p=>String(p.pocket_id)===v.substring(2));
-  if(v.startsWith('top'))return ps.slice(0,Number(v.substring(3)));return ps;
+/** Local geometry is read from the displayed PDB, including the saved mobile transform. */
+function contextResidues(st,lining){
+  const cutoff=Number(st.threshold.value),mode=el('view-mode').value;
+  if(mode==='pockets')return [];
+  const seeds=lining.map(n=>st.atoms.get(n)).filter(Boolean),radius=Math.max(4,Math.min(30,Number(el('context-radius').value)||12));
+  return st.model.residues.filter(r=>{
+    const n=r.tool_residue_number||keyNumber(r.residue_key),position=r.model_position||n;
+    if(position<Number(st.start.value)||position>Number(st.end.value))return false;
+    if(cutoff>0&&(r.plddt===null||r.plddt===undefined||r.plddt<cutoff))return false;
+    const a=st.atoms.get(n);
+    return a&&(mode==='whole'||!seeds.length||seeds.some(b=>(a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2<=radius**2));
+  }).map(r=>r.tool_residue_number||keyNumber(r.residue_key));
 }
-function visible(st){return (st.model.residues||[]).filter(r=>(r.model_position||r.tool_residue_number)>=Number(st.start.value)&&(r.model_position||r.tool_residue_number)<=Number(st.end.value)&&(Number(st.threshold.value)===0||(r.plddt!==null&&r.plddt!==undefined&&r.plddt>=Number(st.threshold.value)))).map(r=>r.tool_residue_number||keyNumber(r.residue_key));}
-function colourQuality(a){return a.b>=90?'#1253d9':a.b>=70?'#65c9e9':a.b>=50?'#f3db51':'#ef8a3c';}
-function apply(){if(!viewer)return;viewer.removeAllSurfaces();viewer.removeAllLabels();viewer.setStyle({},{});focused=[];
-  viewer.setBackgroundColor(el('background').value);el('opacity-value').textContent=Number(el('opacity').value).toFixed(2);
+function colourQuality(a){return a.b>=90?'#1253d9':a.b>=70?'#65c9e9':a.b>=50?'#e5c43c':'#e78b36';}
+function selectionCard(st,p,i){
+  const card=node('div',undefined,{class:'selection-card'}),heading=node('div',undefined,{class:'selection-title'});
+  const dot=node('span',undefined,{class:'swatch'});dot.style.background=colour(p,i);
+  heading.append(dot,document.createTextNode((models.length===1?'':i===0?'Reference · ':'Mobile · ')+rankText(p)+' · pocket '+p.pocket_id));
+  card.append(heading,node('div',(st.model.short_label||st.model.label)+' · '+methodName(p.method),{class:'help',title:st.model.label}));
+  const badge=node('span',confidence(p),{class:'badge '+(p.confidence_status==='meets_local_confidence_rule'?'good':'low')});card.append(badge);
+  const values=[];
+  if(number(p.mean_plddt)!==null)values.push('Mean lining pLDDT '+number(p.mean_plddt).toFixed(1));
+  if(number(p.druggability_score)!==null)values.push('fpocket druggability '+number(p.druggability_score).toFixed(3));
+  if(number(p.p2rank_rescore_score)!==null)values.push('P2Rank cavity rescore '+number(p.p2rank_rescore_score).toFixed(3));
+  if(number(p.probability)!==null)values.push('Method probability '+number(p.probability).toFixed(3));
+  const nums=[...new Set((p.residues||[]).map(keyNumber))],mapped=nums.filter(n=>st.atoms.has(n));
+  card.append(node('div',values.join(' · '),{class:'help'}),node('div',mapped.length+'/'+nums.length+' lining residues mapped',{class:'help'}));
+  const flags=[];
+  if(p.near_cut_boundary)flags.push('Near a preparation cut');
+  if(p.near_very_low_confidence)flags.push('Near very low-confidence context');
+  if(flags.length)card.append(node('div',flags.join(' · '),{class:'badge low'}));
+  el('selection-summary').append(card);
+}
+function apply(reframe=false){
+  if(!viewer)return;
+  const token=++renderToken,warnings=[];
+  viewer.removeAllSurfaces();viewer.removeAllLabels();viewer.setStyle({},{});
+  pickedLabel=null;focused=[];el('selection-summary').replaceChildren();
+  viewer.setBackgroundColor(el('background').value);
+  el('opacity-value').textContent=Number(el('opacity').value).toFixed(2);
+  el('protein-opacity-value').textContent=Number(el('protein-opacity').value).toFixed(2);
+  el('quality-legend').hidden=!el('quality').checked;
   state.forEach((st,i)=>{
-    if(!st.check.checked)return;st.visible=visible(st);const keys=new Set(st.visible);
-    const selection=st.model.residues?.length?{model:i,resi:st.visible}:{model:i};
-    const cartoon={color:backbone[i%2],opacity:1};
-    if(el('representation').value==='trace'){cartoon.style='trace';cartoon.thickness=0.3;}
+    st.selected=st.check.checked?chosen(st):[];
+    st.lining=[...new Set(st.selected.flatMap(p=>(p.residues||[]).map(keyNumber)))].filter(n=>st.atoms.has(n));
+    st.visible=st.check.checked?contextResidues(st,st.lining):[];
+    const cartoon={color:el('background').value==='#071722'?'#9DAEBB':'#8798A8',opacity:Number(el('protein-opacity').value)};
+    if(el('representation').value==='trace'){cartoon.style='trace';cartoon.thickness=.22;}
     if(el('quality').checked&&st.model.confidence!=='none'){delete cartoon.color;cartoon.colorfunc=colourQuality;}
-    viewer.addStyle(selection,{cartoon});
-    st.selected=chosen(st);const pocketNumbers=new Set();
+    if(st.visible.length)viewer.addStyle({model:i,resi:st.visible},{cartoon});
     st.selected.forEach((p,j)=>{
-      const nums=(p.residues||[]).map(keyNumber).filter(n=>!st.model.residues?.length||keys.has(n));nums.forEach(n=>pocketNumbers.add(n));
-      const col=palette[(rank(p)-1)%palette.length]||palette[j%palette.length];const sel={model:i,resi:nums};
-      if(el('pockets').checked)viewer.addStyle(sel,{stick:{radius:0.18,color:col}});
-      if(el('markers').checked)viewer.addStyle({...sel,atom:'CA'},{sphere:{radius:0.8,color:col}});
-      if(el('surface').checked&&nums.length)viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:Number(el('opacity').value),color:col},sel);
+      const nums=[...new Set((p.residues||[]).map(keyNumber))].filter(n=>st.atoms.has(n)),col=colour(p,i),sel={model:i,resi:nums};
+      if(nums.length){
+        if(el('pockets').checked)viewer.addStyle(sel,{stick:{radius:.28,color:col}});
+        if(el('markers').checked)viewer.addStyle({...sel,atom:'CA'},{sphere:{radius:.95,color:col}});
+        if(el('surface').checked&&j<8){
+          const result=viewer.addSurface($3Dmol.SurfaceType.VDW,{opacity:Number(el('opacity').value),color:col},sel);
+          if(result&&typeof result.then==='function')result.then(()=>{if(token===renderToken)viewer.render();}).catch(()=>{el('status').textContent='Surface rendering failed; lining sticks and markers remain available.';});
+        }
+        if(el('labels').checked&&j<8){
+          const atoms=nums.map(n=>st.atoms.get(n)),position={x:0,y:0,z:0};
+          atoms.forEach(a=>{position.x+=a.x/atoms.length;position.y+=a.y/atoms.length;position.z+=a.z/atoms.length;});
+          viewer.addLabel((models.length>1?(i===0?'Ref ':'Mob '):'')+(rank(p)===null?'Pocket '+p.pocket_id:'Rank '+rank(p)),{position,fontColor:'#152B3B',backgroundColor:'white',backgroundOpacity:.9,fontSize:12,borderThickness:1,borderColor:col,inFront:true,screenOffset:models.length>1?{x:i===0?-38:38,y:i===0?-18:18}:null});
+        }
+      }
+      if(j<5)selectionCard(st,p,i);
+      if(nums.length!==(new Set(p.residues||[])).size)warnings.push('Pocket '+p.pocket_id+' has unmapped lining residues.');
     });
-    if(!st.selected.length&&st.model.initial_residues?.length&&!(st.model.pockets||[]).length){
-      const nums=st.model.initial_residues.map(keyNumber);nums.forEach(n=>pocketNumbers.add(n));viewer.addStyle({model:i,resi:nums},{sphere:{radius:0.8,color:palette[i]}});
-    }
-    if(pocketNumbers.size)focused.push({model:i,resi:[...pocketNumbers]});
-    st.count.textContent=(st.model.residues?.length?st.visible.length+' / '+st.model.residues.length+' residues visible · ':'')+st.selected.length+' pockets · '+pocketNumbers.size+' lining residues shown';
-    st.info.textContent=st.selected.slice(0,10).map(p=>'Rank '+rank(p)+' · pocket '+p.pocket_id+'\n'+(p.confidence_status||'Confidence unreported')+(p.mean_plddt!==undefined&&p.mean_plddt!==null?' · pLDDT '+Number(p.mean_plddt).toFixed(1):'')+(p.druggability_score!==null&&p.druggability_score!==undefined?' · fpocket druggability '+Number(p.druggability_score).toFixed(3):'')).join('\n\n');
-  });viewer.render();window.pocketDisplayState=state.map(s=>({visible:s.visible.length,pockets:s.selected.map(p=>p.pocket_id)}));
+    if(st.selected.length>8&&el('surface').checked)warnings.push('Surfaces and labels are limited to the first eight selected pockets; other lining markers remain available.');
+    if(st.lining.length)focused.push({model:i,resi:st.lining});
+    st.count.textContent='Protein context: '+st.visible.length+'/'+st.model.residues.length+' residues · '+st.selected.length+' selected pockets · '+st.lining.length+' mapped lining residues.';
+    if(st.check.checked&&!st.selected.length&&st.choice.value!=='none')warnings.push('No pockets match this selection. Check the pocket confidence filter.');
+    if(models.length>1&&st.selected.length&&st.model.initial_pocket!==null&&st.model.initial_pocket!==undefined&&(st.selected.length!==1||String(st.selected[0].pocket_id)!==String(st.model.initial_pocket)||st.method.value!==(st.model.initial_method||'fpocket')))warnings.push('The displayed pocket selection differs from the saved pair. Metrics outside this viewer still describe the saved pair.');
+  });
+  if(!el('selection-summary').childElementCount)el('selection-summary').append(node('div','No pocket is selected. Choose a pocket in the controls; available protein context is shown.',{class:'selection-card'}));
+  el('display-warning').hidden=!warnings.length;el('display-warning').textContent=[...new Set(warnings)].join(' ');
+  el('status').textContent=models.map(m=>m.short_label||m.label).join(' · ')+' · '+(el('view-mode').value==='whole'?'Whole visible context':'Pocket-focused display')+' · rendering shows lining residues, not empty cavity volume.';
+  viewer.render();
+  window.pocketDisplayState=state.map(s=>({visible:s.visible.length,pockets:s.selected.map(p=>p.pocket_id),ranks:s.selected.map(rank),lining:s.lining.length,context:[...s.visible],colours:s.selected.map(p=>colour(p,state.indexOf(s)))}));
+  if(reframe){if(el('view-mode').value==='whole')whole();else focus();}
 }
-function focus(){if(focused.length)viewer.zoomTo({or:focused});else viewer.zoomTo();viewer.render();}
+function focus(){if(focused.length){viewer.zoomTo({or:focused});viewer.zoom(.8);}else whole();viewer.render();}
+function whole(){
+  const sels=state.filter(s=>s.check.checked).map((s,i)=>({model:state.indexOf(s),resi:[...new Set(s.visible.concat(s.lining))]}));
+  if(sels.some(s=>s.resi.length))viewer.zoomTo({or:sels});else viewer.zoomTo();
+  viewer.render();
+}
 try{
-  viewer=$3Dmol.createViewer(el('viewer'),{backgroundColor:'#071722',antialias:true});
-  models.forEach((m,i)=>{viewer.addModel(m.pdb,'pdb');control(i,m);});
+  if(typeof $3Dmol.setSyncSurface==='function')$3Dmol.setSyncSurface(true);
+  viewer=$3Dmol.createViewer(el('viewer'),{backgroundColor:'#f8fafc',antialias:true});
+  if(models.length>1)el('colour-by').value='model';
+  models.forEach((m,i)=>{
+    viewer.addModel(m.pdb,'pdb');
+    if(!m.residues?.length)m.residues=viewer.getModel(i).selectedAtoms({atom:'CA'}).map((a,n)=>({tool_residue_number:a.resi,residue_key:a.chain+'_'+a.resi,model_position:n+1,plddt:m.confidence==='none'?null:a.b}));
+    if(!m.pockets?.length&&m.initial_residues?.length)m.pockets=[{pocket_id:m.initial_pocket??'selected',method:'fpocket',residues:m.initial_residues}];
+    control(i,m);
+  });
   viewer.setClickable({},true,a=>{
     const m=models[a.model],r=(m.residues||[]).find(r=>(r.tool_residue_number||keyNumber(r.residue_key))===a.resi);
-    const original=r?(r.author_chain||r.tool_chain||a.chain)+':'+(r.author_residue_number??r.author_number??r.tool_residue_number)+(r.author_insertion_code||r.insertion_code||''):'unavailable';
+    const original=r?.author_residue_number!==undefined?(r.author_chain||a.chain)+':'+r.author_residue_number+(r.insertion_code||''):'unavailable';
     el('picked').textContent=m.label+'\n'+a.resn+' · tool '+a.chain+'_'+a.resi+'\nOriginal residue: '+original+(r?.sequence_position?'\nFASTA position: '+r.sequence_position:'')+(r?.plddt!==null&&r?.plddt!==undefined?'\npLDDT: '+Number(r.plddt).toFixed(1):'');
-    viewer.removeAllLabels();viewer.addLabel(a.resn+' '+a.chain+'_'+a.resi,{position:a,backgroundColor:'#17384d',fontSize:12});viewer.render();
+    if(pickedLabel)viewer.removeLabel(pickedLabel);
+    pickedLabel=viewer.addLabel(a.resn+' '+a.chain+'_'+a.resi,{position:a,backgroundColor:'#17384d',fontSize:12,inFront:true});viewer.render();
   });
-  apply();viewer.zoomTo();viewer.render();status.textContent=models.map(m=>m.label).join(' · ')+' · Ready. Whole models shown; use Focus pockets for a close view.';
   el('title').textContent=models.length===1?'Model and predicted pockets':'Aligned structures and pocket positions';
-  ['quality','pockets','markers','surface','representation','opacity','background'].forEach(id=>el(id).addEventListener('change',apply));
-  el('focus').onclick=focus;el('reset').onclick=()=>{viewer.zoomTo();viewer.render();};
+  ['quality','pockets','markers','surface','labels','representation','opacity','protein-opacity','background','colour-by','context-radius'].forEach(id=>el(id).addEventListener('change',()=>apply(false)));
+  el('view-mode').onchange=()=>apply(true);
+  el('focus').onclick=()=>{el('view-mode').value='detail';apply(true);};
+  el('reset').onclick=()=>{el('view-mode').value='whole';apply(true);};
   el('spin').onclick=()=>{spinning=!spinning;viewer.spin('y',spinning);el('spin').textContent=spinning?'Stop rotation':'Rotate';};
-  el('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else el('explorer').requestFullscreen().catch(()=>{status.textContent='Full screen is unavailable here; download and open the offline page.';});};
+  el('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else el('explorer').requestFullscreen().catch(()=>{el('status').textContent='Full screen is unavailable here. Download and open the offline page to use it.';});};
   document.addEventListener('fullscreenchange',()=>setTimeout(()=>{viewer.resize();viewer.render();},100));
   el('png').onclick=()=>{const a=node('a');a.href=viewer.pngURI();a.download='protein_pockets.png';a.click();};
   new ResizeObserver(()=>{viewer.resize();viewer.render();}).observe(el('viewer'));
   window.pocketViewer=viewer;
-}catch(e){status.textContent='The 3D viewer could not start: '+e.message+'. Enable WebGL or download the prepared PDB files.';}
+  apply(true);
+}catch(error){el('status').textContent='The 3D viewer could not start: '+error.message+'. Enable WebGL or download the prepared PDB files.';}
 </script></body></html>

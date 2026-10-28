@@ -1,5 +1,7 @@
 # Documentation
 
+- [VIEWER_GUIDE.md](VIEWER_GUIDE.md): pocket visibility, fit/evidence interpretation,
+  alignment controls and the screenshot-driven improvements in 1.3.0.
 - [QUALITY_RERUN.md](QUALITY_RERUN.md): cleaning, full prediction/analysis run,
   curated ranges, thresholds, resume and limitations.
 - [HPC_WORKFLOW.md](HPC_WORKFLOW.md): the separate existing-result build.

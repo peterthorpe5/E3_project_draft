@@ -7,6 +7,7 @@ AlphaFold model	A predicted protein structure. Its local confidence and the rela
 Angstrom (Å)	A length unit equal to 0.1 nanometres. Coordinates, RMSD and pocket distances use Angstroms.
 Author residue number	The chain, residue number and insertion code assigned in the original structure. Tool-normalised residue numbers are mapped back to these labels.
 B-factor	A structure file field used for atomic displacement in experimental models. AlphaFold exports use it for pLDDT. Select confidence=none for experimental B-factors and set fit pLDDT to 0.
+Best tested member pocket	The original member pocket with the highest saved overlap with reference rank one, among tested member ranks 1 through k. Its plot colour uses that same pair's position rule. It may differ from the original rank-one result and does not replace that conclusion.
 Bootstrap support	The percentage of resampled alignment-column datasets that recover a split. It measures stability under this resampling procedure; it is not the probability that the split is biologically correct.
 C-alpha (Cα / CA)	The alpha carbon in each amino acid backbone. This app uses one CA coordinate per lining residue for pocket geometry comparisons.
 Candidate region	A contiguous input range selected by confidence/PAE heuristics or an explicit range TSV. An automatic candidate is not a validated biological domain; cutting changes surface geometry and may remove real interfaces.
@@ -14,12 +15,13 @@ Cavity	A geometric depression or enclosed region predicted on a structure. A pre
 Centroid distance	Distance between arithmetic means of the two sets of pocket CA coordinates after superposition. This is not a distance between independently predicted cavity centres.
 Chain	A protein chain in a coordinate model. Import one explicit target chain per model when structures contain multiple protein chains.
 Chemical-group conservation	Fraction of comparable mutual-nearest pocket residue pairs in the same E3 chemical class: hydrophobic, polar, positive, negative or special. Exact sequence coordinates are required; missing evidence is unknown.
+Compact alignment rows	A display of the first available model per representative sequence and input range. It neither chooses the best AlphaFold replicate nor combines pocket annotations. All model replicates remain selectable.
 Complete mapping	Every reported lining residue has a corresponding CA coordinate. Incomplete pockets cannot receive positional-support status.
 Confidence selection	The residue pLDDT threshold used to choose fit atoms. Changing it changes the structure region being compared. It does not delete residues from the original models.
 Corresponding region group	A computational connected group of retained ranges linked through full parent-sequence alignments with at least 70% mutual region coverage. It is not an inferred domain, species assignment or HOG. Reference comparisons require a direct qualifying link.
 Coverage	Aligned CA count divided by the complete model CA count. TM-scores are normalised by the selected fit inputs, which can be much shorter than the whole protein.
 Cut boundary	A new model terminus created by cropping. A pocket is flagged when any lining CA is within 8 Å of the first/last three CAs at a cut end. This heuristic cannot detect every artefact caused by removing a region.
-Display trimming	Hide low-confidence or terminal residues in the viewer only. It does not change saved coordinates, pocket ranks, fits or analytical conclusions.
+Display trimming	Hide low-confidence or terminal protein context in the viewer only. Selected pocket lining stays visible for inspection. This does not change saved coordinates, pocket ranks, fits or analytical conclusions.
 Domain	A chosen protein region. The app accepts an inclusive reference sequence range, then obtains mobile residues through the global sequence correspondence before fitting.
 Druggability	A model-dependent assessment of features associated with small-molecule binding. fpocket druggability scores do not establish binding affinity, selectivity or therapeutic efficacy.
 DuckDB	The materialised local analytical database. The workbench builds a separate schema containing imported evidence, residue coordinates, fits and pocket comparisons.
@@ -38,6 +40,7 @@ Kabsch	A least-squares rigid superposition of sequence-corresponding CA atoms. T
 Ligandability	The potential for a site to bind a ligand. It is a useful prioritisation concept, but pocket prediction alone does not measure experimental ligand binding.
 Lining-atom surface	A visual surface around atoms of selected pocket-lining residues. It is not a computed cavity boundary or cavity-volume overlap.
 Local pocket confidence	The imported pipeline's assessment of lining-residue pLDDT. Its default rule is at least 80% of all lining residues with residue-mean pLDDT >=70 and no unmapped residues. The original run settings are retained.
+Local protein context	Protein residues within the selected CA distance of any selected lining-residue CA, initially 12 Å. Geometry uses the displayed fitted coordinates. Confidence and position filters affect this background, not the analytical input or selected pocket lining.
 MAFFT	An optional external multiple sequence aligner. The app runs --auto --amino with an explicit thread count and retains the command and stderr log.
 Mapping TSV	An optional tab-separated file with unique sample_id and sequence_id columns, and optional chain/group_id. It resolves identical FASTA records or explicitly maps a unique exact sequence fragment.
 mmCIF	A structure format supporting richer identifiers than PDB. The app accepts AlphaFold mmCIF models and prepares tool-compatible PDBs with residue maps.

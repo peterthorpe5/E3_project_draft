@@ -217,7 +217,7 @@ def test_viewer_data_escapes_script_endings_and_uses_bundled_assets():
     )
     assert "<hostile>" not in overlay
     assert "createViewer" in overlay
-    assert "Lining-atom surfaces" in overlay
+    assert "lining residues, not empty cavity volume" in overlay
     assert sequence_position_columns(aligned="A--C.D") == {1: 1, 2: 4, 3: 6}
 
 

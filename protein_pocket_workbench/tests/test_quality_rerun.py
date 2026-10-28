@@ -601,7 +601,13 @@ def test_complete_quality_run_resume_and_isolation(raw_models, tmp_path, monkeyp
     app = AppTest.from_file(str(Path(ui.__file__)), default_timeout=20).run()
     app.sidebar.radio[0].set_value("Input quality").run()
     assert not app.exception and not app.error
-    assert len(app.expander) == 4
+    assert {
+        "Original model checks",
+        "Retained and rejected regions",
+        "Excluded sequence ranges",
+        "Comparison eligibility",
+        "Model confidence and exact FASTA mapping",
+    } <= {item.label for item in app.expander}
     app.sidebar.radio[0].set_value("Models & pockets").run()
     assert not app.exception and not app.error
     assert any(c.value for c in app.checkbox if "quality screen" in c.label)

@@ -25,6 +25,15 @@ These launch Chromium, block HTTP requests, initialise each bundled third-party
 viewer and operate the 3D visibility/focus/confidence controls. No biological
 coordinates or pocket scores are fabricated in a real project: the synthetic
 demonstration is labelled explicitly.
+
+For the 1.3.0 visibility/alignment regressions, also run
+`POCKET_WORKBENCH_BROWSER_TESTS=1 python -m pytest tests/test_viewer_visibility.py`.
+These test local pocket focus, context-only filtering, original/unknown rank
+identity, transformed mobile context, model colours, compact range-aware rows,
+FASTA versus alignment numbering, selected TSV downloads and FASTA-only selection.
+`test_viewer_navigation.py` verifies direct saved-fit navigation and byte-identical
+source evidence after browsing; `test_presentation.py` checks missing values,
+directional matrices, collision-safe identifiers and strict/alternative plot identity.
 # Quality rerun checks
 
 `test_quality_rerun.py` tests confidence/PAE segmentation, retained short loops,

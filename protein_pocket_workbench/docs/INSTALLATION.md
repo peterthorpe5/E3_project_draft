@@ -1,7 +1,12 @@
 # Installation and remote use
 
-Version 1.1 uses the batch-first workflow in
-[HPC_WORKFLOW.md](HPC_WORKFLOW.md). For viewing-only local/de.NBI installation,
+For the 1.3.0 viewer update, follow the focused commands in [README](../README.md).
+Keep an active/resumable 1.2.0 HPC workflow on its existing software/environment.
+Opening its completed native resource in 1.3.0 requires no new predictions,
+structural fits, sequence analysis or DuckDB rebuild.
+
+Batch analysis uses [HPC_WORKFLOW.md](HPC_WORKFLOW.md), with the separate quality
+rerun in [QUALITY_RERUN.md](QUALITY_RERUN.md). For viewing-only local/de.NBI installation,
 use `environment.viewer.yml` and [DEPLOYMENT.md](DEPLOYMENT.md).
 The optional prediction/worker instructions below require explicit
 `pocket-workbench app --enable-jobs`. Existing pocket predictions are reused
@@ -12,7 +17,7 @@ by the normal batch build.
 From the extracted package root:
 
 ```bash
-conda env create --file environment.yml
+conda env create --file environment.viewer.yml
 conda activate pocket_workbench
 python -m pip install --editable .
 pocket-workbench --version

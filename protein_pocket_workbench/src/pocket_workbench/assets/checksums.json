@@ -1,10 +1,11 @@
 {
-  "alignment.css": "88a2589f32f5180a17350589dc27f6e79aeaf29d7e4b830de3f6299e3a3a726e",
-  "structure_template.html": "52c0bcf5da2df8d6b0ef8b9b6585ff6a00d72bfff5c2855395000b73f8d2ebc3",
   "3Dmol-LICENSE.txt": "4c6eaaed856f3f28a3b1a98e74f4a8a71618de7d51ea4155c29f6f793bcef861",
-  "THIRD_PARTY_NOTICES.txt": "f8cdcfd8b4b9cd995fc07f4b27923c222ba7f93e8e4d28e87811e70ef39876ed",
-  "alignment.js": "d306f9228c6fdb35695b8f7d94b59a889ae3f4b6c04101391dccc8188351587a",
   "3Dmol-min.js": "bcf422137a34b4e206413a8a83a67c24a1ace84e282bf3b164f6bda6aeb42a20",
+  "THIRD_PARTY_NOTICES.txt": "f8cdcfd8b4b9cd995fc07f4b27923c222ba7f93e8e4d28e87811e70ef39876ed",
+  "alignment.css": "88a2589f32f5180a17350589dc27f6e79aeaf29d7e4b830de3f6299e3a3a726e",
+  "alignment.js": "d306f9228c6fdb35695b8f7d94b59a889ae3f4b6c04101391dccc8188351587a",
+  "app.css": "110f0d2186daf54a2edb4ebd188c5ea1f07af1def4fdd4d60753c034cbfd07f5",
   "jbrowse.js": "42ef1a010059948eab8bbce131c808bce95abf7910b61540f469ca7578302703",
-  "app.css": "66681d7465670e5d7e81a86f288e841f55d2cb2812921d1de0eb8e14c296732e"
+  "pocket_alignment.html": "76f96bfa41b12f6cfe8f6099c7c726fc731b41bf7c65e6d78b4bbf1db613650f",
+  "structure_template.html": "66c05da313d2ce359dd39fa5e8191dcaabe4ac9dadeda1ca075f4d9719fa6433"
 }

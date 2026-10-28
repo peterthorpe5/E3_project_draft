@@ -1,4 +1,4 @@
-# Protein pocket workbench 1.2.0: methods
+# Protein pocket workbench 1.3.0: methods
 
 ## Scope and inputs
 
@@ -238,6 +238,32 @@ and asset SHA-256 digests are included. Viewer pages embed coordinates/alignment
 and code locally, with no CDN requirement or protein-data submission. WebGL is
 needed for the 3D view. Browser widgets provide camera, visibility, pocket and
 confidence-colour controls. Original residue labels are available in TSV/Excel.
+
+The default 3D view focuses on one selected pocket with muted local protein
+context. A coloured van der Waals surface covers the selected lining atoms; it
+is a visual aid, not an empty cavity volume or a cavity-overlap calculation.
+Local context is selected by CA proximity to lining-residue CAs (initially 12 Å),
+using coordinates from the displayed PDB after any saved mobile transform.
+Aligned pairs use distinct reference/mobile colours by default. Labels and
+surfaces are capped at the first eight selected pockets for rendering.
+
+Viewer confidence/position filters affect the protein context, while selected
+lining remains visible. Pocket confidence filters apply separately. Display
+choices never change saved ranks, predictors, prepared coordinates, transforms
+or analytical decisions. Original ranks 1 through k refer to those recorded
+ranks, without promotion after filtering; absent ranks remain unreported.
+
+The evidence page separates original rank-one overlap from the best-tested
+member-pocket overlap, with colour describing the plotted pair's position rule.
+Cards, plots and tables share a selected engine/settings/scope. The similarity
+matrix retains the recorded direction of each fit and leaves absent values
+blank. No whole-protein interpretation is assigned to a retained-region fit.
+
+Compact pocket-alignment rows show the first available model per sequence/input
+range, rather than a best-model choice or a union of predictions. All replicates
+remain available. Position labels distinguish MSA columns (including gaps) from
+ungapped FASTA positions. Track colours, displayed counts and TSV downloads
+follow the active row, rank, sequence and confidence selections.
 
 The resource retains typed materialised DuckDB tables, original pocket records,
 prepared PDBs, residue coordinates, comparison transforms and settings, sequence

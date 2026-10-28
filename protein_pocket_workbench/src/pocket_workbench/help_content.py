@@ -324,8 +324,26 @@ GLOSSARY.update(
             "TM-scores, RMSD and raw output remain separate from USalign evidence."
         ),
         "Display trimming": (
-            "Hide low-confidence or terminal residues in the viewer only. It does not "
+            "Hide low-confidence or terminal protein context in the viewer only. "
+            "Selected pocket lining stays visible for inspection. This does not "
             "change saved coordinates, pocket ranks, fits or analytical conclusions."
+        ),
+        "Local protein context": (
+            "Protein residues within the selected CA distance of any selected "
+            "lining-residue CA, initially 12 Å. Geometry uses the displayed fitted "
+            "coordinates. Confidence and position filters affect this background, "
+            "not the analytical input or selected pocket lining."
+        ),
+        "Compact alignment rows": (
+            "A display of the first available model per representative sequence and "
+            "input range. It neither chooses the best AlphaFold replicate nor "
+            "combines pocket annotations. All model replicates remain selectable."
+        ),
+        "Best tested member pocket": (
+            "The original member pocket with the highest saved overlap with reference "
+            "rank one, among tested member ranks 1 through k. Its plot colour uses "
+            "that same pair's position rule. It may differ from the original "
+            "rank-one result and does not replace that conclusion."
         ),
         "Lining-atom surface": (
             "A visual surface around atoms of selected pocket-lining residues. It is "

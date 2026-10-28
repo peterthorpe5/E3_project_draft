@@ -1,70 +1,76 @@
-# Release validation: 1.2.0
+# Release validation: 1.3.0
 
-Validated on 23 October 2026 in Python 3.12.14 with Streamlit 1.66.1.
+Validated on 28 October 2026 with Python 3.12.14, Streamlit 1.66.1,
+Playwright 1.51.0 and Chromium 134 on Linux.
 
-- **115 tests passed**, including five real Chromium viewer/live-app tests.
-- Ten app routes render with prepared evidence; browsing mode hides analysis
-  submission controls and explicit opt-in restores them.
-- Real USalign and TMalign recover a known rigid transform and retain unequal
-  independent fit lengths (32 reference versus 24 mobile CA atoms).
-- A complete synthetic batch ran both structural tools concurrently, built
-  the representative MSA/bootstrap tree, rebuilt DuckDB and published reviews.
-- Exact alignment gaps, unmapped pocket residues, hostile identifiers,
-  rank-one/top-k separation and same-member-pocket tool agreement are tested.
-- The Inspector ZIP contains valid mmCIF coordinates, an exact model-index
-  manifest and explicit missing-metric statuses.
-- Portable reviews include HTML, numeric formatted Excel, DuckDB, local
-  structure/sequence views and a reopenable native project archive.
-- Quality tests cover contiguous confidence/PAE regions, short internal loops,
-  invalid token mappings, original numbering/input preservation, curated ranges,
-  cut/context flags, HOG/source metadata and no rank promotion.
-- The complete quality workflow was exercised with explicitly synthetic pocket
-  predictor fixtures and both real structural aligners. Real preparation, import,
-  FAMSA, tree construction, DuckDB and portable export were used.
-- Prepare-only/full-run/resume tests confirm prediction reuse, refusal of changed
-  settings/prepared inputs, preserved previous results and numbered review exports.
-- New quality app pages, numeric Excel tables and typed DuckDB tables are checked.
-- Offline quality-review link audit: all 14 generated HTML pages had valid local targets.
-- Ruff passed; all six delivered Bash scripts passed `bash -n`.
-- A wheel built and installed independently. Both new viewer templates,
-  packaged methods and the private predictor report resource were verified.
+- **135 tests passed; 3 optional real-aligner tests skipped.**
+  The current JUnit and coverage records are `test_results.xml` and `coverage.json`.
+- Eleven real-browser tests initialise the offline structure, pocket-alignment,
+  alignment/tree and live-app views, with HTTP blocked for standalone viewers.
+- Pocket visibility tests cover default close-up, selected lining preserved under
+  context filters, original/unknown rank identity, transformed mobile context,
+  distinct model colours and changed-display-pair warnings.
+- Sequence-view tests cover compact range-aware rows, all-replicate mode,
+  active legends/counts, FASTA versus MSA numbering, filtered TSV downloads and
+  distinct FASTA-only residue selections.
+- Presentation tests cover missing/non-finite evidence, zero-valued scores,
+  collision-safe labels, directional matrices, and consistent strict/alternative
+  overlap and point-colour decisions.
+- All ten app routes render against prepared evidence. Group/evidence jumps
+  open the selected saved fit. Hashes of every native project file remain
+  identical after those browsing operations, including DuckDB and result JSON.
+- Existing tests cover quality preparation, synthetic prediction integration,
+  exact pocket mappings, rank preservation, typed DuckDB/Excel, export and resume.
+- Visual QA inspected the revised single-model and aligned-pair 3D pages,
+  pocket-marked alignment, model page, comparison page and input-quality summary
+  using explicitly synthetic known-transform models. Internal screenshots are
+  not distributed as biological examples.
+- Compared against the original 1.2.0 archive, **35 scientific-core, inherited
+  prediction, script and environment files are byte-identical**. This includes
+  preparation, prediction, fitting, sequence analysis, import, database, batch
+  orchestration and all supplied Slurm scripts. Evidence changes add derived
+  presentation fields; saved analytical decisions are not recomputed.
+- Ruff passed for `src` and `tests`, excluding the inherited private engine.
+  All six delivered Bash scripts passed `bash -n`.
+- A final wheel built and installed into an independent target. Imports, version,
+  packaged methods, all asset checksums and the private prediction report
+  resource were verified from that installed wheel.
 
-Backend/CLI line-and-branch coverage is **86.45%**. UI code and the inherited
-private prediction engine are excluded from that denominator; UI routes and
-real browser behaviour are checked separately. Machine-readable results are
-in `coverage.json` and `test_results.xml`.
+Backend/CLI line-and-branch coverage is **85.86%**. UI code and the
+inherited private engine are excluded from the denominator; route/navigation
+and real-browser tests cover UI behaviour separately.
 
-The real test binaries reported USalign **20261019** and TMalign **20240303**.
-The delivered scientific Conda environment intentionally follows the E3
-repository pins: USalign **20241201**, TMalign **20240303**. A Conda solve and
-execution of the older pinned USalign build were not performed here. Every
-production fit retains its actual executable checksum, reported version,
-command, matrix and raw output.
+## Limits and compatibility
 
-The inherited fpocket/P2Rank runner was not exercised with actual predictor
-binaries in this workspace. Its integration tests use clearly labelled synthetic
-records, not fabricated biological predictions. The new Conda environment file
-was not solved here; the wheel and its resources were built/installed/checked.
+The real BRCA1 coordinates/native project and an authenticated Dundee/de.NBI
+session were unavailable here. No real BRCA1 prediction, cluster submission or
+live deployment was performed. The real-aligner tests were skipped because
+USalign and TMalign executables were not installed in this development runtime.
+The 1.2.0 validation previously exercised those tools; their implementation and
+Conda pins are unchanged, but that does not constitute a fresh 1.3.0 binary run.
+Actual fpocket/P2Rank executables and a new Conda solve were not exercised here.
 
-No Dundee/de.NBI login session or real BRCA1 coordinate/FASTA files were
-available in this development workspace. Slurm submission, installation on
-those machines and the real BRCA1 analysis remain deployment steps. The
-included BRCA1 example contains the earlier real pocket-report tables only.
-Synthetic structures and scores are explicitly labelled and are not BRCA1
-results.
+The viewer opens existing 1.0–1.2 native resources without rebuilding DuckDB or
+rerunning analyses. New plots derive their values from saved matches. Earlier
+exported HTML retains its embedded viewer until a fresh `review` export is made.
+A review export regenerates presentation from saved evidence, not the analyses.
 
-The external Inspector link/naming convention follows the E3 source. Generated
-mmCIF bundles were parsed locally; the independently maintained external site
-was not used for a live upload.
+The software-version change can alter workflow/cache fingerprints even though
+scientific implementations are unchanged. Keep an active/resumable 1.2.0 HPC
+workflow on its existing software and environment. Install the viewer update
+separately on the viewing machine and open completed copied resources.
 
-## Reproduce tests
+## Reproduce
 
 ```bash
 python -m pip install --editable '.[dev]'
 python -m playwright install chromium
-POCKET_WORKBENCH_BROWSER_TESTS=1 \
-POCKET_WORKBENCH_TEST_USALIGN="$(command -v USalign)" \
-POCKET_WORKBENCH_TEST_TMALIGN="$(command -v TMalign)" \
-python -m pytest tests -q
+POCKET_WORKBENCH_BROWSER_TESTS=1 python -m pytest tests -q
 ruff check src/pocket_workbench tests --exclude _pipeline
 ```
+
+To include optional real-aligner tests, set
+`POCKET_WORKBENCH_TEST_USALIGN=/absolute/path/to/USalign` and
+`POCKET_WORKBENCH_TEST_TMALIGN=/absolute/path/to/TMalign` before running pytest.
+The supplied scientific environments follow the E3 pins: USalign 20241201 and
+TMalign 20240303. Every production fit records the executable identity actually used.

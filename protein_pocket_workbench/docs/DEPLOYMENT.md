@@ -3,6 +3,11 @@
 Dundee Slurm is the recommended analysis route. The app consumes completed
 data. No analysis starts when a project opens.
 
+For 1.3.0, update the viewing machine only while a 1.2.0 HPC run is active or
+resumable. Existing native resources open directly; no analysis or database
+rebuild is required. Previously exported HTML stays unchanged until a new
+`pocket-workbench review` export is made from the finished resource.
+
 ## Local app
 
 For a viewing-only installation, create the lighter environment with
