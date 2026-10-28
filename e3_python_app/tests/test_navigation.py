@@ -30,7 +30,7 @@ def test_navigation_groups_every_helped_page_once() -> None:
         "🔴 6 · Chemistry & outputs",
     ]
     titles = navigation_page_titles()
-    assert len(titles) == 29
+    assert len(titles) == 30
     assert len(titles) == len(set(titles))
     assert set(titles) == set(TOP_LEVEL_TAB_HELP)
     validate_navigation()
@@ -57,6 +57,20 @@ def test_all_results_has_two_explicit_shortcuts_to_the_same_page() -> None:
     assert first == second
     assert first.shared
     assert navigation_page_titles().count("All results") == 1
+    validate_navigation()
+
+
+def test_external_links_is_one_shared_directory_without_an_extra_stage() -> None:
+    """Information and structural prioritisation share the same directory page."""
+    information = navigation_stage(label="🔵 1 · Information")
+    structural = navigation_stage(label="🟠 4 · Structural prioritisation")
+    first = navigation_page(stage=information, title="External links")
+    second = navigation_page(stage=structural, title="External links")
+    assert first == second
+    assert first.shared
+    assert not first.method_annotation
+    assert navigation_page_titles().count("External links") == 1
+    assert len(navigation_stage_labels()) == 7
     validate_navigation()
 
 

@@ -59,6 +59,7 @@ from e3app.external_actions import (
     external_pair_actions,
     selected_pair_fasta_bytes,
 )
+from e3app.external_resources import EXTERNAL_RESOURCES, PROTEIN_IMAGER_URL
 from e3app.enriched_hogs import (
     ENRICHED_HOG_LABELS,
     ENRICHED_HOG_MEMBERS,
@@ -340,6 +341,42 @@ def _render_method_annotation(*, tab_name: str) -> None:
         st.markdown(method_annotation_markdown(tab_name=tab_name))
 
 
+def _render_protein_imager_link() -> None:
+    """Offer manual pocket inspection using the retained full coordinate model."""
+    st.link_button(
+        "Open Protein Imager",
+        PROTEIN_IMAGER_URL,
+        help="Opens the external viewer in a new tab for manual model loading.",
+    )
+    st.caption(
+        "For detailed pocket inspection, load the retained PDB/mmCIF model used in this "
+        "analysis and select the recorded pocket chain and residue identifiers. This link "
+        "does not transfer the model or pocket annotations, or recalculate pocket predictions."
+    )
+
+
+def _render_external_links() -> None:
+    """Render service start pages while preserving selection-specific source controls."""
+    st.subheader("External links")
+    st.markdown(
+        "Open a tool below for further inspection. These are service start pages: "
+        "they do not carry a selected protein, pocket, pair or HOG. The existing "
+        "links and preparation controls remain on their original E3 pages."
+    )
+    for resource in EXTERNAL_RESOURCES:
+        with st.container(border=True):
+            st.markdown(f"#### {resource.name}")
+            st.write(resource.purpose)
+            st.markdown("**Prepare in the E3 app:** " + ", ".join(resource.source_pages))
+            st.caption(resource.preparation)
+            st.link_button(f"Open {resource.name} (start page)", resource.url)
+    st.caption(
+        "External results do not change the recorded E3 predictions or rankings. "
+        "Remote prediction/annotation jobs still use the explicit submission controls "
+        "in the Protein research workbench."
+    )
+
+
 def _render_section(
     *,
     connection: object,
@@ -352,6 +389,8 @@ def _render_section(
     if show_heading:
         st.subheader(str(specification["title"]))
         st.caption(str(specification["description"]))
+    if section == "ligandability":
+        _render_protein_imager_link()
     relations = relations_for_section(connection, section)
     if not relations:
         st.info(
@@ -3587,6 +3626,8 @@ def _render_selected_pocket_review(
         key_prefix: Unique prefix for Streamlit widget state.
         include_evidence_matrix: Whether to offer the release-wide matrix.
     """
+    if focus == "structure":
+        _render_protein_imager_link()
     row = selected_group_row(bundle, group_page)
     st.caption(
         f"Review rank {int(row['review_rank'])} | evolutionary group "
@@ -5078,6 +5119,7 @@ def render_app() -> None:
                     config=config,
                 ),
                 "Workflow schematic": _render_workflow_schematic,
+                "External links": _render_external_links,
                 "Glossary": lambda: _render_glossary(connection=connection),
                 "Provenance and QC": lambda: _render_section(
                     connection=connection,

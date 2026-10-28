@@ -64,6 +64,7 @@ NAVIGATION_STAGES = (
             NavigationPage("Workflow schematic", method_annotation=True),
             NavigationPage("Glossary"),
             NavigationPage("Provenance and QC", method_annotation=True),
+            NavigationPage("External links", shared=True),
         ),
     ),
     NavigationStage(
@@ -115,6 +116,7 @@ NAVIGATION_STAGES = (
         pages=(
             NavigationPage("Ligandability", method_annotation=True),
             NavigationPage("Pocket conservation", method_annotation=True),
+            NavigationPage("External links", shared=True),
         ),
     ),
     NavigationStage(

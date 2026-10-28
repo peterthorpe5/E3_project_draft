@@ -40,6 +40,7 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Protein & HOG search",
         "All results",
         "Provenance and QC",
+        "External links",
     }
     assert set(TOP_LEVEL_TAB_HELP) == expected
     for name in expected:

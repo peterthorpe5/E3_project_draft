@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.21.2
+
+- Adds Protein Imager beside ligandability/pocket evidence and selected
+  structure/pocket reviews, with manual model and pocket-residue guidance.
+- Adds a shared External links directory under Information and Structural
+  prioritisation. It covers Protein Imager, Mol*, AlphaFold DB, EMERALD and
+  the AlphaFold 3 Multi-Model Inspector without moving their existing links.
+- Makes required selections, exact-model inputs and manual ZIP preparation
+  explicit; directory shortcuts do not imply selection or file transfer.
+- Keeps recorded predictions, rankings and remote-job submission controls
+  unchanged, with navigation and full-app regression coverage.
+
 ## v0.21.1
 
 - Restores **All results** under Candidate discovery and keeps the Search &

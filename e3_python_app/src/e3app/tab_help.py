@@ -19,6 +19,18 @@ class TabHelpEntry:
 
 
 TOP_LEVEL_TAB_HELP = {
+    "External links": TabHelpEntry(
+        instruction=(
+            "Choose an external tool and read its preparation notes first. For a selected "
+            "protein pair, pocket or HOG-model ZIP, use the existing controls on its source "
+            "page; directory links open service start pages without carrying that selection."
+        ),
+        yields=(
+            "A directory of structure viewers and sequence-comparison tools, including "
+            "Protein Imager, with the required files or identifiers and the E3 page where "
+            "they are prepared. Existing contextual links remain available on their pages."
+        ),
+    ),
     "Protein research workbench": TabHelpEntry(
         instruction=(
             "Link exact E3 member/seed accessions or generic protein inputs to global "

@@ -10,6 +10,7 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+from e3app.external_resources import EXTERNAL_RESOURCES, PROTEIN_IMAGER_URL
 from e3app.taxonomy import load_taxonomy_authority
 from test_pocket_review import make_pocket_review
 
@@ -177,6 +178,65 @@ def test_app_renders_and_searches(resource_db: Path, monkeypatch: object) -> Non
     )
 
 
+@pytest.mark.parametrize(
+    "stage",
+    ("🔵 1 · Information", "🟠 4 · Structural prioritisation"),
+)
+def test_external_links_directory_needs_no_selection_or_remote_preparation(
+    resource_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str,
+) -> None:
+    """Both directory routes render manual entry points without preparing remote inputs."""
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    monkeypatch.setattr(
+        "e3app.alphafold_hog_bundle.build_alphafold_hog_bundle",
+        lambda **kwargs: pytest.fail("Directory must not retrieve or prepare models"),
+    )
+    monkeypatch.setattr(
+        "e3app.alphafold_confidence.retrieve_alphafold_confidence",
+        lambda **kwargs: pytest.fail("Directory must not retrieve confidence"),
+    )
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=10).run()
+    _navigate(app, stage=stage, page="External links")
+    assert not app.exception
+    links = {button.label: button.proto.url for button in app.get("link_button")}
+    assert links == {
+        f"Open {resource.name} (start page)": resource.url
+        for resource in EXTERNAL_RESOURCES
+    }
+    assert not app.get("download_button")
+    assert not app.selectbox
+    assert any("do not carry a selected protein" in item.value for item in app.markdown)
+    assert any("HOG model comparison" in item.value for item in app.markdown)
+    assert any("exact pair FASTA" in item.value for item in app.caption)
+
+
+@pytest.mark.parametrize("with_evidence", (True, False))
+def test_protein_imager_is_available_beside_pocket_predictions(
+    resource_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    with_evidence: bool,
+) -> None:
+    """The pocket shortcut remains useful even when a release lacks a pocket table."""
+    if not with_evidence:
+        resource_db = resource_db.parent / "without_pocket_evidence.duckdb"
+        with duckdb.connect(str(resource_db)) as connection:
+            connection.execute("SELECT 1")
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=10).run()
+    _navigate(app, stage="🟠 4 · Structural prioritisation", page="Ligandability")
+    assert not app.exception
+    links = {button.label: button.proto.url for button in app.get("link_button")}
+    assert links["Open Protein Imager"] == PROTEIN_IMAGER_URL
+    assert any("retained PDB/mmCIF model" in item.value for item in app.caption)
+    assert any("does not transfer" in item.value for item in app.caption)
+    if not with_evidence:
+        assert any("recognised relation" in item.value for item in app.info)
+
+
 def test_app_reports_missing_database(monkeypatch: object, tmp_path: Path) -> None:
     """Invalid configuration is shown in-app without a database write."""
 
@@ -342,6 +402,8 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     ]
     assert len(group_selectors) == 1
     assert group_selectors[0].value == "groups/rank_001__hog__N0.HOG1.html"
+    links = {button.label: button.proto.url for button in app.get("link_button")}
+    assert links["Open Protein Imager"] == PROTEIN_IMAGER_URL
 
     _navigate(
         app,
@@ -403,6 +465,8 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     assert "Pairwise 3D comparison" in nested_labels
     assert "Choose structures & pockets" in nested_labels
     assert "Pocket-aligned FASTA" in nested_labels
+    links = {button.label: button.proto.url for button in app.get("link_button")}
+    assert links["Open Protein Imager"] == PROTEIN_IMAGER_URL
     expander_labels = [expander.label for expander in app.expander]
     assert expander_labels.count("❓ Why was this structural reference selected?") == 1
     assert expander_labels.count("❓ Define the pair-evidence terms") == 1

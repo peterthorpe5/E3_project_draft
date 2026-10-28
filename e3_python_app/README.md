@@ -1,6 +1,14 @@
 # ARIA plant E3 Python reporter
 
-Version **0.21.1** restores **All results** under **Candidate discovery** and
+Version **0.21.2** adds **Protein Imager** to Ligandability and the selected
+structure/pocket reviews. A shared **External links** page under Information
+and Structural prioritisation lists the existing tools and explains their
+required inputs. Pair-specific links and model-bundle preparation remain on
+their existing pages. Protein Imager uses a manual upload of the retained
+PDB/mmCIF model and manual pocket-residue selection; the link does not transfer
+models or annotations. See [the external tools guide](docs/EXTERNAL_LINKS.md).
+
+Version 0.21.1 restores **All results** under **Candidate discovery** and
 keeps its **Search & results** shortcut. Both locations provide identical
 complete downloads. Complete HOG/OG searches now open stored ranks and member
 metadata directly; full evidence dossiers/counts are loaded on request and
@@ -155,7 +163,7 @@ fail-closed review rules are documented in
 The reporter provides:
 
 - a top-level Search & results section and six ordered, colour-marked
-  scientific stages covering 29 maintained pages, from release information
+  scientific stages covering 30 maintained pages, from release information
   through discovery, orthology, structure and outputs;
 - a responsive Workflow schematic tracing the complete method from validated
   inputs through sequence discovery, OrthoFinder reconciliation, biological
