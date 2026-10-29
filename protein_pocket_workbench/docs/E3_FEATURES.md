@@ -1,3 +1,7 @@
+Version 1.4.0 adds the focused [Pocket conservation](POCKET_CONSERVATION.md)
+page and E3-style [External links](EXTERNAL_TOOLS.md) hand-offs. Both use
+saved data and are included in new portable reviews.
+
 # E3 structural feature mapping
 
 Reference: `peterthorpe5/E3_project_draft`, including

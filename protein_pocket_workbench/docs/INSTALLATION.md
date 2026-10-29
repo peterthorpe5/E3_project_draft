@@ -1,8 +1,8 @@
 # Installation and remote use
 
-For the 1.3.0 viewer update, follow the focused commands in [README](../README.md).
+For the 1.4.0 viewer update, follow the focused commands in [README](../README.md).
 Keep an active/resumable 1.2.0 HPC workflow on its existing software/environment.
-Opening its completed native resource in 1.3.0 requires no new predictions,
+Opening its completed native resource in 1.4.0 requires no new predictions,
 structural fits, sequence analysis or DuckDB rebuild.
 
 Batch analysis uses [HPC_WORKFLOW.md](HPC_WORKFLOW.md), with the separate quality

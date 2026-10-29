@@ -107,6 +107,23 @@ def test_live_browser_navigation_and_glossary(project, tmp_path):
                 page.get_by_text(
                     "Structural evidence and top-k review", exact=True
                 ).wait_for()
+                sidebar.get_by_text("External links", exact=True).click()
+                page.get_by_role(
+                    "button", name="Prepare models for external tools", exact=True
+                ).click()
+                page.get_by_role(
+                    "button", name="Download prepared external-tool ZIP", exact=True
+                ).wait_for()
+                sidebar.get_by_text("Pocket conservation", exact=True).click()
+                page.get_by_role(
+                    "heading", name="Alignment quality", exact=True
+                ).wait_for()
+                page.get_by_role(
+                    "button", name="Open this pocket pair in 3D", exact=True
+                ).click()
+                page.get_by_role(
+                    "button", name="Download offline 3D page", exact=True
+                ).wait_for()
                 sidebar.get_by_text("Methods & glossary", exact=True).click()
                 page.get_by_role("tab", name="Searchable glossary").click()
                 search = page.get_by_role(

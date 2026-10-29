@@ -1,5 +1,9 @@
 # Documentation
 
+- [POCKET_CONSERVATION.md](POCKET_CONSERVATION.md): position/conservation rules,
+  distances, alignment quality and exact-pair 3D navigation.
+- [EXTERNAL_TOOLS.md](EXTERNAL_TOOLS.md): populated public links and exact local
+  model/FASTA/pocket downloads.
 - [VIEWER_GUIDE.md](VIEWER_GUIDE.md): pocket visibility, fit/evidence interpretation,
   alignment controls and the screenshot-driven improvements in 1.3.0.
 - [QUALITY_RERUN.md](QUALITY_RERUN.md): cleaning, full prediction/analysis run,

@@ -1,4 +1,4 @@
-# Protein Pocket Workbench 1.3.0
+# Protein Pocket Workbench 1.4.0
 
 Browse predicted protein pockets, saved structural alignments, pocket-marked
 FASTA alignments and trees. The analysis runs in batch on HPC; colleagues can
@@ -11,18 +11,18 @@ predictor is needed for viewing.
 and environment on Dundee while the quality rerun is running or being resumed.**
 Workflow fingerprints include software identity, so changing that installation
 can prevent an exact resume. Existing native resources from 1.0–1.2 open in
-1.3.0 without rerunning pocket prediction, fitting, alignment or rebuilding DuckDB.
+1.4.0 without rerunning pocket prediction, fitting, alignment or rebuilding DuckDB.
 
 Extract the software ZIP into Downloads, stop the old app with Ctrl-C, then:
 
 ```bash
-cd "$HOME/Downloads/protein_pocket_workbench_1.3.0"
+cd "$HOME/Downloads/protein_pocket_workbench_1.4.0"
 conda activate pocket_workbench
 python -m pip install --upgrade --editable .
 pocket-workbench --version
 ```
 
-The version should be `1.3.0`. Keep this source directory in place because the
+The version should be `1.4.0`. Keep this source directory in place because the
 installation is editable. If you do not already have the environment, replace
 the activation step above with these two commands:
 
@@ -59,7 +59,26 @@ HTML report or DuckDB file alone does not supply the structures needed for 3D.
 A review ZIP contains a nested `app_resource.zip`; extract that too for the app.
 The app starts in browsing mode, with analysis submission controls hidden.
 
-## What is clearer in 1.3.0
+## New in 1.4.0
+
+**Pocket conservation** separates position, fold and lining-conservation rules,
+explains threshold failures and shows pocket distances beside RMSD, aligned
+length, both TM-scores and both input coverages. Original ranks, alternative
+pairs and unassessed evidence remain distinct. Numeric TSV/Excel downloads and
+exact-pair 3D navigation are included. See
+[POCKET_CONSERVATION.md](docs/POCKET_CONSERVATION.md).
+
+**External links** prepares E3-style hand-offs to Protein Imager, Mol*, AlphaFold
+Database, EMERALD and the Multi-Model Inspector. It uses exact local structures,
+pocket residue TSVs and explicitly scoped FASTA, with populated URLs when a
+supported UniProt accession is supplied. A model ZIP can reuse a saved alignment;
+its files and coordinate frame are audited. See
+[EXTERNAL_TOOLS.md](docs/EXTERNAL_TOOLS.md).
+
+Both features are included in newly exported offline reviews, using saved
+results without prediction, fitting or a database rebuild.
+
+## Pocket-viewer improvements retained from 1.3.0
 
 - One selected pocket opens in close-up with muted local protein context,
   bright lining surfaces, sticks, markers, rank labels and confidence details.
@@ -90,7 +109,7 @@ were created. To regenerate a finished offline review from saved evidence:
 ```bash
 pocket-workbench review \
   --resource /path/to/finished_resource \
-  --output /path/to/new_review_v1_3
+  --output /path/to/new_review_v1_4
 ```
 
 Choose a new output folder outside the resource. This exports existing evidence;

@@ -1,12 +1,24 @@
-# Release validation: 1.3.0
+# Release validation: 1.4.0
 
 Validated on 28 October 2026 with Python 3.12.14, Streamlit 1.66.1,
 Playwright 1.51.0 and Chromium 134 on Linux.
 
-- **135 tests passed; 3 optional real-aligner tests skipped.**
+- **202 tests passed; 3 optional real-aligner tests skipped.**
   The current JUnit and coverage records are `test_results.xml` and `coverage.json`.
-- Eleven real-browser tests initialise the offline structure, pocket-alignment,
-  alignment/tree and live-app views, with HTTP blocked for standalone viewers.
+- Thirteen real-browser tests initialise the offline structure, pocket-alignment,
+  alignment/tree, external-links, conservation and live-app views, with HTTP
+  blocked for standalone viewers.
+- Conservation tests separate position, fold and lining-conservation decisions,
+  preserve original ranks and saved thresholds, and distinguish failed rules
+  from missing evidence. Zero-valued evidence, missing/empty match lists,
+  invalid distances, exact-pocket 3D navigation and distance TSVs are checked.
+- Alignment-quality checks cover both TM-scores, both input coverages, RMSD,
+  aligned CA counts and fit scope. Kabsch distances remain available without
+  inventing TM-scores or a positive fold-conservation conclusion.
+- External hand-off checks cover canonical UniProt URL validation, exact
+  model-input/representative FASTA selection, complete local structures, pocket
+  mappings, saved coordinate frames and per-file hashes. Selection changes or
+  preparation failures clear stale downloads. No user data is uploaded remotely.
 - Pocket visibility tests cover default close-up, selected lining preserved under
   context filters, original/unknown rank identity, transformed mobile context,
   distinct model colours and changed-display-pair warnings.
@@ -16,16 +28,18 @@ Playwright 1.51.0 and Chromium 134 on Linux.
 - Presentation tests cover missing/non-finite evidence, zero-valued scores,
   collision-safe labels, directional matrices, and consistent strict/alternative
   overlap and point-colour decisions.
-- All ten app routes render against prepared evidence. Group/evidence jumps
-  open the selected saved fit. Hashes of every native project file remain
-  identical after those browsing operations, including DuckDB and result JSON.
+- All twelve app routes render against prepared evidence. Group/evidence jumps
+  open the selected saved fit; conservation links select the exact pocket pair.
+  Hashes of every native project file remain identical after browsing and
+  hand-off preparation, including DuckDB and result JSON.
 - Existing tests cover quality preparation, synthetic prediction integration,
   exact pocket mappings, rank preservation, typed DuckDB/Excel, export and resume.
-- Visual QA inspected the revised single-model and aligned-pair 3D pages,
-  pocket-marked alignment, model page, comparison page and input-quality summary
-  using explicitly synthetic known-transform models. Internal screenshots are
-  not distributed as biological examples.
-- Compared against the original 1.2.0 archive, **35 scientific-core, inherited
+- Visual QA inspected the new conservation and external-links pages in the app
+  and standalone HTML, alongside the previously validated 1.3.0 structure,
+  sequence and comparison views. The examples use explicitly synthetic
+  known-transform models. Internal screenshots are not distributed as
+  biological examples.
+- Compared against the 1.3.0 archive, **35 scientific-core, inherited
   prediction, script and environment files are byte-identical**. This includes
   preparation, prediction, fitting, sequence analysis, import, database, batch
   orchestration and all supplied Slurm scripts. Evidence changes add derived
@@ -36,7 +50,7 @@ Playwright 1.51.0 and Chromium 134 on Linux.
   packaged methods, all asset checksums and the private prediction report
   resource were verified from that installed wheel.
 
-Backend/CLI line-and-branch coverage is **85.86%**. UI code and the
+Backend/CLI line-and-branch coverage is **87.14%**. UI code and the
 inherited private engine are excluded from the denominator; route/navigation
 and real-browser tests cover UI behaviour separately.
 
@@ -47,10 +61,10 @@ session were unavailable here. No real BRCA1 prediction, cluster submission or
 live deployment was performed. The real-aligner tests were skipped because
 USalign and TMalign executables were not installed in this development runtime.
 The 1.2.0 validation previously exercised those tools; their implementation and
-Conda pins are unchanged, but that does not constitute a fresh 1.3.0 binary run.
+Conda pins are unchanged, but that does not constitute a fresh 1.4.0 binary run.
 Actual fpocket/P2Rank executables and a new Conda solve were not exercised here.
 
-The viewer opens existing 1.0–1.2 native resources without rebuilding DuckDB or
+The viewer opens existing 1.0–1.3 native resources without rebuilding DuckDB or
 rerunning analyses. New plots derive their values from saved matches. Earlier
 exported HTML retains its embedded viewer until a fresh `review` export is made.
 A review export regenerates presentation from saved evidence, not the analyses.

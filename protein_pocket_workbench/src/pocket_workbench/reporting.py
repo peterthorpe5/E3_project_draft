@@ -12,12 +12,16 @@ import zipfile
 from pathlib import Path
 
 from .annotations import pocket_alignment_data, pocket_alignment_document
+from .conservation_review import conservation_document, pocket_pair_rows
 from .core import WorkbenchError, digest_file, inside, load_project, utc_now, write_tsv
 from .database import export_tables, pack_project, workbook_bytes
 from .evidence import aligner_agreement, comparison_audit
+from .external_reporting import export_external_review
+from .external_tools import prepare_external_bundle
 from .groups import AF3_INSPECTOR_URL, inspector_bundle
 from .help_content import glossary_rows, methods_text
 from .importing import read_fasta
+from .presentation import model_labels
 from .sequences import fasta_text
 from .viewers import model_viewer_records, structure_document
 
@@ -135,7 +139,9 @@ def export_review(*, root: Path, output: Path) -> Path:
             )
         )
         model_links, comparison_links, alignment_links, group_links = [], [], [], []
+        external_fits, external_groups = [], []
         model_lookup = {row["sample_id"]: row for row in data["models"]}
+        display_labels = model_labels(identifiers=list(model_lookup))
         for model in data["models"]:
             identifier = model["sample_id"]
             if not model.get("prepared_model"):
@@ -180,6 +186,20 @@ def export_review(*, root: Path, output: Path) -> Path:
             directory.mkdir(parents=True)
             reference = model_lookup[result["reference"]]
             mobile = model_lookup[result["mobile"]]
+            ordered_pairs = pocket_pair_rows(result=result, pockets=data["pockets"])
+            initial_pair = (
+                next(
+                    m
+                    for m in result["pocket_matches"]
+                    if (m["reference_pocket"], m["mobile_pocket"])
+                    == (
+                        ordered_pairs[0]["reference_pocket"],
+                        ordered_pairs[0]["mobile_pocket"],
+                    )
+                )
+                if ordered_pairs
+                else None
+            )
             document = structure_document(
                 reference_pdb=inside(
                     root=root, relative=reference["prepared_model"]
@@ -191,11 +211,13 @@ def export_review(*, root: Path, output: Path) -> Path:
                 mobile_label=result["mobile"],
                 reference_metadata=model_viewer_records(
                     root=root, model=reference, pockets=data["pockets"]
-                ),
+                )
+                | ({"initial_display": "none"} if not initial_pair else {}),
                 mobile_metadata=model_viewer_records(
                     root=root, model=mobile, pockets=data["pockets"]
-                ),
-                match=next(iter(result["pocket_matches"]), None),
+                )
+                | ({"initial_display": "none"} if not initial_pair else {}),
+                match=initial_pair,
                 summary=(
                     f"{result['engine']} · {result['scope']} · RMSD"
                     f" {result['rmsd']:.3f} Å · {result['aligned_atoms']} aligned Cα"
@@ -203,6 +225,9 @@ def export_review(*, root: Path, output: Path) -> Path:
                 ),
             )
             (directory / "viewer.html").write_text(document)
+            (directory / "conservation.html").write_text(
+                conservation_document(result=result, pockets=data["pockets"])
+            )
             shutil.copy2(
                 inside(root=root, relative=result["result_path"]),
                 directory / "result.json",
@@ -211,11 +236,34 @@ def export_review(*, root: Path, output: Path) -> Path:
                 inside(root=root, relative=result["mobile_aligned"]),
                 directory / "mobile_aligned.pdb",
             )
+            external_fits.append(
+                {
+                    "comparison_id": identifier,
+                    "reference": result["reference"],
+                    "mobile": result["mobile"],
+                    "label": (
+                        display_labels[result["reference"]]
+                        + " ← "
+                        + display_labels[result["mobile"]]
+                        + " · "
+                        + result["engine"]
+                        + " · "
+                        + result["scope"]
+                    ),
+                    "reference_href": "../models/" + result["reference"] + ".pdb",
+                    "mobile_href": (
+                        "../comparisons/" + identifier + "/mobile_aligned.pdb"
+                    ),
+                    "result_href": "../comparisons/" + identifier + "/result.json",
+                }
+            )
             comparison_links.append(
                 f'<li><a href="comparisons/{identifier}/viewer.html">'
                 f'{html.escape(result["reference"])} / {html.escape(result["mobile"])}'
                 f' · {html.escape(result["engine"])} · {html.escape(result["scope"])}'
-                "</a></li>"
+                "</a> · "
+                f'<a href="comparisons/{identifier}/conservation.html">'
+                "Pocket conservation and alignment quality</a></li>"
             )
         for analysis in data["sequence_analyses"]:
             directory = staging / "alignments" / analysis["analysis_id"]
@@ -268,12 +316,26 @@ def export_review(*, root: Path, output: Path) -> Path:
                 + "_inspector.zip"
             )
             (staging / "model_groups" / filename).write_bytes(
-                inspector_bundle(root=root, models=members)
+                prepare_external_bundle(
+                    root=root, data=data, model_ids=[m["sample_id"] for m in members]
+                )
+                if any(m.get("prepared_model") for m in members)
+                else inspector_bundle(root=root, models=members)
+            )
+            external_groups.append(
+                {"name": group + " · model ZIP", "href": "../model_groups/" + filename}
             )
             group_links.append(
                 f'<li>{html.escape(group)} · <a href="model_groups/{filename}">Model'
                 f" ZIP for manual Inspector upload</a> · {len(members)} models</li>"
             )
+        export_external_review(
+            root=root,
+            data=data,
+            output=staging / "external",
+            group_files=external_groups,
+            fits=external_fits,
+        )
         pack_project(root=root, output=staging / "app_resource.zip")
         glossary_html = html_table(rows=glossary_rows(), columns=["term", "definition"])
         (staging / "methods_glossary.html").write_text(
@@ -295,6 +357,12 @@ def export_review(*, root: Path, output: Path) -> Path:
                 "top_k_position",
                 "top_k_tested_pairs",
                 "minimum_tm",
+                "rank_one_centroid_distance",
+                "rank_one_overlap",
+                "rank_one_conserved",
+                "rmsd",
+                "reference_coverage",
+                "mobile_coverage",
                 "best_tested_overlap",
             ],
         )
@@ -315,6 +383,7 @@ def export_review(*, root: Path, output: Path) -> Path:
             " href='pocket_workbench.duckdb'>DuckDB</a> · <a"
             " href='representatives.fasta'>Representative FASTA</a> · <a"
             " href='methods_glossary.html'>Methods and glossary</a> · <a"
+            " href='external/index.html'>External tools and prepared inputs</a> · <a"
             " href='app_resource.zip'>Reopen in the"
             " app</a></p>"
             + (
@@ -327,28 +396,29 @@ def export_review(*, root: Path, output: Path) -> Path:
                 if data.get("quality_preparation")
                 else ""
             )
-            + "</section><section><h2>Find a model, comparison or"
-            " sequence</h2><input id='search' type='search' placeholder='Search"
-            " identifiers'><p class='note'>Rank one and alternative-pocket sensitivity"
-            " are separate. Not assessed is retained when the requested ranks,"
-            " coordinates or fit are unavailable. Position and fold evidence do not"
-            " establish binding.</p></section><section><h2>Models and predicted"
+            + "</section><section><h2>Find a model, comparison or sequence</h2><input"
+            " id='search' type='search' placeholder='Search identifiers'><p"
+            " class='note'>Rank one and alternative-pocket sensitivity are separate."
+            " Not assessed is retained when the requested ranks, coordinates or fit"
+            " are unavailable. Position and fold evidence do not establish"
+            " binding.</p></section><section><h2>Models and predicted"
             f" pockets</h2><ul>{''.join(model_links)}</ul></section>"
-            "<section><h2>Structure"
+            + "<section><h2>Structure"
             " alignments and"
             f" pockets</h2><ul>{''.join(comparison_links)}</ul></section>"
-            "<section><h2>FASTA"
+            + "<section><h2>FASTA"
             " alignments and"
             f" trees</h2><ul>{''.join(alignment_links)}</ul></section>"
-            "<section><h2>Structural"
-            f" evidence audit</h2>{evidence}</section><section><h2>HOG / model group"
+            + "<section><h2>Pocket"
+            " conservation and alignment quality"
+            f" audit</h2>{evidence}</section><section><h2>HOG / model group"
             f" comparison</h2><p><a href='{AF3_INSPECTOR_URL}'>Open the external"
             " AlphaFold 3 Multi-Model Inspector</a>. Download a group ZIP and choose"
             " it manually on the external site. Prepared chains and pLDDT are"
             " retained; PAE and AF3-specific metrics are not supplied. The external"
             " source requires internet"
             f" access.</p><ul>{''.join(group_links)}</ul></section>"
-            "<section><h2>Dual-aligner"
+            + "<section><h2>Dual-aligner"
             " agreement</h2>"
             + html_table(
                 rows=agreement,

@@ -353,6 +353,37 @@ GLOSSARY.update(
             "A zero-based model number in a compatibility ZIP. manifest.tsv maps it "
             "back to the original sample, sequence and group identifiers."
         ),
+        "Conservation rule": (
+            "The existing computational rule requires recorded pocket position and "
+            "fold support, sufficient mutual-nearest lining match and sufficient "
+            "chemical-group agreement under the saved thresholds. Missing required "
+            "evidence remains unassessed. It does not prove ligand binding or "
+            "whole-protein conservation."
+        ),
+        "Matched residue distance": (
+            "The saved C-alpha separation for a mutual-nearest lining-residue pair "
+            "after the recorded structural fit. These pairs were already admitted "
+            "within the matching radius; their mean excludes unmatched residues. "
+            "An absent distance list is different from an explicitly empty list."
+        ),
+        "Coordinate frame": (
+            "The axes and origin used for structure coordinates. Original prepared "
+            "models may have independent frames. A saved-alignment export reuses "
+            "the recorded reference frame and already-transformed mobile, without "
+            "running another structural fit."
+        ),
+        "Populated external link": (
+            "A supported web URL with explicit selected canonical UniProt accessions "
+            "already supplied. It opens public database sequences/models, which may "
+            "differ from the saved de novo input. Local files and pocket annotations "
+            "are not embedded or uploaded by that link."
+        ),
+        "External model bundle": (
+            "A locally prepared ZIP of saved atomic models, original identifiers, "
+            "coordinate hashes, scoped input FASTA, pocket residue TSVs and frame "
+            "audit. Download it and upload it manually to an external viewer. "
+            "Absent PAE and AF3-specific confidence metrics remain unknown."
+        ),
         "Portable review": (
             "A downloaded folder with index.html, offline viewers, Excel, TSV, "
             "DuckDB "

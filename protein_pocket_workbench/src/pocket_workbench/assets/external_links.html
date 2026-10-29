@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>External tools and prepared inputs</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:#f2f6fa;color:#193b50}
+header{background:#12394e;color:white;padding:22px}h1{font-size:23px;margin:0 0 7px}
+main{max-width:1500px;margin:auto;padding:18px}h2{font-size:18px;margin:0 0 12px}
+.card{padding:18px;background:white;border:1px solid #d5e2eb;border-radius:8px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.controls{display:flex;flex-wrap:wrap;gap:15px;align-items:end}
+label{display:block;font-size:13px;margin:8px 0}select{display:block;max-width:100%;min-width:190px;margin-top:6px;padding:9px;border:1px solid #9eb6c7;border-radius:5px;font:inherit;color:inherit}
+a,button{display:inline-block;background:#edf4f8;color:#0b5379;border:1px solid #b9cedc;border-radius:5px;padding:8px 11px;margin:5px 7px 5px 0;text-decoration:none;font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}.note{font-size:12px;color:#506d7e;line-height:1.6;overflow-wrap:anywhere}
+.id{font:12px ui-monospace,monospace;overflow-wrap:anywhere}p{line-height:1.6}
+select:focus-visible,a:focus-visible,button:focus-visible{outline:3px solid #268cb9;outline-offset:2px}[hidden]{display:none!important}
+@media(max-width:850px){.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>External tools and prepared inputs</h1><div id="project"></div></header>
+<main><section class="card">
+<a href="../index.html">Return to the complete review</a>
+<p>Choose a model or sequence and download its exact saved inputs. Public accession links open separate database records.
+Local files and pocket annotations are transferred only when you load them in the external website.</p>
+<div class="controls"><label>First protein or model<select id="first" aria-label="First protein or model"></select></label>
+<label>Second protein or model<select id="second" aria-label="Second protein or model"></select></label>
+<label>FASTA content<select id="scope" aria-label="FASTA content"><option value="model_input">Selected model inputs</option><option value="representative_fasta">Full representative sequences</option></select></label>
+</div><button id="fasta">Download selected FASTA</button><span id="pair-link"></span>
+<p id="sequence-status" class="note" role="status"></p>
+<p class="note">Model inputs preserve retained-region sequences. FASTA-only records use their own saved sequence. Populated EMERALD links use public canonical UniProt sequences, which can differ from local model inputs.</p>
+</section>
+<div id="models" class="grid"></div>
+<section id="saved" class="card" hidden><h2>Reuse a saved structural alignment</h2>
+<label>Saved fit<select id="fit" aria-label="Saved fit"></select></label><div id="fit-files"></div>
+<p class="note">The reference file and already-transformed mobile retain the saved fit. No new structural alignment is run here. The recorded input region and tool remain explicit.</p>
+</section>
+<section class="card"><h2>Prepared group model ZIPs</h2><div id="groups"></div>
+<p class="note">Download a group ZIP and upload it manually to the Multi-Model Inspector. Read its manifest and HANDOFF.txt where supplied. Group members may be distinct sequences rather than alternative predictions of one protein. PAE and AF3-specific summary metrics are not supplied.</p>
+</section>
+<section class="card"><h2>Tool start pages and preparation notes</h2><div id="tools"></div>
+<a href="public_links.tsv" download>Download public-link inventory TSV</a>
+<p class="note">Public services are maintained independently. Their results do not replace the recorded pocket ranks or saved comparison evidence. Use the offline workbench pages for a local view.</p>
+</section></main>
+<script id="external-data" type="application/json">@@DATA@@</script>
+<script>
+"use strict";
+const d=JSON.parse(document.getElementById('external-data').textContent),el=id=>document.getElementById(id);
+const records=new Map(d.records.map(r=>[r.record_id,r]));
+function node(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));return n;}
+function link(text,url,local=false){return node('a',text,local?{href:url,download:''}:{href:url,target:'_blank',rel:'noopener noreferrer'});}
+function options(select,items){select.replaceChildren();items.forEach(([value,text])=>select.append(node('option',text,{value})));}
+function secondOptions(){const prior=el('second').value,first=records.get(el('first').value),other=d.records.filter(r=>r.record_id!==first?.record_id);options(el('second'),[['','No second selection'],...other.map(r=>[r.record_id,r.label])]);el('second').value=other.some(r=>r.record_id===prior)?prior:(other.find(r=>r.sequence_id!==first?.sequence_id)||other[0])?.record_id||'';}
+function chosen(){return [records.get(el('first').value),records.get(el('second').value)].filter(Boolean);}
+function render(){
+ const selected=chosen(),scope=el('scope').value;
+ el('models').replaceChildren();el('pair-link').replaceChildren();
+ selected.forEach((r,i)=>{
+  const card=node('section',undefined,{class:'card'});
+  card.append(node('h2',(i?'Second: ':'First: ')+r.label),node('p',r.record_id,{class:'id'}));
+  card.append(node('p','Saved input scope: '+r.input_scope+' · FASTA ID: '+(r.sequence_id||'unavailable'),{class:'note'}));
+  if(r.model_href){card.append(link('Download saved model PDB',r.model_href,true),link('Open Protein Imager for this saved file',d.resources.find(t=>t.name==='Protein Imager').url),link('Open Mol* for this saved file',d.resources.find(t=>t.name==='Mol* Viewer').url));}
+  else card.append(node('p','No saved structure is available for this record.',{class:'note'}));
+  if(r.residue_href)card.append(link('Download matching pocket-residue TSV',r.residue_href,true));
+  if(r.public_links.molstar){
+   card.append(link('Open in Mol* (database model)',r.public_links.molstar),link('Open AlphaFold Database',r.public_links.alphafold));
+   card.append(node('p','Public accession '+r.canonical_accession+'; this is a database model, not the saved de novo structure.',{class:'note'}));
+  }else card.append(node('p','No supported canonical UniProt accession is supplied. Use the exact local files and the tool start pages.',{class:'note'}));
+  el('models').append(card);
+ });
+ if(selected.length===2&&selected[0].canonical_accession&&selected[1].canonical_accession&&selected[0].canonical_accession!==selected[1].canonical_accession){
+  const query=new URLSearchParams({seqA:selected[0].canonical_accession,seqB:selected[1].canonical_accession,alpha:'0.75',delta:'8'});
+  el('pair-link').append(link('Open selected pair in EMERALD',d.emerald_url+'?'+query));
+ }else if(selected.length===2){el('pair-link').append(link('Open EMERALD for FASTA upload',d.emerald_url));}
+ const missing=selected.filter(r=>!r[scope]?.sequence);
+ el('fasta').disabled=!selected.length||Boolean(missing.length);
+ el('sequence-status').textContent=missing.length?missing.map(r=>r[scope]?.reason||'Sequence unavailable').join(' '):selected.map(r=>r.label+': '+r[scope].sequence.length+' residues ('+r[scope].source+')').join(' · ');
+ const pair=new Set(selected.map(r=>r.sample_id));
+ const fits=d.fits.filter(f=>selected.length===2&&pair.size===2&&pair.has(f.reference)&&pair.has(f.mobile));
+ el('saved').hidden=!fits.length;
+ const previous=el('fit').value;
+ options(el('fit'),[['','Choose a recorded fit'],...fits.map(f=>[f.comparison_id,f.label])]);
+ el('fit').value=fits.some(f=>f.comparison_id===previous)?previous:'';
+ fitFiles();
+ window.externalLinksReady=true;
+}
+function fitFiles(){el('fit-files').replaceChildren();const fit=d.fits.find(f=>f.comparison_id===el('fit').value);if(fit){el('fit-files').append(link('Download reference PDB',fit.reference_href,true),link('Download aligned mobile PDB',fit.mobile_href,true),link('Download saved fit JSON',fit.result_href,true));}}
+el('project').textContent=d.title;
+options(el('first'),d.records.map(r=>[r.record_id,r.label]));secondOptions();
+el('first').onchange=()=>{secondOptions();render();};['second','scope'].forEach(id=>el(id).onchange=render);el('fit').onchange=fitFiles;
+el('fasta').onclick=()=>{
+ const scope=el('scope').value,clean=v=>String(v||'').replace(/[\r\n\t>]+/g,' ');
+ const text=chosen().map((r,i)=>{
+  const input=r[scope],header=(i?'second':'first')+'|'+r.record_id+' sequence_id='+r.sequence_id+' scope='+input.source+' input_scope='+r.input_scope;
+  return '>'+clean(header)+'\n'+input.sequence.match(/.{1,80}/g).join('\n')+'\n';
+ }).join('');
+ const href=URL.createObjectURL(new Blob([text],{type:'text/plain'})),a=link('FASTA',href,true);a.download=chosen().length===2?'selected_pair.fasta':'selected_sequence.fasta';a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);
+};
+d.resources.forEach(r=>{const item=node('div');item.append(link(r.name,r.url),node('p',r.purpose+' '+r.preparation,{class:'note'}));el('tools').append(item);});
+d.groups.forEach(g=>el('groups').append(link(g.name,g.href,true)));
+if(d.groups.length)el('groups').append(link('Open Multi-Model Inspector for ZIP upload',d.resources.find(r=>r.name==='AlphaFold 3 Multi-Model Inspector').url));
+if(!d.groups.length)el('groups').append(node('p','No model-group ZIP was prepared.',{class:'note'}));
+render();
+</script></body></html>

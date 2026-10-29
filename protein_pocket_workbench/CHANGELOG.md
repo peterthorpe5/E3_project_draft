@@ -1,3 +1,23 @@
+# 1.4.0 — 28 October 2026
+
+- Added Pocket conservation with separate position, fold and combined lining
+  decisions, threshold checks, centroid/overlap metrics, matched-CA distance
+  summaries and exact-pair 3D navigation.
+- Added alignment-quality panels with RMSD, aligned CA count, both TM-scores,
+  both selected-input coverages and explicit scope. Missing and zero-match
+  residue records remain distinct.
+- Added E3-style External links for Protein Imager, Mol*, AlphaFold Database,
+  EMERALD and Multi-Model Inspector, with validated populated accession links.
+- Added exact scoped FASTA, full PDB/mmCIF and pocket-residue downloads, plus
+  audited local-model ZIPs that can reuse a saved alignment.
+- Added independent model-set controls, stale-download invalidation and
+  checksum-verified individual model extraction.
+- Added external-tool and per-fit conservation pages to new portable reviews.
+- Added focused methods, glossary/help and guides. Existing native resources
+  open without prediction/fitting/sequence reruns or a DuckDB rebuild.
+- Scientific prediction/preparation/fitting code, environments and Slurm scripts
+  remain unchanged. Keep active/resumable HPC jobs on their existing release.
+
 # 1.3.0 — 28 October 2026
 
 - Reworked 3D defaults around one selected pocket: pale background, muted local

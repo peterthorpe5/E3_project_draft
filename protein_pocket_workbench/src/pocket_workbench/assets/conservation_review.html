@@ -1,0 +1,95 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pocket conservation and alignment quality</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f2f6fa;color:#193b50;font:14px system-ui,sans-serif}
+header{padding:22px;background:#12394e;color:white}h1{font-size:23px;margin:0 0 7px}
+main{max-width:1500px;margin:auto;padding:18px}.card{background:white;border:1px solid #d4e1eb;border-radius:8px;padding:18px;margin-bottom:15px;overflow:auto}
+h2{font-size:18px;margin:0 0 12px}.grid{display:flex;gap:12px;flex-wrap:wrap}.metric{flex:1;min-width:160px;padding:12px;border:1px solid #dce5ed;border-radius:6px;margin-bottom:10px}.value{font-size:24px;font-weight:650;margin-top:6px}.note{font-size:12px;color:#526f80;line-height:1.6}
+.decision{min-width:220px}.pass{background:#e4f3ee;color:#155c47}.fail{background:#fff0dd;color:#7d410c}.unknown{background:#edf1f5;color:#425b6b}
+select,button,a.action{font:inherit;padding:9px;border:1px solid #aac1d0;border-radius:5px;color:#0c537a;background:white;max-width:100%;margin:5px 8px 8px 0}
+select{width:100%;display:block}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}a{color:#0c638e}a.action{display:inline-block;text-decoration:none}
+table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;border-bottom:1px solid #dee8ef;padding:9px;vertical-align:top}th{background:#e9f1f6}
+#distance-chart svg{width:100%;height:270px}.warning{padding:10px;background:#fff0dd;border-radius:5px;line-height:1.5;margin:10px 0}
+[hidden]{display:none!important}select:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #319ac6;outline-offset:2px}
+</style></head><body><header><h1>Pocket conservation and alignment quality</h1><div id="names"></div></header>
+<main><section class="card">
+<a href="../../index.html">Return to the complete review</a>
+<p class="note">These metrics reuse the saved structural fit and pocket matches. The conservation rule combines position, fold, mutual-nearest lining matches and chemical-group agreement. It is computational evidence, not binding validation.</p>
+<label for="pair">Pocket pair to inspect</label><select id="pair"></select>
+<p id="pair-note" class="note"></p><a id="three-d" class="action">Open this pocket pair in 3D</a>
+<button id="metrics-download">Download selected-pair metrics TSV</button>
+<div id="decisions" class="grid"></div><div id="position-metrics" class="grid"></div><div id="consistency"></div>
+</section>
+<section class="card"><h2>Alignment quality</h2><div id="quality" class="grid"></div><p id="scope" class="note"></p><p id="quality-note" class="note"></p></section>
+<section class="card"><h2>Why each rule passes or fails</h2><div id="checks"></div></section>
+<section class="card"><h2>Matched lining-residue distances</h2><div id="distance-metrics" class="grid"></div><div id="distance-chart"></div>
+<p id="distance-note" class="note"></p><p class="note">Distances cover saved mutual-nearest Cα matches within the recorded radius. They do not cover unmatched residues or represent a cavity-volume overlap.</p>
+<button id="residue-download">Download all saved matched residue pairs TSV</button><div id="residues"></div></section>
+</main><script id="conservation-data" type="application/json">@@DATA@@</script>
+<script>
+"use strict";
+const d=JSON.parse(document.getElementById('conservation-data').textContent),el=id=>document.getElementById(id),ns='http://www.w3.org/2000/svg';
+function node(tag,text,attrs={}){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));return n;}
+function finite(v){return typeof v==='number'&&Number.isFinite(v);}
+function number(v,digits=3){return finite(v)?v.toFixed(digits):'Unavailable';}
+function percent(v){return finite(v)?(v*100).toFixed(1)+'%':'Unavailable';}
+function decision(v){return v===true?'Meets recorded rule':v===false?'Does not meet recorded rule':'Not assessed';}
+function metric(parent,title,value,cls=''){const card=node('div',undefined,{class:'metric '+cls});card.append(node('div',title),node('div',value,{class:'value'}));parent.append(card);}
+function table(parent,rows,keys){const table=node('table'),head=node('tr');keys.forEach(k=>head.append(node('th',k.replaceAll('_',' '))));table.append(head);rows.forEach(r=>{const tr=node('tr');keys.forEach(k=>tr.append(node('td',r[k]===null||r[k]===undefined?'Unavailable':typeof r[k]==='boolean'?r[k]?'Yes':'No':k==='ca_distance'&&finite(r[k])?r[k].toFixed(3):String(r[k]))));table.append(tr);});parent.append(table);}
+function exportTSV(rows,name){
+ const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))],safe=v=>String(v??'').replace(/[\t\r\n]/g,' ');
+ const text=[keys.join('\t'),...rows.map(r=>keys.map(k=>safe(r[k])).join('\t'))].join('\n')+'\n';
+ const href=URL.createObjectURL(new Blob([text],{type:'text/tab-separated-values'})),a=node('a',undefined,{href,download:name});a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);
+}
+function plot(rows,radius){
+ const valid=rows.filter(r=>finite(r.ca_distance)&&r.ca_distance>=0),svg=document.createElementNS(ns,'svg');
+ svg.setAttribute('viewBox','0 0 1000 270');const top=Math.max(1e-6,...valid.map(r=>r.ca_distance),finite(radius)?radius:0)*1.05;
+ function shape(tag,attrs){const n=document.createElementNS(ns,tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));svg.append(n);return n;}
+ for(let j=0;j<=4;j++){const y=225-195*j/4;shape('line',{x1:65,x2:975,y1:y,y2:y,stroke:'#dde7ef'});const text=shape('text',{x:5,y:y+4,fill:'#526e7f','font-size':12});text.textContent=(top*j/4).toFixed(2);}
+ if(finite(radius)){const y=225-radius/top*195;shape('line',{x1:65,x2:975,y1:y,y2:y,stroke:'#a36f00','stroke-dasharray':'5,4'});const t=shape('text',{x:70,y:Math.max(16,y-7),fill:'#805600','font-size':12});t.textContent='Recorded match radius '+radius+' Å';}
+ valid.forEach((r,i)=>{const x=70+900*i/Math.max(1,valid.length-1),y=225-r.ca_distance/top*195,c=shape('circle',{cx:x,cy:y,r:4,fill:r.residue_identity===true?'#0072B2':r.residue_identity===false?'#D55E00':'#65798A'});const title=document.createElementNS(ns,'title');title.textContent=r.reference_residue+' → '+r.mobile_residue+' · '+r.ca_distance.toFixed(3)+' Å';c.append(title);});
+ const axis=shape('text',{x:450,y:260,fill:'#526e7f','font-size':13});axis.textContent='Saved matched residue pairs';el('distance-chart').append(svg);
+}
+function selected(){return d.pairs[Number(el('pair').value)]||null;}
+function render(){
+ const pair=selected(),review=pair?.review,row=pair?.row;
+ ['decisions','position-metrics','checks','distance-metrics','distance-chart','residues','consistency'].forEach(id=>el(id).replaceChildren());
+ el('pair-note').textContent=pair?(row.original_rank_one_pair?'This is the original rank-one pair.':'This is an alternative pair; its metrics do not replace the original rank-one conclusion.'):'No pocket pair was tested in this saved fit. Position and conservation remain unassessed.';
+ const params=pair?'?'+new URLSearchParams({'reference-pocket':row.reference_pocket,'mobile-pocket':row.mobile_pocket}):'';
+ el('three-d').href='viewer.html'+params;
+ el('metrics-download').disabled=!pair;el('residue-download').disabled=!pair||!Array.isArray(pair.residues)||!pair.residues.length;
+ for(const [title,key] of [['Pocket position','position_supported'],['Fold support','fold_supported'],['Conservation rule','conservation_supported']]){
+  const value=review?.[key];metric(el('decisions'),title,decision(value),'decision '+(value===true?'pass':value===false?'fail':'unknown'));
+ }
+ if(!pair){el('distance-note').textContent='Residue-level pocket distances are unassessed.';return;}
+ metric(el('position-metrics'),'Pocket centroid separation (Å)',number(row.centroid_distance));
+ metric(el('position-metrics'),'Symmetric lining Cα overlap',percent(row.symmetric_overlap));
+ metric(el('position-metrics'),'Reference lining within radius',percent(row.reference_fraction));
+ metric(el('position-metrics'),'Compared lining within radius',percent(row.mobile_fraction));
+ metric(el('position-metrics'),'Mutual-nearest lining match',percent(row.mutual_match_fraction));
+ metric(el('position-metrics'),'Pocket residue identity',percent(row.residue_identity_fraction));
+ metric(el('position-metrics'),'Chemical-group agreement',percent(row.chemical_group_conservation));
+ table(el('checks'),review.checks.map(c=>({...c,value:typeof c.value==='boolean'?c.value:number(c.value),threshold:typeof c.threshold==='boolean'?c.threshold:number(c.threshold),passes:c.passes===true?'Pass':c.passes===false?'Does not pass':'Not assessed'})),['criterion','value','rule','threshold','passes']);
+ for(const note of review.consistency_notes)el('consistency').append(node('p',note,{class:'warning'}));
+ metric(el('distance-metrics'),'Saved matched pairs',finite(review.matched_pairs)?String(review.matched_pairs):'Unavailable');
+ for(const [title,key] of [['Mean Cα distance (Å)','mean_ca_distance'],['Median Cα distance (Å)','median_ca_distance'],['Maximum Cα distance (Å)','maximum_ca_distance']])metric(el('distance-metrics'),title,number(review[key]));
+ const rows=Array.isArray(pair.residues)?pair.residues:[];
+ if(review.distance_status==='available')plot(rows,review.fit.thresholds.radius);
+ el('distance-note').textContent=review.distance_status==='recorded_empty'?'The saved result records no matched lining-residue pairs within its radius.':review.distance_status!=='available'?'Usable residue-level distances were not supplied.':rows.length+' saved matched pairs; '+review.omitted_distances+' omitted from distance statistics. Blue: same amino acid; orange: different; grey: identity unassessed.';
+ if(rows.length){table(el('residues'),rows.slice(0,100),['reference_residue','mobile_residue','reference_fasta_position','mobile_fasta_position','ca_distance','residue_identity','chemical_group_match']);if(rows.length>100)el('residues').prepend(node('p','First 100 rows shown; the TSV retains every saved pair.',{class:'note'}));}
+ window.conservationReviewReady=true;
+}
+el('names').textContent=d.reference+' ← '+d.mobile;
+for(const [title,key,fraction] of [['RMSD of aligned Cα (Å)','rmsd',false],['Aligned Cα pairs','aligned_atoms',false],['Reference input coverage','reference_coverage',true],['Compared input coverage','mobile_coverage',true],['Reference-normalised TM-score','tm_reference',false],['Compared-normalised TM-score','tm_mobile',false],['Minimum TM-score','minimum_tm',false]]){
+ metric(el('quality'),title,fraction?percent(d.fit[key]):number(d.fit[key],key==='aligned_atoms'?0:3));
+}
+el('scope').textContent=d.fit.engine+' · recorded scope: '+d.fit.scope+'. Coverage refers to the selected fit inputs; RMSD refers only to aligned Cα pairs. Retained-region coverage is not whole-protein coverage.';
+el('quality-note').textContent=d.fit.minimum_tm===null?'No TM-score was supplied; fold and combined conservation remain unassessed.':d.fit.fold_supported===false?'Minimum TM-score is below its saved threshold. Nearby pockets under this weak fit are insufficient evidence of conservation.':'Compare TM-score, aligned length and both coverages together; a small RMSD alone is insufficient.';
+if(d.fit.legacy_thresholds.length)el('quality-note').textContent+=' Established legacy defaults supply missing thresholds: '+d.fit.legacy_thresholds.join(', ')+'.';
+d.pairs.forEach((p,i)=>el('pair').append(node('option','Reference rank '+(p.row.reference_rank??'unreported')+' (pocket '+p.row.reference_pocket+') / compared rank '+(p.row.mobile_rank??'unreported')+' (pocket '+p.row.mobile_pocket+')'+(p.row.original_rank_one_pair?' · original rank-one pair':' · alternative pair'),{value:i})));
+el('pair').disabled=!d.pairs.length;el('pair').onchange=render;
+el('metrics-download').onclick=()=>{const p=selected();if(p)exportTSV([{comparison_id:d.comparison_id,reference:d.reference,mobile:d.mobile,...p.row,rmsd:d.fit.rmsd,aligned_atoms:d.fit.aligned_atoms,tm_reference:d.fit.tm_reference,tm_mobile:d.fit.tm_mobile,minimum_tm:d.fit.minimum_tm,reference_coverage:d.fit.reference_coverage,mobile_coverage:d.fit.mobile_coverage,engine:d.fit.engine,scope:d.fit.scope}],'selected_pocket_conservation.tsv');};
+el('residue-download').onclick=()=>{const p=selected();if(p)exportTSV(p.residues,'saved_pocket_residue_pairs.tsv');};
+render();window.conservationReviewReady=true;
+</script></body></html>

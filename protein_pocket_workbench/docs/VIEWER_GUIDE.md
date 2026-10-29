@@ -1,8 +1,11 @@
 # Reading structures, pockets and evidence
 
-Version 1.3.0 improves presentation using saved evidence. Predictions, pocket
+Version 1.4.0 adds focused conservation and external-tool pages while retaining the 1.3.0 pocket-viewer improvements. It uses saved evidence. Predictions, pocket
 ranks, coordinates and fitted transforms are unchanged. The same viewer works
 with original full-length resources and finished quality-rerun resources.
+
+See [Pocket conservation](POCKET_CONSERVATION.md) for distances and alignment quality,
+and [External tools](EXTERNAL_TOOLS.md) for populated links and exact downloads.
 
 ## Finding and inspecting a pocket
 

@@ -46,3 +46,18 @@ Third-party pocket predictions in these integration tests are explicitly
 synthetic fixtures. The biological data and predictor binaries are not fabricated
 or described as having been run.
 
+
+# External links and conservation review (1.4.0)
+
+`test_external_tools.py` checks canonical URL contracts, exact scoped FASTA,
+complete atomic exports, author/tool residue labels, original ranks, coordinate
+frames, hashes and invalid/missing inputs. UI tests cover context hand-offs,
+independent model sets, stale-download invalidation and failure clearing.
+`test_conservation_review.py` checks position/fold/lining separation, actual
+thresholds, missing versus empty residue data, invalid metrics and exact-pair
+3D navigation. Portable tests verify all local targets. Real Chromium tests
+operate the offline external page and conservation-to-3D links with HTTP blocked.
+
+Run the full browser-enabled suite with
+`POCKET_WORKBENCH_BROWSER_TESTS=1 python -m pytest tests -q`.
+Optional real-aligner tests require the binaries described in VALIDATION.md.

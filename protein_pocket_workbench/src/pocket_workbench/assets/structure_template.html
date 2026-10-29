@@ -78,6 +78,13 @@ details{font-size:12px;margin-top:10px}summary{cursor:pointer;font-weight:600}de
 "use strict";
 const data=JSON.parse(document.getElementById('structure-data').textContent);
 const models=data.models,el=id=>document.getElementById(id);
+// A local conservation report may select an existing saved fpocket pair by ID.
+const pairQuery=new URLSearchParams(window.location.search);
+models.forEach((model,index)=>{
+  const requested=pairQuery.get(index===0?'reference-pocket':'mobile-pocket');
+  const pocket=(model.pockets||[]).find(p=>p.method==='fpocket'&&String(p.pocket_id)===requested);
+  if(pocket){model.initial_pocket=pocket.pocket_id;model.initial_method='fpocket';}
+});
 const palette=['#D55E00','#0072B2','#009E73','#9B3C86','#A36F00','#CC4778','#386A20','#5947B1'];
 const modelColours=['#0072B2','#D55E00'];
 let viewer,spinning=false,focused=[],pickedLabel=null,renderToken=0;

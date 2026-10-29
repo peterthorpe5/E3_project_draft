@@ -19,6 +19,7 @@ from pocket_workbench.annotations import (
     pocket_alignment_data,
     pocket_alignment_document,
 )
+from pocket_workbench.conservation_ui import conservation_page
 from pocket_workbench.core import (
     ComparisonSettings,
     WorkbenchError,
@@ -28,6 +29,7 @@ from pocket_workbench.core import (
 )
 from pocket_workbench.database import TABLES, pack_project, query_table, workbook_bytes
 from pocket_workbench.evidence import aligner_agreement, comparison_audit
+from pocket_workbench.external_ui import external_jump, external_page
 from pocket_workbench.groups import AF3_INSPECTOR_URL, inspector_bundle, source_link
 from pocket_workbench.help_content import field_help, glossary_rows, methods_text
 from pocket_workbench.importing import import_project, read_fasta
@@ -150,6 +152,9 @@ def show_table(
         "rank_one_conserved_both_aligners",
         "top_k_both_aligners",
         "quality_screen_pass",
+        "conservation_supported",
+        "near_cut_boundary",
+        "near_very_low_confidence",
     )
     for column in decisions:
         if column in displayed:
@@ -175,6 +180,9 @@ def show_table(
             "method": "Evidence source",
             "confidence_status": "Local pocket confidence",
             "rank_one_position": "Rank-one position",
+            "reference_rank": "Original reference rank",
+            "mobile_rank": "Original compared rank",
+            "conservation_supported": "Conservation rule met",
             "rank_one_position_and_fold": "Rank-one position + fold",
             "rank_one_conserved": st.column_config.TextColumn(
                 "Rank-one lining + fold",
@@ -567,6 +575,7 @@ def model_page(*, root: Path, data: dict) -> None:
                 file_name=selected + "_pockets.html",
                 mime="text/html",
             )
+            external_jump(key="model_external_tools", first="model:" + selected)
     st.subheader("Ranked pocket evidence")
     show_table(
         rows=[{key: row.get(key) for key in columns} for row in pockets],
@@ -1045,6 +1054,10 @@ def comparison_page(*, root: Path, data: dict) -> None:
             rows=compact, key="pocket_matches", glossary_term="Position supported"
         )
     match = None
+    requested_pair = st.session_state.pop("requested_pocket_pair", None)
+    if st.session_state.get("comparison_pocket_context") != result["comparison_id"]:
+        st.session_state["comparison_pocket_pair"] = 0
+        st.session_state["comparison_pocket_context"] = result["comparison_id"]
     if matches:
         if not any(
             ranks.get((result["reference"], m["reference_pocket"]))
@@ -1066,10 +1079,18 @@ def comparison_page(*, root: Path, data: dict) -> None:
                 f"overlap {row['symmetric_overlap']:.2f} · "
                 f"{row['centroid_distance']:.2f} Å"
             )
+        if requested_pair is not None:
+            for pair_index, row in enumerate(matches):
+                if (row["reference_pocket"], row["mobile_pocket"]) == requested_pair:
+                    st.session_state["comparison_pocket_pair"] = pair_index
+                    break
+        if st.session_state.get("comparison_pocket_pair") not in range(len(matches)):
+            st.session_state["comparison_pocket_pair"] = 0
         index = st.selectbox(
             "Pocket pair to inspect in 3D",
             range(len(matches)),
             format_func=lambda i: pair_labels[i],
+            key="comparison_pocket_pair",
         )
         match = matches[index]
     else:
@@ -1078,6 +1099,17 @@ def comparison_page(*, root: Path, data: dict) -> None:
             " inspected; choosing an independent pocket for display does not create"
             " comparison evidence."
         )
+    if st.button(
+        "Pocket conservation and alignment quality", key="comparison_conservation"
+    ):
+        st.session_state["requested_conservation"] = {
+            "comparison_id": result["comparison_id"],
+            "pair": (
+                (match["reference_pocket"], match["mobile_pocket"]) if match else None
+            ),
+        }
+        st.session_state["pending_navigation"] = "Pocket conservation"
+        st.rerun()
     reference_model = next(
         row for row in data["models"] if row["sample_id"] == result["reference"]
     )
@@ -1137,6 +1169,12 @@ def comparison_page(*, root: Path, data: dict) -> None:
         file_name=result["comparison_id"] + ".json",
     )
     with st.expander("Use another structure viewer"):
+        external_jump(
+            key="comparison_external_tools",
+            first="model:" + result["reference"],
+            second="model:" + result["mobile"],
+            comparison=result["comparison_id"],
+        )
         st.link_button(
             "Open Mol* for local-file viewing", "https://molstar.org/viewer/"
         )
@@ -1156,6 +1194,9 @@ def sequence_page(*, root: Path, data: dict, workspace: Path) -> None:
         workspace: User's import parent.
     """
     st.header("Sequence alignment and trees")
+    external_jump(
+        key="sequence_external_tools", label="External links and exact sequence inputs"
+    )
     st.markdown(
         "Select representative FASTA records rather than individual prediction"
         " replicates. FAMSA runs locally; MAFFT is available when installed. The"
@@ -1590,6 +1631,13 @@ def evidence_page(*, root: Path, data: dict) -> None:
         st.session_state["requested_comparison"] = scoped[selected_fit]["comparison_id"]
         st.session_state["pending_navigation"] = "Compare structures"
         st.rerun()
+    if st.button("Open conservation detail", key="evidence_conservation"):
+        st.session_state["requested_conservation"] = {
+            "comparison_id": scoped[selected_fit]["comparison_id"],
+            "pair": None,
+        }
+        st.session_state["pending_navigation"] = "Pocket conservation"
+        st.rerun()
     with st.expander("Complete audit records and settings"):
         show_table(rows=scoped, key="structural_audit_raw", readable_ids=False)
     with st.expander(
@@ -1734,6 +1782,7 @@ def group_page(*, root: Path, data: dict) -> None:
                 ]
                 st.session_state["pending_navigation"] = "Compare structures"
                 st.rerun()
+    external_jump(key="group_external_tools", group=selected)
     st.subheader("Open the external model comparison source")
     st.link_button("Open AlphaFold 3 Multi-Model Inspector", AF3_INSPECTOR_URL)
     selected_models = st.multiselect(
@@ -1885,6 +1934,27 @@ def documentation_page() -> None:
         show_table(rows=glossary_rows(), key="glossary")
     with questions:
         for title, explanation in [
+            (
+                "Where can I see whether the pockets align or are conserved?",
+                (
+                    "Open Pocket conservation, select a saved fit and pocket pair,"
+                    " and read the separate position, fold and conservation cards."
+                    " Threshold checks explain each result. Centroid and matched"
+                    " residue distances sit beside RMSD, aligned CA count, both"
+                    " TM-scores and both input coverages. Missing evidence stays"
+                    " unassessed; an alternative does not replace rank one."
+                ),
+            ),
+            (
+                "How do I use the external viewers with these models?",
+                (
+                    "Open External links. Download exact local FASTA or saved atomic"
+                    " models and matching pocket residue TSVs, then load them in the"
+                    " destination viewer. Supported UniProt accessions provide"
+                    " populated database links. Inspector ZIP preparation reuses"
+                    " local models and can retain an existing saved alignment."
+                ),
+            ),
             (
                 "How can I make a pocket stand out?",
                 (
@@ -2089,8 +2159,10 @@ def main() -> None:
                 "Models & pockets",
                 "Input quality",
                 "Compare structures",
+                "Pocket conservation",
                 "Structural evidence",
                 "HOG / model groups",
+                "External links",
                 "Alignment & trees",
                 "Jobs",
                 "Methods & glossary",
@@ -2130,10 +2202,14 @@ def main() -> None:
             quality_page(root=root, data=data)
         elif page == "Compare structures":
             comparison_page(root=root, data=data)
+        elif page == "Pocket conservation":
+            conservation_page(root=root, data=data, render_table=show_table)
         elif page == "Structural evidence":
             evidence_page(root=root, data=data)
         elif page == "HOG / model groups":
             group_page(root=root, data=data)
+        elif page == "External links":
+            external_page(root=root, data=data)
         elif page == "Alignment & trees":
             sequence_page(root=root, data=data, workspace=workspace)
         elif page == "Jobs":

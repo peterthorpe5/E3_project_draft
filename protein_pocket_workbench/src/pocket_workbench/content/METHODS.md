@@ -1,4 +1,4 @@
-# Protein pocket workbench 1.3.0: methods
+# Protein pocket workbench 1.4.0: methods
 
 ## Scope and inputs
 
@@ -273,6 +273,43 @@ The app opens in browsing mode; local workers require explicit operator opt-in.
 Final review ZIPs contain offline viewers, annotated alignments, Excel, DuckDB
 and a reusable app resource. Only external source/Inspector links require a
 network connection.
+
+## Pocket conservation review and external tools
+
+The conservation page separates recorded pocket-position and fold flags from
+the existing combined conservation rule: position and fold support, sufficient
+mutual-nearest lining match fraction and sufficient chemical-group agreement.
+Exact residue identity and sequence Jaccard are descriptive, not extra binary
+gates. Missing required values remain unassessed. Alternatives retain original
+ranks and never replace the original rank-one conclusion.
+
+Alignment quality includes RMSD, aligned CA pairs, both normalised TM-scores,
+their minimum, both selected-input coverages and recorded scope. Mean, median
+and maximum distances summarise saved mutual-nearest lining CA pairs already
+admitted within the matching radius. Empty and absent distance records are
+distinct. No prediction or structural fit is recomputed. Threshold checks use
+saved settings; established defaults for missing legacy fields are identified
+explicitly, while invalid recorded thresholds remain unavailable.
+
+External links follow the E3-supported Mol*, AlphaFold Database, EMERALD,
+Protein Imager and Multi-Model Inspector hand-offs. Populated database links
+require an explicit canonical UniProt accession; local/RefSeq/isoform IDs are
+not silently rewritten. Public database models/sequences can differ from the
+saved de novo inputs. Local coordinate and residue TSV downloads retain exact
+prepared tool numbering and available author/FASTA mappings. FASTA exports
+distinguish model inputs from full representatives.
+
+Compatibility ZIPs retain model hashes, original pocket ranks, exact available
+input sequences and a coordinate-frame audit. An explicitly selected saved fit
+reuses its recorded transformed mobile; no new fitting is run. No replacement
+database models are fetched and no local files are automatically uploaded.
+Missing PAE/AF3 metrics remain unknown. Users load downloaded files manually.
+External results do not change the recorded project evidence.
+
+New offline reviews include external-tool and per-fit conservation pages,
+linked to the exact selected pocket IDs in the local 3D viewer. Existing native
+resources require no DuckDB rebuild or analysis rerun. Previously exported HTML
+needs a new review export, which reuses saved evidence.
 
 ## References and implementation sources
 

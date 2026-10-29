@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "protein-pocket-workbench"
-version = "1.3.0"
+version = "1.4.0"
 description = "Local sequence, structure and pocket comparison for any protein project"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -44,7 +44,7 @@ select = ["E", "F", "I"]
 [tool.coverage.run]
 branch = true
 source = ["pocket_workbench"]
-omit = ["*/ui.py", "*/_pipeline/*", "*/__main__.py"]
+omit = ["*/ui.py", "*/external_ui.py", "*/conservation_ui.py", "*/_pipeline/*", "*/__main__.py"]
 
 [tool.coverage.report]
 show_missing = true
