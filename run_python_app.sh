@@ -15,7 +15,7 @@ LOCAL_REPO="/Users/PThorpe001/github_repos/E3_project_draft"
 cd "${LOCAL_REPO}/e3_python_app"
 
 
-LOCAL_PARENT_ROOT="/Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_top200_v0_14_0_20260805"
+LOCAL_PARENT_ROOT="/Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_all1972_v0_16_0_20260909"
 
 LOCAL_EXTENSION_ROOT="/Users/PThorpe001/e3_app_cache/grant_human_plant_structural_top200_v0_16_0_20260826"
 
@@ -27,7 +27,7 @@ LOCAL_COMBINED_REVIEW="${LOCAL_EXTENSION_ROOT}/pocket_review"
 
 
 ./run_e3_python_app.sh \
-  --resource-duckdb "${LOCAL_DB}" \
+  --resource-duckdb /Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_all1972_v0_16_0_20260909/duckdb/e3_integrated_resource.duckdb \
   --pocket-review-dir "${LOCAL_PLANT_REVIEW}" \
   --human-plant-review-dir "${LOCAL_COMBINED_REVIEW}" \
   --max-rows 1000 \
