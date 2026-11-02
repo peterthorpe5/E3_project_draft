@@ -82,7 +82,7 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
         try {
           window.proteinMSA = window.ReactMSAView.mount(document.getElementById('viewer'),
               {msa:data.msa, tree:data.tree || undefined, height:680, colorScheme:'clustal'});
-          document.getElementById('status').textContent='JBrowse MSA · alignment and inferred tree';
+          document.getElementById('status').textContent='JBrowse MSA · alignment and selected tree';
         } catch(error) {
           document.getElementById('status').textContent='Viewer error: '+error.message;
         }

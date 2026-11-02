@@ -247,6 +247,22 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
     output = job_directory(workspace=config.workspace, job_id=str(job["job_id"]))
     parameters = job["parameters"]
     operation = job["operation"]
+    if operation == "compare":
+        from .comparison_jobs import compare_job
+
+        return compare_job(config=config, parameters=parameters, output=output)
+    if operation == "deepclust_map":
+        from .campaign import run_campaign
+
+        return run_campaign(config=config, parameters=parameters, output=output)
+    if operation == "deepclust_retrieve":
+        from .remote import exchange
+
+        return exchange(
+            config=config, request={"operation": "retrieve", "cluster_ids": parameters.get(
+                "cluster_ids",
+            )}, output=output, transport=str(parameters.get("transport", "")),
+        )
     if operation == "resolve":
         identifiers = parameters.get("identifiers")
         if not isinstance(identifiers, list) or any(
@@ -289,7 +305,14 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
             expected_members=parameters.get("expected_members"),
         )
     if operation == "subcluster":
-        return subcluster(config=config, source=source, output=output, parameters=parameters)
+        from .taxonomy import subcluster_species
+
+        result = subcluster(config=config, source=source, output=output, parameters=parameters)
+        result.update(subcluster_species(
+            config=config, membership=result["membership.tsv"], source=source,
+            source_job=str(parameters.get("source_job", "")), output=output,
+        ))
+        return result
     if operation == "align":
         membership = None
         if parameters.get("subcluster_id"):
@@ -305,17 +328,28 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
             parameters=parameters,
             membership=membership,
         )
+        from .taxonomy import reviewed_metadata
+        from .common import write_tsv
+
+        metadata = reviewed_metadata(
+            config=config, source=output / "sequences.fasta",
+            source_job=str(parameters.get("source_job", "")),
+        )
+        metadata_path = output / "member_taxonomy.tsv"
+        write_tsv(
+            path=metadata_path,
+            rows=[{"sequence_id": identifier, **record} for identifier, record in metadata.items()],
+            columns=("sequence_id", "species", "taxon_id"),
+        )
+        result[metadata_path.name] = metadata_path
         if "tree.nwk" in result:
             from .analysis import auspice_dataset
 
-            metadata = family_metadata(
-                config=config,
-                source=output / "sequences.fasta",
-                subcluster_id=str(parameters.get("subcluster_id", "")),
-            )
             dataset = auspice_dataset(
                 newick=result["tree.nwk"].read_text(encoding="utf-8"),
-                metadata=metadata,
+                metadata={identifier: {
+                    **record, "subcluster_id": str(parameters.get("subcluster_id", "")),
+                } for identifier, record in metadata.items()},
                 title="Protein family phylogeny",
             )
             atomic_json(path=output / "auspice.json", value=dataset)

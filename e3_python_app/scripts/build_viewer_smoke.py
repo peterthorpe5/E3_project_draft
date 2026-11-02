@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from e3app.research.viewers import viewer_document
+from e3app.research.species_tree import species_display_tree
 
 
 def main(*, argv: Sequence[str] | None = None) -> int:
@@ -37,6 +38,19 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         (output / f"{viewer}.html").write_text(
             viewer_document(viewer=viewer, payload=payload), encoding="utf-8"
         )
+    (output / "nightingale-recorded.html").write_text(
+        viewer_document(viewer="nightingale", payload={
+            **payload, "sequence": "", "length": 100,
+            "coordinate_scope": "Recorded annotation coordinates; amino-acid sequence not verified",
+        }), encoding="utf-8",
+    )
+    species, _audit = species_display_tree(
+        newick="(Human:1,Plant:1);", sequence_ids=["query", "member"],
+        metadata={"query": {"species": "Human"}, "member": {"species": "Plant"}},
+    )
+    (output / "jbrowse-species.html").write_text(
+        viewer_document(viewer="jbrowse", payload={**payload, "tree": species}), encoding="utf-8",
+    )
     return 0
 
 

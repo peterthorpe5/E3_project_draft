@@ -219,9 +219,11 @@ def test_cli_import_to_analysis_handoff_without_deepclust(exported_cluster, tmp_
     def fake_alignment(*, config, source, output, parameters, membership):
         assert source == fasta
         assert len(dict(iter_fasta(path=source))) == 3
-        result = output / "alignment.fa"
+        result = output / "alignment.fasta"
         result.write_bytes(source.read_bytes())
-        return {result.name: result}
+        sequences = output / "sequences.fasta"
+        sequences.write_bytes(source.read_bytes())
+        return {result.name: result, sequences.name: sequences}
 
     monkeypatch.setattr(runner, "align_family", fake_alignment)
     alignment = submit_job(

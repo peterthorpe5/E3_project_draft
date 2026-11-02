@@ -4,6 +4,25 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.22.0
+
+- Adds a dedicated DeepClust workbench and complete Top-N published primary-group
+  mapping inputs, preserving one-to-many, unmatched and unindexed results.
+- Adds a read-only CLI exchange over the existing SSH alias or mounted worker,
+  with request-bound inventories, byte limits and artifact checksum verification.
+- Connects retrieval to adjustable DIAMOND subclustering, MAFFT and FastTree.
+  Reviewed taxonomy follows retrieval and subcluster ancestry.
+- Adds pairwise identity and taxon-Jaccard heatmaps, exact denominators,
+  average-linkage display hierarchies, size/taxonomy summaries and species Venn.
+- Adds reviewed species backbones to JBrowse MSA, with exact protein mappings
+  and explicit within-species display polytomies.
+- Shares a Nightingale protein feature browser between candidate discovery and
+  DeepClust. Historical features retain their recorded coordinate scope.
+- Adds pasted FASTA and shared InterProScan, eggNOG-mapper and ESMFold routes.
+  Remote InterProScan submits one protein per service request sequentially.
+- Fixes Nightingale zoom attributes/events, adds SciPy and expands synthetic
+  real-tool, behavioural, scientific and browser checks.
+
 ## v0.21.5
 
 - Includes recorded pocket residue sets, numbers, selection ranks, scores,

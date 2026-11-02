@@ -1,5 +1,16 @@
 # ARIA plant E3 Python reporter
 
+Version **0.22.0** adds **🧬 DeepClust research**: prepare complete Top-200
+E3 primary-group inputs, map through the mounted worker or existing SSH
+connection, and retrieve chosen size-ranked external clusters. Refine with
+adjustable mutual coverage, align subclusters, inspect JBrowse MSA with a
+reviewed species tree, and compare proteins/species using hierarchical
+heatmaps and species Venn diagrams. The shared **Protein feature browser**
+adds recorded E3 domains in Nightingale and access to InterProScan,
+eggNOG-mapper and ESMFold for selected/uploaded/pasted proteins. Install on
+both ends of an SSH exchange and include the new SciPy dependency. See the
+[DeepClust workbench guide](docs/DEEPCLUST_WORKBENCH.md) for setup and scope.
+
 Version **0.21.5** includes **recorded pocket inspection files** in Protein
 Imager preparation when the matching plant or human/plant review is configured.
 Download separate protein/pocket mmCIFs and exact residue/score TSVs, then load

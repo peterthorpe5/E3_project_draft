@@ -134,7 +134,10 @@ def test_input_integrity_dispatch_and_failures(
             fasta=protein_fasta.read_text(),
         )
         claimed = claim_job(workspace=config.workspace, job_id=identifier)
-        callback = Mock(return_value={"ok": protein_fasta})
+        from e3app.research import taxonomy
+
+        monkeypatch.setattr(taxonomy, "subcluster_species", lambda **_: {})
+        callback = Mock(return_value={"ok": protein_fasta, "membership.tsv": protein_fasta})
         monkeypatch.setattr(runner, function, callback)
         assert execute_job(config=config, job=claimed)["ok"] == protein_fasta
         assert callback.call_count == 1

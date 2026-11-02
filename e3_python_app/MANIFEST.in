@@ -1,0 +1,9 @@
+include CHANGELOG.md PROTEIN_RESEARCH.md environment.yml requirements*.txt
+include run_tests.sh run_e3_python_app.sh
+recursive-include config *.toml
+recursive-include docs *.md *.tsv
+recursive-include scripts *.py
+recursive-include tests *.py *.js
+recursive-include deployment *.md *.sh *.service *.conf
+recursive-include frontend *.mjs *.js *.jsx *.json *.svg
+prune frontend/node_modules

@@ -541,7 +541,7 @@ def cluster_statistics(*, config: ResearchConfig, output: Path) -> dict[str, Pat
                 WITH reviewed AS (
                     SELECT sequence_id,min(species) AS species,min(taxon_id) AS taxon_id
                     FROM taxonomy WHERE taxon_id>0 GROUP BY sequence_id
-                    HAVING count(DISTINCT taxon_id)=1
+                    HAVING count(DISTINCT taxon_id)=1 AND count(DISTINCT species)=1
                 )
                 SELECT m.cluster_id,coalesce(t.species,'UNCLASSIFIED') AS species,
                     t.taxon_id,count(*) AS member_count
@@ -549,6 +549,17 @@ def cluster_statistics(*, config: ResearchConfig, output: Path) -> dict[str, Pat
                 GROUP BY m.cluster_id,t.species,t.taxon_id ORDER BY m.cluster_id,member_count DESC
             """).write_csv(str(output / "cluster_species.tsv"), sep="\t", header=True)
             artifacts["cluster_species.tsv"] = output / "cluster_species.tsv"
+            connection.sql("""
+                WITH reviewed AS (
+                    SELECT sequence_id,min(species) AS species,min(taxon_id) AS taxon_id
+                    FROM taxonomy WHERE taxon_id>0 GROUP BY sequence_id
+                    HAVING count(DISTINCT taxon_id)=1 AND count(DISTINCT species)=1
+                )
+                SELECT m.sequence_id,m.cluster_id,coalesce(t.species,'') AS species,t.taxon_id
+                FROM retrieved_members m LEFT JOIN reviewed t USING(sequence_id)
+                ORDER BY m.sequence_id
+            """).write_csv(str(output / "member_taxonomy.tsv"), sep="\t", header=True)
+            artifacts["member_taxonomy.tsv"] = output / "member_taxonomy.tsv"
     return artifacts
 
 

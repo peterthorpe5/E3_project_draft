@@ -23,6 +23,8 @@ def test_every_top_level_tab_has_substantive_help() -> None:
         "Orthology",
         "C-terminal conservation",
         "Protein research workbench",
+        "DeepClust workbench",
+        "Protein feature browser",
         "Human HOGs",
         "Plant & human HOGs",
         "Seed & HOG explorer",

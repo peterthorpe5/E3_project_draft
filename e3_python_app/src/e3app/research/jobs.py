@@ -25,6 +25,9 @@ OPERATIONS = {
     "taxonomy_index",
     "search",
     "import_cluster",
+    "deepclust_map",
+    "deepclust_retrieve",
+    "compare",
 }
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 

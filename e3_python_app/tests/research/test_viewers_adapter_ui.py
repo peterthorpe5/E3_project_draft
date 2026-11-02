@@ -220,7 +220,7 @@ def test_ranked_e3_seed_context_and_missing_schemas(monkeypatch):
 
 
 def test_smoke_document_generator_is_reproducible(tmp_path):
-    """The shipped developer script creates all three offline synthetic documents."""
+    """The shipped script covers all viewers plus recorded coordinates and species trees."""
     import runpy
 
     script = Path(__file__).parents[2] / "scripts" / "build_viewer_smoke.py"
@@ -228,7 +228,9 @@ def test_smoke_document_generator_is_reproducible(tmp_path):
     assert main(argv=["--output", str(tmp_path)]) == 0
     assert sorted(path.name for path in tmp_path.glob("*.html")) == [
         "alignment.html",
+        "jbrowse-species.html",
         "jbrowse.html",
+        "nightingale-recorded.html",
         "nightingale.html",
     ]
 

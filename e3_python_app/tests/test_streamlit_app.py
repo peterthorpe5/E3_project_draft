@@ -19,6 +19,7 @@ STAGE_TAB_LABELS = [
     "🔵 1 · Information",
     "🟢 2 · Candidate discovery",
     "🟣 3 · E3 orthology context",
+    "🧬 DeepClust research",
     "🟠 4 · Structural prioritisation",
     "🟡 5 · Structural comparison",
     "🔴 6 · Chemistry & outputs",

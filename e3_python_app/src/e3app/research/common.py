@@ -57,6 +57,11 @@ class ResearchConfig:
         email: Contact address required by the optional EBI service.
         auspice_url: Browser-accessible self-hosted Auspice URL.
         centroid_database: Optional DIAMOND database of global representatives.
+        remote_host: Existing SSH host alias or user@host for the denbi analysis service.
+        remote_executable: Installed protein-research-workbench command on that host.
+        remote_config: Operator-owned research profile on the remote host.
+        transfer_max_bytes: Maximum uncompressed remote response and transfer size.
+        species_tree: Optional reviewed species Newick tree, with exact species/taxon tip names.
     """
 
     workspace: Path = Path.home() / ".local" / "share" / "protein_research"
@@ -87,6 +92,11 @@ class ResearchConfig:
     email: str = ""
     auspice_url: str = ""
     centroid_database: str = ""
+    remote_host: str = ""
+    remote_executable: str = "protein-research-workbench"
+    remote_config: str = ""
+    transfer_max_bytes: int = 2_000_000_000
+    species_tree: str = ""
 
 
 def bounded_number(
@@ -151,6 +161,7 @@ def load_config(*, path: Path | None = None) -> ResearchConfig:
         ("command_timeout", 604_800),
         ("local_fold_max_length", 10_000),
         ("endpoint_max_length", 10_000),
+        ("transfer_max_bytes", 100_000_000_000),
     )
     for name, maximum in numeric_fields:
         if name in values:

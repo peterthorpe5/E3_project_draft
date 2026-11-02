@@ -1,4 +1,9 @@
-# Protein research workbench — v0.20.0
+# Protein research workbench — v0.22.0
+
+For the new dedicated Top-200/SSH campaign, quantitative comparisons, reviewed
+species trees and shared Nightingale/annotation/model surface, see the
+[DeepClust workbench guide](docs/DEEPCLUST_WORKBENCH.md). Existing workflows below
+remain available. New installations include SciPy for display hierarchies.
 
 ## Using the workbench
 

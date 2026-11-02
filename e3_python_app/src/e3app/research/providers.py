@@ -425,10 +425,10 @@ def parse_interpro(*, path: Path, sequences: Mapping[str, str]) -> list[dict[str
 def remote_interpro(
     *, sequences: Mapping[str, str], output: Path, config: ResearchConfig, remote_allowed: bool
 ) -> Path:
-    """Submit/poll a bounded EBI InterProScan job, retaining its service job ID for recovery.
+    """Submit one sequence per EBI request, retaining service IDs for recovery.
 
     Args:
-        sequences: At most 25 selected proteins.
+        sequences: At most 25 proteins, submitted sequentially as individual service jobs.
         output: Owned job directory.
         config: Contact email and runtime settings.
         remote_allowed: Explicit user decision to send sequences to EBI.
@@ -450,6 +450,30 @@ def remote_interpro(
                 "execution for batches"
             )
         )
+    if len(sequences) > 1:
+        destination = output / "interpro.raw.tsv"
+        audit = []
+        with destination.open(mode="wb") as combined:
+            for index, (identifier, sequence) in enumerate(sequences.items()):
+                directory = output / f"interpro_sequence_{index:03d}"
+                directory.mkdir(exist_ok=True)
+                result = remote_interpro(
+                    sequences={identifier: sequence}, output=directory, config=config,
+                    remote_allowed=remote_allowed,
+                )
+                content = result.read_bytes()
+                if combined.tell() + len(content) > 50_000_000:
+                    raise ResearchError("Combined InterPro results exceed 50 MB")
+                combined.write(content)
+                if content and not content.endswith(b"\n"):
+                    combined.write(b"\n")
+                checkpoint = json.loads((directory / "interpro_service_job.json").read_text())
+                audit.append({"sequence_id": identifier,
+                              "sequence_sha256": hashlib.sha256(sequence.encode()).hexdigest(),
+                              "service_job_id": checkpoint["service_job_id"]})
+        write_tsv(path=output / "interpro_service_jobs.tsv", rows=audit,
+                  columns=("sequence_id", "sequence_sha256", "service_job_id"))
+        return destination
     checkpoint = output / "interpro_service_job.json"
     if checkpoint.is_file():
         job_id = json.loads(checkpoint.read_text(encoding="utf-8"))["service_job_id"]
@@ -566,6 +590,9 @@ def annotate_batch(
             "evidence_type",
         )
         artifacts[raw.name] = raw
+        for name in ("interpro_service_jobs.tsv", "interpro_service_job.json"):
+            if (output / name).is_file():
+                artifacts[name] = output / name
     elif engine == "eggnog":
         scope = str(parameters.get("tax_scope", "Eukaryota"))
         target = str(parameters.get("target_taxon", "2759"))

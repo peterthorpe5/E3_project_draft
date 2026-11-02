@@ -5584,6 +5584,14 @@ def render_app() -> None:
             from e3app.research.ui import render_research_workbench
 
             page_renderers = {
+                "DeepClust workbench": lambda: render_research_workbench(
+                    connection=connection, initial_section="Top-200 cluster campaign",
+                    title="DeepClust workbench",
+                ),
+                "Protein feature browser": lambda: render_research_workbench(
+                    connection=connection, initial_section="Protein features",
+                    title="Protein feature browser",
+                ),
                 "Protein research workbench": lambda: render_research_workbench(
                     connection=connection,
                 ),

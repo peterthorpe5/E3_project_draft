@@ -25,12 +25,13 @@ def test_navigation_groups_every_helped_page_once() -> None:
         "🔵 1 · Information",
         "🟢 2 · Candidate discovery",
         "🟣 3 · E3 orthology context",
+        "🧬 DeepClust research",
         "🟠 4 · Structural prioritisation",
         "🟡 5 · Structural comparison",
         "🔴 6 · Chemistry & outputs",
     ]
     titles = navigation_page_titles()
-    assert len(titles) == 30
+    assert len(titles) == 32
     assert len(titles) == len(set(titles))
     assert set(titles) == set(TOP_LEVEL_TAB_HELP)
     validate_navigation()
@@ -70,7 +71,7 @@ def test_external_links_is_one_shared_directory_without_an_extra_stage() -> None
     assert first.shared
     assert not first.method_annotation
     assert navigation_page_titles().count("External links") == 1
-    assert len(navigation_stage_labels()) == 7
+    assert len(navigation_stage_labels()) == 8
     validate_navigation()
 
 

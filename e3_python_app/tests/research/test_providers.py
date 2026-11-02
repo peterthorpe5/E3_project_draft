@@ -228,6 +228,39 @@ def test_remote_interpro_polling_and_checkpoint(research_config, tmp_path, monke
         )
 
 
+def test_remote_interpro_batch_submits_individual_proteins(research_config, tmp_path, monkeypatch):
+    """EBI receives one protein per request, and result/audit rows retain original IDs."""
+    from urllib.parse import parse_qs
+
+    config = replace(research_config, email="researcher@example.org", command_timeout=30)
+    calls = []
+
+    def service(**kwargs):
+        if kwargs['url'].endswith('/run'):
+            fields = parse_qs(kwargs['body'].decode())
+            fasta = fields['sequence'][0]
+            assert fasta.count('>') == 1
+            identifier = fasta.splitlines()[0][1:]
+            calls.append(identifier)
+            return f'iprscan-{identifier}'.encode()
+        if '/status/' in kwargs['url']:
+            return b'FINISHED'
+        identifier = kwargs['url'].split('/result/iprscan-')[1].split('/')[0]
+        return interpro_row(identifier=identifier).encode()
+
+    monkeypatch.setattr(providers, 'http_request', service)
+    raw = remote_interpro(sequences={'a': 'ACDE', 'b': 'ACDE'}, output=tmp_path,
+                          config=config, remote_allowed=True)
+    assert calls == ['a', 'b']
+    assert len(parse_interpro(path=raw, sequences={'a': 'ACDE', 'b': 'ACDE'})) == 2
+    audit = pd.read_csv(tmp_path / 'interpro_service_jobs.tsv', sep='\t')
+    assert audit.sequence_id.tolist() == ['a', 'b']
+    assert audit.service_job_id.tolist() == ['iprscan-a', 'iprscan-b']
+    remote_interpro(sequences={'a': 'ACDE', 'b': 'ACDE'}, output=tmp_path,
+                    config=config, remote_allowed=True)
+    assert calls == ['a', 'b']
+
+
 def test_annotation_commands_and_no_hit_audit(research_config, tmp_path, monkeypatch):
     """InterPro and eukaryote-scoped eggNOG preserve predicted/no-hit evidence."""
     source = tmp_path / "source.fasta"

@@ -15,6 +15,9 @@ from .common import ResearchConfig, ResearchError
 SECTIONS = (
     "Start here",
     "Discover",
+    "Top-200 cluster campaign",
+    "Cluster comparisons",
+    "Protein features",
     "Family analysis",
     "Alignments and trees",
     "Models",
@@ -33,10 +36,36 @@ OPERATION_NAMES = {
     "predict": "Predict protein structures",
     "annotate": "Predict protein annotations",
     "taxonomy_index": "Build species index",
+    "deepclust_map": "Map the published E3 campaign to external clusters",
+    "deepclust_retrieve": "Collect selected clusters through the command-line connection",
+    "compare": "Compare selected proteins or species sets",
 }
 
 # Aim, inputs/actions and outputs are shared by the page and downloadable help.
 PAGE_GUIDES = {
+    "Top-200 cluster campaign": (
+        "Collect external clusters for the published E3 shortlist",
+        "Map complete Top-N primary candidate groups to external DeepClust membership.",
+        "Prepare the published group/member inventory, choose the worker or existing SSH "
+        "connection, then queue mapping. Review unresolved and one-to-many matches before "
+        "selecting global clusters for complete retrieval. No entire source database is copied.",
+    ),
+    "Cluster comparisons": (
+        "Compare family sizes, taxonomy and sequence conservation",
+        "Inspect complete extracted/subcluster summaries and queue bounded comparisons.",
+        "Select a completed family job and clusters with reviewed taxonomy for species-set "
+        "Jaccard heatmaps and a two/three-set Venn diagram. Select an alignment and protein "
+        "rows for pairwise identity with comparable-residue denominators. Hierarchical "
+        "clustering is a display summary, separate from a species or inferred protein tree.",
+    ),
+    "Protein features": (
+        "Inspect protein features with Nightingale",
+        "Inspect recorded E3 domain coordinates or annotate/predict selected exact sequences.",
+        "Published domain coordinates use their recorded protein-length axis when no exact "
+        "annotation-sequence checksum is available. Completed InterProScan jobs supply "
+        "sequence-verified feature tracks. ESMFold and annotation routes accept selected "
+        "FASTA proteins and run as explicit worker jobs.",
+    ),
     "Discover": (
         "Step 1 · Find and collect a protein family",
         "Find global DeepClust clusters containing your proteins, then retrieve their sequences.",

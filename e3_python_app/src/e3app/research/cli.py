@@ -31,6 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor", help="Inspect configured data and optional executables")
     commands.add_parser("jobs", help="List recent queue status as JSON")
+    export = commands.add_parser(
+        "export-deepclust", help="Serve one bounded read-only CLI request as a checked ZIP",
+    )
+    export.add_argument("--request-stdin", action="store_true", required=True)
     cancel = commands.add_parser("cancel", help="Cancel one queued job")
     cancel.add_argument("--job-id", required=True)
     submit = commands.add_parser("submit", help="Queue work without blocking the web process")
@@ -93,6 +97,8 @@ def installation_status(*, config: ResearchConfig) -> dict[str, object]:
         ),
         "dedicated_folding_endpoint": bool(config.esm_endpoint),
         "auspice_url": config.auspice_url or None,
+        "deepclust_ssh_configured": bool(config.remote_host and config.remote_config),
+        "species_tree_configured": bool(config.species_tree),
     }
 
 
@@ -146,7 +152,17 @@ def main(*, argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
         config = load_config(path=args.config)
-        if args.command == "doctor":
+        if args.command == "export-deepclust":
+            from .remote import MAX_REQUEST_BYTES, write_response
+
+            raw = sys.stdin.buffer.read(MAX_REQUEST_BYTES + 1)
+            if len(raw) > MAX_REQUEST_BYTES:
+                raise ResearchError("DeepClust CLI request exceeds 2 MB")
+            request = json.loads(raw)
+            if not isinstance(request, dict):
+                raise ResearchError("DeepClust CLI request must be a JSON object")
+            write_response(config=config, request=request, destination=sys.stdout.buffer)
+        elif args.command == "doctor":
             print(json.dumps(installation_status(config=config), indent=2))
         elif args.command == "jobs":
             print(json.dumps(list_jobs(workspace=config.workspace), indent=2))

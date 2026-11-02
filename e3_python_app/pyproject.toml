@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "e3-python-app"
-version = "0.21.5"
+version = "0.22.0"
 description = "Testable Streamlit and DuckDB browser for the ARIA plant E3 resource"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,7 @@ dependencies = [
   "requests>=2.32.4,<3",
   "streamlit>=1.51,<2",
   "xlsxwriter>=3.2,<4",
+  "scipy>=1.15,<2",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +50,8 @@ e3app = ["*.toml", "resources/*.js", "resources/*.tsv", "resources/research_view
 [tool.coverage.run]
 branch = true
 source = ["e3app"]
-omit = ["*/__main__.py", "*/streamlit_app.py", "*/research/ui.py", "*/research/standalone.py"]
+omit = ["*/__main__.py", "*/streamlit_app.py", "*/research/ui.py", "*/research/standalone.py",
+        "*/research/expansion_ui.py"]
 
 [tool.coverage.report]
 show_missing = true

@@ -19,6 +19,17 @@ class TabHelpEntry:
 
 
 TOP_LEVEL_TAB_HELP = {
+    "DeepClust workbench": TabHelpEntry(
+        instruction="Prepare complete Top-200 mapping inputs, queue CLI mapping and retrieval, "
+        "then refine families and inspect alignments, reviewed species and annotations.",
+        yields="Audited mapping, complete selected clusters, alignments and comparison summaries.",
+    ),
+    "Protein feature browser": TabHelpEntry(
+        instruction="Use Nightingale for recorded E3 domain coordinates or choose InterProScan, "
+        "eggNOG-mapper or ESMFold for an uploaded, pasted or previously retrieved FASTA.",
+        yields="Interactive protein features, exact-sequence annotation audits, "
+        "raw evidence downloads and optional ESMFold models.",
+    ),
     "External links": TabHelpEntry(
         instruction=(
             "Choose a HOG and its proteins here for populated Mol*/AlphaFold/EMERALD links "

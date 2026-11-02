@@ -352,12 +352,18 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
     ]
     route = st.radio(
         "Protein input",
-        ["Completed job", "Upload FASTA"],
+        ["Completed job", "Upload FASTA", "Paste FASTA"],
         horizontal=True,
         key=f"{key}_route",
         help=FIELD_HELP["protein_input"],
         index=0 if options else 1,
     )
+    if route == "Paste FASTA":
+        pasted = st.text_area(
+            "Protein FASTA text", key=f"{key}_pasted_fasta",
+            help="Paste >protein_id followed by its amino-acid sequence. Each ID must be unique.",
+        )
+        return {}, pasted if pasted.strip() else None
     if route == "Upload FASTA":
         uploaded = st.file_uploader(
             "Protein FASTA (maximum 20 MB)",
@@ -396,7 +402,8 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
         key=f"{key}_source",
     )
     manifest = manifests[selected[0]]
-    if manifest.get("operation") == "retrieve" and "clusters.tsv" in manifest["artifacts"]:
+    if manifest.get("operation") in {"retrieve", "deepclust_retrieve"} \
+            and "clusters.tsv" in manifest["artifacts"]:
         clusters = read_table(
             path=artifact_path(
                 workspace=config.workspace, job_id=selected[0], artifact="clusters.tsv"
@@ -1169,6 +1176,10 @@ def render_alignments(*, config: ResearchConfig) -> None:
         if "tree.nwk" in artifacts
         else ""
     )
+    if view == "JBrowse MSA":
+        from .expansion_ui import species_view
+
+        tree = species_view(config=config, job_id=job_id, records=records, default_tree=tree)
     document = viewer_document(
         viewer="jbrowse" if view == "JBrowse MSA" else "alignment",
         payload={"msa": msa, "tree": tree},
@@ -1559,7 +1570,7 @@ def render_jobs(*, config: ResearchConfig) -> None:
                         dict(zip(result["fasta_artifact"], result["cluster_id"], strict=True))
                     )
         operation = job["operation"]
-        if operation in {"retrieve", "import_cluster", "subcluster"}:
+        if operation in {"retrieve", "deepclust_retrieve", "import_cluster", "subcluster"}:
             fastas = [
                 name
                 for name in manifest["artifacts"]
@@ -1642,13 +1653,18 @@ def render_jobs(*, config: ResearchConfig) -> None:
                 )
 
 
-def render_research_workbench(*, connection: object | None = None) -> None:
+def render_research_workbench(
+    *, connection: object | None = None, initial_section: str = "Start here",
+    title: str = "Protein research workbench",
+) -> None:
     """Render one selected generic research section, optionally with an E3 adapter.
 
     Args:
         connection: Optional open E3 resource for top-N or exact-HOG input selection.
+        initial_section: First page when entering a different application surface.
+        title: Application surface heading.
     """
-    st.header("Protein research workbench")
+    st.header(title)
     st.write(
         (
             "Link protein families to global DeepClust clusters, refine families, "
@@ -1656,7 +1672,12 @@ def render_research_workbench(*, connection: object | None = None) -> None:
         )
     )
     try:
+        from .expansion_ui import render_campaign, render_comparisons, render_features
+
         config = load_config()
+        if st.session_state.get("research_surface") != title:
+            st.session_state["research_surface"] = title
+            st.session_state["research_section"] = initial_section
         section = st.radio(
             "Workbench page",
             options=SECTIONS,
@@ -1667,6 +1688,11 @@ def render_research_workbench(*, connection: object | None = None) -> None:
         renderers = {
             "Start here": lambda: render_start(config=config, connection=connection),
             "Discover": lambda: render_discovery(config=config, connection=connection),
+            "Top-200 cluster campaign": lambda: render_campaign(
+                config=config, connection=connection,
+            ),
+            "Cluster comparisons": lambda: render_comparisons(config=config),
+            "Protein features": lambda: render_features(config=config, connection=connection),
             "Family analysis": lambda: render_analysis(config=config),
             "Alignments and trees": lambda: render_alignments(config=config),
             "Models": lambda: render_models(config=config),

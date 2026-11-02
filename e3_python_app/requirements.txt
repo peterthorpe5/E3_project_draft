@@ -1,7 +1,10 @@
+biopython>=1.85,<2
 duckdb>=1.4,<2
 kaleido>=0.2.1,<1
 pandas>=2.2,<3
 plotly>=6,<7
 pyarrow>=18,<26
+requests>=2.32.4,<3
+scipy>=1.15,<2
 streamlit>=1.51,<2
 xlsxwriter>=3.2,<4
