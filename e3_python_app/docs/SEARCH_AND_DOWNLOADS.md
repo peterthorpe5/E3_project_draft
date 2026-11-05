@@ -41,19 +41,28 @@ available. Opening a page does not launch a new analysis or contact DeepClust.
    It includes the available enriched HOG overview/members, all group-linked
    recorded ranks and raw source evidence linked by group, contributing-cluster
    or protein identifiers. Release metadata/provenance is included when present.
-7. Select TSV archive or Excel, press **Prepare complete download**, then the
-   download button. The dossier contains every matching row and field in its
-   planned sources, including hidden preview fields and sequences stored there.
+7. In **Download this group's complete evidence**, select TSV archive or Excel
+   and press **Prepare group evidence download**. When **Download ready** appears,
+   select **Download group evidence dossier** to save the file to your computer.
+   The filename and size are shown beside this enabled button, before the source
+   inventory. Preparation alone does not start a browser download. The dossier
+   contains every matching row and field in its planned sources, including hidden
+   preview fields and sequences stored there.
 
-The **Direct matching rows and complete search downloads** expander provides
-the original search hits, with entered term, source relation and matched fields.
-That export retains direct matches; the selected-group dossier additionally
-follows recorded identifier links. A direct match without a recorded group link
-remains downloadable without an invented HOG or ranking.
-For a direct HOG/OG lookup, press **Load direct matching rows** to calculate
-the full per-source match counts. This scans group fields, not every descriptive
-name or protein field. The wider-search option is available for references in
-those other fields.
+The **Download the search results** section exports the original search hits,
+with entered term, source relation and matched fields. Select a format, press
+**Prepare search results download**, then select **Download search results**
+when the ready confirmation appears. Both preparation and download controls
+remain outside the **Inspect direct matching rows** preview expander. A disabled
+download button before preparation becomes enabled when a file is available;
+preview changes and ordinary page reruns do not consume or hide the prepared file.
+
+That export retains direct matches; the selected-group dossier additionally follows
+recorded identifier links. A direct match without a recorded group link remains
+downloadable without an invented HOG or ranking. For a direct HOG/OG lookup,
+press **Load direct matching rows** to calculate the full per-source match counts
+and enable preparation. This scans group fields, not every descriptive name or
+protein field. The wider-search option is available for references in those fields.
 
 ## Download all results
 

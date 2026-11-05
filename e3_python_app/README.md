@@ -1,5 +1,11 @@
 # ARIA plant E3 Python reporter
 
+Version **0.22.1** makes search downloads visible beside their preparation
+controls. After preparation, **Download ready** confirms the filename and size;
+select the enabled download button to save the file to your computer. Search
+results and linked group evidence have separate download controls, outside
+collapsed previews. See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
+
 Version **0.22.0** adds **🧬 DeepClust research**: prepare complete Top-200
 E3 primary-group inputs, map through the mounted worker or existing SSH
 connection, and retrieve chosen size-ranked external clusters. Refine with

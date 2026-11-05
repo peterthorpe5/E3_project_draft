@@ -143,6 +143,8 @@ def render_complete_export(
             exporter = complete_tsv_archive if export_format == "tsv" else complete_excel_workbook
             with st.spinner("Preparing every matching row and field…", show_time=True):
                 payload = exporter(connection=connection, queries=queries, description=description)
+            if not isinstance(payload, bytes) or not payload:
+                raise AppError("No download file was produced. Prepare the download again.")
             prepared = (signature, payload)
             st.session_state[payload_key] = prepared
             LOGGER.info("Prepared complete resource download key=%s bytes=%d", key, len(payload))
@@ -151,18 +153,28 @@ def render_complete_export(
             LOGGER.exception("Could not prepare complete resource download %s", key)
             st.error(str(exc))
             return
-    if prepared is not None:
-        extension = "zip" if export_format == "tsv" else "xlsx"
-        label = "TSV ZIP" if export_format == "tsv" else "Excel"
+    extension = "zip" if export_format == "tsv" else "xlsx"
+    label = "TSV ZIP" if export_format == "tsv" else "Excel"
+    filename = f"{safe_file_stem(value=file_stem)}.{extension}"
+    with st.container(border=True):
+        if prepared is not None:
+            st.success("Download ready. Select the download button below to save the file.")
+            st.caption(f"{filename} · {len(prepared[1]) / 1024**2:.2f} MiB")
+        else:
+            st.caption(
+                "Prepare the download above to enable this button. "
+                "Preparation does not start a browser download automatically."
+            )
         st.download_button(
             label=f"Download {download_subject} ({label})",
-            data=prepared[1],
-            file_name=f"{safe_file_stem(value=file_stem)}.{extension}",
+            data=prepared[1] if prepared is not None else b"",
+            file_name=filename,
             mime="application/zip" if export_format == "tsv" else EXCEL_MIME_TYPE,
             key=f"{key}_download",
             on_click="ignore",
+            type="primary",
+            disabled=prepared is None,
         )
-        st.caption(f"Prepared complete download: {len(prepared[1]) / 1024**2:.2f} MiB.")
 
 
 def _preview_fields(*, columns: Sequence[str], key: str) -> list[str]:
@@ -448,6 +460,17 @@ def _render_group_dossier(
     if available.empty:
         st.info("No linked evidence is available for this group in the loaded resource.")
         return
+    st.markdown("#### Download this group's complete evidence")
+    render_complete_export(
+        connection=connection,
+        queries=queries,
+        source=source_id,
+        description=f"Source: {config.source_path}; complete linked group dossier: {group_id}",
+        key="group_dossier_complete",
+        file_stem=f"dossier_{group_id}",
+        prepare_label="Prepare group evidence download",
+        download_subject="group evidence dossier",
+    )
     st.markdown("**Complete evidence inventory**")
     _show_table(frame=available, height=300)
     with st.expander("❓ What does this dossier include?"):
@@ -457,14 +480,6 @@ def _render_group_dossier(
             "and protein identifiers. Shared identifiers retain their original group context. "
             "Separate model/review files and external databases are not embedded."
         )
-    render_complete_export(
-        connection=connection,
-        queries=queries,
-        source=source_id,
-        description=f"Source: {config.source_path}; complete linked group dossier: {group_id}",
-        key="group_dossier_complete",
-        file_stem=f"dossier_{group_id}",
-    )
     selected_key = "dossier_source"
     sources = available["source"].tolist()
     if st.session_state.get(selected_key) not in sources:
@@ -503,48 +518,53 @@ def _render_direct_matches(
         config: Current source and preview configuration.
         state: Submitted search, catalogue, matching queries and cached previews.
     """
-    with st.expander(
-        "Direct matching rows and complete search downloads", expanded=not state["groups"]
-    ):
-        if state["summary"] is None:
-            if not st.button(
-                "Load direct matching rows",
-                key="search_direct_load",
-                help=(
-                    "Search group-ID fields across every source and count complete matches. "
-                    "This does not limit the HOG lookup or full dossier download."
-                ),
-            ):
-                st.caption("Direct source counts and previews are loaded on request.")
-                return
-            with st.spinner("Counting direct group-ID matches across all sources…", show_time=True):
-                queries = group_match_queries(
-                    connection=connection,
-                    terms=state["terms"],
-                    schema=state["schema"],
-                )
-                summary = summarise_search_queries(connection=connection, queries=queries)
-                matching_sources = set(summary["relation"])
-                state["queries"] = tuple(
-                    query for query in queries if query.name in matching_sources
-                )
-                state["summary"] = summary
-        summary = state["summary"]
-        if summary.empty:
-            st.info("No direct matching source rows were found.")
-            return
-        _show_table(frame=summary, height=280)
-        render_complete_export(
-            connection=connection,
-            queries=state["queries"],
-            source=state["source"],
-            description=(
-                f"Source: {config.source_path}; direct search: {state['terms']!r}; "
-                f"mode: {state['mode']}; group_only: {state['group_only']}"
+    st.markdown("#### Download the search results")
+    st.caption(
+        "These files contain every direct matching row and field for the submitted search. "
+        "Use the group evidence download above for the selected group's linked sources."
+    )
+    if state["summary"] is None:
+        if not st.button(
+            "Load direct matching rows",
+            key="search_direct_load",
+            help=(
+                "Search group-ID fields across every source and count complete matches. "
+                "This does not limit the HOG lookup or full dossier download."
             ),
-            key="search_direct_complete",
-            file_stem="complete_search_matches",
-        )
+        ):
+            st.caption("Load the direct matching rows to prepare their complete download.")
+            return
+        with st.spinner("Counting direct group-ID matches across all sources…", show_time=True):
+            queries = group_match_queries(
+                connection=connection,
+                terms=state["terms"],
+                schema=state["schema"],
+            )
+            summary = summarise_search_queries(connection=connection, queries=queries)
+            matching_sources = set(summary["relation"])
+            state["queries"] = tuple(
+                query for query in queries if query.name in matching_sources
+            )
+            state["summary"] = summary
+    summary = state["summary"]
+    if summary.empty:
+        st.info("No direct matching source rows were found.")
+        return
+    render_complete_export(
+        connection=connection,
+        queries=state["queries"],
+        source=state["source"],
+        description=(
+            f"Source: {config.source_path}; direct search: {state['terms']!r}; "
+            f"mode: {state['mode']}; group_only: {state['group_only']}"
+        ),
+        key="search_direct_complete",
+        file_stem="complete_search_matches",
+        prepare_label="Prepare search results download",
+        download_subject="search results",
+    )
+    with st.expander("Inspect direct matching rows", expanded=not state["groups"]):
+        _show_table(frame=summary, height=280)
         selected_key = "search_direct_source"
         sources = [query.name for query in state["queries"]]
         if st.session_state.get(selected_key) not in sources:

@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.22.1
+
+- Keeps search preparation and download controls visible outside collapsed
+  source previews, with separate labels for search results and linked group evidence.
+- Shows a disabled download control before preparation, then a prominent enabled
+  button, filename, size and explicit confirmation when the file is ready.
+- Places group evidence downloads before the potentially long source inventory.
+  Prepared files remain available during preview changes and normal page reruns;
+  source, selection and format changes invalidate incompatible files.
+- Rejects missing or empty export payloads and removes previous files after a failed retry.
+- Adds protein/HOG, TSV/Excel, visibility, rerun and failed-preparation regressions.
+
 ## v0.22.0
 
 - Adds a dedicated DeepClust workbench and complete Top-N published primary-group

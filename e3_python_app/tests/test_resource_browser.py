@@ -227,3 +227,98 @@ def test_source_identity_tracks_nested_parquets(tmp_path: Path) -> None:
     before = source_identity(config=config)
     path.write_bytes(b"changed source")
     assert source_identity(config=config) != before
+
+
+@pytest.mark.parametrize("term", ["P38398", "N0.HOG0001"])
+@pytest.mark.parametrize("export_format", ["tsv", "excel"])
+def test_search_download_is_visible_and_remains_ready_after_reruns(
+    resource_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    term: str,
+    export_format: str,
+) -> None:
+    """Protein and HOG exports stay enabled outside the collapsed source previews."""
+    app = _open_page(resource_db=resource_db, monkeypatch=monkeypatch, page="Protein & HOG search")
+    app = _submit_search(app=app, text=term)
+    if term.startswith("N0.HOG"):
+        app.button(key="search_direct_load").click().run()
+    key = "search_direct_complete"
+    app.radio(key=f"{key}_format").set_value(export_format).run()
+    button = next(item for item in app.get("download_button") if item.key == f"{key}_download")
+    assert button.disabled
+    assert any("enable this button" in item.value for item in app.caption)
+    app.button(key=f"{key}_prepare").click().run()
+    assert not app.exception
+    payload = app.session_state[f"{key}_prepared"][1]
+    assert payload.startswith(b"PK")
+    for _ in range(2):
+        button = next(
+            item for item in app.get("download_button") if item.key == f"{key}_download"
+        )
+        assert not button.disabled
+        assert button.proto.url
+        assert button.proto.ignore_rerun
+        assert any("Download ready" in item.value for item in app.success)
+        assert not any(
+            item.key == f"{key}_download"
+            for expander in app.expander
+            for item in expander.get("download_button")
+        )
+        app.number_input(key="search_preview_rows").set_value(1).run()
+        assert app.session_state[f"{key}_prepared"][1] == payload
+
+
+def test_group_download_stays_visible_and_format_changes_invalidate_it(
+    resource_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dossier provides its own ready control and cannot serve the wrong file format."""
+    app = _open_page(resource_db=resource_db, monkeypatch=monkeypatch, page="Protein & HOG search")
+    app = _submit_search(app=app, text="N0.HOG0001")
+    app.button(key="group_dossier_load").click().run()
+    app.button(key="group_dossier_complete_prepare").click().run()
+    assert not app.exception
+    app.selectbox(key="dossier_source").set_value("candidate_evidence").run()
+    button = next(
+        item for item in app.get("download_button") if item.key == "group_dossier_complete_download"
+    )
+    assert button.label == "Download group evidence dossier (TSV ZIP)"
+    assert not button.disabled
+    app.radio(key="group_dossier_complete_format").set_value("excel").run()
+    assert "group_dossier_complete_prepared" not in app.session_state
+    button = next(
+        item for item in app.get("download_button") if item.key == "group_dossier_complete_download"
+    )
+    assert button.label == "Download group evidence dossier (Excel)"
+    assert button.disabled
+    app.button(key="group_dossier_complete_prepare").click().run()
+    assert not app.exception
+    workbook = load_workbook(BytesIO(app.session_state["group_dossier_complete_prepared"][1]))
+    assert "Manifest" in workbook.sheetnames
+
+
+@pytest.mark.parametrize("result", [b"", None])
+def test_search_export_without_file_reports_failure_and_discards_previous_download(
+    resource_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    result: object,
+) -> None:
+    """A failed retry cannot leave a stale or empty file advertised as ready."""
+    app = _open_page(resource_db=resource_db, monkeypatch=monkeypatch, page="Protein & HOG search")
+    app = _submit_search(app=app, text="P38398")
+    app.button(key="search_direct_complete_prepare").click().run()
+    assert "search_direct_complete_prepared" in app.session_state
+    monkeypatch.setattr("e3app.resource_browser.complete_tsv_archive", lambda **kwargs: result)
+    app.button(key="search_direct_complete_prepare").click().run()
+    assert not app.exception
+    assert any("No download file was produced" in item.value for item in app.error)
+    assert "search_direct_complete_prepared" not in app.session_state
+    assert not any("Download ready" in item.value for item in app.success)
+    assert not any(
+        item.key == "search_direct_complete_download" for item in app.get("download_button")
+    )
+    app.run()
+    button = next(
+        item for item in app.get("download_button") if item.key == "search_direct_complete_download"
+    )
+    assert button.disabled
