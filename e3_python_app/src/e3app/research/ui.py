@@ -17,6 +17,10 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+from e3app.config import AppConfig
+from e3app.errors import AppError
+from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
+
 from .catalogue import browse_clusters, open_catalogue
 from .common import ResearchConfig, ResearchError, iter_fasta, load_config
 from .deepclust_exchange import centroid_list
@@ -79,12 +83,13 @@ def navigate_research(
         raise ResearchError("Unknown family-analysis task")
     if input_route and input_route not in {"Completed job", "Upload FASTA"}:
         raise ResearchError("Unknown protein input route")
-    stage = "🧬 DeepClust research"
-    page_key = f"e3_navigation_page_{stage}"
-    if st.session_state.get("e3_navigation_stage") == stage and st.session_state.get(page_key) in {
+    stage = st.session_state.get("e3_navigation_stage")
+    page = st.session_state.get(f"e3_navigation_page_{stage}")
+    if stage in {CANDIDATE_STAGE, DEEPCLUST_STAGE} and page in {
         "DeepClust results & FASTA", "JBrowse MSA", "ESMFold & models",
     }:
-        st.session_state[page_key] = "DeepClust workbench"
+        st.session_state["e3_navigation_stage"] = DEEPCLUST_STAGE
+        st.session_state[f"e3_navigation_page_{DEEPCLUST_STAGE}"] = "DeepClust workbench"
         st.session_state["research_surface"] = "DeepClust workbench"
     st.session_state["research_section"] = section
     if discovery_mode:
@@ -351,12 +356,15 @@ def read_table(*, path: Path, maximum_rows: int = 10_000) -> pd.DataFrame:
     return pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False, nrows=maximum_rows)
 
 
-def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object], str | None]:
+def render_input(
+    *, config: ResearchConfig, key: str, published_fasta: tuple[str, str] | None = None,
+) -> tuple[dict[str, object], str | None]:
     """Select an uploaded FASTA or a complete checksummed prior-job FASTA artifact.
 
     Args:
         config: Current workspace.
         key: Unique UI control namespace.
+        published_fasta: Label and exact FASTA for an explicitly selected E3 protein.
 
     Returns:
         Source parameters and optional uploaded FASTA content.
@@ -372,6 +380,10 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
     routes = ["Completed job", "Upload FASTA", "Paste FASTA"]
     if prepared:
         routes.append("Prepared FASTA")
+    if published_fasta:
+        routes.append("Selected E3 protein")
+    if st.session_state.get(f"{key}_route") not in routes:
+        st.session_state.pop(f"{key}_route", None)
     route = st.radio(
         "Protein input",
         routes,
@@ -383,6 +395,14 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
     if route == "Prepared FASTA":
         st.caption(f"Prepared protein source: {prepared[0]}")
         return {}, prepared[1]
+    if route == "Selected E3 protein" and published_fasta is not None:
+        label, fasta = published_fasta
+        st.caption(f"Exact released sequence for {label} · {len(fasta.splitlines()[1]):,} residues")
+        st.download_button(
+            label="Download selected protein FASTA", data=fasta,
+            file_name=f"{label.split(' · ', 1)[0]}.fasta", mime="text/plain",
+        )
+        return {}, fasta
     if route == "Paste FASTA":
         pasted = st.text_area(
             "Protein FASTA text", key=f"{key}_pasted_fasta",
@@ -390,23 +410,18 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
         )
         return {}, pasted if pasted.strip() else None
     if route == "Upload FASTA":
-        uploaded = st.file_uploader(
-            "Protein FASTA (maximum 20 MB)",
-            type=["fa", "faa", "fasta"],
+        from .expansion_ui import upload_text
+
+        fasta = upload_text(
+            label="Protein FASTA",
+            types=["fa", "faa", "fasta"],
             key=f"{key}_upload",
-            help=FIELD_HELP["upload"],
+            help_text=FIELD_HELP["upload"],
         )
         with st.expander("What should the FASTA look like?"):
             st.code(">protein_A\nMAAKLVVAGL\n>protein_B\nMAAKLVIAGL\n", language="text")
             st.write(FIELD_HELP["upload"])
-        if uploaded is None:
-            return {}, None
-        if uploaded.size > 20_000_000:
-            raise ResearchError("Uploaded FASTA exceeds 20 MB")
-        try:
-            return {}, uploaded.getvalue().decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ResearchError("FASTA must be UTF-8 text") from exc
+        return {}, fasta or None
     if not options:
         st.info(
             "No completed FASTA is available. Upload a protein FASTA, or first retrieve/import "
@@ -1109,22 +1124,30 @@ def render_analysis(*, config: ResearchConfig, enable_search: bool = True) -> No
             )
 
 
-def render_alignments(*, config: ResearchConfig, dedicated: bool = False) -> None:
+def render_alignments(
+    *, config: ResearchConfig, dedicated: bool = False, app_config: AppConfig | None = None,
+) -> None:
     """Render real JBrowse/AV2 libraries and a configured self-hosted Auspice dataset.
 
     Args:
         config: Alignment workspace and Auspice URL.
-        dedicated: Open the file upload route in the named JBrowse page.
+        dedicated: Present the focused JBrowse page.
+        app_config: Optional published E3 resources for the HOG alignment route.
     """
-    from .expansion_ui import render_uploaded_alignment
+    from .expansion_ui import render_published_alignment, render_uploaded_alignment
 
     if not dedicated:
         render_page_guidance(section="Alignments and trees")
-    options = ["Upload alignment files", "Try an example", "Completed alignment job"]
+    options = ["Try an example", "Upload alignment files", "Completed alignment job"]
+    if app_config is not None:
+        options.append("Published HOG alignment")
     completed = completed_manifests(config=config, operation="align") if not dedicated else {}
     source = st.radio("Alignment source", options, horizontal=True, key="alignment_view_source",
                       index=2 if completed else 0,
                       help="Open a saved alignment, try the example, or upload an aligned FASTA.")
+    if source == "Published HOG alignment":
+        render_published_alignment(config=config, app_config=app_config)
+        return
     if source != "Completed alignment job":
         render_uploaded_alignment(config=config, example=source == "Try an example")
         if not dedicated:
@@ -1249,38 +1272,40 @@ def render_alignments(*, config: ResearchConfig, dedicated: bool = False) -> Non
     path = artifact_path(workspace=config.workspace, job_id=job_id, artifact="alignment.fasta")
     records = dict(iter_fasta(path=path, aligned=True))
     reference = summary["reference_id"]
-    msa = "".join(
-        f">{identifier}\n{records[identifier]}\n"
-        for identifier in [reference, *[item for item in records if item != reference]]
-    )
+    ordered = {reference: records[reference], **records}
     tree = (
         artifact_path(workspace=config.workspace, job_id=job_id, artifact="tree.nwk").read_text()
         if "tree.nwk" in artifacts
         else ""
     )
     if view == "JBrowse MSA":
-        from .expansion_ui import species_view
+        from .expansion_ui import render_jbrowse, species_view
 
         tree = species_view(config=config, job_id=job_id, records=records, default_tree=tree)
+        render_jbrowse(records=ordered, tree=tree, stem=f"{job_id}_jbrowse")
+        return
+    msa = "".join(f">{name}\n{sequence}\n" for name, sequence in ordered.items())
     document = viewer_document(
-        viewer="jbrowse" if view == "JBrowse MSA" else "alignment",
-        payload={"msa": msa, "tree": tree},
+        viewer="alignment", payload={"msa": msa, "tree": tree},
     )
     components.html(document, height=740, scrolling=True)
     st.download_button(
         "Download standalone alignment viewer",
         data=document,
-        file_name=f"{job_id}_{'jbrowse' if view == 'JBrowse MSA' else 'av2'}.html",
+        file_name=f"{job_id}_av2.html",
         mime="text/html",
     )
 
 
-def render_models(*, config: ResearchConfig, dedicated: bool = False) -> None:
+def render_models(
+    *, config: ResearchConfig, dedicated: bool = False, connection: object | None = None,
+) -> None:
     """Queue optional ESMFold jobs and interrogate exact-sequence model evidence.
 
     Args:
         config: Trusted model providers and workspace.
         dedicated: Open the model file route in the named ESMFold page.
+        connection: Optional E3 sequence release for a selected protein.
     """
     route = st.radio("Model workflow", ["Open an existing PDB", "Predict with ESMFold"],
                      horizontal=True, index=0 if dedicated else 1, key="esmfold_view_route",
@@ -1289,7 +1314,25 @@ def render_models(*, config: ResearchConfig, dedicated: bool = False) -> None:
         render_uploaded_model()
         return
     render_page_guidance(section="Models")
-    source, fasta = render_input(config=config, key="fold")
+    st.caption("Queue a prediction for this app’s analysis worker, or prepare the files "
+               "to run on another machine.")
+    published_fasta = None
+    selection = st.session_state.get("selected_e3_model_protein") if dedicated else None
+    if connection is not None and selection:
+        from .e3_adapter import published_protein_fasta
+
+        accession, group_id, species = selection
+        try:
+            published_fasta = published_protein_fasta(
+                connection=connection, accession=accession, hog_id=group_id, species=species,
+            )
+        except AppError as exc:
+            LOGGER.info("Selected E3 model sequence unavailable: %s", exc)
+            st.info(f"Exact released sequence unavailable for {accession} in {group_id}. "
+                    "Upload or paste the protein’s FASTA to continue.")
+    elif dedicated and connection is not None:
+        st.caption("To use a released protein sequence, open ESMFold from its feature record.")
+    source, fasta = render_input(config=config, key="fold", published_fasta=published_fasta)
     engines = {
         "atlas": "ESM Atlas · external service (up to 400 amino acids)",
         "huggingface_endpoint": "Dedicated Hugging Face / ESMFold endpoint · external",
@@ -1303,6 +1346,10 @@ def render_models(*, config: ResearchConfig, dedicated: bool = False) -> None:
         key="fold_engine",
     )
     issue = provider_problem(config=config, operation="predict", engine=engine)
+    if (engine == "atlas" and published_fasta and fasta == published_fasta[1]
+            and len(fasta.splitlines()[1]) > 400):
+        issue = ("This protein exceeds the ESM Atlas limit of 400 residues. "
+                 "Choose a configured dedicated endpoint or local ESMFold.")
     if issue:
         st.warning(issue)
     remote = False
@@ -1314,6 +1361,8 @@ def render_models(*, config: ResearchConfig, dedicated: bool = False) -> None:
         )
         if not remote:
             st.caption("Select external submission to enable this remote prediction request.")
+    if not source and not fasta:
+        st.caption("Select a protein FASTA to enable prediction or file preparation.")
     with st.form("research_fold"):
         ids = split_identifiers(
             value=st.text_area(
@@ -1774,7 +1823,7 @@ def render_jobs(*, config: ResearchConfig) -> None:
 def render_research_workbench(
     *, connection: object | None = None, initial_section: str = "Start here",
     title: str = "Protein research workbench", dedicated: bool = False,
-    external_search: bool = False,
+    external_search: bool = False, app_config: AppConfig | None = None,
 ) -> None:
     """Render one selected generic research section, optionally with an E3 adapter.
 
@@ -1784,6 +1833,7 @@ def render_research_workbench(
         title: Application surface heading.
         dedicated: Render just the named viewer or import page.
         external_search: Prioritise external DeepClust FASTA and Parquet exchange.
+        app_config: Published E3 resource settings for the dedicated HOG alignment viewer.
     """
     st.header(title)
     try:
@@ -1822,8 +1872,12 @@ def render_research_workbench(
             ),
             "Family analysis": lambda: render_analysis(config=config,
                                                        enable_search=not external_search),
-            "Alignments and trees": lambda: render_alignments(config=config, dedicated=dedicated),
-            "Models": lambda: render_models(config=config, dedicated=dedicated),
+            "Alignments and trees": lambda: render_alignments(
+                config=config, dedicated=dedicated, app_config=app_config,
+            ),
+            "Models": lambda: render_models(
+                config=config, dedicated=dedicated, connection=connection,
+            ),
             "Annotations": lambda: render_annotations(config=config),
             "Jobs": lambda: render_jobs(config=config),
             "Help & glossary": lambda: render_help(connection=connection),

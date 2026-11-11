@@ -64,8 +64,8 @@ STRUCTURAL_COLUMN_HELP: Mapping[str, str] = {
     "reference_species": "Species supplying the fixed structural reference model.",
     "mobile_species": "Species supplying the transformed, aligned member model.",
     "alignment_tool": (
-        "Structural aligner that generated this transformation. The strict analysis "
-        "retains agreement between US-align and TM-align."
+        "Structural aligner that generated this transformation. Strict consensus, when "
+        "reported, requires agreement among the enabled aligners in that run."
     ),
     "minimum_tm_score": PAIR_EVIDENCE_DEFINITIONS["Minimum TM-score"],
     "rmsd_angstrom": PAIR_EVIDENCE_DEFINITIONS["RMSD (Å)"],

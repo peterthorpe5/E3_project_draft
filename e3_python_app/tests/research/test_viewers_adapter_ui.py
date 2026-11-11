@@ -9,8 +9,13 @@ import duckdb
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from e3app.errors import AppError
 from e3app.research.common import ResearchError
-from e3app.research.e3_adapter import select_e3_cluster_inputs, select_e3_inputs
+from e3app.research.e3_adapter import (
+    published_protein_fasta,
+    select_e3_cluster_inputs,
+    select_e3_inputs,
+)
 from e3app.research.jobs import artifact_path, submit_job
 from e3app.research.runner import run_next_job
 from e3app.research.ui import completed_manifests, read_table, split_identifiers
@@ -21,6 +26,49 @@ from e3app.research.viewers import (
     viewer_asset,
     viewer_document,
 )
+
+
+def test_published_protein_fasta_requires_the_exact_hog_species_and_isoform(resource_db):
+    """A canonical request cannot pick up the sequence of a recorded isoform."""
+    with duckdb.connect(str(resource_db)) as connection:
+        label, fasta = published_protein_fasta(
+            connection=connection, accession="Q9SA03", hog_id="N0.HOG0001",
+            species="Arabidopsis_thaliana",
+        )
+        assert label == "Q9SA03 · N0.HOG0001 · Arabidopsis thaliana"
+        assert fasta.splitlines()[1] == "MSTNPKPN"
+        with pytest.raises(AppError, match="No unique exact sequence"):
+            published_protein_fasta(
+                connection=connection, accession="Q9SA03", hog_id="N0.HOG0001",
+                species="Homo_sapiens",
+            )
+        connection.execute("ALTER TABLE hierarchical_membership ADD parsed_accession VARCHAR")
+        for raw_identifier in ("sp|Q9SA03-2|FB27_ARATH", "Q9SA03-2"):
+            connection.execute(
+                "UPDATE hierarchical_membership SET parsed_accession = 'Q9SA03', "
+                "raw_identifier = ? WHERE species = 'Arabidopsis_thaliana'",
+                [raw_identifier],
+            )
+            connection.execute(
+                "UPDATE candidate_group_member_sequences SET raw_identifier = ? "
+                "WHERE group_id = 'N0.HOG0001' AND species = 'Arabidopsis_thaliana'",
+                [raw_identifier],
+            )
+            with pytest.raises(AppError, match="No unique exact sequence"):
+                published_protein_fasta(
+                    connection=connection, accession="Q9SA03", hog_id="N0.HOG0001",
+                    species="Arabidopsis_thaliana",
+                )
+            _, exact_isoform = published_protein_fasta(
+                connection=connection, accession="Q9SA03-2", hog_id="N0.HOG0001",
+                species="Arabidopsis_thaliana",
+            )
+            assert exact_isoform.splitlines() == [">Q9SA03-2", "MSTNPKPN"]
+        with pytest.raises(AppError, match="cannot be used as a FASTA identifier"):
+            published_protein_fasta(
+                connection=connection, accession="bad identifier", hog_id="N0.HOG0001",
+                species="Arabidopsis_thaliana",
+            )
 
 
 def test_viewers_escape_script_content_and_ship_real_libraries():

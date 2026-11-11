@@ -9,6 +9,8 @@ from typing import Sequence
 from e3app.errors import AppError
 
 LOGGER = logging.getLogger(__name__)
+CANDIDATE_STAGE = "🟢 2 · Candidate discovery"
+DEEPCLUST_STAGE = "🧬 DeepClust research"
 
 
 @dataclass(frozen=True)
@@ -68,7 +70,7 @@ NAVIGATION_STAGES = (
         ),
     ),
     NavigationStage(
-        label="🟢 2 · Candidate discovery",
+        label=CANDIDATE_STAGE,
         description=(
             "Pre-structural E3 evidence, authoritative rankings, expression, "
             "domains and complete candidate-level results."
@@ -88,6 +90,8 @@ NAVIGATION_STAGES = (
             NavigationPage("E3 seed catalogue"),
             NavigationPage("Domains", method_annotation=True),
             NavigationPage("Protein feature browser", shared=True),
+            NavigationPage("JBrowse MSA", shared=True),
+            NavigationPage("ESMFold & models", shared=True),
             NavigationPage("Expression", method_annotation=True),
             NavigationPage("Threshold explorer", method_annotation=True),
             NavigationPage("Visual explorer"),
@@ -109,7 +113,7 @@ NAVIGATION_STAGES = (
         ),
     ),
     NavigationStage(
-        label="🧬 DeepClust research",
+        label=DEEPCLUST_STAGE,
         description=(
             "Prepare search FASTA, import DeepClust results, and view protein alignments, "
             "features and models."
@@ -117,9 +121,9 @@ NAVIGATION_STAGES = (
         pages=(
             NavigationPage("DeepClust results & FASTA"),
             NavigationPage("DeepClust workbench"),
-            NavigationPage("JBrowse MSA"),
+            NavigationPage("JBrowse MSA", shared=True),
             NavigationPage("Protein feature browser", shared=True),
-            NavigationPage("ESMFold & models"),
+            NavigationPage("ESMFold & models", shared=True),
         ),
     ),
     NavigationStage(

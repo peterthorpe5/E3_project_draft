@@ -32,20 +32,23 @@ TOP_LEVEL_TAB_HELP = {
         "and selected protein FASTA when the export contains sequences.",
     ),
     "JBrowse MSA": TabHelpEntry(
-        instruction="Upload aligned protein FASTA, optionally with a protein tree or reviewed "
-        "species tree and sequence-to-species mapping. Try the example to open the viewer.",
+        instruction="Open the example, a completed job, a published HOG alignment or an aligned "
+        "protein FASTA. Uploaded alignments can include a protein tree or reviewed species tree "
+        "with a sequence-to-species mapping.",
         yields="Interactive alignment with an optional tree, a species mapping audit where "
         "applicable, and a portable HTML download.",
     ),
     "ESMFold & models": TabHelpEntry(
-        instruction="Open an existing PDB with its original protein FASTA, or prepare an "
-        "ESMFold prediction using a configured worker or another machine.",
+        instruction="Open an existing PDB with its original protein FASTA, or select a protein "
+        "from the feature browser and prepare its ESMFold prediction. Use a configured worker "
+        "or download the inputs to run on another machine.",
         yields="Interactive structure and confidence plots, or downloadable prediction inputs "
         "for a configured CPU or GPU worker.",
     ),
     "Protein feature browser": TabHelpEntry(
         instruction="Find recorded domain coordinates by protein accession or HOG, or "
-        "upload the normalised annotation table and its original FASTA.",
+        "upload the normalised annotation table and its original FASTA. A selected record "
+        "can open the matching HOG alignment or its protein in the models page.",
         yields="Labelled Nightingale feature tracks, recorded coordinate evidence and an offline "
         "HTML viewer download.",
     ),

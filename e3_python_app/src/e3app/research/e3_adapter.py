@@ -8,9 +8,48 @@ import pandas as pd
 
 from e3app.data import list_relations, quote_identifier, relation_columns
 from e3app.errors import AppError
+from e3app.external_hog import collect_external_hog_members
 from e3app.prestructure_hogs import collect_prestructure_ranked_hogs
 
 from .common import ResearchError, bounded_number
+
+
+def published_protein_fasta(
+    *, connection: object, accession: str, hog_id: str, species: str,
+) -> tuple[str, str]:
+    """Find the exact release sequence for the selected protein and HOG.
+
+    Args:
+        connection: Open immutable E3 resource.
+        accession: Selected accession, including any isoform suffix.
+        hog_id: Selected root HOG.
+        species: Recorded species column, if available.
+
+    Returns:
+        A descriptive source label and single-record FASTA.
+
+    Raises:
+        AppError: If the release cannot resolve the selection to one usable sequence.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_.|:+-]+", accession):
+        raise AppError("The recorded accession cannot be used as a FASTA identifier")
+    members = collect_external_hog_members(
+        connection=connection, hog_id=hog_id, maximum_members=10_000,
+    )
+    raw = members["member_raw_identifier"]
+    explicit_accessions = raw.str.extract(r"^(?:sp|tr)\|([^|]+)\|", expand=False)
+    raw_isoforms = raw.str.extract(r"^([A-Za-z0-9]+-\d+)$", expand=False)
+    recorded_accessions = explicit_accessions.fillna(raw_isoforms).fillna(
+        members["member_parsed_accession"],
+    )
+    matches = members.loc[raw.eq(accession) | recorded_accessions.eq(accession)]
+    if species:
+        matches = matches.loc[matches["member_species"].eq(species)]
+    if len(matches) != 1 or matches.iloc[0]["sequence_status"] != "AVAILABLE":
+        raise AppError(f"No unique exact sequence is available for {accession} in {hog_id}")
+    member = matches.iloc[0]
+    label = f"{accession} · {hog_id} · {member['member_species'].replace('_', ' ')}"
+    return label, f">{accession}\n{member['protein_sequence']}\n"
 
 
 def select_e3_inputs(

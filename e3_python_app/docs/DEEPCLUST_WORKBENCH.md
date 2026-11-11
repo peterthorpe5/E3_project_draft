@@ -136,7 +136,14 @@ downloadable. A heatmap hierarchy is not a species phylogeny.
 ## JBrowse MSA with a reviewed species tree
 
 The real, locally bundled **react-msaview 9.8.0** engine used by the GMOD
-JBrowse MSA plugin supplies the viewer. Protein data is not sent to a CDN.
+JBrowse MSA plugin supplies the viewer. Open **JBrowse MSA** from either
+**Candidate discovery** or **DeepClust research**. The example uses six
+synthetic sequences. For an E3 HOG, select **Published HOG alignment** to see
+the MAFFT sequence set exported in the plant pocket-review bundle. Where the
+release lacks a review alignment, **Prepare HOG member FASTA** opens sequence
+selection for a new alignment.
+
+Protein data is not sent to a CDN.
 Choose the inferred FastTree protein tree or **Reviewed species tree**. Upload
 a Newick backbone, or set `species_tree` in the research profile.
 
@@ -157,6 +164,10 @@ and group/species context. Those hits have the recorded protein length, but no
 sequence checksum: Nightingale shows their original length/coordinate axis
 without inventing amino acids or mapping onto a current sequence. Evidence TSV
 and standalone viewer HTML are downloadable.
+From the selected record, open JBrowse for its HOG or ESMFold for that
+protein. ESMFold can use the exact HOG/species sequence from the release,
+when available. To run a prediction elsewhere, prepare the job files and
+open the returned PDB in **ESMFold & models**.
 
 For new annotation select a completed family/FASTA, upload FASTA or choose
 **Paste FASTA**. Restrict to exact IDs when needed. Shared annotation/model

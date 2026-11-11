@@ -4,6 +4,19 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.1
+
+- Opens JBrowse MSA and ESMFold directly from Candidate discovery as well as
+  DeepClust research. The selected feature record links to the exact HOG alignment
+  or released protein sequence where available.
+- Starts JBrowse with a readable synthetic example and sizes the embedded viewer
+  to the number of alignment rows. Labels the active Nightingale protein and
+  keeps a small feature view compact.
+- Displays the input limit on supported upload widgets and explains the worker
+  and portable ESMFold routes on the prediction page.
+- Lists and filters the published 3D overlays by their recorded structural aligner,
+  including LoL-align when present in the review bundle.
+
 ## v0.23.0
 
 - Opens JBrowse MSA, the Nightingale feature browser and ESMFold models directly

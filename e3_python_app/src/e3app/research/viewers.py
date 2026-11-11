@@ -79,20 +79,31 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     if viewer == "jbrowse":
         bootstrap = """
         const data = JSON.parse(document.getElementById('protein-data').textContent);
+        const container = document.getElementById('viewer');
+        const status = document.getElementById('status');
         try {
-          window.proteinMSA = window.ReactMSAView.mount(document.getElementById('viewer'),
-              {msa:data.msa, tree:data.tree || undefined, height:680, colorScheme:'clustal'});
-          document.getElementById('status').textContent='JBrowse MSA · alignment and selected tree';
+          const width = container.clientWidth || 900;
+          const treeAreaWidth = Math.min(235, Math.max(110, Math.floor(width * 0.24)));
+          const visibleColumns = Math.min(data.alignment_length || 60, 60);
+          const colWidth = Math.max(14, Math.min(24,
+              Math.floor((width - treeAreaWidth - 28) / visibleColumns)));
+          window.proteinMSA = window.ReactMSAView.mount(container, {
+            msa: data.msa, tree: data.tree || undefined, height: data.height || 680,
+            rowHeight: data.row_height || 22, colWidth, treeAreaWidth, colorScheme: 'clustal',
+          });
+          status.textContent = data.tree ? 'JBrowse MSA · alignment with tree' : 'JBrowse MSA';
         } catch(error) {
-          document.getElementById('status').textContent='Viewer error: '+error.message;
+          status.textContent = 'Viewer error: ' + error.message;
         }
         """
+    viewer_class = ' class="alignment-viewer"' if viewer == "alignment" else ""
     return (
         """<!doctype html><html lang="en"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Protein research viewer</title><style>
     html,body{margin:0;font-family:Arial,sans-serif;background:white;color:#18243b}
-    #status{padding:8px;font-size:13px}#viewer{height:680px;width:100%;position:relative}
+    #status{padding:8px;font-size:13px}#viewer{width:100%;position:relative}
+    #viewer.alignment-viewer{height:680px}
     nightingale-navigation,nightingale-sequence,nightingale-track{display:block;width:100%}
     #viewer.protein-feature-viewer{height:auto;box-sizing:border-box;padding:0 10px 10px}
     .protein-feature-viewer p{font-size:13px;margin:8px 0}
@@ -103,7 +114,8 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
         + css
         + '</style></head><body><div id="status" role="status">Loading viewer…</div>'
         + (
-            '<div id="viewer"></div><script id="protein-data" type="application/json">'
+            f'<div id="viewer"{viewer_class}></div>'
+            '<script id="protein-data" type="application/json">'
             + encoded
             + "</script><script>"
             + script

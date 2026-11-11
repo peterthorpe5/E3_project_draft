@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import csv
+from inspect import signature
 from io import StringIO
 import json
 import os
 from pathlib import Path
+import re
 
 import pandas as pd
 import plotly.express as px
@@ -14,6 +16,11 @@ import plotly.graph_objects as go
 from scipy.cluster.hierarchy import dendrogram
 import streamlit as st
 import streamlit.components.v1 as components
+
+from e3app.config import AppConfig
+from e3app.errors import AppError
+from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
+from e3app.pocket_review import prepare_pocket_review, selected_group_alignment_fasta_bytes
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
@@ -26,6 +33,19 @@ from .viewer_inputs import (
     TREE_BYTES, UPLOAD_BYTES, read_species_mapping, uploaded_proteins, validate_protein_tree,
 )
 from .viewers import nightingale_features, viewer_document
+
+EXAMPLE_ALIGNMENT = {
+    "Example_A": "MAAKLVVA" "GLTQLKEA" "GLDVAVID" "RHGLDVEQ" "LKAALEAG" "ADVVVVTA" "DKETQLAS",
+    "Example_B": "MAAKLIVA" "GLTQLKEA" "GLDVAVID" "RHGLDVEQ" "LKAALEAG" "ADVVIVTA" "DKETQLAS",
+    "Example_C": "MSAKLVVA" "GLTQLKDA" "GLDVAVID" "RHGLDVEQ" "LKSALEAG" "ADIVVVTA" "DKETQLAT",
+    "Example_D": "MSAKLIVA" "GLTQLKDA" "GLDVAVID" "RHGL--EQ" "LKSALEAG" "ADIVIVTA" "DKETQLAT",
+    "Example_E": "MNARLIVA" "GVTQLREA" "GMDVAIVD" "RHGLDVEQ" "LKSALESG" "ADVIVVTA" "DRETQLAT",
+    "Example_F": "MNARLIVA" "GVTQLREA" "GMDVAIVD" "RHGLDV-Q" "LKSALESG" "ADVIVITA" "DRETQLAT",
+}
+EXAMPLE_TREE = (
+    "((Example_A:0.03,Example_B:0.03):0.04,"
+    "((Example_C:0.04,Example_D:0.05):0.03,(Example_E:0.03,Example_F:0.04):0.06):0.03);"
+)
 
 
 def _resource_identity(*, config: ResearchConfig) -> tuple:
@@ -114,7 +134,6 @@ def render_query_fasta(*, connection: object | None) -> None:
     Args:
         connection: Optional published E3 source with sequence-bearing HOG members.
     """
-    from e3app.errors import AppError
     from e3app.external_hog import collect_external_hog_members
 
     st.caption("Download the query FASTA for Ken’s app or CLI. API submission will be available "
@@ -123,7 +142,10 @@ def render_query_fasta(*, connection: object | None) -> None:
     mode = st.radio("Query protein source", modes, horizontal=True, key="ken_query_fasta_source")
     if mode == "Published HOG members":
         with st.form("ken_query_hog"):
-            hog = st.text_input("Exact HOG ID", placeholder="N0.HOG0003902")
+            hog = st.text_input(
+                label="Exact HOG ID", value=st.session_state.get("ken_query_selected_hog", ""),
+                placeholder="N0.HOG0003902",
+            )
             if st.form_submit_button("Find HOG proteins"):
                 st.session_state["ken_query_selected_hog"] = hog.strip().upper()
         hog = st.session_state.get("ken_query_selected_hog", "")
@@ -433,6 +455,47 @@ def render_comparisons(*, config: ResearchConfig) -> None:
         _render_comparison(config=config, job_id=chosen)
 
 
+def open_e3_viewer(
+    *, page: str, group_id: str, accession: str = "", species: str = "",
+) -> None:
+    """Open a dedicated E3 page with the exact selection supplied by its caller.
+
+    Args:
+        page: Dedicated destination in Candidate discovery or DeepClust research.
+        group_id: Recorded evolutionary group identifier.
+        accession: Exact protein accession for the models route.
+        species: Recorded species column for the models route.
+
+    Raises:
+        ResearchError: If the requested destination is unknown.
+    """
+    stage = st.session_state.get("e3_navigation_stage")
+    if stage not in {CANDIDATE_STAGE, DEEPCLUST_STAGE}:
+        stage = CANDIDATE_STAGE
+    if page == "Protein feature browser":
+        st.session_state["recorded_feature_query"] = group_id
+        st.session_state["recorded_feature_search_term"] = group_id
+        st.session_state["feature_browser_route"] = "Recorded E3 domain features"
+        st.session_state.pop("recorded_feature_context", None)
+    elif page == "JBrowse MSA":
+        st.session_state["published_alignment_group"] = group_id
+        st.session_state["published_alignment_input"] = group_id
+        st.session_state["alignment_view_source"] = "Published HOG alignment"
+    elif page == "ESMFold & models":
+        st.session_state["selected_e3_model_protein"] = (accession, group_id, species)
+        st.session_state["esmfold_view_route"] = "Predict with ESMFold"
+        st.session_state["fold_route"] = "Selected E3 protein"
+    elif page == "DeepClust results & FASTA":
+        stage = DEEPCLUST_STAGE
+        st.session_state["deepclust_exchange_mode"] = "Prepare query FASTA"
+        st.session_state["ken_query_fasta_source"] = "Published HOG members"
+        st.session_state["ken_query_selected_hog"] = group_id
+    else:
+        raise ResearchError("Unknown E3 viewer destination")
+    st.session_state["e3_navigation_stage"] = stage
+    st.session_state[f"e3_navigation_page_{stage}"] = page
+
+
 def render_features(
     *, config: ResearchConfig, connection: object | None, dedicated: bool = False,
 ) -> None:
@@ -445,7 +508,8 @@ def render_features(
     """
     from .ui import render_annotations, render_models
 
-    st.subheader("Nightingale protein features")
+    if not dedicated:
+        st.subheader("Nightingale protein features")
     choices = (["Recorded E3 domain features"] if connection is not None else []) + [
         "Upload annotation results",
     ]
@@ -465,12 +529,22 @@ def render_features(
     if route == "ESMFold for selected sequences":
         render_models(config=config)
         return
-    st.caption("Choose a recorded protein or search by accession or HOG ID.")
+    st.caption("Search for an exact accession or HOG ID, or choose a protein from the list.")
+    st.session_state.setdefault(
+        "recorded_feature_search_term", st.session_state.get("recorded_feature_query", ""),
+    )
     with st.form("recorded_feature_search"):
-        query = st.text_input("Accession or HOG ID", placeholder="Q5ZC88 or N0.HOG0000390")
+        query = st.text_input(
+            label="Accession or HOG ID",
+            key="recorded_feature_search_term",
+            placeholder="For example, Q5ZC88 or N0.HOG0000390",
+        )
         if st.form_submit_button("Find recorded proteins"):
-            st.session_state["recorded_feature_query"] = query
+            st.session_state["recorded_feature_query"] = query.strip().upper()
+            st.session_state.pop("recorded_feature_context", None)
     query = st.session_state.get("recorded_feature_query", "")
+    if query:
+        st.caption(f"Showing recorded contexts for {query}")
     try:
         matches = feature_contexts(connection=connection, query=query)
     except ResearchError as exc:
@@ -480,12 +554,34 @@ def render_features(
         st.info("No recorded coordinates match this search in the loaded release.")
         return
     if len(matches) > 100:
-        st.caption("Showing the first 100 recorded contexts. Search to find a specific protein.")
+        st.caption("Showing the first 100 matches. Search by accession to narrow the list.")
     contexts = list(matches.head(100).itertuples(index=False, name=None))
-    accession, group_id, species = st.selectbox(
-        "Protein · group · species", options=contexts,
-        format_func=lambda value: " · ".join(item for item in value if item),
+    choice = st.selectbox(
+        label="Protein · group · species", options=contexts,
+        format_func=lambda value: " · ".join(item.replace("_", " ") for item in value if item),
+        key="recorded_feature_context",
+        index=0 if query and len(contexts) == 1 else None, placeholder="Select a recorded protein",
     )
+    if choice is None:
+        return
+    accession, group_id, species = choice
+    context = " · ".join(item for item in (group_id, species.replace("_", " ")) if item)
+    st.subheader(accession)
+    if context:
+        st.caption(context)
+    if dedicated and group_id:
+        alignment, models = st.columns(2)
+        alignment.button(
+            label="Open this HOG in JBrowse MSA", key="feature_to_msa", on_click=open_e3_viewer,
+            kwargs={"page": "JBrowse MSA", "group_id": group_id},
+        )
+        models.button(
+            label="Open ESMFold for this protein", key="feature_to_models", on_click=open_e3_viewer,
+            kwargs={
+                "page": "ESMFold & models", "group_id": group_id,
+                "accession": accession, "species": species,
+            },
+        )
     rows = published_features(connection=connection, accession=accession)
     selected = rows.loc[rows["primary_group_id"].fillna("").astype(str).eq(group_id)
                         & rows["species_column"].fillna("").astype(str).eq(species)
@@ -506,7 +602,8 @@ def render_features(
         subset["member_accession"] = accession
         if numeric.loc[usable, "protein_length"].nunique() > 1:
             st.caption(f"Recorded protein length {int(length):,} residues")
-        show_features(payload=recorded_feature_payload(rows=subset), stem=f"features_{int(length)}")
+        stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{int(length)}")
+        show_features(payload=recorded_feature_payload(rows=subset), stem=f"{stem}_features")
     with st.expander("Recorded feature evidence", expanded=True):
         columns = ["entry_accession", "entry_name", "location_start", "location_end",
                    "protein_length", "source_database"]
@@ -525,12 +622,18 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
         stem: Filename and widget namespace for this selection.
     """
     document = viewer_document(viewer="nightingale", payload=payload)
-    components.html(document, height=420, scrolling=True)
+    features = {(feature["accession"], feature["description"]) for feature in payload["features"]}
+    base_height = 160 if payload.get("sequence") else 122
+    height = min(620, max(160, base_height + 43 * len(features)))
+    components.html(document, height=height, scrolling=True)
     st.download_button("Download Nightingale viewer (HTML)", data=document,
                        file_name=f"{stem}.html", key=f"nightingale_{stem}", mime="text/html")
 
 
-def upload_text(*, label: str, types: list[str], key: str, maximum: int = UPLOAD_BYTES) -> str:
+def upload_text(
+    *, label: str, types: list[str], key: str, maximum: int = UPLOAD_BYTES,
+    help_text: str | None = None,
+) -> str:
     """Read a bounded UTF-8 viewer upload with a visible file requirement.
 
     Args:
@@ -538,11 +641,18 @@ def upload_text(*, label: str, types: list[str], key: str, maximum: int = UPLOAD
         types: Supported filename extensions.
         key: Unique widget key.
         maximum: Maximum upload bytes.
+        help_text: Optional instructions displayed beside the upload control.
 
     Returns:
         Decoded text, or empty text before a file is selected.
     """
-    uploaded = st.file_uploader(label, type=types, key=key)
+    limit_mb = (maximum + 999_999) // 1_000_000
+    options = {}
+    if "max_upload_size" in signature(st.file_uploader).parameters:
+        options["max_upload_size"] = limit_mb
+    else:
+        st.caption(f"This input accepts up to {limit_mb} MB of text.")
+    uploaded = st.file_uploader(label=label, type=types, key=key, help=help_text, **options)
     if uploaded is None:
         return ""
     if uploaded.size > maximum:
@@ -587,50 +697,127 @@ def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) 
         example: Use an explicitly labelled synthetic alignment.
     """
     if example:
-        st.caption("Example alignment with three synthetic protein sequences.")
-        msa = ">protein_A\nMAAKLVVAGL\n>protein_B\nMAAKL-IAGL\n>protein_C\nMAAKLVIAGV\n"
-        tree = "((protein_A:0.1,protein_B:0.1):0.05,protein_C:0.2);"
-    else:
-        st.caption("Open aligned FASTA from MAFFT or another aligner. A tree is optional.")
-        msa = upload_text(label="Aligned protein FASTA", types=["fa", "faa", "fasta", "aln"],
-                          key="viewer_aligned_fasta")
-        tree = ""
+        st.caption("Example with synthetic sequences and a demonstration tree.")
+        render_jbrowse(records=EXAMPLE_ALIGNMENT, tree=EXAMPLE_TREE, stem="example_jbrowse_msa")
+        return
+    st.caption("Upload a gapped protein FASTA from MAFFT or another aligner. A tree is optional.")
+    msa = upload_text(
+        label="Aligned protein FASTA", types=["fa", "faa", "fasta", "aln"],
+        key="viewer_aligned_fasta",
+        help_text="The file must be in FASTA format, with one equal-length row per protein.",
+    )
     if not msa:
         return
     records = uploaded_proteins(text=msa, aligned=True,
                                 maximum_records=config.max_alignment_sequences,
                                 maximum_cells=config.max_alignment_cells)
-    if not example:
-        kind = st.radio("Tree beside the MSA", ["No tree", "Protein tree", "Reviewed species tree"],
-                        horizontal=True, key="viewer_uploaded_tree_kind")
-        if kind != "No tree":
-            newick = upload_text(label=f"{kind} (Newick)", types=["nwk", "newick", "tree", "nh"],
-                                 key=f"viewer_tree_{kind}", maximum=TREE_BYTES)
-            if kind == "Protein tree" and newick:
-                tree = validate_protein_tree(newick=newick, identifiers=list(records))
-            elif kind == "Reviewed species tree":
-                mapping = upload_text(label="Reviewed sequence-to-species mapping (TSV)",
-                                      types=["tsv"], key="viewer_species_mapping")
-                if newick and mapping:
-                    tree, audit = species_display_tree(
-                        newick=newick, sequence_ids=list(records),
-                        metadata=read_species_mapping(text=mapping),
-                    )
-                    st.download_button("Download species-tree mapping audit (TSV)",
-                                       data=pd.DataFrame(audit).to_csv(sep="\t", index=False),
-                                       file_name="msa_species_mapping.tsv")
-                else:
-                    st.info("Supply a species tree and mapping with sequence_id, species and "
-                            "taxon_id. The alignment is available below while you select files.")
-    width = len(next(iter(records.values())))
-    st.caption(f"{len(records):,} proteins · {width:,} aligned positions")
-    document = viewer_document(viewer="jbrowse", payload={
-        "msa": "".join(f">{identifier}\n{sequence}\n" for identifier, sequence in records.items()),
-        "tree": tree,
-    })
-    components.html(document, height=740, scrolling=True)
+    tree = ""
+    kind = st.radio(
+        label="Tree beside the MSA", options=["No tree", "Protein tree", "Reviewed species tree"],
+        horizontal=True, key="viewer_uploaded_tree_kind",
+    )
+    if kind != "No tree":
+        newick = upload_text(label=f"{kind} (Newick)", types=["nwk", "newick", "tree", "nh"],
+                             key=f"viewer_tree_{kind}", maximum=TREE_BYTES)
+        if kind == "Protein tree" and newick:
+            tree = validate_protein_tree(newick=newick, identifiers=list(records))
+        elif kind == "Reviewed species tree":
+            mapping = upload_text(label="Reviewed sequence-to-species mapping (TSV)",
+                                  types=["tsv"], key="viewer_species_mapping")
+            if newick and mapping:
+                tree, audit = species_display_tree(
+                    newick=newick, sequence_ids=list(records),
+                    metadata=read_species_mapping(text=mapping),
+                )
+                st.download_button("Download species-tree mapping audit (TSV)",
+                                   data=pd.DataFrame(audit).to_csv(sep="\t", index=False),
+                                   file_name="msa_species_mapping.tsv")
+            else:
+                st.info("Supply a species tree and mapping with sequence_id, species and "
+                        "taxon_id. The alignment is available below while you select files.")
+    render_jbrowse(records=records, tree=tree, stem="jbrowse_msa")
+
+
+def render_published_alignment(*, config: ResearchConfig, app_config: AppConfig) -> None:
+    """Open an exact HOG's recorded plant review alignment, if exported.
+
+    Args:
+        config: Protein alignment rendering limits.
+        app_config: Loaded resource and optional plant review bundle.
+    """
+    st.caption("Look up the aligned sequences exported with the plant pocket review.")
+    st.session_state.setdefault(
+        "published_alignment_input", st.session_state.get("published_alignment_group", ""),
+    )
+    with st.form(key="published_hog_alignment"):
+        entered = st.text_input(
+            label="Exact HOG ID", key="published_alignment_input", placeholder="N0.HOG0000390",
+        )
+        if st.form_submit_button(label="Find published alignment"):
+            st.session_state["published_alignment_group"] = entered.strip().upper()
+    group_id = st.session_state.get("published_alignment_group", "")
+    if not group_id:
+        return
+    st.caption(f"Selected HOG {group_id}")
+    bundle = prepare_pocket_review(config=app_config)
+    if bundle.available:
+        hits = bundle.index.loc[bundle.index["primary_group_id"].astype(str).eq(group_id)]
+        if len(hits) == 1:
+            try:
+                fasta = selected_group_alignment_fasta_bytes(
+                    bundle=bundle, review_rank=int(hits.iloc[0]["review_rank"]),
+                )
+            except AppError as exc:
+                st.info(str(exc))
+            else:
+                records = uploaded_proteins(
+                    text=fasta.decode("utf-8"), aligned=True,
+                    maximum_records=config.max_alignment_sequences,
+                    maximum_cells=config.max_alignment_cells,
+                )
+                st.caption("Published MAFFT alignment from the plant pocket-review sequence set.")
+                stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", group_id)
+                render_jbrowse(records=records, tree="", stem=f"{stem}_pocket_review_msa")
+                st.download_button(
+                    label="Download published aligned FASTA", data=fasta,
+                    file_name=f"{stem}_pocket_review_alignment.fasta", mime="text/plain",
+                )
+                return
+        else:
+            st.info(f"No unique plant pocket-review alignment is available for {group_id}.")
+    else:
+        st.info("The plant pocket-review bundle is unavailable in this app session.")
+    st.button(
+        label="Prepare HOG member FASTA", on_click=open_e3_viewer,
+        kwargs={"page": "DeepClust results & FASTA", "group_id": group_id},
+        help="Select published HOG sequences for alignment in the workbench or on another machine.",
+    )
+
+
+def render_jbrowse(*, records: dict[str, str], tree: str, stem: str) -> None:
+    """Open a validated alignment in a readable frame sized to the number of rows.
+
+    Args:
+        records: Validated aligned protein records in their intended display order.
+        tree: Optional Newick tree using those record IDs.
+        stem: Download filename stem.
+    """
+    sequence_count = len(records)
+    alignment_length = len(next(iter(records.values())))
+    row_height = 26 if sequence_count <= 16 else 19
+    height = min(640, max(250, 118 + row_height * sequence_count))
+    st.caption(f"{sequence_count:,} proteins · {alignment_length:,} aligned positions. "
+               "Use the toolbar to zoom or fit the alignment.")
+    document = viewer_document(
+        viewer="jbrowse", payload={
+            "msa": "".join(f">{name}\n{sequence}\n" for name, sequence in records.items()),
+            "tree": tree, "alignment_length": alignment_length, "row_height": row_height,
+            "height": height,
+        },
+    )
+    components.html(document, height=height + 42, scrolling=True)
     st.download_button("Download standalone JBrowse MSA viewer", data=document,
-                       file_name="jbrowse_msa.html", mime="text/html")
+                       file_name=f"{stem}.html", mime="text/html")
 
 
 def species_view(

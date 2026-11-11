@@ -2574,9 +2574,8 @@ def _render_external_pair_actions(
             )
         st.caption(
             "Each Mol* action loads the selected AlphaFold model directly and "
-            "uses Mol*'s residue-level pLDDT colouring. The unreliable RCSB "
-            "computed-model pair hand-off is deliberately not offered. External "
-            "alignments do not replace the recorded E3 US-align/TM-align evidence."
+            "uses Mol*'s residue-level pLDDT colouring. Published E3 superpositions "
+            "are available under Structural comparison."
         )
 
         alphafold_actions = st.columns(2)
@@ -2742,12 +2741,28 @@ def _render_structural_superposition(
     if viewers.empty:
         st.info("No pairwise structural superposition was published for this group.")
         return
+    methods = sorted(viewers["alignment_tool"].astype(str).unique(), key=str.casefold)
+    st.caption("Published 3D overlays for this group · " + " · ".join(methods))
+    if not any("lolalign" in method.casefold().replace("-", "").replace(" ", "")
+               for method in methods):
+        st.caption("This review bundle has no published LoL-align overlay for the selected group.")
+    if len(methods) > 1:
+        method = st.selectbox(
+            label="Alignment method", options=["All published methods", *methods],
+            key=f"{key_prefix}_method",
+            help="Filter the saved superpositions by the method used to generate them.",
+        )
+        if method != "All published methods":
+            viewers = viewers.loc[viewers["alignment_tool"].astype(str).eq(method)]
     viewer_labels = structural_viewer_choice_labels(viewers)
+    pair_key = f"{key_prefix}_pair"
+    if st.session_state.get(pair_key) not in viewer_labels:
+        st.session_state.pop(pair_key, None)
     viewer_path = st.selectbox(
         "Reference and aligned protein pair",
         options=list(viewer_labels),
         format_func=lambda value: viewer_labels[value],
-        key=f"{key_prefix}_pair",
+        key=pair_key,
         help=(
             "The reference protein remains fixed. Choose the mobile protein "
             "whose coordinates were transformed onto that reference."
@@ -3620,8 +3635,7 @@ def _render_overview(*, connection: object, config: AppConfig) -> None:
         st.markdown("#### Milestone 2: conserved chemical starting space")
         st.write(
             "Reusable pocket evidence, pocket-bearing region conservation, FASTA "
-            "coordinates and US-align/TM-align pocket equivalence. The zero stringent "
-            "passes is a result of the current gates, not an unfinished placeholder."
+            "coordinates and pocket equivalence from the recorded structural aligners."
         )
     with boundary:
         st.markdown("#### Interpretation boundary")
@@ -4943,6 +4957,16 @@ def _render_candidate_landscape(
         frame=pd.DataFrame([row[display_columns].to_dict()]),
     )
     identifiers = candidate_identifiers_from_row(row=row)
+    group_id = identifiers.get("primary_group_id")
+    if group_id and str(group_id).strip().casefold() not in {"none", "none:none"}:
+        from e3app.research.expansion_ui import open_e3_viewer
+
+        st.button(
+            label=f"Open protein features for {group_id}",
+            key="visual_candidate_protein_features",
+            on_click=open_e3_viewer,
+            kwargs={"page": "Protein feature browser", "group_id": str(group_id)},
+        )
     evidence_relations = candidate_evidence_relations(
         connection=connection,
         identifiers=identifiers,
@@ -5530,8 +5554,7 @@ def render_app() -> None:
     st.markdown(_WRAPPED_TAB_CSS, unsafe_allow_html=True)
     st.title("ARIA plant E3 discovery and ligandability resource")
     st.caption(
-        "Read-only Python companion to the R Shiny reporter. DuckDB performs "
-        "bounded screen previews and complete, on-demand evidence exports."
+        "Browse published E3 evidence, compare selected proteins and export the underlying data."
     )
     try:
         config = config_from_environment()
@@ -5553,25 +5576,31 @@ def render_app() -> None:
     )
 
     st.sidebar.header("Data release")
-    st.sidebar.code(str(config.source_path))
-    st.sidebar.caption(f"Source mode: {config.source_mode}")
-    if config.expression_duckdb:
-        st.sidebar.caption(f"Raw Expression Atlas: {config.expression_duckdb}")
+    st.sidebar.caption(f"{config.source_path.name} · {config.source_mode}")
     if pocket_review_dir is not None:
-        st.sidebar.success(f"Pocket review configured: {pocket_review_dir}")
+        st.sidebar.success("Plant pocket review configured")
     else:
         st.sidebar.warning("Portable pocket review is not configured.")
     if human_plant_review_dir is not None:
-        st.sidebar.success(
-            f"Human + plant review configured: {human_plant_review_dir}"
-        )
+        st.sidebar.success("Human + plant review configured")
     else:
         st.sidebar.caption("Human + plant structural extension is not configured.")
     st.sidebar.caption(f"Maximum screen-preview rows: {config.max_rows:,}")
     if config.taxonomy_map:
-        st.sidebar.success(f"Custom taxonomy mapping: {config.taxonomy_map}")
+        st.sidebar.success("Custom taxonomy mapping configured")
     else:
         st.sidebar.caption("Taxonomy: packaged 13-species E3 snapshot")
+    with st.sidebar.expander(label="Data source paths"):
+        for label, path in (
+            ("Primary resource", config.source_path),
+            ("Raw Expression Atlas", config.expression_duckdb),
+            ("Plant pocket review", pocket_review_dir),
+            ("Human + plant pocket review", human_plant_review_dir),
+            ("Custom taxonomy mapping", config.taxonomy_map),
+        ):
+            if path is not None:
+                st.caption(label)
+                st.code(str(path), language=None, wrap_lines=True)
     st.sidebar.info(
         "Missing annotation or expression resources are shown as unavailable "
         "evidence, never silently converted into a biological negative."
@@ -5593,10 +5622,12 @@ def render_app() -> None:
                     title="DeepClust workbench",
                 ),
                 "JBrowse MSA": lambda: render_research_workbench(
-                    initial_section="Alignments and trees", title="JBrowse MSA", dedicated=True,
+                    initial_section="Alignments and trees", title="JBrowse MSA",
+                    dedicated=True, app_config=config,
                 ),
                 "ESMFold & models": lambda: render_research_workbench(
-                    initial_section="Models", title="ESMFold & models", dedicated=True,
+                    connection=connection, initial_section="Models", title="ESMFold & models",
+                    dedicated=True,
                 ),
                 "Protein feature browser": lambda: render_research_workbench(
                     connection=connection, initial_section="Protein features",

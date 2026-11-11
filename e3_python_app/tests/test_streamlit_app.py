@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import duckdb
+import pandas as pd
 import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
@@ -353,9 +354,8 @@ def test_app_accepts_custom_reviewed_taxonomy(
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
     app = AppTest.from_file(str(path), default_timeout=10).run()
     assert not app.exception
-    assert any(
-        str(mapping.resolve()) in success.value for success in app.success
-    )
+    sources = next(expander for expander in app.expander if expander.label == "Data source paths")
+    assert any(str(mapping.resolve()) == code.proto.code_text for code in sources.get("code"))
     assert any(
         "Custom taxonomy mapping" in success.value for success in app.success
     )
@@ -430,6 +430,7 @@ def test_app_renders_portable_structure_and_alignment_tabs(
     ]
     assert len(pair_selectors) == 1
     assert any("Reference: P1" in option for option in pair_selectors[0].options)
+    assert any("no published LoL-align overlay" in caption.value for caption in app.caption)
     expander_labels = [expander.label for expander in app.expander]
     assert "❓ Why was this structural reference selected?" in expander_labels
     assert "❓ Define the pair-evidence terms" in expander_labels
@@ -485,6 +486,33 @@ def test_app_renders_portable_structure_and_alignment_tabs(
         if button.label == "Download exact pair FASTA"
     ]
     assert len(pair_downloads) == 1
+
+
+def test_app_filters_published_structural_alignment_methods(
+    resource_db: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Expose only saved overlays for the selected structural method."""
+    review_dir = make_pocket_review(tmp_path)
+    table = review_dir / "tables/structural_alignment_viewers.tsv"
+    viewers = pd.read_csv(table, sep="\t")
+    original = Path(viewers.iloc[0]["interactive_view_html"])
+    alternative = original.with_name("lolalign.html")
+    (review_dir / alternative).write_bytes((review_dir / original).read_bytes())
+    lol = viewers.assign(alignment_tool="LoL-align", interactive_view_html=str(alternative))
+    pd.concat([viewers, lol]).to_csv(table, sep="\t", index=False)
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    monkeypatch.setenv("E3_POCKET_REVIEW_DIR", str(review_dir))
+    path = Path(__file__).resolve().parents[1] / "src/e3app/streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=20).run()
+    _navigate(app, stage="🟡 5 · Structural comparison", page="3D alignment")
+    method = next(selector for selector in app.selectbox if selector.label == "Alignment method")
+    assert method.options == ["All published methods", "LoL-align", "US-align"]
+    method.select("LoL-align").run()
+    pair = next(selector for selector in app.selectbox
+                if selector.label == "Reference and aligned protein pair")
+    assert len(pair.options) == 1 and "LoL-align" in pair.options[0]
+    assert not any("no published LoL-align overlay" in caption.value for caption in app.caption)
+    assert not app.exception and not app.error
 
 
 def _terminal_app(*, resource_db: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
