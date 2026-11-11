@@ -111,12 +111,15 @@ NAVIGATION_STAGES = (
     NavigationStage(
         label="🧬 DeepClust research",
         description=(
-            "Collect external clusters through the command-line connection, refine families "
-            "and compare sequences, species and protein features."
+            "Prepare search FASTA, import DeepClust results, and view protein alignments, "
+            "features and models."
         ),
         pages=(
+            NavigationPage("DeepClust results & FASTA"),
             NavigationPage("DeepClust workbench"),
+            NavigationPage("JBrowse MSA"),
             NavigationPage("Protein feature browser", shared=True),
+            NavigationPage("ESMFold & models"),
         ),
     ),
     NavigationStage(

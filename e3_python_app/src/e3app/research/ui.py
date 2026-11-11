@@ -6,7 +6,9 @@ import csv
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
+import shlex
 from typing import Mapping
 
 import pandas as pd
@@ -77,6 +79,13 @@ def navigate_research(
         raise ResearchError("Unknown family-analysis task")
     if input_route and input_route not in {"Completed job", "Upload FASTA"}:
         raise ResearchError("Unknown protein input route")
+    stage = "🧬 DeepClust research"
+    page_key = f"e3_navigation_page_{stage}"
+    if st.session_state.get("e3_navigation_stage") == stage and st.session_state.get(page_key) in {
+        "DeepClust results & FASTA", "JBrowse MSA", "ESMFold & models",
+    }:
+        st.session_state[page_key] = "DeepClust workbench"
+        st.session_state["research_surface"] = "DeepClust workbench"
     st.session_state["research_section"] = section
     if discovery_mode:
         st.session_state["research_discovery_mode"] = discovery_mode
@@ -129,14 +138,23 @@ def render_page_guidance(*, section: str) -> None:
         st.markdown(instructions)
 
 
-def render_start(*, config: ResearchConfig, connection: object | None) -> None:
+def render_start(
+    *, config: ResearchConfig, connection: object | None, external_search: bool = False,
+) -> None:
     """Offer project-aware entry points while retaining generic FASTA workflows.
 
     Args:
         config: Current workspace profile.
         connection: Optional source-project adapter connection.
+        external_search: Use the external search exchange as the primary route.
     """
     st.subheader("Start with one protein family")
+    if external_search:
+        st.write("Prepare FASTA for Ken’s search or open its results. Use Family analysis to "
+                 "align sequences, and the viewers to open results from any machine.")
+        render_next_action(label="Prepare FASTA or import results", key="start_exchange",
+                           section="Discover", primary=True)
+        return
     st.write(
         "The aim is to collect a relevant family, compare its protein sequences and inspect "
         "conservation and relationships. Structure and annotation predictions are optional."
@@ -350,14 +368,21 @@ def render_input(*, config: ResearchConfig, key: str) -> tuple[dict[str, object]
         for name in manifest["artifacts"]
         if name.endswith((".fasta", ".faa", ".fa")) and name != "alignment.fasta"
     ]
+    prepared = st.session_state.get("research_prepared_fasta")
+    routes = ["Completed job", "Upload FASTA", "Paste FASTA"]
+    if prepared:
+        routes.append("Prepared FASTA")
     route = st.radio(
         "Protein input",
-        ["Completed job", "Upload FASTA", "Paste FASTA"],
+        routes,
         horizontal=True,
         key=f"{key}_route",
         help=FIELD_HELP["protein_input"],
         index=0 if options else 1,
     )
+    if route == "Prepared FASTA":
+        st.caption(f"Prepared protein source: {prepared[0]}")
+        return {}, prepared[1]
     if route == "Paste FASTA":
         pasted = st.text_area(
             "Protein FASTA text", key=f"{key}_pasted_fasta",
@@ -448,8 +473,8 @@ def queue_action(
     LOGGER.info("Workbench queued %s job %s", operation, job_id)
     st.success(f"Queued: {OPERATION_NAMES.get(operation, operation)} · job {job_id}.")
     st.info(
-        "Next: open Jobs and wait for COMPLETE. The analysis worker executes the request; "
-        "a queued job has not started yet. You can leave the browser open or return later."
+        "Open Jobs to see the queue workspace and the command for running this request. "
+        "A worker using that workspace starts the job."
     )
     render_next_action(
         label="Track this job",
@@ -457,6 +482,36 @@ def queue_action(
         section="Jobs",
         job_id=job_id,
     )
+
+
+def render_portable_job(
+    *, operation: str, parameters: Mapping[str, object], fasta: str | None, prepare: bool,
+) -> None:
+    """Offer a self-contained request to execute on another machine.
+
+    Args:
+        operation: Supported FASTA-based job type.
+        parameters: Current form settings.
+        fasta: Uploaded, pasted or prepared protein FASTA.
+        prepare: Whether the user requested fresh job files.
+    """
+    from .viewer_inputs import portable_job_archive
+
+    key = f"portable_research_{operation}"
+    saved = st.session_state.get(key)
+    if not fasta or (not prepare and not saved):
+        return
+    identity = (hashlib.sha256(fasta.encode()).hexdigest(),
+                json.dumps(dict(parameters), sort_keys=True))
+    if prepare:
+        st.session_state.pop(key, None)
+        saved = (identity, portable_job_archive(operation=operation, parameters=parameters,
+                                                fasta=fasta))
+        st.session_state[key] = saved
+    if saved and saved[0] == identity:
+        st.download_button("Download job files (ZIP)", data=saved[1],
+                           file_name=f"protein_{operation}_job.zip", key=key + "_download",
+                           mime="application/zip")
 
 
 def render_deepclust_import(*, config: ResearchConfig) -> None:
@@ -874,16 +929,19 @@ def render_discovery(*, config: ResearchConfig, connection: object | None) -> No
             queue_action(config=config, operation="taxonomy_index", parameters={})
 
 
-def render_analysis(*, config: ResearchConfig) -> None:
+def render_analysis(*, config: ResearchConfig, enable_search: bool = True) -> None:
     """Render exact subclustering, bounded alignment and representative-search requests.
 
     Args:
         config: Tool and workspace profile.
+        enable_search: Expose the optional built-in representative search.
     """
     render_page_guidance(section="Family analysis")
     task = st.radio(
         "Family analysis",
-        ["Stricter subclusters", "Alignment and tree", "Representative homology search"],
+        ["Stricter subclusters", "Alignment and tree"] + (
+            ["Representative homology search"] if enable_search else []
+        ),
         horizontal=True,
         key="research_analysis_task",
         help="Choose Stricter subclusters for a broad family, Alignment and tree to compare "
@@ -1007,8 +1065,15 @@ def render_analysis(*, config: ResearchConfig) -> None:
             help="Save this input and these settings as a job. The worker runs it; "
             "follow progress and errors in Jobs.",
         )
+        prepare = operation == "align" and st.form_submit_button(
+            "Prepare files for another machine", disabled=not fasta,
+            help="Use uploaded, pasted or prepared FASTA for a self-contained job ZIP.",
+        )
     if queued:
         queue_action(config=config, operation=operation, parameters=parameters, fasta=fasta)
+    if operation == "align":
+        render_portable_job(operation=operation, parameters=parameters, fasta=fasta,
+                            prepare=prepare)
     completed = completed_manifests(config=config, operation="subcluster")
     if completed:
         st.markdown("#### Completed subclustering results")
@@ -1044,14 +1109,30 @@ def render_analysis(*, config: ResearchConfig) -> None:
             )
 
 
-def render_alignments(*, config: ResearchConfig) -> None:
+def render_alignments(*, config: ResearchConfig, dedicated: bool = False) -> None:
     """Render real JBrowse/AV2 libraries and a configured self-hosted Auspice dataset.
 
     Args:
         config: Alignment workspace and Auspice URL.
+        dedicated: Open the file upload route in the named JBrowse page.
     """
-    render_page_guidance(section="Alignments and trees")
-    completed = completed_manifests(config=config, operation="align")
+    from .expansion_ui import render_uploaded_alignment
+
+    if not dedicated:
+        render_page_guidance(section="Alignments and trees")
+    options = ["Upload alignment files", "Try an example", "Completed alignment job"]
+    completed = completed_manifests(config=config, operation="align") if not dedicated else {}
+    source = st.radio("Alignment source", options, horizontal=True, key="alignment_view_source",
+                      index=2 if completed else 0,
+                      help="Open a saved alignment, try the example, or upload an aligned FASTA.")
+    if source != "Completed alignment job":
+        render_uploaded_alignment(config=config, example=source == "Try an example")
+        if not dedicated:
+            render_next_action(label="Set up an alignment", key="empty_alignment",
+                               section="Family analysis", analysis_task="Alignment and tree")
+        return
+    if dedicated:
+        completed = completed_manifests(config=config, operation="align")
     if not completed:
         st.info(
             (
@@ -1104,6 +1185,7 @@ def render_alignments(*, config: ResearchConfig) -> None:
         help="JBrowse MSA combines the alignment and tree. Alignment Viewer 2 supports "
         "sorting by similarity to the reference. Statistics gives tables and conservation "
         "plots. Auspice requires a separately configured viewer service.",
+        key="completed_alignment_view",
     )
     st.caption(
         {
@@ -1193,12 +1275,19 @@ def render_alignments(*, config: ResearchConfig) -> None:
     )
 
 
-def render_models(*, config: ResearchConfig) -> None:
+def render_models(*, config: ResearchConfig, dedicated: bool = False) -> None:
     """Queue optional ESMFold jobs and interrogate exact-sequence model evidence.
 
     Args:
         config: Trusted model providers and workspace.
+        dedicated: Open the model file route in the named ESMFold page.
     """
+    route = st.radio("Model workflow", ["Open an existing PDB", "Predict with ESMFold"],
+                     horizontal=True, index=0 if dedicated else 1, key="esmfold_view_route",
+                     help="Inspect a model file or open the prediction and completed-job forms.")
+    if route == "Open an existing PDB":
+        render_uploaded_model()
+        return
     render_page_guidance(section="Models")
     source, fasta = render_input(config=config, key="fold")
     engines = {
@@ -1249,13 +1338,17 @@ def render_models(*, config: ResearchConfig) -> None:
             help="Predict models for the selected proteins. External requests require the "
             "submission selection above. Follow per-protein successes and failures in Jobs.",
         )
+        prepare = st.form_submit_button("Prepare files for another machine", disabled=not fasta
+                                        or (engine != "local" and not remote))
+    parameters = {**source, "sequence_ids": ids, "engine": engine, "remote_allowed": remote}
     if queued:
         queue_action(
             config=config,
             operation="predict",
-            parameters={**source, "sequence_ids": ids, "engine": engine, "remote_allowed": remote},
+            parameters=parameters,
             fasta=fasta,
         )
+    render_portable_job(operation="predict", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="predict")
     if not completed:
         return
@@ -1290,32 +1383,7 @@ def render_models(*, config: ResearchConfig) -> None:
             workspace=config.workspace, job_id=selected, artifact=row["residue_artifact"]
         )
     ).copy()
-    for column in ("x", "y", "z", "residue_index", "confidence_b_factor"):
-        residues[column] = pd.to_numeric(residues[column])
-    figure = go.Figure(
-        go.Scatter3d(
-            x=residues.x,
-            y=residues.y,
-            z=residues.z,
-            mode="lines+markers",
-            marker={
-                "size": 3,
-                "color": residues.confidence_b_factor,
-                "cmin": 0,
-                "cmax": 100,
-                "colorscale": "Viridis",
-                "colorbar": {"title": "Confidence"},
-            },
-            text=residues.residue + residues.residue_index.astype(str),
-            hovertemplate="%{text}<extra></extra>",
-        )
-    )
-    figure.update_layout(scene={"aspectmode": "data"}, title="Predicted model · C-alpha trace")
-    st.plotly_chart(figure, key="predicted_model_trace")
-    st.plotly_chart(
-        px.line(residues, x="residue_index", y="confidence_b_factor", range_y=[0, 100]),
-        key="model_confidence",
-    )
+    render_model_trace(residues=residues)
     sequence = "".join(residues["residue"])
     if hashlib.sha256(sequence.encode()).hexdigest() != row["sequence_sha256"]:
         raise ResearchError("Model residue evidence differs from its input sequence")
@@ -1355,6 +1423,46 @@ def render_models(*, config: ResearchConfig) -> None:
             "function."
         )
     )
+
+
+def render_model_trace(*, residues: pd.DataFrame) -> None:
+    """Show coordinates and reported per-residue confidence for a predicted model.
+
+    Args:
+        residues: Validated per-residue coordinate evidence.
+    """
+    residues = residues.copy()
+    for column in ("x", "y", "z", "residue_index", "confidence_b_factor"):
+        residues[column] = pd.to_numeric(residues[column])
+    figure = go.Figure(go.Scatter3d(
+        x=residues.x, y=residues.y, z=residues.z, mode="lines+markers",
+        marker={"size": 3, "color": residues.confidence_b_factor, "cmin": 0, "cmax": 100,
+                "colorscale": "Viridis", "colorbar": {"title": "Confidence"}},
+        text=residues.residue + residues.residue_index.astype(str),
+        hovertemplate="%{text}<extra></extra>",
+    ))
+    figure.update_layout(scene={"aspectmode": "data"}, title="Predicted model · C-alpha trace")
+    st.plotly_chart(figure, key="predicted_model_trace")
+    st.plotly_chart(px.line(residues, x="residue_index", y="confidence_b_factor", range_y=[0, 100]),
+                    key="model_confidence")
+
+
+def render_uploaded_model() -> None:
+    """Inspect an externally produced monomer PDB against its exact FASTA sequence."""
+    from .expansion_ui import upload_text
+    from .providers import pdb_evidence
+    from .viewer_inputs import uploaded_proteins
+
+    st.caption("Open an ESMFold PDB and its original protein FASTA. Confidence is read from the "
+               "PDB B-factor field.")
+    pdb = upload_text(label="Predicted monomer PDB", types=["pdb"], key="viewer_model_pdb")
+    fasta = upload_text(label="Original model input FASTA", types=["fa", "faa", "fasta"],
+                        key="viewer_model_fasta")
+    if pdb and fasta:
+        records = uploaded_proteins(text=fasta)
+        identifier = st.selectbox("Original protein ID", options=list(records))
+        residues = pdb_evidence(pdb=pdb, expected_sequence=records[identifier])
+        render_model_trace(residues=pd.DataFrame(residues))
 
 
 def render_annotations(*, config: ResearchConfig) -> None:
@@ -1419,20 +1527,18 @@ def render_annotations(*, config: ResearchConfig) -> None:
             help="Run the chosen method for the selected proteins. Inspect no-hit records "
             "as well as predicted annotations after the worker completes the job.",
         )
+        prepare = st.form_submit_button("Prepare files for another machine", disabled=not fasta
+                                        or (engine == "interpro_remote" and not remote))
+    parameters = {**source, "sequence_ids": ids, "engine": engine, "tax_scope": scope,
+                  "target_taxon": target, "remote_allowed": remote}
     if queued:
         queue_action(
             config=config,
             operation="annotate",
-            parameters={
-                **source,
-                "sequence_ids": ids,
-                "engine": engine,
-                "tax_scope": scope,
-                "target_taxon": target,
-                "remote_allowed": remote,
-            },
+            parameters=parameters,
             fasta=fasta,
         )
+    render_portable_job(operation="annotate", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="annotate")
     if not completed:
         return
@@ -1555,6 +1661,18 @@ def render_jobs(*, config: ResearchConfig) -> None:
     ):
         cancel_job(workspace=config.workspace, job_id=selected)
         st.rerun()
+    if job["status"] == "QUEUED":
+        with st.expander("Run this queued job from a terminal"):
+            st.write(f"Queue workspace: `{config.workspace}`")
+            command = ["protein-research-workbench"]
+            profile = os.environ.get("E3_RESEARCH_CONFIG", "")
+            if profile:
+                command.extend(["--config", str(Path(profile).expanduser().resolve())])
+            st.caption("Run on the VM with access to this workspace, using the app’s "
+                       "research profile and the environment with the analysis tools installed.")
+            st.code(shlex.join([*command, "doctor"]), language="bash")
+            st.code(shlex.join([*command, "worker", "--once", "--job-id", selected]),
+                    language="bash")
     manifest = None
     if job["status"] == "COMPLETE":
         manifest = completed_manifests(config=config)[selected]
@@ -1655,7 +1773,8 @@ def render_jobs(*, config: ResearchConfig) -> None:
 
 def render_research_workbench(
     *, connection: object | None = None, initial_section: str = "Start here",
-    title: str = "Protein research workbench",
+    title: str = "Protein research workbench", dedicated: bool = False,
+    external_search: bool = False,
 ) -> None:
     """Render one selected generic research section, optionally with an E3 adapter.
 
@@ -1663,39 +1782,48 @@ def render_research_workbench(
         connection: Optional open E3 resource for top-N or exact-HOG input selection.
         initial_section: First page when entering a different application surface.
         title: Application surface heading.
+        dedicated: Render just the named viewer or import page.
+        external_search: Prioritise external DeepClust FASTA and Parquet exchange.
     """
     st.header(title)
-    st.write(
-        (
-            "Link protein families to global DeepClust clusters, refine families, "
-            "inspect alignments and request optional model or annotation jobs."
-        )
-    )
     try:
-        from .expansion_ui import render_campaign, render_comparisons, render_features
+        from .expansion_ui import (
+            render_campaign, render_comparisons, render_deepclust_exchange, render_features,
+        )
 
         config = load_config()
-        if st.session_state.get("research_surface") != title:
-            st.session_state["research_surface"] = title
-            st.session_state["research_section"] = initial_section
-        section = st.radio(
-            "Workbench page",
-            options=SECTIONS,
-            horizontal=True,
-            key="research_section",
-            help=FIELD_HELP["navigation"],
-        )
+        discover = render_deepclust_exchange if external_search else render_discovery
+        section = initial_section
+        if not dedicated:
+            sections = [value for value in SECTIONS
+                        if not external_search or value != "Top-200 cluster campaign"]
+            if (st.session_state.get("research_surface") != title
+                    or st.session_state.get("research_section") not in sections):
+                st.session_state["research_surface"] = title
+                st.session_state["research_section"] = initial_section
+            section = st.radio(
+                "Workbench page", options=sections, horizontal=True, key="research_section",
+                format_func=lambda value: (
+                    "DeepClust results & FASTA"
+                    if external_search and value == "Discover" else value
+                ),
+                help=FIELD_HELP["navigation"],
+            )
         renderers = {
-            "Start here": lambda: render_start(config=config, connection=connection),
-            "Discover": lambda: render_discovery(config=config, connection=connection),
+            "Start here": lambda: render_start(config=config, connection=connection,
+                                               external_search=external_search),
+            "Discover": lambda: discover(config=config, connection=connection),
             "Top-200 cluster campaign": lambda: render_campaign(
                 config=config, connection=connection,
             ),
             "Cluster comparisons": lambda: render_comparisons(config=config),
-            "Protein features": lambda: render_features(config=config, connection=connection),
-            "Family analysis": lambda: render_analysis(config=config),
-            "Alignments and trees": lambda: render_alignments(config=config),
-            "Models": lambda: render_models(config=config),
+            "Protein features": lambda: render_features(
+                config=config, connection=connection, dedicated=dedicated,
+            ),
+            "Family analysis": lambda: render_analysis(config=config,
+                                                       enable_search=not external_search),
+            "Alignments and trees": lambda: render_alignments(config=config, dedicated=dedicated),
+            "Models": lambda: render_models(config=config, dedicated=dedicated),
             "Annotations": lambda: render_annotations(config=config),
             "Jobs": lambda: render_jobs(config=config),
             "Help & glossary": lambda: render_help(connection=connection),

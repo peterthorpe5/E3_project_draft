@@ -94,6 +94,11 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     html,body{margin:0;font-family:Arial,sans-serif;background:white;color:#18243b}
     #status{padding:8px;font-size:13px}#viewer{height:680px;width:100%;position:relative}
     nightingale-navigation,nightingale-sequence,nightingale-track{display:block;width:100%}
+    #viewer.protein-feature-viewer{height:auto;box-sizing:border-box;padding:0 10px 10px}
+    .protein-feature-viewer p{font-size:13px;margin:8px 0}
+    .protein-feature-row{border-top:1px solid #d9e1eb;padding:5px 0 2px}
+    .protein-feature-label{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+    .protein-feature-label span{font-size:12px;font-weight:400;margin-left:10px;color:#425671}
     """
         + css
         + '</style></head><body><div id="status" role="status">Loading viewer…</div>'

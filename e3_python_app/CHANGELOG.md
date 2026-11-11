@@ -4,6 +4,16 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.0
+
+- Opens JBrowse MSA, the Nightingale feature browser and ESMFold models directly
+  from the E3 navigation. Each viewer accepts files produced on another machine.
+- Gives overlapping Nightingale signatures labelled tracks and exact residue ranges.
+- Prepares query FASTA for external DeepClust search and opens Parquet results with
+  explicit column selection. The built-in search remains in a collapsed menu.
+- Adds portable alignment, annotation and prediction requests. Jobs shows the
+  workspace and the terminal command for a queued request.
+
 ## v0.22.1
 
 - Keeps search preparation and download controls visible outside collapsed

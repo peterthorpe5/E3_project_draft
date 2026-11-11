@@ -5584,16 +5584,26 @@ def render_app() -> None:
             from e3app.research.ui import render_research_workbench
 
             page_renderers = {
+                "DeepClust results & FASTA": lambda: render_research_workbench(
+                    connection=connection, initial_section="Discover", dedicated=True,
+                    external_search=True, title="DeepClust results & FASTA",
+                ),
                 "DeepClust workbench": lambda: render_research_workbench(
-                    connection=connection, initial_section="Top-200 cluster campaign",
+                    connection=connection, initial_section="Discover", external_search=True,
                     title="DeepClust workbench",
+                ),
+                "JBrowse MSA": lambda: render_research_workbench(
+                    initial_section="Alignments and trees", title="JBrowse MSA", dedicated=True,
+                ),
+                "ESMFold & models": lambda: render_research_workbench(
+                    initial_section="Models", title="ESMFold & models", dedicated=True,
                 ),
                 "Protein feature browser": lambda: render_research_workbench(
                     connection=connection, initial_section="Protein features",
-                    title="Protein feature browser",
+                    title="Protein feature browser", dedicated=True,
                 ),
                 "Protein research workbench": lambda: render_research_workbench(
-                    connection=connection,
+                    connection=connection, initial_section="Discover", external_search=True,
                 ),
                 "Overview": lambda: _render_overview(
                     connection=connection,

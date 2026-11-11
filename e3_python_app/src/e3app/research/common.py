@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import tempfile
 import tomllib
-from typing import Iterator, Mapping, Sequence
+from typing import Iterable, Iterator, Mapping, Sequence
 
 LOGGER = logging.getLogger(__name__)
 PROTEIN = re.compile(r"^[ACDEFGHIKLMNPQRSTVWYBXZJUO]+$")
@@ -286,26 +286,42 @@ def iter_fasta(*, path: Path, aligned: bool = False) -> Iterator[tuple[str, str]
     Raises:
         ResearchError: If content precedes its header or a header is empty.
     """
+    with path.open(encoding="utf-8") as handle:
+        yield from fasta_records(lines=handle, aligned=aligned)
+
+
+def fasta_records(*, lines: Iterable[str], aligned: bool = False) -> Iterator[tuple[str, str]]:
+    """Read exact identifiers and protein sequences from uploaded text or a file stream.
+
+    Args:
+        lines: Lines of decoded FASTA text.
+        aligned: Permit alignment gaps in a protein sequence.
+
+    Yields:
+        Identifier and normalised sequence in input order.
+
+    Raises:
+        ResearchError: If a record is malformed or has an invalid sequence.
+    """
     identifier: str | None = None
     chunks: list[str] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(">"):
-                if identifier is not None:
-                    yield identifier, normalise_protein(sequence="".join(chunks), aligned=aligned)
-                tokens = line[1:].split()
-                if not tokens:
-                    raise ResearchError("FASTA headers must contain an identifier")
-                identifier, chunks = tokens[0], []
-                if any(character in identifier for character in "\t\r\n"):
-                    raise ResearchError("FASTA identifiers cannot contain control characters")
-            elif identifier is None:
-                raise ResearchError("FASTA content occurs before its first header")
-            else:
-                chunks.append(line)
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if identifier is not None:
+                yield identifier, normalise_protein(sequence="".join(chunks), aligned=aligned)
+            tokens = line[1:].split()
+            if not tokens:
+                raise ResearchError("FASTA headers must contain an identifier")
+            identifier, chunks = tokens[0], []
+            if any(character in identifier for character in "\t\r\n"):
+                raise ResearchError("FASTA identifiers cannot contain control characters")
+        elif identifier is None:
+            raise ResearchError("FASTA content occurs before its first header")
+        else:
+            chunks.append(line)
     if identifier is not None:
         yield identifier, normalise_protein(sequence="".join(chunks), aligned=aligned)
 

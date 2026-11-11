@@ -302,7 +302,7 @@ def test_populated_result_pages_render_downloads_and_real_components(
         assert not app.exception and not app.error
         if section == "Alignments and trees":
             for view in ("Alignment Viewer 2", "Statistics", "Auspice tree", "JBrowse MSA"):
-                app.radio[1].set_value(view).run()
+                app.radio(key="completed_alignment_view").set_value(view).run()
                 assert not app.exception and not app.error
         if section == "Models":
             next(

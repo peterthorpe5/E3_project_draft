@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 from io import StringIO
 import json
 import os
@@ -16,11 +17,15 @@ import streamlit.components.v1 as components
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
-from .feature_catalogue import published_features, recorded_feature_payload
+from .deepclust_import import PARQUET_UPLOAD_BYTES, extract_family, open_results, results_preview
+from .feature_catalogue import feature_contexts, published_features, recorded_feature_payload
 from .jobs import artifact_path
 from .remote import ssh_command
 from .species_tree import species_display_tree
-from .viewers import viewer_document
+from .viewer_inputs import (
+    TREE_BYTES, UPLOAD_BYTES, read_species_mapping, uploaded_proteins, validate_protein_tree,
+)
+from .viewers import nightingale_features, viewer_document
 
 
 def _resource_identity(*, config: ResearchConfig) -> tuple:
@@ -32,6 +37,139 @@ def _resource_identity(*, config: ResearchConfig) -> tuple:
         stamp = path.stat().st_mtime_ns if path is not None and path.exists() else None
         values.append((key, value, stamp))
     return tuple(values)
+
+
+def render_deepclust_exchange(*, config: ResearchConfig, connection: object | None) -> None:
+    """Prepare FASTA for external search and inspect returned DeepClust exports.
+
+    Args:
+        config: Research profile for optional built-in searches.
+        connection: Published E3 resource for selecting query proteins.
+    """
+    from .ui import render_analysis, render_discovery
+
+    st.subheader("DeepClust results and query FASTA")
+    st.write("Prepare protein FASTA for Ken’s DeepClust search, then open its exported results.")
+    mode = st.radio("What would you like to do?", ["Import Parquet results", "Prepare query FASTA"],
+                    horizontal=True, key="deepclust_exchange_mode")
+    if mode == "Import Parquet results":
+        render_deepclust_parquet()
+    else:
+        render_query_fasta(connection=connection)
+    with st.expander("Built-in DeepClust search"):
+        st.caption("Uses this app’s configured DeepClust data and analysis worker.")
+        if st.checkbox("Show built-in search controls", key="legacy_deepclust_enabled"):
+            route = st.radio("Built-in search", ["Discover", "Top-200 cluster campaign",
+                                                 "Representative homology search"],
+                             horizontal=True, key="legacy_deepclust_route")
+            if route == "Discover":
+                render_discovery(config=config, connection=connection)
+            elif route == "Top-200 cluster campaign":
+                render_campaign(config=config, connection=connection)
+            else:
+                render_analysis(config=config, enable_search=True)
+
+
+def render_deepclust_parquet() -> None:
+    """Preview an external export and optionally prepare a selected family as FASTA."""
+    upload = st.file_uploader("DeepClust results Parquet", type=["parquet"],
+                              key="external_deepclust_parquet")
+    if upload is None:
+        st.caption("Upload a results export from Ken’s app when it is available.")
+        return
+    if upload.size > PARQUET_UPLOAD_BYTES:
+        raise ResearchError("Upload a selected results export of at most 200 MB")
+    reader = open_results(content=upload.getvalue())
+    preview = results_preview(reader=reader)
+    st.caption(f"{reader.metadata.num_rows:,} result rows · showing the first {len(preview):,}")
+    st.dataframe(preview, hide_index=True)
+    if not st.checkbox("Extract protein FASTA from this export", key="deepclust_extract_fasta"):
+        return
+    columns = ["", *reader.schema_arrow.names]
+    st.caption("Choose the exact ID and amino-acid sequence columns. For a hit-only export, "
+               "request the selected sequences from Ken’s app or use a separate protein FASTA.")
+    with st.form("external_deepclust_family"):
+        identifier = st.selectbox("Protein ID column", columns)
+        sequence = st.selectbox("Amino-acid sequence column", columns)
+        cluster = st.selectbox("Cluster ID column (optional)", columns)
+        value = st.text_input("Exact cluster ID (required if a cluster column is selected)")
+        prepare = st.form_submit_button("Prepare selected protein FASTA")
+    identity = (upload.file_id, identifier, sequence, cluster, value.strip())
+    if prepare:
+        st.session_state.pop("deepclust_prepared_family", None)
+        fasta = extract_family(reader=reader, id_column=identifier, sequence_column=sequence,
+                               cluster_column=cluster, cluster_id=value.strip())
+        st.session_state["deepclust_prepared_family"] = (identity, fasta)
+        st.session_state["research_prepared_fasta"] = (upload.name, fasta)
+    prepared = st.session_state.get("deepclust_prepared_family")
+    if prepared and prepared[0] == identity:
+        st.success("FASTA ready. Select Prepared FASTA in Family analysis, Annotations or Models.")
+        st.download_button("Download selected protein FASTA", data=prepared[1],
+                           file_name="deepclust_selected_proteins.fasta", mime="text/plain")
+
+
+def render_query_fasta(*, connection: object | None) -> None:
+    """Collect exact published proteins or user FASTA for a future external request.
+
+    Args:
+        connection: Optional published E3 source with sequence-bearing HOG members.
+    """
+    from e3app.errors import AppError
+    from e3app.external_hog import collect_external_hog_members
+
+    st.caption("Download the query FASTA for Ken’s app or CLI. API submission will be available "
+               "once its interface is defined.")
+    modes = (["Published HOG members"] if connection is not None else []) + ["Upload FASTA files"]
+    mode = st.radio("Query protein source", modes, horizontal=True, key="ken_query_fasta_source")
+    if mode == "Published HOG members":
+        with st.form("ken_query_hog"):
+            hog = st.text_input("Exact HOG ID", placeholder="N0.HOG0003902")
+            if st.form_submit_button("Find HOG proteins"):
+                st.session_state["ken_query_selected_hog"] = hog.strip().upper()
+        hog = st.session_state.get("ken_query_selected_hog", "")
+        if not hog:
+            return
+        try:
+            members = collect_external_hog_members(connection=connection, hog_id=hog,
+                                                   maximum_members=10_000)
+        except AppError as exc:
+            st.warning(str(exc))
+            return
+        available = members.loc[members.sequence_status.eq("AVAILABLE")].set_index("member_key")
+        st.caption(f"{len(available):,} of {len(members):,} HOG members have usable sequences.")
+        chosen = st.multiselect("Proteins to include", list(available.index),
+                                format_func=available.label.to_dict().__getitem__,
+                                key=f"ken_query_members_{hog}")
+        if not chosen:
+            return
+        selected = available.loc[chosen]
+        fasta = "".join(f">{row.fasta_identifier}\n{row.protein_sequence}\n"
+                        for row in selected.itertuples())
+        if len(fasta.encode()) > UPLOAD_BYTES:
+            raise ResearchError("Select fewer proteins. Query FASTA is limited to 20 MB")
+        st.download_button("Download query ID mapping (TSV)",
+                           data=selected[["fasta_identifier", "identifier", "member_species",
+                                          "member_raw_identifier"]].to_csv(sep="\t", index=False),
+                           file_name="deepclust_query_ids.tsv")
+        filename = f"{hog}_deepclust_queries.fasta"
+    else:
+        files = st.file_uploader("Query protein FASTA files", type=["fa", "faa", "fasta"],
+                                 accept_multiple_files=True, key="ken_query_upload")
+        if not files:
+            return
+        if sum(file.size for file in files) > UPLOAD_BYTES:
+            raise ResearchError("Combined query FASTA files exceed 20 MB")
+        try:
+            fasta = "\n".join(file.getvalue().decode("utf-8-sig").rstrip() for file in files) + "\n"
+        except UnicodeDecodeError as exc:
+            raise ResearchError("Query FASTA files must contain UTF-8 text") from exc
+        uploaded_proteins(text=fasta, maximum_records=100_000)
+        filename = "deepclust_queries.fasta"
+    st.download_button("Download DeepClust query FASTA", data=fasta,
+                       file_name=filename, mime="text/plain")
+    if st.button("Use this FASTA in the workbench", key="ken_use_query_fasta"):
+        st.session_state["research_prepared_fasta"] = (filename, fasta)
+        st.success("Select Prepared FASTA in Family analysis, Annotations or Models.")
 
 
 def render_campaign(*, config: ResearchConfig, connection: object | None) -> None:
@@ -295,57 +433,204 @@ def render_comparisons(*, config: ResearchConfig) -> None:
         _render_comparison(config=config, job_id=chosen)
 
 
-def render_features(*, config: ResearchConfig, connection: object | None) -> None:
+def render_features(
+    *, config: ResearchConfig, connection: object | None, dedicated: bool = False,
+) -> None:
     """Share Nightingale, arbitrary-sequence annotation and ESMFold across both app contexts.
 
     Args:
         config: Analysis profile and jobs.
         connection: Optional immutable E3 domain evidence.
+        dedicated: Focus the E3 entry point on feature viewing.
     """
     from .ui import render_annotations, render_models
 
-    st.subheader("Protein features")
+    st.subheader("Nightingale protein features")
     choices = (["Recorded E3 domain features"] if connection is not None else []) + [
-        "InterProScan / eggNOG for selected sequences", "ESMFold for selected sequences",
+        "Upload annotation results",
     ]
-    route = st.radio("Protein feature workflow", options=choices, horizontal=True,
+    if not dedicated:
+        choices += [
+            "InterProScan / eggNOG for selected sequences", "ESMFold for selected sequences",
+        ]
+    route = st.radio("Feature source", options=choices, horizontal=True,
                      key="feature_browser_route",
-                     help="Recorded domains or explicit selected-sequence jobs.")
+                     help="Open recorded domains or annotation files from another machine.")
+    if route == "Upload annotation results":
+        render_uploaded_features(config=config)
+        return
     if route == "InterProScan / eggNOG for selected sequences":
         render_annotations(config=config)
         return
     if route == "ESMFold for selected sequences":
         render_models(config=config)
         return
-    accession = st.text_input("Exact published protein accession", key="recorded_feature_accession",
-                              help="Exact accession from the published domain evidence.")
-    if not accession.strip():
-        st.info("Enter an accession from E3 results or choose a sequence workflow above.")
+    st.caption("Choose a recorded protein or search by accession or HOG ID.")
+    with st.form("recorded_feature_search"):
+        query = st.text_input("Accession or HOG ID", placeholder="Q5ZC88 or N0.HOG0000390")
+        if st.form_submit_button("Find recorded proteins"):
+            st.session_state["recorded_feature_query"] = query
+    query = st.session_state.get("recorded_feature_query", "")
+    try:
+        matches = feature_contexts(connection=connection, query=query)
+    except ResearchError as exc:
+        st.info(f"{exc}. Select Upload annotation results to open your own files.")
         return
+    if matches.empty:
+        st.info("No recorded coordinates match this search in the loaded release.")
+        return
+    if len(matches) > 100:
+        st.caption("Showing the first 100 recorded contexts. Search to find a specific protein.")
+    contexts = list(matches.head(100).itertuples(index=False, name=None))
+    accession, group_id, species = st.selectbox(
+        "Protein · group · species", options=contexts,
+        format_func=lambda value: " · ".join(item for item in value if item),
+    )
     rows = published_features(connection=connection, accession=accession)
-    if rows.empty:
-        st.info("No recorded domain hits match this exact accession. InterProScan can annotate "
-                "an uploaded/pasted FASTA or proteins from a completed DeepClust job.")
-        return
-    pairs = rows[["primary_group_id", "species_column"]].astype(str).drop_duplicates()
-    contexts = list(pairs.itertuples(index=False, name=None))
-    group_id, species = st.selectbox("Recorded annotation context", options=contexts,
-                                     format_func=lambda value: " · ".join(value),
-                                     help="Keep the recorded group and species context.")
-    selected = rows.loc[rows["primary_group_id"].astype(str).eq(group_id)
-                        & rows["species_column"].astype(str).eq(species)]
-    payload = recorded_feature_payload(rows=selected)
+    selected = rows.loc[rows["primary_group_id"].fillna("").astype(str).eq(group_id)
+                        & rows["species_column"].fillna("").astype(str).eq(species)
+                        & rows["member_accession"].astype(str).str.strip().eq(accession)].copy()
+    selected[["primary_group_id", "species_column"]] = selected[
+        ["primary_group_id", "species_column"]].fillna("")
+    coordinates = ["protein_length", "location_start", "location_end"]
+    numeric = selected[coordinates].apply(pd.to_numeric, errors="coerce")
+    usable = numeric.notna().all(axis=1) & numeric.gt(0).all(axis=1)
+    usable &= numeric.mod(1).eq(0).all(axis=1)
+    usable &= numeric.protein_length.le(1_000_000)
+    usable &= numeric.location_start.le(numeric.location_end)
+    usable &= numeric.location_end.le(numeric.protein_length)
+    if not usable.all():
+        st.warning(f"{int((~usable).sum()):,} rows lack usable coordinates. See the full evidence.")
+    for length in sorted(numeric.loc[usable, "protein_length"].unique()):
+        subset = selected.loc[usable & numeric.protein_length.eq(length)].copy()
+        subset["member_accession"] = accession
+        if numeric.loc[usable, "protein_length"].nunique() > 1:
+            st.caption(f"Recorded protein length {int(length):,} residues")
+        show_features(payload=recorded_feature_payload(rows=subset), stem=f"features_{int(length)}")
+    with st.expander("Recorded feature evidence", expanded=True):
+        columns = ["entry_accession", "entry_name", "location_start", "location_end",
+                   "protein_length", "source_database"]
+        st.dataframe(selected[[field for field in columns if field in selected]], hide_index=True)
+        st.download_button("Download complete recorded feature evidence (TSV)",
+                           data=selected.to_csv(sep="\t", index=False),
+                           file_name="recorded_protein_features.tsv",
+                           mime="text/tab-separated-values")
+
+
+def show_features(*, payload: dict[str, object], stem: str) -> None:
+    """Show a labelled Nightingale viewer and offer the same offline document.
+
+    Args:
+        payload: Validated feature tracks and coordinate axis.
+        stem: Filename and widget namespace for this selection.
+    """
     document = viewer_document(viewer="nightingale", payload=payload)
-    components.html(document, height=340, scrolling=True)
-    st.caption("This view uses the recorded annotation protein-length axis. It does not claim "
-               "a sequence match to a current model. InterProScan jobs provide feature tracks "
-               "verified against their exact submitted amino-acid sequences.")
-    st.dataframe(selected, hide_index=True)
-    st.download_button("Download Nightingale feature viewer", data=document,
-                       file_name="recorded_protein_features.html", mime="text/html")
-    st.download_button("Download complete recorded feature evidence (TSV)",
-                       data=selected.to_csv(sep="\t", index=False),
-                       file_name="recorded_protein_features.tsv", mime="text/tab-separated-values")
+    components.html(document, height=420, scrolling=True)
+    st.download_button("Download Nightingale viewer (HTML)", data=document,
+                       file_name=f"{stem}.html", key=f"nightingale_{stem}", mime="text/html")
+
+
+def upload_text(*, label: str, types: list[str], key: str, maximum: int = UPLOAD_BYTES) -> str:
+    """Read a bounded UTF-8 viewer upload with a visible file requirement.
+
+    Args:
+        label: File control label.
+        types: Supported filename extensions.
+        key: Unique widget key.
+        maximum: Maximum upload bytes.
+
+    Returns:
+        Decoded text, or empty text before a file is selected.
+    """
+    uploaded = st.file_uploader(label, type=types, key=key)
+    if uploaded is None:
+        return ""
+    if uploaded.size > maximum:
+        raise ResearchError(f"{label} exceeds {maximum / 1_000_000:g} MB")
+    try:
+        return uploaded.getvalue().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ResearchError(f"{label} must contain UTF-8 text") from exc
+
+
+def render_uploaded_features(*, config: ResearchConfig) -> None:
+    """Display worker-produced annotations against the exact uploaded protein FASTA.
+
+    Args:
+        config: Protein input limits from the current profile.
+    """
+    st.caption("Upload annotation_input.fasta and annotations.tsv from a completed annotation job.")
+    fasta = upload_text(label="Annotation input FASTA", types=["fa", "faa", "fasta"],
+                        key="viewer_annotation_fasta")
+    annotations = upload_text(label="Normalised annotations TSV", types=["tsv"],
+                              key="viewer_annotation_tsv")
+    if not fasta or not annotations:
+        return
+    records = uploaded_proteins(text=fasta, maximum_records=config.max_alignment_sequences)
+    reader = csv.DictReader(StringIO(annotations), delimiter="\t")
+    if not {"sequence_id", "sequence_sha256", "start", "end"}.issubset(reader.fieldnames or ()):
+        raise ResearchError("Upload the normalised annotations.tsv from the research worker")
+    identifier = st.selectbox("Annotated protein", options=list(records))
+    sequence = records[identifier]
+    rows = [row for row in reader if row["sequence_id"] == identifier]
+    features = nightingale_features(sequence_id=identifier, sequence=sequence, annotations=rows)
+    show_features(payload={"sequence": sequence, "features": features}, stem="uploaded_features")
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True)
+
+
+def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) -> None:
+    """Open a ready-made alignment with optional protein or reviewed species tree.
+
+    Args:
+        config: Rendering limits and optional reviewed species backbone.
+        example: Use an explicitly labelled synthetic alignment.
+    """
+    if example:
+        st.caption("Example alignment with three synthetic protein sequences.")
+        msa = ">protein_A\nMAAKLVVAGL\n>protein_B\nMAAKL-IAGL\n>protein_C\nMAAKLVIAGV\n"
+        tree = "((protein_A:0.1,protein_B:0.1):0.05,protein_C:0.2);"
+    else:
+        st.caption("Open aligned FASTA from MAFFT or another aligner. A tree is optional.")
+        msa = upload_text(label="Aligned protein FASTA", types=["fa", "faa", "fasta", "aln"],
+                          key="viewer_aligned_fasta")
+        tree = ""
+    if not msa:
+        return
+    records = uploaded_proteins(text=msa, aligned=True,
+                                maximum_records=config.max_alignment_sequences,
+                                maximum_cells=config.max_alignment_cells)
+    if not example:
+        kind = st.radio("Tree beside the MSA", ["No tree", "Protein tree", "Reviewed species tree"],
+                        horizontal=True, key="viewer_uploaded_tree_kind")
+        if kind != "No tree":
+            newick = upload_text(label=f"{kind} (Newick)", types=["nwk", "newick", "tree", "nh"],
+                                 key=f"viewer_tree_{kind}", maximum=TREE_BYTES)
+            if kind == "Protein tree" and newick:
+                tree = validate_protein_tree(newick=newick, identifiers=list(records))
+            elif kind == "Reviewed species tree":
+                mapping = upload_text(label="Reviewed sequence-to-species mapping (TSV)",
+                                      types=["tsv"], key="viewer_species_mapping")
+                if newick and mapping:
+                    tree, audit = species_display_tree(
+                        newick=newick, sequence_ids=list(records),
+                        metadata=read_species_mapping(text=mapping),
+                    )
+                    st.download_button("Download species-tree mapping audit (TSV)",
+                                       data=pd.DataFrame(audit).to_csv(sep="\t", index=False),
+                                       file_name="msa_species_mapping.tsv")
+                else:
+                    st.info("Supply a species tree and mapping with sequence_id, species and "
+                            "taxon_id. The alignment is available below while you select files.")
+    width = len(next(iter(records.values())))
+    st.caption(f"{len(records):,} proteins · {width:,} aligned positions")
+    document = viewer_document(viewer="jbrowse", payload={
+        "msa": "".join(f">{identifier}\n{sequence}\n" for identifier, sequence in records.items()),
+        "tree": tree,
+    })
+    components.html(document, height=740, scrolling=True)
+    st.download_button("Download standalone JBrowse MSA viewer", data=document,
+                       file_name="jbrowse_msa.html", mime="text/html")
 
 
 def species_view(

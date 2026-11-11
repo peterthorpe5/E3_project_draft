@@ -1,10 +1,33 @@
-# DeepClust workbench · 0.22.0
+# DeepClust workbench
 
-Open **🧬 DeepClust research → DeepClust workbench**. The shared **Protein
-feature browser** is also under **🟢 2 · Candidate discovery**. Existing
-research and external-link pages remain available.
+From v0.23.0, open **🧬 DeepClust research → DeepClust results & FASTA**.
+The same controls are available in **DeepClust workbench** and **3 · E3
+orthology context → Protein research workbench**.
 
-## From the Top 200 to external clusters
+- **Prepare query FASTA** collects selected published HOG proteins or combines
+  uploaded FASTA files. Download the FASTA and, for HOG members, the identifier
+  mapping TSV to carry the source identities into Ken’s search app.
+- **Import Parquet results** previews a selected external search export. If it
+  contains amino-acid sequences, select the ID and sequence columns and,
+  optionally, an exact cluster. Use the prepared FASTA in the workbench or
+  download it. An export with hit identifiers alone can be viewed as a table.
+  Request sequence FASTA separately for alignment or prediction.
+- **JBrowse MSA**, **Protein feature browser** and **ESMFold & models** are direct
+  E3 pages. They accept aligned FASTA and optional Newick, annotation TSV and
+  its exact input FASTA, or a monomer PDB and its exact input FASTA, respectively.
+  A reviewed species tree also needs the sequence-to-species TSV.
+- For a different compute machine, use **Prepare files for another machine**
+  with uploaded, pasted or prepared FASTA. The ZIP includes the exact input,
+  parameters and commands for the installed research CLI. Open the returned
+  files in the viewers. Each machine uses its own research profile.
+
+The Parquet importer uses explicit column selection while Ken’s export and
+API/CLI contract are being defined. The FASTA download is the current handoff.
+
+## Built-in search and the Top-200 campaign
+
+Open **Built-in DeepClust search** under **DeepClust results & FASTA** and select
+**Show built-in search controls**. The original search and campaign are there.
 
 1. Open **Top-200 cluster campaign**. The default is 200 published **primary
    evolutionary groups** in pre-structure rank order, including HOGs and

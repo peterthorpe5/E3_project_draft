@@ -20,15 +20,34 @@ class TabHelpEntry:
 
 TOP_LEVEL_TAB_HELP = {
     "DeepClust workbench": TabHelpEntry(
-        instruction="Prepare complete Top-200 mapping inputs, queue CLI mapping and retrieval, "
-        "then refine families and inspect alignments, reviewed species and annotations.",
-        yields="Audited mapping, complete selected clusters, alignments and comparison summaries.",
+        instruction="Prepare search FASTA or import DeepClust results, then refine families, "
+        "inspect alignments, or prepare jobs for a worker on another machine.",
+        yields="Selected protein FASTA, portable analysis requests, alignments, feature tracks "
+        "and family comparison summaries.",
+    ),
+    "DeepClust results & FASTA": TabHelpEntry(
+        instruction="Select query proteins for Ken’s app or upload its Parquet export. "
+        "Choose the identifier and sequence columns if the export includes amino acids.",
+        yields="Query FASTA with a HOG identifier map, a preview of the imported results, "
+        "and selected protein FASTA when the export contains sequences.",
+    ),
+    "JBrowse MSA": TabHelpEntry(
+        instruction="Upload aligned protein FASTA, optionally with a protein tree or reviewed "
+        "species tree and sequence-to-species mapping. Try the example to open the viewer.",
+        yields="Interactive alignment with an optional tree, a species mapping audit where "
+        "applicable, and a portable HTML download.",
+    ),
+    "ESMFold & models": TabHelpEntry(
+        instruction="Open an existing PDB with its original protein FASTA, or prepare an "
+        "ESMFold prediction using a configured worker or another machine.",
+        yields="Interactive structure and confidence plots, or downloadable prediction inputs "
+        "for a configured CPU or GPU worker.",
     ),
     "Protein feature browser": TabHelpEntry(
-        instruction="Use Nightingale for recorded E3 domain coordinates or choose InterProScan, "
-        "eggNOG-mapper or ESMFold for an uploaded, pasted or previously retrieved FASTA.",
-        yields="Interactive protein features, exact-sequence annotation audits, "
-        "raw evidence downloads and optional ESMFold models.",
+        instruction="Find recorded domain coordinates by protein accession or HOG, or "
+        "upload the normalised annotation table and its original FASTA.",
+        yields="Labelled Nightingale feature tracks, recorded coordinate evidence and an offline "
+        "HTML viewer download.",
     ),
     "External links": TabHelpEntry(
         instruction=(
