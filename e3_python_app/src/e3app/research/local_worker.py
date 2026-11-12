@@ -1,4 +1,4 @@
-"""Start an explicit app-host alignment with the existing job worker."""
+"""Start alignment and tree jobs with the existing app-host worker."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from threading import Thread
 from typing import Mapping
 
 from .common import ResearchConfig, ResearchError, bounded_number
-from .jobs import fail_queued_job, job_directory, submit_job
+from .jobs import artifact_path, fail_queued_job, get_job, job_directory, submit_job
 from .viewer_inputs import uploaded_proteins
 
 LOGGER = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def _wait_for_worker(
     """
     returncode = process.wait()
     if returncode:
-        LOGGER.warning("App-host alignment worker for %s exited with %s", job_id, returncode)
+        LOGGER.warning("App-host worker for %s exited with %s", job_id, returncode)
     fail_queued_job(
         workspace=config.workspace, job_id=job_id,
         error=f"Local worker exited with status {returncode} before claiming this job. "
@@ -68,6 +68,47 @@ def submit_local_alignment(
         workspace=config.workspace, operation="align",
         parameters={**parameters, "execution_target": "app_host"}, fasta=fasta,
     )
+    _start_local_job(config=config, job_id=job_id, label="alignment")
+    return job_id
+
+
+def submit_local_tree(*, config: ResearchConfig, alignment_job: str) -> str:
+    """Start FastTree on the checksummed FASTA of a completed alignment.
+
+    Args:
+        config: Research profile used by the app and its one-shot worker.
+        alignment_job: Exact completed alignment job ID.
+
+    Returns:
+        The durable tree job ID.
+
+    Raises:
+        ResearchError: If FastTree, the source alignment or worker launch is unavailable.
+    """
+    if not shutil.which(config.fasttree):
+        raise ResearchError("FastTree is unavailable on the machine running the app.")
+    if get_job(workspace=config.workspace, job_id=alignment_job)["operation"] != "align":
+        raise ResearchError("Select a completed protein alignment job")
+    artifact_path(workspace=config.workspace, job_id=alignment_job, artifact="alignment.fasta")
+    job_id = submit_job(
+        workspace=config.workspace, operation="tree",
+        parameters={"source_job": alignment_job, "execution_target": "app_host"},
+    )
+    _start_local_job(config=config, job_id=job_id, label="tree")
+    return job_id
+
+
+def _start_local_job(*, config: ResearchConfig, job_id: str, label: str) -> None:
+    """Launch the app-host worker for one reserved job.
+
+    Args:
+        config: Workspace profile used for the job.
+        job_id: Exact queued request to claim.
+        label: Analysis name for launch diagnostics.
+
+    Raises:
+        ResearchError: If the worker could not start.
+    """
     log_path = job_directory(workspace=config.workspace, job_id=job_id) / "local_worker.log"
     try:
         with log_path.open(mode="wb") as log:
@@ -78,12 +119,11 @@ def submit_local_alignment(
                 start_new_session=True,
             )
     except OSError as exc:
-        diagnostic = f"Could not start local alignment worker: {exc}"
+        diagnostic = f"Could not start local {label} worker: {exc}"
         fail_queued_job(workspace=config.workspace, job_id=job_id, error=diagnostic)
         raise ResearchError(diagnostic) from exc
     Thread(
         target=_wait_for_worker, kwargs={"process": process, "config": config, "job_id": job_id},
         daemon=True,
     ).start()
-    LOGGER.info("Started app-host alignment job %s as PID %s", job_id, process.pid)
-    return job_id
+    LOGGER.info("Started app-host %s job %s as PID %s", label, job_id, process.pid)

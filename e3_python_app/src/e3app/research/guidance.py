@@ -10,7 +10,7 @@ from typing import Mapping
 
 import pandas as pd
 
-from .common import ResearchConfig, ResearchError
+from .common import ResearchConfig, ResearchError, interproscan_contact
 
 SECTIONS = (
     "Start here",
@@ -32,6 +32,7 @@ OPERATION_NAMES = {
     "import_cluster": "Import a cluster FASTA",
     "subcluster": "Create stricter subclusters",
     "align": "Align sequences and infer a tree",
+    "tree": "Infer a tree from a completed alignment",
     "search": "Search global representatives",
     "predict": "Predict protein structures",
     "annotate": "Predict protein annotations",
@@ -39,6 +40,67 @@ OPERATION_NAMES = {
     "deepclust_map": "Map the published E3 campaign to external clusters",
     "deepclust_retrieve": "Collect selected clusters through the command-line connection",
     "compare": "Compare selected proteins or species sets",
+}
+
+ALIGNMENT_POSITION_METRICS = {
+    "alignment_column": (
+        "Alignment column", "Column number from 1, including columns where the reference has a gap."
+    ),
+    "reference_position": (
+        "Reference position", "Residue number from 1 in the ungapped reference. "
+        "Blank where the reference has a gap."
+    ),
+    "gap_fraction": (
+        "Gap fraction", "Number of proteins with a gap at this column divided by all aligned "
+        "proteins."
+    ),
+    "canonical_residue_fraction": (
+        "Canonical residue fraction", "Number of proteins with one of the 20 standard amino "
+        "acids at this column divided by all aligned proteins. Gaps and ambiguous letters "
+        "are excluded from the numerator."
+    ),
+    "consensus_residue": (
+        "Consensus residue", "Most frequent standard amino acid at this column. Ties use "
+        "alphabetical order. Blank when there are no standard amino acids."
+    ),
+    "consensus_fraction_of_known": (
+        "Consensus fraction", "Count of the consensus residue divided by the number of standard "
+        "amino acids at this column. A fraction of 1 can come from a single residue in a mostly "
+        "gapped column. Read it alongside the canonical residue fraction."
+    ),
+    "shannon_entropy_bits": (
+        "Shannon entropy (bits)", "Diversity of the standard amino acids at this column, "
+        "calculated as −Σ p log₂(p) from their frequencies. Zero means all known residues "
+        "agree. Blank when there are no standard amino acids. Check coverage before "
+        "interpreting low entropy."
+    ),
+}
+
+ALIGNMENT_MEMBER_METRICS = {
+    "sequence_id": ("Protein ID", "Exact ID of the aligned protein."),
+    "reference_id": ("Reference ID", "Exact ID of the protein used for these comparisons."),
+    "sequence_length": ("Protein length", "Number of amino-acid positions after removing gaps."),
+    "comparable_residue_count": (
+        "Comparable positions", "Number of columns where both this protein and the reference "
+        "have a standard amino acid."
+    ),
+    "identity_to_reference_fraction": (
+        "Identity to reference", "Identical residues divided by comparable positions. "
+        "Blank when there are no comparable positions."
+    ),
+    "reference_overlap_fraction": (
+        "Reference overlap", "Columns where both proteins have a non-gap residue divided by "
+        "the ungapped reference length. Non-gap ambiguous residues count towards overlap."
+    ),
+    "member_overlap_fraction": (
+        "Protein overlap", "Columns where both proteins have a non-gap residue divided by "
+        "this protein's ungapped length. Non-gap ambiguous residues count towards overlap."
+    ),
+    "blosum62_sum_over_comparable_positions": (
+        "BLOSUM62 sum", "Sum of BLOSUM62 substitution scores over comparable positions, "
+        "with no gap penalties or length normalisation. The score depends on the number "
+        "of comparable positions and is zero when that count is zero."
+    ),
 }
 
 # Aim, inputs/actions and outputs are shared by the page and downloadable help.
@@ -96,15 +158,15 @@ PAGE_GUIDES = {
     "Alignments and trees": (
         "Step 3 · Inspect conservation and relationships",
         "Explore a completed multiple sequence alignment, its conservation statistics and tree.",
-        "1. Select a completed alignment job. This page displays results; it does not run an "
-        "alignment.\n"
+        "1. Select a completed alignment job.\n"
         "2. Start with JBrowse MSA for the tree and alignment together. Use its search and "
         "zoom controls to locate sequences and residues.\n"
-        "3. Try Alignment Viewer 2 for sorting by similarity to the reference, or Statistics "
-        "for per-position and per-sequence evidence.\n\n"
-        "**Output:** interactive views and downloadable standalone alignment HTML. Complete "
-        "FASTA, Newick and TSV files are in Jobs. Tree branch lengths represent divergence, "
-        "not elapsed time; alignments and trees do not demonstrate experimental function.",
+        "3. In Auspice tree, open the saved tree or infer one from this alignment with "
+        "FastTree. Download Newick or Auspice JSON from the tree view.\n"
+        "4. Open Statistics for per-position and per-protein evidence. Use the metric "
+        "definitions beside each table for the calculation.\n\n"
+        "**Output:** interactive views and downloadable standalone alignment HTML. "
+        "Complete FASTA and TSV files are in Jobs.",
     ),
     "Models": (
         "Optional · Predict and inspect protein structures",
@@ -125,8 +187,9 @@ PAGE_GUIDES = {
         "1. Select an unaligned protein FASTA and optionally restrict it to exact sequence IDs.\n"
         "2. Choose InterProScan for domains/signatures, or installed eggNOG-mapper for "
         "orthology-based annotation. Only eggNOG uses the taxonomic scope controls.\n"
-        "3. For remote InterProScan, explicitly allow sequence submission. Queue the job, "
-        "then inspect the completed annotation audit and feature tracks below.\n\n"
+        "3. For remote InterProScan, enter a contact email or use the profile default. "
+        "Allow sequence submission, queue the job and inspect the completed annotation audit "
+        "and feature tracks below.\n\n"
         "**Output:** annotations, per-input no-hit records and positional Nightingale tracks "
         "where domain coordinates exist. These are predictions, not experimentally validated "
         "functions. Eukaryota/2759 is the default eggNOG scope, not a prokaryote-only workflow.",
@@ -216,7 +279,8 @@ FIELD_HELP = {
     "only when you tick this and submit the job. Local routes do not send sequences away.",
     "annotation_engine": "InterProScan recognises protein signatures/domains. eggNOG-mapper "
     "transfers orthology-based annotations from its installed database. Local routes need "
-    "their tool/database; remote InterProScan needs the configured contact email.",
+    "their tool/database. Enter a contact email for remote InterProScan or use the "
+    "worker profile's default.",
     "scope": "eggNOG-mapper taxonomic scope. Eukaryota is suitable as a broad starting "
     "scope for eukaryotic proteins; choose a supported narrower scope when appropriate.",
     "target_taxon": "Positive NCBI target taxon ID passed to eggNOG-mapper. 2759 is Eukaryota. "
@@ -299,13 +363,16 @@ def retrievable_cluster_ids(*, frame: pd.DataFrame) -> list[str]:
     )
 
 
-def provider_problem(*, config: ResearchConfig, operation: str, engine: str) -> str:
+def provider_problem(
+    *, config: ResearchConfig, operation: str, engine: str, contact_email: str | None = None,
+) -> str:
     """Explain missing local setup without contacting a remote prediction service.
 
     Args:
         config: Trusted worker configuration.
         operation: predict or annotate.
         engine: Selected route identifier.
+        contact_email: Optional form address overriding the profile for remote InterProScan.
 
     Returns:
         Actionable setup message, or an empty string when basic setup is present.
@@ -329,14 +396,18 @@ def provider_problem(*, config: ResearchConfig, operation: str, engine: str) -> 
             )
     elif operation == "annotate":
         if engine == "interpro_remote":
-            return "" if config.email else "Ask the operator to set the InterProScan contact email."
+            try:
+                interproscan_contact(value=config.email if contact_email is None else contact_email)
+            except ResearchError as exc:
+                return str(exc)
+            return ""
         if engine == "interpro_local":
             return (
                 ""
                 if shutil.which(config.interproscan)
                 else (
                     "Local InterProScan is unavailable. Configure its executable and databases, "
-                    "or select the remote route after setting its contact email."
+                    "or choose the EMBL-EBI route and enter your contact email."
                 )
             )
         if engine == "eggnog":

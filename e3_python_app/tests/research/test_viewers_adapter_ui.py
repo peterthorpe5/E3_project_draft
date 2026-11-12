@@ -10,6 +10,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from e3app.errors import AppError
+from e3app.research.analysis import auspice_dataset
 from e3app.research.common import ResearchError
 from e3app.research.e3_adapter import (
     published_protein_fasta,
@@ -23,9 +24,26 @@ from e3app.research.viewers import (
     auspice_dataset_url,
     json_for_html,
     nightingale_features,
+    protein_tree_figure,
     viewer_asset,
     viewer_document,
 )
+
+
+def test_protein_tree_preview_preserves_divergence_and_reviewed_labels():
+    """Use cumulative branch lengths and escape exact tip labels for the browser."""
+    dataset = auspice_dataset(
+        newick="((plant_A:0.1,plant_B:0.2):0.3,plant_C:0.4);",
+        metadata={"plant_A": {"species": "Plant <A>"}},
+        title="Test protein tree",
+    )
+    figure = protein_tree_figure(dataset=dataset)
+    assert list(figure.data[1].x) == pytest.approx([0.4, 0.5, 0.4])
+    assert list(figure.layout.yaxis.ticktext) == ["plant_A", "plant_B", "plant_C"]
+    assert figure.data[1].text[0] == "plant_A<br>Plant &lt;A&gt;"
+    assert figure.layout.xaxis.title.text == "Divergence (substitutions per site)"
+    with pytest.raises(ResearchError, match="invalid Auspice divergence"):
+        protein_tree_figure(dataset={"tree": {"node_attrs": {"div": "nan"}}})
 
 
 def test_published_protein_fasta_requires_the_exact_hog_species_and_isoform(resource_db):

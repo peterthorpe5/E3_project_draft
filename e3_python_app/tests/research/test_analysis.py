@@ -17,6 +17,7 @@ from e3app.research.analysis import (
     audit_subclusters,
     auspice_dataset,
     index_fasta,
+    infer_protein_tree,
     run_command,
     subcluster,
 )
@@ -184,6 +185,37 @@ def test_auspice_has_real_divergence_and_no_fabricated_dates():
     for newick in ("(a:-0.1,b:0.1);", "(a:0.1,a:0.2);", "(a:0.1,):0.2;"):
         with pytest.raises(ResearchError):
             auspice_dataset(newick=newick, metadata={}, title="Bad")
+
+
+def test_tree_inference_validates_saved_input_and_exact_tips(
+    research_config, tmp_path, monkeypatch,
+):
+    """Reject too few proteins, malformed alignments and changed FastTree identifiers."""
+    path = tmp_path / "saved.fasta"
+    for text, diagnostic in (
+        (">a\nACD\n>b\nACD\n", "at least three"),
+        (">a\nACD\n>b\nACDE\n>c\nACD\n", "equal row lengths"),
+        (">a\nACD\n>a\nACD\n>b\nACD\n", "unique IDs"),
+    ):
+        path.write_text(text, encoding="utf-8")
+        with pytest.raises(ResearchError, match=diagnostic):
+            infer_protein_tree(config=research_config, alignment=path, output=tmp_path)
+    path.write_text(">a\nACD\n>b\nACD\n>c\nACD\n", encoding="utf-8")
+    with pytest.raises(ResearchError, match="matrix size bound"):
+        infer_protein_tree(
+            config=replace(research_config, max_alignment_cells=8),
+            alignment=path,
+            output=tmp_path,
+        )
+
+    def wrong_tips(*, arguments, output, config, stdout):
+        """Simulate a tree program changing the saved protein identifiers."""
+        stdout.write_text("(a:0.1,b:0.2,d:0.3);\n", encoding="utf-8")
+
+    monkeypatch.setattr(analysis, "run_command", wrong_tips)
+    with pytest.raises(ResearchError, match="tip names differ"):
+        infer_protein_tree(config=research_config, alignment=path, output=tmp_path)
+    assert not (tmp_path / "auspice.json").exists()
 
 
 def test_alignment_selection_sampling_and_sequence_integrity(

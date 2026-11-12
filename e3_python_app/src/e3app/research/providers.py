@@ -23,7 +23,9 @@ from Bio.PDB.PDBExceptions import PDBConstructionException
 from Bio.SeqUtils import seq1
 
 from .analysis import index_fasta, run_command
-from .common import ResearchConfig, ResearchError, atomic_json, iter_fasta, write_tsv
+from .common import (
+    ResearchConfig, ResearchError, atomic_json, interproscan_contact, iter_fasta, write_tsv,
+)
 
 LOGGER = logging.getLogger(__name__)
 ATLAS_ENDPOINT = "https://api.esmatlas.com/foldSequence/v1/pdb/"
@@ -439,10 +441,9 @@ def remote_interpro(
     Raises:
         ResearchError: If consent/contact is absent, the service fails or polling expires.
     """
-    if remote_allowed is not True or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", config.email):
-        raise ResearchError(
-            "Remote InterProScan requires explicit submission and a configured contact email"
-        )
+    if remote_allowed is not True:
+        raise ResearchError("Remote InterProScan requires explicit submission")
+    email = interproscan_contact(value=config.email)
     if len(sequences) > 25:
         raise ResearchError(
             (
@@ -480,7 +481,7 @@ def remote_interpro(
     else:
         fasta = "".join(f">{key}\n{sequence}\n" for key, sequence in sequences.items())
         body = urlencode(
-            {"email": config.email, "sequence": fasta, "goterms": "true", "pathways": "true"}
+            {"email": email, "sequence": fasta, "goterms": "true", "pathways": "true"}
         ).encode()
         job_id = (
             http_request(

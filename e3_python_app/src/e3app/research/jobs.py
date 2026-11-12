@@ -12,7 +12,9 @@ import sqlite3
 from typing import Iterator, Mapping
 from uuid import uuid4
 
-from .common import ResearchError, atomic_json, file_sha256, safe_path, utc_now
+from .common import (
+    ResearchError, atomic_json, file_sha256, interproscan_contact, safe_path, utc_now,
+)
 
 LOGGER = logging.getLogger(__name__)
 OPERATIONS = {
@@ -20,6 +22,7 @@ OPERATIONS = {
     "retrieve",
     "subcluster",
     "align",
+    "tree",
     "predict",
     "annotate",
     "taxonomy_index",
@@ -30,6 +33,7 @@ OPERATIONS = {
     "compare",
 }
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
+INTERPROSCAN_CONTACT_FILE = ".interproscan_contact.json"
 
 
 @contextmanager
@@ -84,6 +88,7 @@ def submit_job(
     parameters: Mapping[str, object],
     fasta: str | None = None,
     fasta_path: Path | None = None,
+    interproscan_email: str | None = None,
 ) -> str:
     """Persist a validated operation request without executing work in the web process.
 
@@ -94,6 +99,7 @@ def submit_job(
         fasta: Optional uploaded protein FASTA; at most 20 MB.
         fasta_path: Operator-selected local FASTA, streamed into a private snapshot.
             This CLI-only route supports exports larger than the web upload limit.
+        interproscan_email: Optional contact for a consented remote annotation job.
 
     Returns:
         New queued job identifier.
@@ -107,6 +113,14 @@ def submit_job(
         raise ResearchError("Supply FASTA text or a local FASTA file, not both")
     if fasta_path is not None and not fasta_path.is_file():
         raise ResearchError("The selected local FASTA file does not exist")
+    if interproscan_email is not None:
+        if (
+            operation != "annotate"
+            or parameters.get("engine") != "interpro_remote"
+            or parameters.get("remote_allowed") is not True
+        ):
+            raise ResearchError("The contact email requires consent to remote InterProScan")
+        interproscan_email = interproscan_contact(value=interproscan_email)
     request = json.dumps(dict(parameters), allow_nan=False, sort_keys=True)
     if len(request) > 2_000_000 or (fasta is not None and len(fasta.encode("utf-8")) > 20_000_000):
         raise ResearchError("Research input exceeds the explicit upload/request size limit")
@@ -133,24 +147,35 @@ def submit_job(
             "created_at": utc_now(),
         },
     )
-    with _connection(workspace=workspace) as connection:
-        connection.execute(
-            (
-                "INSERT INTO jobs(job_id, operation, status, created_at, request) VALUES "
-                "(?,?,'QUEUED',?,?)"
-            ),
-            (job_id, operation, utc_now(), request),
-        )
+    try:
+        with _connection(workspace=workspace) as connection:
+            connection.execute(
+                (
+                    "INSERT INTO jobs(job_id, operation, status, created_at, request) VALUES "
+                    "(?,?,'QUEUED',?,?)"
+                ),
+                (job_id, operation, utc_now(), request),
+            )
+            if interproscan_email is not None:
+                atomic_json(path=directory / INTERPROSCAN_CONTACT_FILE, value=interproscan_email)
+    except (OSError, sqlite3.Error):
+        _clear_interproscan_contact(directory=directory)
+        raise
     LOGGER.info("Queued %s job %s", operation, job_id)
     return job_id
 
 
-def list_jobs(*, workspace: Path, limit: int = 200) -> list[dict[str, object]]:
+def list_jobs(
+    *, workspace: Path, limit: int = 200, operation: str | None = None,
+    source_job: str | None = None,
+) -> list[dict[str, object]]:
     """Return bounded recent job summaries without exposing request sequences or tokens.
 
     Args:
         workspace: Job workspace.
         limit: Maximum recent records, between one and 1,000.
+        operation: Optional exact operation filter.
+        source_job: Optional exact source-job filter.
 
     Returns:
         Newest-first job status dictionaries.
@@ -160,11 +185,19 @@ def list_jobs(*, workspace: Path, limit: int = 200) -> list[dict[str, object]]:
     """
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1_000:
         raise ResearchError("Job result limit must be an integer between 1 and 1000")
+    predicates, arguments = [], []
+    if operation is not None:
+        predicates.append("operation = ?")
+        arguments.append(operation)
+    if source_job is not None:
+        predicates.append("json_extract(request, '$.source_job') = ?")
+        arguments.append(source_job)
+    where = " WHERE " + " AND ".join(predicates) if predicates else ""
     with _connection(workspace=workspace) as connection:
         rows = connection.execute(
             "SELECT job_id,operation,status,created_at,started_at,finished_at,error "
-            "FROM jobs ORDER BY created_at DESC,job_id LIMIT ?",
-            (limit,),
+            f"FROM jobs{where} ORDER BY created_at DESC,job_id LIMIT ?",
+            (*arguments, limit),
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -236,13 +269,15 @@ def fail_queued_job(*, workspace: Path, job_id: str, error: str) -> None:
         job_id: Exact generated job identifier.
         error: Diagnostic to display beside the failed job.
     """
-    job_directory(workspace=workspace, job_id=job_id)
+    directory = job_directory(workspace=workspace, job_id=job_id)
     with _connection(workspace=workspace) as connection:
-        connection.execute(
+        cursor = connection.execute(
             "UPDATE jobs SET status='FAILED', finished_at=?, error=? "
             "WHERE job_id=? AND status='QUEUED'",
             (utc_now(), error[:4_000], job_id),
         )
+    if cursor.rowcount:
+        _clear_interproscan_contact(directory=directory)
 
 
 def finish_job(*, workspace: Path, job_id: str, error: str | None = None) -> None:
@@ -256,7 +291,7 @@ def finish_job(*, workspace: Path, job_id: str, error: str | None = None) -> Non
     Raises:
         ResearchError: If the job is not currently running.
     """
-    job_directory(workspace=workspace, job_id=job_id)
+    directory = job_directory(workspace=workspace, job_id=job_id)
     status = "FAILED" if error is not None else "COMPLETE"
     with _connection(workspace=workspace) as connection:
         cursor = connection.execute(
@@ -265,6 +300,7 @@ def finish_job(*, workspace: Path, job_id: str, error: str | None = None) -> Non
         )
         if cursor.rowcount != 1:
             raise ResearchError("Only a running job can be completed")
+    _clear_interproscan_contact(directory=directory)
     LOGGER.info("Job %s finished with status %s", job_id, status)
 
 
@@ -278,7 +314,7 @@ def cancel_job(*, workspace: Path, job_id: str) -> None:
     Raises:
         ResearchError: If the job has already started or does not exist.
     """
-    job_directory(workspace=workspace, job_id=job_id)
+    directory = job_directory(workspace=workspace, job_id=job_id)
     with _connection(workspace=workspace) as connection:
         cursor = connection.execute(
             "UPDATE jobs SET status='CANCELLED',finished_at=? WHERE job_id=? AND status='QUEUED'",
@@ -288,6 +324,40 @@ def cancel_job(*, workspace: Path, job_id: str) -> None:
             raise ResearchError(
                 "Only queued jobs can be cancelled; running jobs need worker control"
             )
+    _clear_interproscan_contact(directory=directory)
+
+
+def job_interproscan_contact(*, directory: Path) -> str | None:
+    """Read a private contact override from the claimed annotation job.
+
+    Args:
+        directory: The annotation job's owned workspace directory.
+
+    Returns:
+        Validated address, or None to use the worker profile.
+
+    Raises:
+        ResearchError: If a submitted contact record cannot be used.
+    """
+    try:
+        value = json.loads((directory / INTERPROSCAN_CONTACT_FILE).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        raise ResearchError("Could not read the submitted InterProScan contact") from None
+    return interproscan_contact(value=value)
+
+
+def _clear_interproscan_contact(*, directory: Path) -> None:
+    """Remove a submitted contact after its job reaches a terminal state.
+
+    Args:
+        directory: Owned job directory.
+    """
+    try:
+        (directory / INTERPROSCAN_CONTACT_FILE).unlink(missing_ok=True)
+    except OSError:
+        LOGGER.warning("Could not remove the InterProScan contact for job %s", directory.name)
 
 
 def artifact_path(*, workspace: Path, job_id: str, artifact: str) -> Path:

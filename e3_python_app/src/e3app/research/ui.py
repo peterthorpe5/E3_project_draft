@@ -27,6 +27,8 @@ from .catalogue import browse_clusters, open_catalogue
 from .common import ResearchConfig, ResearchError, iter_fasta, load_config
 from .deepclust_exchange import centroid_list
 from .guidance import (
+    ALIGNMENT_MEMBER_METRICS,
+    ALIGNMENT_POSITION_METRICS,
     FIELD_HELP,
     GLOSSARY,
     OPERATION_NAMES,
@@ -38,7 +40,7 @@ from .guidance import (
     user_guide,
 )
 from .jobs import artifact_path, cancel_job, get_job, job_directory, list_jobs, submit_job
-from .viewers import auspice_dataset_url, nightingale_features, viewer_document
+from .viewers import auspice_dataset_url, nightingale_features, protein_tree_figure, viewer_document
 
 LOGGER = logging.getLogger(__name__)
 
@@ -373,8 +375,8 @@ def completed_manifests(*, config: ResearchConfig, operation: str = "") -> dict[
         Job IDs and manifest dictionaries; corrupt manifests raise a controlled diagnostic.
     """
     result = {}
-    for job in list_jobs(workspace=config.workspace):
-        if job["status"] != "COMPLETE" or (operation and job["operation"] != operation):
+    for job in list_jobs(workspace=config.workspace, operation=operation or None):
+        if job["status"] != "COMPLETE":
             continue
         path = job_directory(workspace=config.workspace, job_id=job["job_id"]) / "manifest.json"
         try:
@@ -530,6 +532,7 @@ def queue_action(
     operation: str,
     parameters: Mapping[str, object],
     fasta: str | None = None,
+    interproscan_email: str | None = None,
 ) -> None:
     """Queue one explicit user action and display its durable job identifier.
 
@@ -538,9 +541,11 @@ def queue_action(
         operation: Validated analysis type.
         parameters: Scientific controls from the visible form.
         fasta: Optional uploaded protein FASTA.
+        interproscan_email: Optional contact for the remote annotation job.
     """
     job_id = submit_job(
-        workspace=config.workspace, operation=operation, parameters=parameters, fasta=fasta
+        workspace=config.workspace, operation=operation, parameters=parameters, fasta=fasta,
+        interproscan_email=interproscan_email,
     )
     LOGGER.info("Workbench queued %s job %s", operation, job_id)
     st.success(f"Queued: {OPERATION_NAMES.get(operation, operation)} · job {job_id}.")
@@ -1310,11 +1315,140 @@ def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> N
     )
 
 
+def render_alignment_statistics(*, config: ResearchConfig, job_id: str) -> None:
+    """Show saved position and protein statistics with their calculation help.
+
+    Args:
+        config: Research workspace.
+        job_id: Completed alignment supplying both metrics tables.
+    """
+    for name, heading, metrics in (
+        ("alignment_columns.tsv", "Per-position statistics", ALIGNMENT_POSITION_METRICS),
+        ("alignment_members.tsv", "Per-protein statistics", ALIGNMENT_MEMBER_METRICS),
+    ):
+        frame = read_table(
+            path=artifact_path(workspace=config.workspace, job_id=job_id, artifact=name)
+        )
+        st.markdown(f"#### {heading}")
+        with st.popover("Metric definitions", icon=":material/help:"):
+            for label, description in metrics.values():
+                st.markdown(f"**{label}**  \n{description}")
+        st.dataframe(
+            frame, hide_index=True,
+            column_config={
+                key: st.column_config.Column(label=label, help=description)
+                for key, (label, description) in metrics.items()
+            },
+        )
+        if name == "alignment_columns.tsv":
+            st.plotly_chart(
+                px.line(
+                    frame.assign(
+                        gap_fraction=pd.to_numeric(frame["gap_fraction"]),
+                        alignment_column=pd.to_numeric(frame["alignment_column"]),
+                    ),
+                    x="alignment_column", y="gap_fraction", range_y=(0, 1),
+                    labels={"alignment_column": "Alignment column", "gap_fraction": "Gap fraction"},
+                ),
+                key="alignment_gaps",
+            )
+
+
+def render_tree_request(
+    *, config: ResearchConfig, alignment_job: str, count: int, jobs: list[dict[str, object]],
+) -> None:
+    """Offer tree inference for a completed alignment lacking a saved tree.
+
+    Args:
+        config: Workspace and app-host FastTree executable.
+        alignment_job: Source alignment job ID.
+        count: Number of aligned proteins.
+        jobs: Recent tree jobs for this alignment, newest first.
+    """
+    from .local_worker import submit_local_tree
+
+    pending = next((job for job in jobs if job["status"] in {"QUEUED", "RUNNING"}), None)
+    if pending:
+        status = str(pending["status"]).lower()
+        st.info(f"FastTree job {pending['job_id']} is {status}.")
+        st.button("Refresh tree status", key=f"refresh_tree_{alignment_job}")
+        return
+    if jobs and jobs[0]["status"] == "FAILED":
+        st.error(f"Tree inference failed. {jobs[0]['error']}")
+    st.info("This completed alignment has no saved protein tree.")
+    if count < 3:
+        st.caption("FastTree requires an alignment of at least three proteins.")
+        return
+    if not shutil.which(config.fasttree):
+        st.warning("FastTree is unavailable on the machine running the app.")
+        st.caption(
+            "Install FastTree in the app environment and relaunch. Set fasttree in "
+            "the research profile if you use a separate executable."
+        )
+        st.code("conda install -c conda-forge -c bioconda fasttree", language="bash")
+        return
+    if st.button(
+        "Infer tree from this alignment", key=f"infer_tree_{alignment_job}", type="primary",
+        help="Run FastTree WAG+gamma on the saved alignment using the app machine.",
+    ):
+        submit_local_tree(config=config, alignment_job=alignment_job)
+        st.rerun()
+
+
+def render_saved_tree(
+    *, config: ResearchConfig, job_id: str, artifacts: set[str],
+) -> None:
+    """Preview a checksummed protein tree and offer its portable files.
+
+    Args:
+        config: Workspace and optional configured Auspice viewer.
+        job_id: Completed job containing Newick or Auspice v2 JSON.
+        artifacts: Names of the saved tree artifacts.
+    """
+    from .analysis import auspice_dataset
+
+    newick = ""
+    if "tree.nwk" in artifacts:
+        newick = artifact_path(
+            workspace=config.workspace, job_id=job_id, artifact="tree.nwk",
+        ).read_text(encoding="utf-8")
+    has_dataset = "auspice.json" in artifacts
+    if has_dataset:
+        json_text = artifact_path(
+            workspace=config.workspace, job_id=job_id, artifact="auspice.json",
+        ).read_text(encoding="utf-8")
+        try:
+            dataset = json.loads(json_text)
+        except ValueError as exc:
+            raise ResearchError("Could not read the saved Auspice dataset") from exc
+    else:
+        dataset = auspice_dataset(newick=newick, metadata={}, title="Protein family phylogeny")
+        json_text = json.dumps(dataset, indent=2, allow_nan=False) + "\n"
+    if config.auspice_url and has_dataset and st.toggle(
+        "Use configured Auspice viewer", value=True, key=f"auspice_server_{job_id}",
+    ):
+        components.iframe(
+            auspice_dataset_url(base_url=config.auspice_url, job_id=job_id),
+            height=760, scrolling=True,
+        )
+    else:
+        st.plotly_chart(protein_tree_figure(dataset=dataset), key=f"protein_tree_{job_id}")
+    if newick:
+        st.download_button(
+            "Download Newick tree", data=newick, file_name=f"{job_id}.nwk",
+            mime="text/plain", key=f"newick_download_{job_id}",
+        )
+    st.download_button(
+        "Download Auspice dataset", data=json_text, file_name=f"{job_id}.json",
+        mime="application/json", key=f"auspice_download_{job_id}",
+    )
+
+
 def render_alignments(
     *, config: ResearchConfig, dedicated: bool = False, app_config: AppConfig | None = None,
     connection: object | None = None,
 ) -> None:
-    """Render real JBrowse/AV2 libraries and a configured self-hosted Auspice dataset.
+    """Render alignment viewers, protein-tree inference and saved statistics.
 
     Args:
         config: Alignment workspace and Auspice URL.
@@ -1371,7 +1505,7 @@ def render_alignments(
         options=list(completed),
         format_func=labels.__getitem__,
         help="Choose a COMPLETE alignment job. Its reference, sampling and tree settings "
-        "were fixed when the job was queued; this page does not rerun the analysis.",
+        "are saved with the job. The Auspice tree view can infer a tree from its saved alignment.",
         key="research_alignment_job",
     )
     summary = json.loads(
@@ -1380,20 +1514,21 @@ def render_alignments(
         ).read_text()
     )
     left, middle, right = st.columns(3)
-    left.metric("Aligned proteins", f"{int(summary['aligned_sequence_count']):,}")
-    middle.metric("Aligned positions", f"{int(summary['alignment_length']):,}")
+    left.metric(
+        "Aligned proteins", f"{int(summary['aligned_sequence_count']):,}",
+        help="Number of protein sequences in this saved alignment, including the reference.",
+    )
+    middle.metric(
+        "Aligned positions", f"{int(summary['alignment_length']):,}",
+        help="Number of columns across the alignment, including columns with gaps.",
+    )
     right.metric(
         "Mean gap fraction",
         f"{float(summary['mean_gap_fraction']):.1%}",
-        help="Fraction of alignment cells containing a gap. High gaps can reflect "
-        "partial sequences, insertions, deletions or a poorly matched family.",
+        help="Number of gap cells divided by all cells in the alignment. This is the "
+        "average gap fraction across columns.",
     )
     st.caption(f"Reference protein: {summary['reference_id']}")
-    st.caption(
-        "Per-sequence statistics compare each protein with this reference. "
-        "They are not an all-pairs comparison. BLOSUM62 is a raw score over comparable "
-        "positions; it is neither an E-value nor a length-normalised score."
-    )
     with st.expander("Technical alignment summary (JSON)"):
         st.json(summary)
     artifacts = completed[job_id]["artifacts"]
@@ -1408,7 +1543,7 @@ def render_alignments(
         horizontal=True,
         help="JBrowse MSA combines the alignment and tree. Alignment Viewer 2 supports "
         "sorting by similarity to the reference. Statistics gives tables and conservation "
-        "plots. Auspice requires a separately configured viewer service.",
+        "plots. Auspice tree opens a saved protein tree or lets you infer one with FastTree.",
         key="completed_alignment_view",
     )
     st.caption(
@@ -1418,55 +1553,30 @@ def render_alignments(
             "coloured columns are aligned residues.",
             "Alignment Viewer 2": "The reference appears first. Use the viewer controls to "
             "sort sequences by their BLOSUM score to that query and inspect conserved regions.",
-            "Auspice tree": "Explore an inferred tree by divergence. Species colours require "
-            "reviewed metadata. This view is not a time-calibrated evolutionary history.",
-            "Statistics": "Gap fraction measures missing alignment cells. Consensus fraction "
-            "uses known residues; lower Shannon entropy indicates stronger conservation. "
-            "Member identity is measured against the chosen reference over canonical residues.",
+            "Auspice tree": "Explore the inferred protein tree. Branch lengths are measured "
+            "in substitutions per site.",
+            "Statistics": "Per-protein metrics use the selected reference. Read consensus "
+            "and entropy alongside the canonical residue fraction.",
         }[view]
     )
     if view == "Statistics":
-        columns = read_table(
-            path=artifact_path(
-                workspace=config.workspace, job_id=job_id, artifact="alignment_columns.tsv"
-            )
-        )
-        st.dataframe(columns, hide_index=True)
-        columns["gap_fraction"] = pd.to_numeric(columns["gap_fraction"])
-        columns["alignment_column"] = pd.to_numeric(columns["alignment_column"])
-        st.plotly_chart(
-            px.line(columns, x="alignment_column", y="gap_fraction"), key="alignment_gaps"
-        )
-        st.dataframe(
-            read_table(
-                path=artifact_path(
-                    workspace=config.workspace, job_id=job_id, artifact="alignment_members.tsv"
-                )
-            ),
-            hide_index=True,
-        )
+        render_alignment_statistics(config=config, job_id=job_id)
         return
+    tree_id, tree_jobs = job_id, []
+    tree_artifacts = {"tree.nwk", "auspice.json"}.intersection(artifacts)
+    if not tree_artifacts and view in {"Auspice tree", "JBrowse MSA"}:
+        tree_jobs = list_jobs(workspace=config.workspace, operation="tree", source_job=job_id)
+        saved = next((job for job in tree_jobs if job["status"] == "COMPLETE"), None)
+        if saved:
+            tree_id = str(saved["job_id"])
+            tree_artifacts = {"tree.nwk", "auspice.json"}
     if view == "Auspice tree":
-        if "auspice.json" not in artifacts:
-            st.info(
-                (
-                    "This job has no inferred tree; request tree inference with at least "
-                    "three sequences."
-                )
-            )
-        elif config.auspice_url:
-            components.iframe(
-                auspice_dataset_url(base_url=config.auspice_url, job_id=job_id),
-                height=760,
-                scrolling=True,
-            )
+        if tree_artifacts:
+            render_saved_tree(config=config, job_id=tree_id, artifacts=tree_artifacts)
         else:
-            st.info(
-                (
-                    "Configure auspice_url for your self-hosted Auspice service. Download "
-                    "auspice.json from Jobs for portable use. Setup commands are in "
-                    "PROTEIN_RESEARCH.md."
-                )
+            render_tree_request(
+                config=config, alignment_job=job_id,
+                count=int(summary["aligned_sequence_count"]), jobs=tree_jobs,
             )
         return
     path = artifact_path(workspace=config.workspace, job_id=job_id, artifact="alignment.fasta")
@@ -1474,8 +1584,10 @@ def render_alignments(
     reference = summary["reference_id"]
     ordered = {reference: records[reference], **records}
     tree = (
-        artifact_path(workspace=config.workspace, job_id=job_id, artifact="tree.nwk").read_text()
-        if "tree.nwk" in artifacts
+        artifact_path(
+            workspace=config.workspace, job_id=tree_id, artifact="tree.nwk",
+        ).read_text(encoding="utf-8")
+        if "tree.nwk" in tree_artifacts
         else ""
     )
     if view == "JBrowse MSA":
@@ -1744,14 +1856,28 @@ def render_annotations(*, config: ResearchConfig) -> None:
         help=FIELD_HELP["annotation_engine"],
         key="annotation_engine",
     )
-    issue = provider_problem(config=config, operation="annotate", engine=engine)
+    contact_email = None
+    if engine == "interpro_remote":
+        contact_email = st.text_input(
+            "InterProScan contact email",
+            key="interproscan_contact_email",
+            placeholder="name@example.org",
+            max_chars=254,
+            help="EMBL-EBI requires a contact email. An address entered here applies to this "
+            "queued job. Leave it blank to use the configured contact, if available. "
+            "Files prepared for another machine use that worker's configured address.",
+        ).strip() or None
+    issue = provider_problem(
+        config=config, operation="annotate", engine=engine, contact_email=contact_email,
+    )
     if issue:
         st.warning(issue)
     remote = False
     if engine == "interpro_remote":
         remote = st.checkbox(
             "Submit selected sequences to EMBL-EBI InterProScan",
-            help=FIELD_HELP["consent"],
+            help="Send the selected proteins and contact email to EMBL-EBI. "
+            "A remote job can contain up to 25 proteins.",
             key="annotation_remote_consent",
         )
         if not remote:
@@ -1760,7 +1886,11 @@ def render_annotations(*, config: ResearchConfig) -> None:
         ids = split_identifiers(
             value=st.text_area(
                 "Exact sequence IDs to annotate (blank selects input)",
-                help=FIELD_HELP["sequence_ids"],
+                help=(
+                    FIELD_HELP["sequence_ids"] + " For EMBL-EBI, select up to 25 proteins "
+                    "and leave this blank only if the input fits that limit."
+                    if engine == "interpro_remote" else FIELD_HELP["sequence_ids"]
+                ),
             )
         )
         scope, target = "Eukaryota", "2759"
@@ -1796,6 +1926,7 @@ def render_annotations(*, config: ResearchConfig) -> None:
             operation="annotate",
             parameters=parameters,
             fasta=fasta,
+            interproscan_email=contact_email,
         )
     render_portable_job(operation="annotate", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="annotate")

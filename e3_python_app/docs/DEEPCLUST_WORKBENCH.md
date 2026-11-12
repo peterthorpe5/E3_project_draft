@@ -154,6 +154,13 @@ JBrowse MSA plugin supplies the viewer. Open **JBrowse MSA** from either
    The first 200 aligned rows are selected by default when they fit the
    comparison limits. Adjust the selection and download the identity and
    comparable-residue count matrices as TSV files.
+6. Open **Auspice tree** to inspect the saved protein tree. If the alignment
+   has no tree and contains at least three proteins, choose **Infer tree from
+   this alignment**. FastTree runs on the app machine using the saved
+   alignment. The tree is then available in JBrowse and as Newick and Auspice
+   JSON downloads.
+7. Open **Statistics** and choose **Metric definitions** beside the position
+   or protein table for the calculation and denominator of each metric.
 
 **Subcluster proteins**, **Annotate proteins** and **Predict models** open
 the corresponding workbench forms with the protein input selected. From
@@ -196,11 +203,13 @@ For new annotation select a completed family/FASTA, upload FASTA or choose
 **Paste FASTA**. Restrict to exact IDs when needed. Shared annotation/model
 forms are also available directly under **Annotations** and **Models**.
 
-- **InterProScan:** installed local tool/databases, or EMBL-EBI REST with a
-  contact email and explicit sequence submission. Up to 25 selected remote
-  proteins are sent sequentially, **one protein per service request**. Service
-  IDs/input hashes are retained. Positional Nightingale tracks are verified
-  against their exact submitted amino-acid sequence hashes.
+- **InterProScan:** installed local tool/databases, or EMBL-EBI REST with
+  explicit sequence submission. Enter the contact email in the form or use
+  the worker profile's default. Files prepared for another machine use that
+  worker's configured address. Up to 25 selected remote proteins are sent
+  sequentially, **one protein per service request**. Service IDs/input hashes
+  are retained. Positional Nightingale tracks are verified against their exact
+  submitted amino-acid sequence hashes.
 - **eggNOG-mapper:** installed executable and matching database, with editable
   taxonomic scope/target. Eukaryota/2759 remains the default. Use a compatible
   tool/database installation; mapper 3/database 7 is a separate deployment

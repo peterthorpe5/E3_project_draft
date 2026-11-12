@@ -3,13 +3,96 @@
 from __future__ import annotations
 
 import hashlib
+from html import escape
 from importlib.resources import files
 import json
+import math
 import re
 from typing import Mapping, Sequence
 from urllib.parse import urlparse
 
+import plotly.graph_objects as go
+
 from .common import ResearchError, normalise_protein
+
+
+def protein_tree_figure(*, dataset: Mapping[str, object]) -> go.Figure:
+    """Lay out a divergence tree from an Auspice dataset for local display.
+
+    Args:
+        dataset: Auspice v2 JSON with real cumulative divergence for each node.
+
+    Returns:
+        A rectangular tree with exact protein IDs and available species in tooltips.
+
+    Raises:
+        ResearchError: If the tree data cannot be displayed.
+    """
+    branch_x, branch_y = [], []
+    tip_x, tip_y, labels, tooltips = [], [], [], []
+
+    def place(*, node: dict) -> tuple[float, float]:
+        """Assign a node a vertical position based on its descendant tips.
+
+        Args:
+            node: Auspice tree node with cumulative divergence.
+
+        Returns:
+            The node's divergence and vertical position.
+        """
+        attrs = node["node_attrs"]
+        x = float(attrs["div"])
+        if not math.isfinite(x) or x < 0:
+            raise ValueError("Invalid divergence")
+        children = node.get("children", [])
+        if children:
+            points = [place(node=child) for child in children]
+            first_y, last_y = points[0][1], points[-1][1]
+            branch_x.extend((x, x, None))
+            branch_y.extend((first_y, last_y, None))
+            for child_x, child_y in points:
+                branch_x.extend((x, child_x, None))
+                branch_y.extend((child_y, child_y, None))
+            return x, (first_y + last_y) / 2
+        y = len(labels)
+        name = escape(node["name"])
+        species = escape(str(attrs.get("species", {}).get("value", "")))
+        tip_x.append(x)
+        tip_y.append(y)
+        labels.append(name)
+        tooltips.append(f"{name}<br>{species}" if species else name)
+        return x, y
+
+    try:
+        place(node=dataset["tree"])
+    except (AttributeError, KeyError, TypeError, ValueError, RecursionError) as exc:
+        raise ResearchError("The saved tree has invalid Auspice divergence data") from exc
+    figure = go.Figure(
+        data=[
+            go.Scatter(x=branch_x, y=branch_y, mode="lines", hoverinfo="skip",
+                       line={"color": "#7b8796", "width": 1.3}),
+            go.Scatter(
+                x=tip_x, y=tip_y, mode="markers", text=tooltips,
+                marker={"color": "#3e65a3", "size": 6},
+                hovertemplate="%{text}<br>%{x:.4g} substitutions per site<extra></extra>",
+            ),
+        ],
+    )
+    show_labels = len(labels) <= 60
+    figure.update_layout(
+        height=max(310, min(900, 155 + 19 * len(labels))),
+        showlegend=False,
+        margin={"l": 16, "r": 16, "t": 12, "b": 56},
+        xaxis_title="Divergence (substitutions per site)",
+        yaxis={
+            "autorange": "reversed", "showgrid": False, "zeroline": False,
+            "showticklabels": show_labels, "side": "right", "automargin": True,
+            "tickfont": {"size": 11},
+            "tickmode": "array", "tickvals": tip_y if show_labels else [],
+            "ticktext": labels if show_labels else [],
+        },
+    )
+    return figure
 
 
 def json_for_html(*, value: object) -> str:

@@ -24,6 +24,29 @@ class ResearchError(ValueError):
     """A controlled protein-workflow validation or execution failure."""
 
 
+def interproscan_contact(*, value: str) -> str:
+    """Normalise the contact address submitted to EMBL-EBI.
+
+    Args:
+        value: A single contact email from the request or worker profile.
+
+    Returns:
+        The validated address with surrounding whitespace removed.
+
+    Raises:
+        ResearchError: If the email is missing or malformed.
+    """
+    address = value.strip() if isinstance(value, str) else ""
+    if (
+        len(address) > 254
+        or not address.isascii()
+        or not address.isprintable()
+        or not re.fullmatch(r"[^\s@<>,;]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", address)
+    ):
+        raise ResearchError("Enter a valid InterProScan contact email.")
+    return address
+
+
 @dataclass(frozen=True, kw_only=True)
 class ResearchConfig:
     """Operator-controlled data, tool and provider settings.

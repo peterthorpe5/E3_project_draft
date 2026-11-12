@@ -63,7 +63,7 @@ def taxonomy_artifact(*, config: ResearchConfig, source_job: str) -> Path | None
 
 
 def reviewed_metadata(
-    *, config: ResearchConfig, source: Path, source_job: str = "",
+    *, config: ResearchConfig, source: Path, source_job: str = "", aligned: bool = False,
 ) -> dict[str, dict[str, object]]:
     """Select exact reviewed metadata for an explicitly bounded protein FASTA.
 
@@ -71,6 +71,7 @@ def reviewed_metadata(
         config: Operator taxonomy profile and resource bounds.
         source: Selected protein sequences.
         source_job: Optional source carrying remote-retrieved taxonomy.
+        aligned: Whether the FASTA contains gaps.
 
     Returns:
         Positive taxon IDs and original species labels, keyed by exact sequence ID.
@@ -79,7 +80,7 @@ def reviewed_metadata(
         ResearchError: If dimensions, source schemas or reviewed species labels conflict.
     """
     identifiers = []
-    for identifier, _sequence in iter_fasta(path=source):
+    for identifier, _sequence in iter_fasta(path=source, aligned=aligned):
         identifiers.append(identifier)
         if len(identifiers) > config.max_sequences:
             raise ResearchError("Taxonomy selection exceeds max_sequences")

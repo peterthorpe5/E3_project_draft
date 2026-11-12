@@ -17,7 +17,7 @@ import signal
 import sqlite3
 import subprocess
 import tempfile
-from typing import Mapping
+from typing import Collection, Mapping
 
 from Bio import Phylo
 from Bio.Phylo.NewickIO import NewickError
@@ -562,7 +562,8 @@ def alignment_statistics(
 
 
 def auspice_dataset(
-    *, newick: str, metadata: Mapping[str, Mapping[str, object]], title: str
+    *, newick: str, metadata: Mapping[str, Mapping[str, object]], title: str,
+    expected_tips: Collection[str] | None = None,
 ) -> dict[str, object]:
     """Convert an inferred protein tree to Auspice v2 divergence JSON without invented dates.
 
@@ -570,6 +571,7 @@ def auspice_dataset(
         newick: Actual inferred Newick tree.
         metadata: Reviewed species/subcluster traits by exact tip identifier.
         title: Dataset title.
+        expected_tips: Exact alignment identifiers when verifying a new tree.
 
     Returns:
         Auspice v2 dataset with cumulative substitutions-per-site divergence.
@@ -579,11 +581,13 @@ def auspice_dataset(
     """
     try:
         tree = Phylo.read(io.StringIO(newick), "newick")
-    except (ValueError, TypeError, NewickError) as exc:
+        tip_names = [tip.name for tip in tree.get_terminals()]
+    except (ValueError, TypeError, NewickError, RecursionError) as exc:
         raise ResearchError("Could not parse the inferred Newick tree") from exc
-    tip_names = [tip.name for tip in tree.get_terminals()]
     if not tip_names or None in tip_names or len(tip_names) != len(set(tip_names)):
         raise ResearchError("Phylogenetic tips must have unique identifiers")
+    if expected_tips is not None and set(tip_names) != set(expected_tips):
+        raise ResearchError("Inferred tree tip names differ from the aligned proteins")
     result: dict[str, object] = {}
     stack = [(tree.root, result, 0.0, 0)]
     node_number = 0
@@ -638,6 +642,57 @@ def auspice_dataset(
         },
         "tree": result,
     }
+
+
+def infer_protein_tree(
+    *, config: ResearchConfig, alignment: Path, output: Path,
+    metadata: Mapping[str, Mapping[str, object]] | None = None,
+) -> dict[str, Path]:
+    """Infer a FastTree WAG+gamma tree directly from an existing protein alignment.
+
+    Args:
+        config: FastTree executable and analysis bounds.
+        alignment: Aligned FASTA, with the exact protein IDs for the tree tips.
+        output: Owned job output directory.
+        metadata: Optional reviewed metadata keyed by exact protein ID.
+
+    Returns:
+        Newick and Auspice v2 artifacts.
+
+    Raises:
+        ResearchError: If the alignment, tool or resulting tree fails validation.
+    """
+    identifiers: set[str] = set()
+    width = None
+    for identifier, sequence in iter_fasta(path=alignment, aligned=True):
+        if identifier in identifiers or (width is not None and len(sequence) != width):
+            raise ResearchError("Aligned FASTA must have unique IDs and equal row lengths")
+        identifiers.add(identifier)
+        width = len(sequence)
+        if (
+            len(identifiers) > config.max_alignment_sequences
+            or len(identifiers) * width > config.max_alignment_cells
+        ):
+            raise ResearchError("Alignment exceeds the configured sequence or matrix size bound")
+    if len(identifiers) < 3:
+        raise ResearchError("Tree inference requires at least three aligned proteins")
+    LOGGER.info("Inferring a protein tree from %d aligned proteins", len(identifiers))
+    tree = output / "tree.nwk"
+    run_command(
+        arguments=[config.fasttree, "-wag", "-gamma", str(alignment)],
+        output=output,
+        config=config,
+        stdout=tree,
+    )
+    dataset = auspice_dataset(
+        newick=tree.read_text(encoding="utf-8"),
+        metadata=metadata or {},
+        title="Protein family phylogeny",
+        expected_tips=identifiers,
+    )
+    path = output / "auspice.json"
+    atomic_json(path=path, value=dataset)
+    return {tree.name: tree, path.name: path}
 
 
 def align_family(
@@ -748,21 +803,12 @@ def align_family(
     if any(aligned[identifier].replace("-", "") != sequence for identifier, sequence in selected):
         raise ResearchError("Alignment tool changed a selected protein sequence")
     if len(selected) >= 3 and bool(parameters.get("infer_tree", True)):
-        run_command(
-            arguments=[config.fasttree, "-wag", "-gamma", str(output / "alignment.fasta")],
-            output=output,
-            config=config,
-            stdout=output / "tree.nwk",
+        result.update(
+            infer_protein_tree(
+                config=config, alignment=output / "alignment.fasta",
+                output=output, metadata=metadata,
+            )
         )
-        newick = (output / "tree.nwk").read_text(encoding="utf-8")
-        tree_ids = {tip.name for tip in Phylo.read(io.StringIO(newick), "newick").get_terminals()}
-        if tree_ids != aligned_ids:
-            raise ResearchError("Inferred tree tip names differ from the aligned proteins")
-        dataset = auspice_dataset(
-            newick=newick, metadata=metadata or {}, title="Protein family phylogeny"
-        )
-        atomic_json(path=output / "auspice.json", value=dataset)
-        result.update({"tree.nwk": output / "tree.nwk", "auspice.json": output / "auspice.json"})
     write_tsv(
         path=output / "selection.tsv",
         rows=[

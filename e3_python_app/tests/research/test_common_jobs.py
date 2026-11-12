@@ -12,6 +12,7 @@ from e3app.research.common import (
     atomic_json,
     bounded_number,
     file_sha256,
+    interproscan_contact,
     iter_fasta,
     load_config,
     normalise_protein,
@@ -20,15 +21,49 @@ from e3app.research.common import (
     write_tsv,
 )
 from e3app.research.jobs import (
+    INTERPROSCAN_CONTACT_FILE,
     artifact_path,
     cancel_job,
     claim_job,
     finish_job,
     get_job,
     job_directory,
+    job_interproscan_contact,
     list_jobs,
     submit_job,
 )
+
+
+@pytest.mark.parametrize("address", ["", "bad", "a@localhost", "a\nb@example.org", "a" * 255])
+def test_interproscan_contact_rejects_invalid_address(address):
+    """Return a generic error without exposing the supplied contact text."""
+    with pytest.raises(ResearchError, match="valid InterProScan contact email"):
+        interproscan_contact(value=address)
+
+
+def test_remote_contact_is_removed_after_cancellation_or_failure(tmp_path):
+    """Keep the private contact scoped to a consented, unfinished annotation job."""
+    parameters = {"engine": "interpro_remote", "remote_allowed": True}
+    address = "contact@example.org"
+    with pytest.raises(ResearchError, match="requires consent"):
+        submit_job(
+            workspace=tmp_path, operation="annotate",
+            parameters={**parameters, "remote_allowed": False}, interproscan_email=address,
+        )
+    for failed in (False, True):
+        job_id = submit_job(
+            workspace=tmp_path, operation="annotate", parameters=parameters,
+            interproscan_email=address,
+        )
+        directory = job_directory(workspace=tmp_path, job_id=job_id)
+        assert job_interproscan_contact(directory=directory) == address
+        if failed:
+            claim_job(workspace=tmp_path, job_id=job_id)
+            finish_job(workspace=tmp_path, job_id=job_id, error="fixture failure")
+        else:
+            cancel_job(workspace=tmp_path, job_id=job_id)
+        assert not (directory / INTERPROSCAN_CONTACT_FILE).exists()
+        assert job_interproscan_contact(directory=directory) is None
 
 
 def test_config_strict_types_paths_and_defaults(tmp_path, monkeypatch):

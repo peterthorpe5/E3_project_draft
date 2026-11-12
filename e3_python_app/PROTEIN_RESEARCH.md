@@ -192,8 +192,9 @@ A typical sequence of actions is:
    explicitly request a deterministic sample. No oversized cluster is silently
    truncated. There is no all-pairs similarity guarantee: exact thresholds are
    audited against assigned representatives.
-5. Open Alignments and trees → JBrowse MSA / Alignment Viewer 2 / Statistics;
-   open Auspice once its service is configured.
+5. Open **Alignments and trees** to inspect the saved alignment. Use the
+   question-mark help in **Statistics** for each metric, or open **Auspice
+   tree** to view or infer a protein tree.
 6. Optionally select exact protein IDs for model/annotation jobs. Blank ID lists
    select the complete input, subject to the stated job bounds. Review failures,
    no-hit evidence and provenance before interpreting downstream results.
@@ -217,10 +218,14 @@ sequence_ids; alignment accepts subcluster_id/reference_id, optional sample_size
 with allow_sampling=true, and infer_tree. Jobs are independent: the next stage
 starts only when its source artifacts have completed and passed checksum checks.
 
-## 4. Auspice service
+## 4. Protein trees and the optional Auspice service
 
-Auspice is a separate web application. The patch writes real v2 datasets and
-embeds your configured service; it does not substitute a static tree drawing.
+The **Auspice tree** view shows a local interactive preview and offers Newick
+and Auspice v2 downloads. If a completed alignment has no tree, select **Infer
+tree from this alignment** to run FastTree on the app host. The saved alignment
+must contain at least three proteins. Refresh tree status to open the result.
+
+To enable the full Auspice interface, configure a separate Auspice service.
 For the currently supported Auspice 3.1.0 service, use Node 24 or 26 on its host:
 
 ```bash
@@ -235,8 +240,9 @@ reverse-proxy URL for a server deployment. Dataset names are job IDs. HTTPS app
 pages need an HTTPS Auspice URL; the proxy must allow the intended iframe embedding.
 The service supplies Auspice interactions, including its supported focus/layout
 controls; it does not derive ancestral states or dates from these protein trees.
-Download auspice.json and tree.nwk from Jobs for other tools. The root is a layout
-root and does not assert an ancestral protein.
+Download the Auspice dataset and Newick from the tree view or from Jobs.
+Branch lengths show substitutions per site. FastTree estimates an unrooted
+tree and the viewer uses a root for layout.
 
 ## 5. ESMFold and annotation routes
 
@@ -265,9 +271,11 @@ per-residue confidence, and downloads the full predicted PDB for atomic inspecti
 It does not automatically feed predictions into the existing authoritative E3
 pocket/ligandability rankings.
 
-**InterProScan:** local installation or explicit EMBL-EBI submission (email in
-profile, at most 25 proteins remotely). Service IDs are retained for manual polling
-recovery. TSV input MD5, protein lengths and domain coordinates are validated.
+**InterProScan:** local installation or explicit EMBL-EBI submission for up to
+25 proteins per job. Enter the contact email under **Annotations** or use the
+profile default. The entered address is used for that queued job and omitted
+from its result files. Service IDs are retained for manual polling recovery.
+TSV input MD5, protein lengths and domain coordinates are validated.
 
 **eggNOG:** local installation/database. The default scope Eukaryota and target
 2759 are visible and configurable. Use a database/version supporting the requested

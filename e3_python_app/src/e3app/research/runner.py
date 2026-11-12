@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 import json
 import logging
 from importlib.metadata import version
@@ -16,7 +17,9 @@ import duckdb
 
 from e3app import __version__
 
-from .analysis import REALIGN_FIELDS, align_family, index_fasta, run_command, subcluster
+from .analysis import (
+    REALIGN_FIELDS, align_family, index_fasta, infer_protein_tree, run_command, subcluster,
+)
 from .catalogue import (
     build_cluster_taxonomy,
     extract_clusters,
@@ -25,7 +28,9 @@ from .catalogue import (
 )
 from .common import ResearchConfig, ResearchError, atomic_json, file_sha256, utc_now
 from .deepclust_exchange import import_cluster
-from .jobs import artifact_path, claim_job, finish_job, job_directory
+from .jobs import (
+    artifact_path, claim_job, finish_job, get_job, job_directory, job_interproscan_contact,
+)
 from .providers import annotate_batch, predict_batch
 
 LOGGER = logging.getLogger(__name__)
@@ -294,6 +299,21 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
     if operation == "taxonomy_index":
         path = build_cluster_taxonomy(config=config, output=output)
         return {path.name: path}
+    if operation == "tree":
+        from .taxonomy import reviewed_metadata
+
+        source_job = parameters.get("source_job", "")
+        if get_job(workspace=config.workspace, job_id=source_job)["operation"] != "align":
+            raise ResearchError("Select a completed protein alignment job")
+        alignment = artifact_path(
+            workspace=config.workspace, job_id=source_job, artifact="alignment.fasta",
+        )
+        metadata = reviewed_metadata(
+            config=config, source=alignment, source_job=source_job, aligned=True,
+        )
+        return infer_protein_tree(
+            config=config, alignment=alignment, output=output, metadata=metadata,
+        )
     source = prepare_input(config=config, job=job, output=output)
     if operation == "import_cluster":
         return import_cluster(
@@ -358,6 +378,10 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
     if operation == "predict":
         return predict_batch(config=config, source=source, output=output, parameters=parameters)
     if operation == "annotate":
+        if parameters.get("engine") == "interpro_remote":
+            email = job_interproscan_contact(directory=output)
+            if email is not None:
+                config = replace(config, email=email)
         return annotate_batch(config=config, source=source, output=output, parameters=parameters)
     if operation == "search":
         return search_representatives(config=config, source=source, output=output)

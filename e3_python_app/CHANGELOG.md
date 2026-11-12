@@ -4,6 +4,13 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.5
+
+- Infer a missing FastTree protein tree from a completed alignment. Preview
+  saved trees in the app and download Newick and Auspice v2 JSON.
+- Explain each position and protein metric in the alignment Statistics view.
+- Enter a contact email in the EMBL-EBI InterProScan form for the queued job.
+
 ## v0.23.4
 
 - Calculate a pairwise identity heatmap beside a completed JBrowse alignment.

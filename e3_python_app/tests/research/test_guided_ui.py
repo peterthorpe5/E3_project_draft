@@ -4,15 +4,20 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
+from unittest.mock import Mock
+from urllib.parse import parse_qs
 
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from e3app.research import analysis, ui
+from e3app.research import analysis, providers, ui
 from e3app.research.common import ResearchError, iter_fasta
 from e3app.research.guidance import SECTIONS
-from e3app.research.jobs import get_job, job_directory, list_jobs, submit_job
+from e3app.research.jobs import (
+    INTERPROSCAN_CONTACT_FILE, artifact_path, get_job, job_directory, list_jobs, submit_job,
+)
 from e3app.research.runner import run_next_job
 
 
@@ -251,6 +256,46 @@ def test_annotation_only_shows_controls_for_the_selected_route(*, guided_app):
     assert find_control(controls=app.button, label="Queue annotation").disabled
 
 
+def test_interproscan_contact_reaches_only_the_consented_request(
+    *, guided_app, guided_profile, monkeypatch,
+):
+    """Validate the page field and pass it privately to the worker's EBI request."""
+    _, config = guided_profile
+    app = guided_app
+    app.radio(key="research_section").set_value("Annotations").run()
+    app.radio(key="annotate_route").set_value("Paste FASTA").run()
+    app.text_area(key="annotate_pasted_fasta").set_value(">plant_protein\nACDE\n").run()
+    app.selectbox(key="annotation_engine").set_value("interpro_remote").run()
+    app.checkbox(key="annotation_remote_consent").check().run()
+    app.text_input(key="interproscan_contact_email").set_value("invalid").run()
+    assert find_control(controls=app.button, label="Queue annotation").disabled
+    assert any("valid InterProScan contact email" in item.value for item in app.warning)
+    app.checkbox(key="annotation_remote_consent").uncheck().run()
+    address = "researcher+e3@example.org"
+    app.text_input(key="interproscan_contact_email").set_value(f" {address} ").run()
+    assert find_control(controls=app.button, label="Queue annotation").disabled
+    assert list_jobs(workspace=config.workspace) == []
+    app.checkbox(key="annotation_remote_consent").check().run()
+    find_control(controls=app.button, label="Queue annotation").click().run()
+    assert not app.exception
+    (job,) = list_jobs(workspace=config.workspace)
+    directory = job_directory(workspace=config.workspace, job_id=job["job_id"])
+    contact = directory / INTERPROSCAN_CONTACT_FILE
+    assert contact.stat().st_mode & 0o777 == 0o600
+    assert address not in (directory / "request.json").read_text(encoding="utf-8")
+    assert address not in json.dumps(job)
+    http = Mock(side_effect=[b"iprscan5-fixture", b"FINISHED", b""])
+    monkeypatch.setattr(providers, "http_request", http)
+    run_next_job(config=replace(config, email="profile@example.org"), job_id=job["job_id"])
+    assert get_job(workspace=config.workspace, job_id=job["job_id"])["status"] == "COMPLETE"
+    post = http.call_args_list[0].kwargs
+    assert post["method"] == "POST"
+    assert parse_qs(post["body"].decode())["email"] == [address]
+    assert not contact.exists()
+    for path in directory.glob("*.json"):
+        assert address not in path.read_text(encoding="utf-8")
+
+
 def test_alignment_summary_is_readable_and_aligned_fasta_is_not_an_input(
     *, guided_app, guided_profile, monkeypatch
 ):
@@ -296,9 +341,90 @@ def test_alignment_summary_is_readable_and_aligned_fasta_is_not_an_input(
         "Mean gap fraction",
     }
     assert any(item.label == "Technical alignment summary (JSON)" for item in app.expander)
+    assert all(item.proto.help for item in app.metric)
+    app.radio(key="completed_alignment_view").set_value("Statistics").run()
+    assert not app.exception
+    positions, members = app.dataframe
+    position_config = json.loads(positions.proto.columns)
+    member_config = json.loads(members.proto.columns)
+    assert all(position_config[column]["help"] for column in positions.value.columns)
+    assert all(member_config[column]["help"] for column in members.value.columns)
+    assert "single residue" in position_config["consensus_fraction_of_known"]["help"]
+    assert "number of comparable positions" in (
+        member_config["blosum62_sum_over_comparable_positions"]["help"]
+    )
+    assert len(app.get("plotly_chart")) == 1
+    manifest_path = job_directory(workspace=config.workspace, job_id=alignment) / "manifest.json"
+    legacy_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del legacy_manifest["artifacts"]["auspice.json"]
+    manifest_path.write_text(json.dumps(legacy_manifest), encoding="utf-8")
+    app.radio(key="completed_alignment_view").set_value("Auspice tree").run()
+    assert not app.exception and len(app.get("plotly_chart")) == 1
+    assert "Download Auspice dataset" in {button.label for button in app.get("download_button")}
     app.radio(key="research_section").set_value("Family analysis").run()
     source = app.selectbox(key="analyse_source")
     assert all("alignment.fasta" not in label for label in source.options)
+
+
+def test_completed_alignment_can_infer_missing_tree_on_app_host(
+    *, guided_app, guided_profile, tmp_path, monkeypatch,
+):
+    """Launch the exact tree-only worker, then show its tree in Auspice and JBrowse."""
+    profile, config = guided_profile
+    fasttree = tmp_path / "FastTree"
+    fasttree.write_text(
+        "#!/usr/bin/env bash\nset -euo pipefail\n"
+        '[[ "$1" == "-wag" && "$2" == "-gamma" && -f "$3" ]]\n'
+        "printf '%s\\n' '((plant_A:0.1,plant_B:0.2)0.8:0.05,plant_C:0.3);'\n",
+        encoding="utf-8",
+    )
+    fasttree.chmod(0o700)
+    config = replace(config, fasttree=str(fasttree))
+    profile.write_text(
+        profile.read_text(encoding="utf-8").replace(
+            f"fasttree={json.dumps(sys.executable)}", f"fasttree={json.dumps(str(fasttree))}"
+        ),
+        encoding="utf-8",
+    )
+
+    def mafft(*, arguments, output, config, stdout):
+        """Write a fixed gapped alignment and reject any tree command in the parent job."""
+        if "--version" in arguments:
+            stdout.write_text("MAFFT test\n", encoding="utf-8")
+        else:
+            assert "--auto" in arguments
+            stdout.write_text(">plant_A\nACDE\n>plant_B\nAC-E\n>plant_C\nACFE\n", encoding="utf-8")
+
+    monkeypatch.setattr(analysis, "run_command", mafft)
+    alignment = submit_job(
+        workspace=config.workspace, operation="align", parameters={"infer_tree": False},
+        fasta=">plant_A\nACDE\n>plant_B\nACE\n>plant_C\nACFE\n",
+    )
+    run_next_job(config=config, job_id=alignment)
+    source = artifact_path(workspace=config.workspace, job_id=alignment, artifact="alignment.fasta")
+    saved_alignment = source.read_bytes()
+    app = guided_app
+    app.radio(key="research_section").set_value("Alignments and trees").run()
+    app.radio(key="completed_alignment_view").set_value("Auspice tree").run()
+    assert any("no saved protein tree" in item.value for item in app.info)
+    app.button(key=f"infer_tree_{alignment}").click().run()
+    (job,) = list_jobs(workspace=config.workspace, operation="tree", source_job=alignment)
+    tree_id = job["job_id"]
+    deadline = time.monotonic() + 20
+    while job["status"] in {"QUEUED", "RUNNING"} and time.monotonic() < deadline:
+        time.sleep(0.1)
+        job = get_job(workspace=config.workspace, job_id=tree_id)
+    assert job["status"] == "COMPLETE", job
+    assert source.read_bytes() == saved_alignment
+    assert len(list_jobs(workspace=config.workspace, operation="align")) == 1
+    app.run()
+    assert not app.exception and not app.error
+    assert not app.get("iframe") and len(app.get("plotly_chart")) == 1
+    assert {"Download Newick tree", "Download Auspice dataset"} <= {
+        button.label for button in app.get("download_button")
+    }
+    app.radio(key="completed_alignment_view").set_value("JBrowse MSA").run()
+    assert "plant_A:0.1,plant_B:0.2" in app.get("iframe")[0].proto.srcdoc
 
 
 def test_subcluster_handoff_uses_audited_source_and_exact_selection(
