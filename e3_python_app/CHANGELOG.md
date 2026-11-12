@@ -4,6 +4,13 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.3
+
+- Start a new alignment from a searchable HOG in JBrowse MSA. Download the
+  released protein FASTA, or align it with MAFFT on the machine hosting the app.
+- Track an app-host or queued alignment and open the completed result in JBrowse.
+- Display the installed app version in the sidebar.
+
 ## v0.23.2
 
 - Align published HOG members directly from Family analysis. Choose the full

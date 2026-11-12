@@ -96,11 +96,11 @@ default response budget is 2 GB; exceeding configured resource/extraction limits
 fails explicitly. Raising limits is an operator choice. Source Parquet stays
 immutable and the entire global database is never copied.
 
-**Where analyses run:** DIAMOND, MAFFT, comparisons and local annotation run on
-the machine executing the research worker. SSH retrieval alone does not move
-these analyses to denbi. For large families, run the app/worker on denbi with
-its mounted data, installed tools and shared sidecar. This avoids downloading
-large clusters to a laptop. Existing deployment/tunnel instructions in
+**Where analyses run.** Queued DIAMOND, MAFFT and annotation jobs run on the
+research worker's machine. In JBrowse, **Run MAFFT on app machine** starts a
+one-shot worker on the host running Streamlit. For large families, run the
+app and worker on denbi with its mounted data, installed tools and shared
+workspace. Existing deployment and tunnel instructions in
 [PROTEIN_RESEARCH.md](../PROTEIN_RESEARCH.md) still apply.
 
 ## Subclusters, summaries and heatmaps
@@ -137,11 +137,22 @@ downloadable. A heatmap hierarchy is not a species phylogeny.
 
 The real, locally bundled **react-msaview 9.8.0** engine used by the GMOD
 JBrowse MSA plugin supplies the viewer. Open **JBrowse MSA** from either
-**Candidate discovery** or **DeepClust research**. The example uses six
-synthetic sequences. For an E3 HOG, select **Published HOG alignment** to see
-the MAFFT sequence set exported in the plant pocket-review bundle. Where the
-release lacks a review alignment, **Prepare HOG member FASTA** opens sequence
-selection for a new alignment.
+**Candidate discovery** or **DeepClust research**.
+
+1. Choose **Align a HOG** and search for a HOG ID. The app shows which
+   members have unaligned protein sequences in the loaded release.
+2. Use all available members or choose proteins. Download their FASTA and
+   ID mapping or set the reference, sampling and tree options.
+3. Choose **Run MAFFT on this Mac** when running Streamlit on a Mac with MAFFT
+   installed. On Linux the button is **Run MAFFT on app machine**. You can
+   also queue the job for a worker with access to the same workspace or
+   download the job files for another machine.
+4. Refresh the alignment status and choose **Open completed alignment**.
+   FastTree is optional and requires at least three selected proteins.
+
+**Published HOG alignment** opens alignments exported with the plant pocket
+review. **Try an example** opens six synthetic sequences. **Upload alignment
+files** accepts a previously aligned protein FASTA and an optional tree.
 
 Protein data is not sent to a CDN.
 Choose the inferred FastTree protein tree or **Reviewed species tree**. Upload

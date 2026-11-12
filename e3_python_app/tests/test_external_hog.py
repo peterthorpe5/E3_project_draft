@@ -19,8 +19,21 @@ from e3app.external_hog import (
     collect_external_hogs,
     external_hog_pair_fasta,
     prepared_hog_model,
+    published_hog_ids,
 )
 from e3app.result_queries import ResourceQuery
+
+
+def test_published_hog_ids_uses_exact_membership_independent_of_rank():
+    """List distinct membership IDs even when a release has no ranked or sequence tables."""
+    with duckdb.connect() as connection:
+        assert published_hog_ids(connection=connection) == ()
+        connection.execute("CREATE TABLE hierarchical_membership(group_id VARCHAR)")
+        connection.execute(
+            "INSERT INTO hierarchical_membership VALUES "
+            "('N0.HOG0000390'), ('N0.HOG0000001'), ('N0.HOG0000390'), (' '), (NULL)"
+        )
+        assert published_hog_ids(connection=connection) == ("N0.HOG0000001", "N0.HOG0000390")
 
 
 def make_model_bundle(

@@ -240,3 +240,7 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         logging.getLogger(__name__).error("Research command failed: %s", exc)
         return 2
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

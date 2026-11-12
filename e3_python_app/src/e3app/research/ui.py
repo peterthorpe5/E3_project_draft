@@ -9,6 +9,8 @@ import logging
 import os
 from pathlib import Path
 import shlex
+import shutil
+import sys
 from typing import Mapping
 
 import pandas as pd
@@ -35,7 +37,7 @@ from .guidance import (
     retrievable_cluster_ids,
     user_guide,
 )
-from .jobs import artifact_path, cancel_job, job_directory, list_jobs, submit_job
+from .jobs import artifact_path, cancel_job, get_job, job_directory, list_jobs, submit_job
 from .viewers import auspice_dataset_url, nightingale_features, viewer_document
 
 LOGGER = logging.getLogger(__name__)
@@ -1149,8 +1151,116 @@ def render_analysis(
             )
 
 
+def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> None:
+    """Prepare HOG sequences and run or export an alignment from the viewer page.
+
+    Args:
+        config: Research workspace, executable paths and analysis limits.
+        connection: Open E3 release with its HOG membership and protein sequences.
+    """
+    from .expansion_ui import render_hog_alignment_input
+    from .local_worker import submit_local_alignment
+
+    st.caption("Select a HOG to prepare its unaligned protein sequences from this release.")
+    fasta = render_hog_alignment_input(
+        config=config, connection=connection, key="msa", browse=True,
+    )
+    if not fasta:
+        return
+    hog = st.session_state["msa_hog"]
+    ids = sorted(line[1:] for line in fasta.splitlines() if line.startswith(">"))
+    parameters = {"e3_hog_id": hog}
+    sample_size = len(ids)
+    fasttree_ready = bool(shutil.which(config.fasttree))
+    with st.expander("Alignment settings", expanded=True):
+        parameters["reference_id"] = st.selectbox(
+            label="Reference protein", options=ids, key=f"msa_reference_{hog}",
+            help=FIELD_HELP["reference"],
+        )
+        sample = len(ids) > 1 and st.checkbox(
+            label="Use a deterministic sample", key="msa_allow_sampling",
+            help=FIELD_HELP["sampling"],
+        )
+        if sample:
+            maximum = min(len(ids), config.max_alignment_sequences)
+            sample_size = st.number_input(
+                label="Proteins to sample", min_value=1, max_value=maximum,
+                value=min(200, maximum), help=FIELD_HELP["sample_size"],
+            )
+            parameters.update(allow_sampling=True, sample_size=sample_size)
+        infer_tree = sample_size >= 3 and st.checkbox(
+            label="Infer protein tree with FastTree", value=fasttree_ready,
+            help=FIELD_HELP["tree"],
+        )
+        parameters["infer_tree"] = infer_tree
+        st.caption(
+            f"Alignment limit of {config.max_alignment_sequences:,} proteins and "
+            f"{config.max_alignment_cells:,} matrix cells."
+        )
+
+    job_key = f"msa_alignment_job_{config.workspace}_{hog}"
+    job_id = st.session_state.get(job_key)
+    job = get_job(workspace=config.workspace, job_id=job_id) if job_id else None
+    pending = bool(job and job["status"] in {"QUEUED", "RUNNING"})
+    can_submit = sample_size <= config.max_alignment_sequences
+    if not can_submit:
+        st.info("Choose fewer members or enable sampling to submit this alignment.")
+    mafft_ready = bool(shutil.which(config.mafft))
+    if not mafft_ready:
+        st.info(
+            "MAFFT is unavailable on the machine running this app. Install MAFFT there, "
+            "use a research worker, or download the job files."
+        )
+    elif infer_tree and not fasttree_ready:
+        st.info("Install FastTree here or untick the tree option to run this alignment here.")
+
+    left, middle, right = st.columns(3)
+    run_label = "Run MAFFT on this Mac" if sys.platform == "darwin" else "Run MAFFT on app machine"
+    if left.button(
+        label=run_label, key="msa_align_here", type="primary",
+        disabled=(
+            not mafft_ready or (infer_tree and not fasttree_ready) or pending or not can_submit
+        ),
+        help="Runs on the computer where the app was launched, using its installed MAFFT.",
+    ):
+        st.session_state[job_key] = submit_local_alignment(
+            config=config, parameters=parameters, fasta=fasta,
+        )
+        st.rerun()
+    if middle.button(
+        label="Queue for research worker", key="msa_queue_alignment",
+        disabled=pending or not can_submit,
+        help="A running research worker must have access to this queue workspace.",
+    ):
+        st.session_state[job_key] = submit_job(
+            workspace=config.workspace, operation="align", parameters=parameters, fasta=fasta,
+        )
+        st.rerun()
+    prepare = right.button(label="Prepare files for another machine", key="msa_prepare_job")
+    render_portable_job(operation="align", parameters=parameters, fasta=fasta, prepare=prepare)
+    if not job:
+        return
+    st.caption(f"{hog} alignment job {job_id} · {job['status']}")
+    if pending:
+        st.button(label="Refresh alignment status", key="msa_refresh_status")
+    if job["error"]:
+        st.error(str(job["error"]))
+    if job["status"] == "COMPLETE":
+        def open_result() -> None:
+            """Open the just-completed job in the current JBrowse page."""
+            st.session_state["alignment_view_source"] = "Completed alignment job"
+            st.session_state["research_alignment_job"] = job_id
+            st.session_state["completed_alignment_view"] = "JBrowse MSA"
+
+        st.button(label="Open completed alignment", type="primary", on_click=open_result)
+    render_next_action(
+        label="View job details", key=f"msa_job_details_{job_id}", section="Jobs", job_id=job_id,
+    )
+
+
 def render_alignments(
     *, config: ResearchConfig, dedicated: bool = False, app_config: AppConfig | None = None,
+    connection: object | None = None,
 ) -> None:
     """Render real JBrowse/AV2 libraries and a configured self-hosted Auspice dataset.
 
@@ -1158,6 +1268,7 @@ def render_alignments(
         config: Alignment workspace and Auspice URL.
         dedicated: Present the focused JBrowse page.
         app_config: Optional published E3 resources for the HOG alignment route.
+        connection: Optional loaded E3 release for collecting unaligned HOG sequences.
     """
     from .expansion_ui import render_published_alignment, render_uploaded_alignment
 
@@ -1166,12 +1277,19 @@ def render_alignments(
     options = ["Try an example", "Upload alignment files", "Completed alignment job"]
     if app_config is not None:
         options.append("Published HOG alignment")
+    if connection is not None:
+        options.insert(0, "Align a HOG")
     completed = completed_manifests(config=config, operation="align") if not dedicated else {}
     source = st.radio("Alignment source", options, horizontal=True, key="alignment_view_source",
-                      index=2 if completed else 0,
-                      help="Open a saved alignment, try the example, or upload an aligned FASTA.")
+                      index=options.index("Completed alignment job") if completed else 0,
+                      help="Start with HOG sequences or open an existing protein alignment.")
+    if source == "Align a HOG":
+        render_new_hog_alignment(config=config, connection=connection)
+        return
     if source == "Published HOG alignment":
-        render_published_alignment(config=config, app_config=app_config)
+        render_published_alignment(
+            config=config, app_config=app_config, can_align_hog=connection is not None,
+        )
         return
     if source != "Completed alignment job":
         render_uploaded_alignment(config=config, example=source == "Try an example")
@@ -1832,6 +1950,7 @@ def render_jobs(*, config: ResearchConfig) -> None:
         for name in (
             "request.json",
             "worker.log",
+            "local_worker.log",
             "predictions.tsv",
             "interpro_service_job.json",
             "commands.jsonl",
@@ -1899,7 +2018,7 @@ def render_research_workbench(
                 config=config, enable_search=not external_search, connection=connection,
             ),
             "Alignments and trees": lambda: render_alignments(
-                config=config, dedicated=dedicated, app_config=app_config,
+                config=config, dedicated=dedicated, app_config=app_config, connection=connection,
             ),
             "Models": lambda: render_models(
                 config=config, dedicated=dedicated, connection=connection,

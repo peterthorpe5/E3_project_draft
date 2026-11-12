@@ -32,11 +32,11 @@ TOP_LEVEL_TAB_HELP = {
         "and selected protein FASTA when the export contains sequences.",
     ),
     "JBrowse MSA": TabHelpEntry(
-        instruction="Open the example, a completed job, a published HOG alignment or an aligned "
-        "protein FASTA. Uploaded alignments can include a protein tree or reviewed species tree "
-        "with a sequence-to-species mapping.",
-        yields="Interactive alignment with an optional tree, a species mapping audit where "
-        "applicable, and a portable HTML download.",
+        instruction="Choose Align a HOG to collect its released protein sequences. Run MAFFT "
+        "on the machine hosting the app, queue a worker job, or download the inputs. You can "
+        "also open an aligned FASTA, a completed job, or a published alignment.",
+        yields="Unaligned HOG FASTA and its identifier map, or an interactive alignment "
+        "with an optional tree and a portable HTML download.",
     ),
     "ESMFold & models": TabHelpEntry(
         instruction="Open an existing PDB with its original protein FASTA, or select a protein "

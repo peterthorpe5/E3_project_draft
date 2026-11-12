@@ -199,7 +199,7 @@ def claim_job(*, workspace: Path, job_id: str | None = None) -> dict[str, object
 
     Args:
         workspace: Job workspace.
-        job_id: Optional exact queued job; otherwise claim the oldest.
+        job_id: Optional exact queued job; otherwise claim the oldest general worker job.
 
     Returns:
         Claimed request and metadata, or None if no eligible job exists.
@@ -208,7 +208,10 @@ def claim_job(*, workspace: Path, job_id: str | None = None) -> dict[str, object
         job_directory(workspace=workspace, job_id=job_id)
     with _connection(workspace=workspace) as connection:
         connection.execute("BEGIN IMMEDIATE")
-        predicate = " AND job_id = ?" if job_id is not None else ""
+        predicate = (
+            " AND job_id = ?" if job_id is not None
+            else " AND json_extract(request, '$.execution_target') IS NOT 'app_host'"
+        )
         row = connection.execute(
             "SELECT * FROM jobs WHERE status='QUEUED'" + predicate + " ORDER BY created_at LIMIT 1",
             (job_id,) if job_id is not None else (),
@@ -223,6 +226,23 @@ def claim_job(*, workspace: Path, job_id: str | None = None) -> dict[str, object
     result["parameters"] = json.loads(result.pop("request"))
     result["status"] = "RUNNING"
     return result
+
+
+def fail_queued_job(*, workspace: Path, job_id: str, error: str) -> None:
+    """Record a launch failure if the job is still queued.
+
+    Args:
+        workspace: Queue workspace.
+        job_id: Exact generated job identifier.
+        error: Diagnostic to display beside the failed job.
+    """
+    job_directory(workspace=workspace, job_id=job_id)
+    with _connection(workspace=workspace) as connection:
+        connection.execute(
+            "UPDATE jobs SET status='FAILED', finished_at=?, error=? "
+            "WHERE job_id=? AND status='QUEUED'",
+            (utc_now(), error[:4_000], job_id),
+        )
 
 
 def finish_job(*, workspace: Path, job_id: str, error: str | None = None) -> None:

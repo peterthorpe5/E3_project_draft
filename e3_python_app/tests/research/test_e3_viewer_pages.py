@@ -1,13 +1,14 @@
-"""Exercise the new E3 pages and portable inputs without starting a worker."""
+"""Exercise the E3 viewer pages, portable inputs and app-host alignment."""
 
 import json
 from pathlib import Path
+import time
 
 import duckdb
 from streamlit.testing.v1 import AppTest
 
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
-from e3app.research.jobs import job_directory, list_jobs
+from e3app.research.jobs import artifact_path, get_job, job_directory, list_jobs
 from test_pocket_review import make_pocket_review
 
 
@@ -33,7 +34,8 @@ def test_main_e3_pages_and_both_workbench_entries(resource_db, tmp_path, monkeyp
     assert app.radio(key=page_key).value == "DeepClust results & FASTA"
     assert not any("Queue Top-N" in item.label for item in app.button)
     app.radio(key=page_key).set_value("JBrowse MSA").run()
-    assert app.radio(key="alignment_view_source").value == "Try an example"
+    assert app.radio(key="alignment_view_source").value == "Align a HOG"
+    app.radio(key="alignment_view_source").set_value("Try an example").run()
     document = app.get("iframe")[0].proto.srcdoc
     assert '"height": 274' in document
     assert '"alignment_length": 56' in document
@@ -212,7 +214,63 @@ def test_align_published_hog_directly(resource_db, tmp_path, monkeypatch) -> Non
     find = next(button for button in app.button if button.label == "Find published alignment")
     find.click().run()
     next(button for button in app.button if button.label == "Align this HOG").click().run()
-    assert app.radio(key="research_section").value == "Family analysis"
-    assert app.radio(key="analyse_route").value == "Published HOG members"
-    assert app.text_input(key="analyse_hog_input").value == "N0.HOG0001"
+    assert app.radio(key="alignment_view_source").value == "Align a HOG"
+    assert app.selectbox(key="msa_hog_selector").value == "N0.HOG0001"
     assert len(list_jobs(workspace=workspace)) == 1
+
+
+def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, monkeypatch):
+    """Start at the HOG selector and open the resulting alignment from a one-shot worker."""
+    mafft = tmp_path / "mafft"
+    mafft.write_text(
+        '#!/usr/bin/env bash\n'
+        'set -euo pipefail\n'
+        'if [[ "$1" == "--version" ]]; then printf "%s\\n" "MAFFT test fixture"; exit 0; fi\n'
+        "awk '/^>/ { print; next } { while (length($0) < 8) $0 = $0 \"-\"; print }' "
+        '"${@: -1}"\n',
+        encoding="utf-8",
+    )
+    mafft.chmod(0o700)
+    workspace = tmp_path / "worker"
+    profile = tmp_path / "research.toml"
+    profile.write_text(
+        f"workspace={json.dumps(str(workspace))}\nmafft={json.dumps(str(mafft))}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("E3_RESEARCH_CONFIG", str(profile))
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    path = Path(__file__).parents[2] / "src/e3app/streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=30).run()
+    app.radio(key="e3_navigation_stage").set_value(CANDIDATE_STAGE).run()
+    app.radio(key=f"e3_navigation_page_{CANDIDATE_STAGE}").set_value("JBrowse MSA").run()
+    assert app.selectbox(key="msa_hog_selector").value is None
+    assert not app.get("iframe")
+    app.selectbox(key="msa_hog_selector").set_value("N0.HOG0001").run()
+    assert any(item.label == "Download HOG protein FASTA" for item in app.get("download_button"))
+    app.button(key="msa_prepare_job").click().run()
+    assert any(item.label == "Download job files (ZIP)" for item in app.get("download_button"))
+    assert list_jobs(workspace=workspace) == []
+    app.button(key="msa_align_here").click().run()
+    jobs = list_jobs(workspace=workspace)
+    assert len(jobs) == 1
+    job_id = jobs[0]["job_id"]
+    deadline = time.monotonic() + 20
+    job = get_job(workspace=workspace, job_id=job_id)
+    while job["status"] in {"QUEUED", "RUNNING"} and time.monotonic() < deadline:
+        time.sleep(0.1)
+        job = get_job(workspace=workspace, job_id=job_id)
+    directory = job_directory(workspace=workspace, job_id=job_id)
+    assert job["status"] == "COMPLETE", (job, (directory / "local_worker.log").read_text())
+    alignment = artifact_path(workspace=workspace, job_id=job_id, artifact="alignment.fasta")
+    assert "MAAAN---" in alignment.read_text(encoding="utf-8")
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parameters"]["e3_hog_id"] == "N0.HOG0001"
+    assert manifest["parameters"]["execution_target"] == "app_host"
+    app.run()
+    open_alignment = next(button for button in app.button
+                          if button.label == "Open completed alignment")
+    open_alignment.click().run()
+    assert app.radio(key="alignment_view_source").value == "Completed alignment job"
+    assert app.selectbox(key="research_alignment_job").value == job_id
+    assert "MAAAN---" in app.get("iframe")[0].proto.srcdoc
+    assert not app.exception and not app.error

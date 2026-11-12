@@ -195,7 +195,7 @@ def render_query_fasta(*, connection: object | None) -> None:
 
 
 def render_hog_alignment_input(
-    *, config: ResearchConfig, connection: object, key: str,
+    *, config: ResearchConfig, connection: object, key: str, browse: bool = False,
 ) -> str | None:
     """Select exact released HOG members and prepare their unaligned protein FASTA.
 
@@ -203,26 +203,51 @@ def render_hog_alignment_input(
         config: Current research profile and resource cache scope.
         connection: Published E3 resource and its sequence authority.
         key: Unique input widget namespace.
+        browse: Use a searchable release HOG selector.
 
     Returns:
         FASTA for the selected available members, or None until selection is ready.
     """
-    from e3app.external_hog import collect_external_hog_members
+    from e3app.external_hog import collect_external_hog_members, published_hog_ids
 
     group_key = f"{key}_hog"
-    input_key = f"{key}_hog_input"
-    st.session_state.setdefault(input_key, st.session_state.get(group_key, ""))
-    with st.form(key=f"{key}_hog_lookup"):
-        entered = st.text_input(
-            label="Exact HOG ID", key=input_key, placeholder="N0.HOG0003902",
+    resource = _resource_identity(config=config)
+    if browse:
+        cached_ids = st.session_state.get(f"{key}_hog_ids")
+        if cached_ids is None or cached_ids[0] != resource:
+            try:
+                ids = published_hog_ids(connection=connection)
+            except AppError as exc:
+                st.info(str(exc))
+                return None
+            st.session_state[f"{key}_hog_ids"] = (resource, ids)
+        else:
+            ids = cached_ids[1]
+        if not ids:
+            st.info("The loaded E3 release has no published HOG membership. "
+                    "Use Family analysis to align an unaligned protein FASTA.")
+            return None
+        previous = st.session_state.get(group_key, "")
+        selected_id = st.selectbox(
+            label="HOG to align", options=ids,
+            index=ids.index(previous) if previous in ids else None,
+            placeholder="Type part of a HOG ID or choose from the list", key=f"{key}_hog_selector",
         )
-        if st.form_submit_button(label="Load HOG members"):
-            st.session_state[group_key] = entered.strip().upper()
+        st.session_state[group_key] = selected_id or ""
+    else:
+        input_key = f"{key}_hog_input"
+        st.session_state.setdefault(input_key, st.session_state.get(group_key, ""))
+        with st.form(key=f"{key}_hog_lookup"):
+            entered = st.text_input(
+                label="Exact HOG ID", key=input_key, placeholder="N0.HOG0003902",
+            )
+            if st.form_submit_button(label="Load HOG members"):
+                st.session_state[group_key] = entered.strip().upper()
     hog = st.session_state.get(group_key, "")
     if not hog:
         st.caption("Enter a HOG ID from the E3 results to load its published protein sequences.")
         return None
-    identity = (_resource_identity(config=config), hog)
+    identity = (resource, hog)
     cache_key = f"{key}_hog_members"
     cached = st.session_state.get(cache_key)
     if cached is None or cached[0] != identity:
@@ -245,7 +270,8 @@ def render_hog_alignment_input(
             hide_index=True,
         )
     if available.empty:
-        st.info("This release has no usable sequences for the HOG. You can upload its FASTA.")
+        st.info("This release has no usable sequences for the HOG. Open the full E3 release "
+                "or upload an unaligned FASTA under Family analysis.")
         return None
     mode = st.radio(
         label="HOG sequences", options=["All available members", "Choose members"],
@@ -570,6 +596,11 @@ def open_e3_viewer(
         st.session_state["published_alignment_group"] = group_id
         st.session_state["published_alignment_input"] = group_id
         st.session_state["alignment_view_source"] = "Published HOG alignment"
+    elif page == "Align a HOG":
+        page = "JBrowse MSA"
+        st.session_state["alignment_view_source"] = "Align a HOG"
+        st.session_state["msa_hog"] = group_id
+        st.session_state.pop("msa_hog_selector", None)
     elif page == "ESMFold & models":
         st.session_state["selected_e3_model_protein"] = (accession, group_id, species)
         st.session_state["esmfold_view_route"] = "Predict with ESMFold"
@@ -835,12 +866,15 @@ def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) 
     render_jbrowse(records=records, tree=tree, stem="jbrowse_msa")
 
 
-def render_published_alignment(*, config: ResearchConfig, app_config: AppConfig) -> None:
+def render_published_alignment(
+    *, config: ResearchConfig, app_config: AppConfig, can_align_hog: bool = False,
+) -> None:
     """Open an exact HOG's recorded plant review alignment, if exported.
 
     Args:
         config: Protein alignment rendering limits.
         app_config: Loaded resource and optional plant review bundle.
+        can_align_hog: Published HOG inputs can be selected on this page.
     """
     st.caption("Look up the aligned sequences exported with the plant pocket review.")
     st.session_state.setdefault(
@@ -853,14 +887,21 @@ def render_published_alignment(*, config: ResearchConfig, app_config: AppConfig)
         if st.form_submit_button(label="Find published alignment"):
             st.session_state["published_alignment_group"] = entered.strip().upper()
     group_id = st.session_state.get("published_alignment_group", "")
+    if can_align_hog:
+        st.button(
+            label="Align this HOG" if group_id else "Start a new HOG alignment",
+            on_click=open_e3_viewer, kwargs={"page": "Align a HOG", "group_id": group_id},
+            help="Load the unaligned protein sequences directly from the E3 release.",
+        )
     if not group_id:
         return
     st.caption(f"Selected HOG {group_id}")
-    st.button(
-        label="Align this HOG", on_click=open_e3_viewer,
-        kwargs={"page": "DeepClust workbench", "group_id": group_id},
-        help="Set up a new sequence alignment from the HOG's published members.",
-    )
+    if not can_align_hog:
+        st.button(
+            label="Align this HOG", on_click=open_e3_viewer,
+            kwargs={"page": "DeepClust workbench", "group_id": group_id},
+            help="Set up a new sequence alignment from the HOG's published members.",
+        )
     bundle = prepare_pocket_review(config=app_config)
     if bundle.available:
         hits = bundle.index.loc[bundle.index["primary_group_id"].astype(str).eq(group_id)]

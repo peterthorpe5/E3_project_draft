@@ -23,6 +23,31 @@ LOGGER = logging.getLogger(__name__)
 SEQUENCE_RELATION = "candidate_group_member_sequences"
 
 
+def published_hog_ids(*, connection: object) -> tuple[str, ...]:
+    """Return searchable HOG IDs from the current release membership table.
+
+    Args:
+        connection: Open read-only E3 resource.
+
+    Returns:
+        Sorted exact HOG identifiers, or an empty tuple if membership is unavailable.
+    """
+    if HIERARCHICAL_RELATION not in list_relations(connection=connection):
+        return ()
+    columns = relation_columns(connection=connection, relation=HIERARCHICAL_RELATION)
+    if "group_id" not in columns:
+        return ()
+    try:
+        rows = connection.execute(
+            "SELECT DISTINCT CAST(group_id AS VARCHAR) AS hog_id "
+            f"FROM {quote_identifier(HIERARCHICAL_RELATION)} "
+            "WHERE nullif(trim(CAST(group_id AS VARCHAR)), '') IS NOT NULL ORDER BY 1"
+        ).fetchall()
+    except duckdb.Error as exc:
+        raise AppError(f"Could not load HOG IDs from this release: {exc}") from exc
+    return tuple(row[0] for row in rows)
+
+
 def collect_external_hogs(*, connection: object) -> pd.DataFrame:
     """Collect every published root HOG with members and its recorded ranks.
 

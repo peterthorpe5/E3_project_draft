@@ -12,6 +12,7 @@ import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
+from e3app import __version__
 from e3app.alphafold_confidence import (
     AlphaFoldConfidence,
     retrieve_alphafold_confidence,
@@ -5576,6 +5577,7 @@ def render_app() -> None:
     )
 
     st.sidebar.header("Data release")
+    st.sidebar.caption(f"E3 Python app v{__version__}")
     st.sidebar.caption(f"{config.source_path.name} · {config.source_mode}")
     if pocket_review_dir is not None:
         st.sidebar.success("Plant pocket review configured")
@@ -5622,7 +5624,8 @@ def render_app() -> None:
                     title="DeepClust workbench",
                 ),
                 "JBrowse MSA": lambda: render_research_workbench(
-                    initial_section="Alignments and trees", title="JBrowse MSA",
+                    connection=connection, initial_section="Alignments and trees",
+                    title="JBrowse MSA",
                     dedicated=True, app_config=config,
                 ),
                 "ESMFold & models": lambda: render_research_workbench(
