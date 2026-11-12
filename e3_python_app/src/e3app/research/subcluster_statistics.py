@@ -6,12 +6,14 @@ import csv
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Mapping
 
 import duckdb
 import pandas as pd
 
 from .common import ResearchError, iter_fasta
 from .subcluster_network import ID_COLUMNS, METRICS, STATUS_LABELS
+from .taxonomy import CLUSTER_SPECIES_QUERY
 
 LOGGER = logging.getLogger(__name__)
 METRIC_NAMES = (
@@ -55,19 +57,18 @@ def _family_lengths(
 
 
 def _species_counts(
-    *, connection: duckdb.DuckDBPyConnection, path: Path, group: str,
+    *, connection: duckdb.DuckDBPyConnection, relation: duckdb.DuckDBPyRelation, group: str,
 ) -> pd.DataFrame:
     """Read complete species counts and aggregate the same reviewed taxa for both scopes.
 
     Args:
         connection: Research statistics connection.
-        path: Verified per-subcluster species counts.
+        relation: Saved or recovered per-subcluster species counts.
         group: Exact selected subcluster, or empty for all input proteins.
 
     Returns:
-        Reviewed taxon counts, with unclassified records retained separately.
+        Reviewed taxon counts and recorded species without taxon IDs.
     """
-    relation = connection.read_csv(str(path), delimiter="\t", header=True, all_varchar=True)
     if not {"cluster_id", "species", "taxon_id", "member_count"}.issubset(relation.columns):
         raise ResearchError("The saved species table lacks taxonomy count fields.")
     relation.create_view(view_name="species_counts")
@@ -76,20 +77,26 @@ def _species_counts(
             SELECT cluster_id, species, try_cast(taxon_id AS BIGINT) AS taxon_id,
                    try_cast(member_count AS BIGINT) AS proteins
             FROM species_counts
+        ), labelled AS (
+            SELECT *, CASE WHEN taxon_id > 0 THEN taxon_id END AS reviewed_taxon_id,
+                   CASE WHEN reviewed_taxon_id IS NULL THEN
+                       coalesce(nullif(nullif(species, 'UNCLASSIFIED'), ''), 'Unclassified')
+                   END AS recorded_species
+            FROM counts
         )
-        SELECT CASE WHEN taxon_id > 0 THEN taxon_id END AS reviewed_taxon_id,
-               CASE WHEN reviewed_taxon_id IS NULL THEN 'Unclassified'
-                    ELSE min(species) END AS species,
+        SELECT reviewed_taxon_id, coalesce(recorded_species, min(species)) AS species,
                sum(proteins)::BIGINT AS input_family,
                coalesce(sum(proteins) FILTER (WHERE cluster_id = ?), 0)::BIGINT
                    AS selected_subcluster
-        FROM counts GROUP BY reviewed_taxon_id
-        ORDER BY input_family DESC, reviewed_taxon_id
+        FROM labelled GROUP BY reviewed_taxon_id, recorded_species
+        ORDER BY input_family DESC, reviewed_taxon_id, species
     """, [group]).fetchdf()
 
 
 def subcluster_statistics(
     *, membership: Path, fasta: Path | None, taxonomy: Path | None = None, group: str = "",
+    member_taxonomy: Path | None = None,
+    recovered_taxonomy: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Summarise all saved assignments and compare one subcluster with its input family.
 
@@ -98,6 +105,8 @@ def subcluster_statistics(
         fasta: Verified unaligned input FASTA, when present.
         taxonomy: Optional verified per-subcluster species count TSV.
         group: Exact audited subcluster ID, or empty for whole-family statistics.
+        member_taxonomy: Optional checksummed per-protein taxonomy TSV saved with the job.
+        recovered_taxonomy: Exact member evidence recovered from a published HOG.
 
     Returns:
         Partition, family comparison, audit counts, centroid metrics and optional species tables.
@@ -190,8 +199,37 @@ def subcluster_statistics(
                 columns=("metric", "passing_alignments", "minimum", "median", "maximum"),
             )
             tables = {"partition": partition, "centroid_metrics": alignment}
-            if taxonomy is not None:
-                species = _species_counts(connection=connection, path=taxonomy, group=group)
+            if recovered_taxonomy or member_taxonomy is not None:
+                if recovered_taxonomy:
+                    metadata = pd.DataFrame([
+                        {"sequence_id": identifier, **record}
+                        for identifier, record in recovered_taxonomy.items()
+                    ]).astype({"taxon_id": "Int64"})
+                    connection.register("member_species", metadata)
+                else:
+                    connection.read_csv(
+                        str(member_taxonomy), delimiter="\t", header=True, all_varchar=True,
+                    ).create_view(view_name="member_species")
+                tables["member_taxonomy"] = connection.execute("""
+                    SELECT m.sequence_id, m.subcluster_id, t.species,
+                           try_cast(t.taxon_id AS BIGINT) AS taxon_id,
+                           CASE WHEN try_cast(t.taxon_id AS BIGINT) > 0 THEN 'REVIEWED'
+                                WHEN t.species IS NOT NULL THEN 'RECORDED_SPECIES'
+                                ELSE 'UNCLASSIFIED' END AS mapping_status
+                    FROM membership m LEFT JOIN member_species t USING(sequence_id)
+                    WHERE (? = '' OR m.subcluster_id = ?)
+                    ORDER BY m.subcluster_id, m.sequence_id
+                """, [group, group]).fetchdf()
+            if "member_taxonomy" in tables or taxonomy is not None:
+                if "member_taxonomy" in tables:
+                    species_relation = connection.sql(CLUSTER_SPECIES_QUERY)
+                else:
+                    species_relation = connection.read_csv(
+                        str(taxonomy), delimiter="\t", header=True, all_varchar=True,
+                    )
+                species = _species_counts(
+                    connection=connection, relation=species_relation, group=group,
+                )
                 reviewed = species.loc[species["reviewed_taxon_id"].notna()]
                 for scope, column in (
                     ("Input family", "input_family"),

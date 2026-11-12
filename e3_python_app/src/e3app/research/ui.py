@@ -11,7 +11,9 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import sqlite3
 import sys
+from tempfile import gettempdir
 from typing import Mapping
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -26,7 +28,7 @@ from e3app.errors import AppError
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
 
 from .catalogue import browse_clusters, open_catalogue
-from .common import ResearchConfig, ResearchError, iter_fasta, load_config
+from .common import ResearchConfig, ResearchError, analysis_temporary_root, iter_fasta, load_config
 from .deepclust_exchange import centroid_list
 from .guidance import (
     ALIGNMENT_MEMBER_METRICS,
@@ -41,6 +43,7 @@ from .guidance import (
     retrievable_cluster_ids,
     user_guide,
 )
+from .hog_context import job_hog, recover_hog_metadata
 from .jobs import (
     artifact_path,
     cancel_job,
@@ -65,6 +68,7 @@ def navigate_research(
     job_id: str = "",
     input_route: str = "",
     prepared_fasta: tuple[str, str] | None = None,
+    prepared_hog: Mapping[str, object] | None = None,
     subcluster_id: str = "",
 ) -> None:
     """Move between workflow pages using a widget callback before the next render.
@@ -78,6 +82,7 @@ def navigate_research(
         job_id: Optional job to focus in Jobs.
         input_route: Optional completed-job or upload input route.
         prepared_fasta: Optional labelled unaligned sequences to reuse at the destination.
+        prepared_hog: Published HOG and taxonomy context for those prepared sequences.
         subcluster_id: Optional exact audited subcluster to select for alignment.
 
     Raises:
@@ -106,6 +111,8 @@ def navigate_research(
         raise ResearchError("This workbench page does not accept a protein FASTA")
     if prepared_fasta is not None and (source_job or input_route):
         raise ResearchError("Choose one protein input for the destination")
+    if prepared_hog is not None and prepared_fasta is None:
+        raise ResearchError("Prepared HOG context requires its selected FASTA")
     if subcluster_id and not (
         section == "Family analysis" and analysis_task == "Alignment and tree" and source_job
     ):
@@ -134,6 +141,7 @@ def navigate_research(
         elif prepared_fasta is not None:
             route = "Prepared FASTA"
             st.session_state["research_prepared_fasta"] = prepared_fasta
+            st.session_state["research_prepared_hog"] = dict(prepared_hog or {})
         st.session_state[f"{input_key}_route"] = route
         if section == "Models":
             st.session_state["esmfold_view_route"] = "Predict with ESMFold"
@@ -171,6 +179,7 @@ def render_next_action(
 def render_protein_analysis_links(
     *, key: str, source_job: str = "", source_artifact: str = "",
     prepared_fasta: tuple[str, str] | None = None,
+    prepared_hog: Mapping[str, object] | None = None,
 ) -> None:
     """Offer the same unaligned proteins as input to other workbench analyses.
 
@@ -179,9 +188,11 @@ def render_protein_analysis_links(
         source_job: Completed job publishing the unaligned proteins.
         source_artifact: The exact FASTA artifact in that job.
         prepared_fasta: Label and unaligned FASTA for a fresh selection.
+        prepared_hog: Published HOG and taxonomy context for the prepared selection.
     """
     source = (
-        {"prepared_fasta": prepared_fasta} if prepared_fasta is not None
+        {"prepared_fasta": prepared_fasta, "prepared_hog": prepared_hog}
+        if prepared_fasta is not None
         else {"source_job": source_job, "source_artifact": source_artifact}
     )
     for column, (label, section, suffix, task) in zip(
@@ -468,10 +479,11 @@ def render_input(
     if route == "Published HOG members" and hog_connection is not None:
         from .expansion_ui import render_hog_alignment_input
 
-        return {}, render_hog_alignment_input(config=config, connection=hog_connection, key=key)
+        selected = render_hog_alignment_input(config=config, connection=hog_connection, key=key)
+        return selected if selected is not None else ({}, None)
     if route == "Prepared FASTA":
         st.caption(f"Prepared protein source: {prepared[0]}")
-        return {}, prepared[1]
+        return st.session_state.get("research_prepared_hog", {}), prepared[1]
     if route == "Selected E3 protein" and published_fasta is not None:
         label, fasta = published_fasta
         st.caption(f"Exact released sequence for {label} · {len(fasta.splitlines()[1]):,} residues")
@@ -1069,10 +1081,8 @@ def render_analysis(
     )
     parameters = dict(source)
     hog_source = st.session_state.get("analyse_route") == "Published HOG members"
-    if hog_source and fasta:
-        parameters["e3_hog_id"] = st.session_state["analyse_hog"]
     subcluster_choice = ""
-    if task == "Alignment and tree" and source:
+    if task == "Alignment and tree" and source.get("source_job"):
         manifest = completed_manifests(config=config).get(source["source_job"], {})
         if manifest.get("operation") == "subcluster":
             table = read_table(
@@ -1244,7 +1254,10 @@ def render_analysis(
     )
     if completed:
         st.markdown("#### Completed subclustering results")
-        labels = {key: job_label(job_id=key, record=value) for key, value in completed.items()}
+        labels = {
+            key: job_label(job_id=key, record=value, workspace=config.workspace)
+            for key, value in completed.items()
+        }
         selected = st.selectbox(
             "Completed subcluster job",
             options=list(completed),
@@ -1252,16 +1265,21 @@ def render_analysis(
             help="Review this result, then use the button below to carry its source "
             "FASTA into the alignment task. Subcluster IDs are specific to this job.",
         )
-        render_subcluster_result(config=config, job_id=selected, manifest=completed[selected])
+        render_subcluster_result(
+            config=config, job_id=selected, manifest=completed[selected], connection=connection,
+        )
 
 
-def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: dict) -> None:
+def render_subcluster_result(
+    *, config: ResearchConfig, job_id: str, manifest: dict, connection: object | None = None,
+) -> None:
     """Show an audited network, size summary and exact alignment handoff.
 
     Args:
         config: Workspace containing the completed result.
         job_id: Owning subclustering job.
         manifest: Verified result inventory from that job.
+        connection: Optional current E3 release for matching older saved HOG members.
     """
     from .subcluster_network import (
         OVERVIEW_GROUPS,
@@ -1278,6 +1296,9 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
         return
     frame["member_count"] = pd.to_numeric(frame["member_count"])
     st.markdown("#### Subclustering results")
+    hog_id = job_hog(record=manifest, workspace=config.workspace)
+    if hog_id:
+        st.caption(f"Source HOG · {hog_id}")
     view = st.radio(
         "Result view", options=("Network", "Statistics and comparison"), horizontal=True,
         key=f"subcluster_result_view_{job_id}",
@@ -1298,6 +1319,7 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
     if view == "Statistics and comparison":
         render_subcluster_statistics(
             config=config, job_id=job_id, manifest=manifest, membership=membership, group=group,
+            hog_id=hog_id, connection=connection,
         )
     else:
         groups = [group] if group else frame["subcluster_id"].head(OVERVIEW_GROUPS).tolist()
@@ -1346,6 +1368,7 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
 
 def render_subcluster_statistics(
     *, config: ResearchConfig, job_id: str, manifest: dict, membership: str, group: str,
+    hog_id: str = "", connection: object | None = None,
 ) -> None:
     """Compare an exact subcluster with the original saved input family.
 
@@ -1355,11 +1378,14 @@ def render_subcluster_statistics(
         manifest: Saved artifact inventory and source parameters.
         membership: Complete membership artifact key.
         group: Exact subcluster ID, or empty for the whole result.
+        hog_id: Recorded HOG identifier, if known.
+        connection: Optional current release for legacy HOG taxonomy recovery.
     """
     from .subcluster_statistics import subcluster_statistics
 
     requested = (
         membership, "sequences.fasta", "cluster_species.tsv", "subcluster_settings.json",
+        "member_taxonomy.tsv",
     )
     try:
         paths = {
@@ -1368,10 +1394,23 @@ def render_subcluster_statistics(
         }
         if membership not in paths:
             raise ResearchError("The job has no saved membership artifact.")
+        recovered = {}
+        if hog_id and connection is not None and "sequences.fasta" in paths and (
+            "member_taxonomy.tsv" not in paths
+        ):
+            taxonomy_map = os.environ.get("E3_TAXONOMY_MAP")
+            try:
+                recovered = recover_hog_metadata(
+                    connection=connection, hog_id=hog_id, fasta=paths["sequences.fasta"],
+                    taxonomy_map=Path(taxonomy_map) if taxonomy_map else None,
+                )
+            except AppError as exc:
+                st.caption(f"Taxonomy from the loaded release is unavailable. {exc}")
         with st.spinner("Reading the complete saved subclustering result"):
             tables = subcluster_statistics(
                 membership=paths[membership], fasta=paths.get("sequences.fasta"),
                 taxonomy=paths.get("cluster_species.tsv"), group=group,
+                member_taxonomy=paths.get("member_taxonomy.tsv"), recovered_taxonomy=recovered,
             )
     except ResearchError as exc:
         st.warning(str(exc))
@@ -1429,11 +1468,16 @@ def render_subcluster_statistics(
         "minimum": "Minimum", "median": "Median", "maximum": "Maximum",
     }), hide_index=True)
     if "species_counts" in tables:
-        with st.expander("Reviewed species composition"):
+        with st.expander("Species composition"):
+            if recovered:
+                st.caption("Matched to the loaded E3 release by exact member ID and sequence.")
+            st.caption("Species names come with reviewed taxon IDs where available.")
             st.dataframe(tables["species_counts"].rename(columns={
                 "reviewed_taxon_id": "Reviewed taxon ID", "species": "Species",
                 "input_family": "Input family", "selected_subcluster": "Selected subcluster",
             }), hide_index=True)
+            if "member_taxonomy" in tables:
+                st.dataframe(tables["member_taxonomy"], hide_index=True)
     else:
         st.caption("Reviewed species counts are unavailable for this job.")
     package = BytesIO()
@@ -1458,19 +1502,20 @@ def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> N
     from .local_worker import submit_local_alignment
 
     st.caption("Select a HOG to prepare its unaligned protein sequences from this release.")
-    fasta = render_hog_alignment_input(
+    selection = render_hog_alignment_input(
         config=config, connection=connection, key="msa", browse=True,
     )
-    if not fasta:
+    if selection is None:
         return
-    hog = st.session_state["msa_hog"]
+    parameters, fasta = selection
+    hog = str(parameters["e3_hog_id"])
     ids = sorted(line[1:] for line in fasta.splitlines() if line.startswith(">"))
     st.caption("Use the selected HOG proteins in another analysis.")
     render_protein_analysis_links(
         key="selected_hog_members",
         prepared_fasta=(f"{hog} · {len(ids):,} selected proteins", fasta),
+        prepared_hog=parameters.copy(),
     )
-    parameters = {"e3_hog_id": hog}
     sample_size = len(ids)
     fasttree_ready = bool(shutil.which(config.fasttree))
     with st.expander("Alignment settings", expanded=True):
@@ -1743,7 +1788,10 @@ def render_alignments(
             analysis_task="Alignment and tree",
         )
         return
-    labels = {key: job_label(job_id=key, record=value) for key, value in completed.items()}
+    labels = {
+        key: job_label(job_id=key, record=value, workspace=config.workspace)
+        for key, value in completed.items()
+    }
     job_id = st.selectbox(
         "Completed alignment",
         options=list(completed),
@@ -1752,6 +1800,9 @@ def render_alignments(
         "are saved with the job. The Auspice tree view can infer a tree from its saved alignment.",
         key="research_alignment_job",
     )
+    hog_id = job_hog(record=completed[job_id], workspace=config.workspace)
+    if hog_id:
+        st.caption(f"Source HOG · {hog_id}")
     summary = json.loads(
         artifact_path(
             workspace=config.workspace, job_id=job_id, artifact="alignment_summary.json"
@@ -2255,13 +2306,92 @@ def render_annotations(*, config: ResearchConfig) -> None:
         )
 
 
-def render_jobs(*, config: ResearchConfig) -> None:
+def render_workspace_storage(*, config: ResearchConfig) -> None:
+    """Show app-host storage paths and let the user preview and clear completed-job indexes.
+
+    Args:
+        config: Current research workspace profile.
+    """
+    from .workspace_storage import clear_job_intermediates, preview_job_cleanup
+
+    with st.expander("Workspace storage"):
+        st.markdown(f"**Saved research jobs** · {config.workspace / 'jobs'}")
+        st.markdown(
+            "**DIAMOND and DeepClust DuckDB scratch** · "
+            f"{analysis_temporary_root(config=config)}"
+        )
+        st.markdown(f"**Python temporary directory** · {gettempdir()}")
+        st.caption(
+            "These locations are on the app host. A worker on a different machine uses "
+            "that machine’s research profile and temporary directory."
+        )
+        st.write(
+            "Preview the names and sizes of disposable SQLite indexes from completed jobs."
+        )
+        days = st.number_input(
+            "Keep intermediate indexes for (days)", min_value=1, value=30, step=1,
+            key="research_cleanup_days",
+            help="Both the job’s completion and the index’s last modification must be older "
+            "than this period.",
+        )
+        scope = (config.workspace, days)
+        preview_key = "research_cleanup_preview"
+        result_key = "research_cleanup_result"
+        result = st.session_state.pop(result_key, None)
+        if result is not None and result[0] == scope:
+            _, cleared, cleared_bytes, skipped = result
+            noun = "index" if cleared == 1 else "indexes"
+            st.success(f"Cleared {cleared:,} {noun} ({cleared_bytes:,} bytes).")
+            if skipped:
+                st.info(f"{skipped:,} previewed indexes were skipped.")
+        if st.button("Preview cleanup", key="research_preview_cleanup"):
+            st.session_state.pop(preview_key, None)
+            try:
+                st.session_state[preview_key] = (
+                    scope, preview_job_cleanup(workspace=config.workspace, retention_days=days),
+                )
+            except (OSError, ResearchError, sqlite3.Error) as exc:
+                LOGGER.warning("Could not scan research intermediates: %s", exc)
+                st.error(f"Could not scan the research workspace. {exc}")
+        if preview_key not in st.session_state:
+            return
+        saved_scope, files = st.session_state[preview_key]
+        if saved_scope != scope:
+            st.session_state.pop(preview_key)
+            return
+        if not files:
+            st.info("There are no eligible intermediate indexes for this retention period.")
+            return
+        st.caption(f"{len(files):,} indexes · {sum(item.size for item in files):,} bytes")
+        st.dataframe([
+            {"Completed job": item.job_id, "Index": item.name, "Size (bytes)": item.size}
+            for item in files
+        ], hide_index=True)
+        if st.button("Clear listed indexes", key="research_clear_cleanup"):
+            st.session_state.pop(preview_key)
+            try:
+                removed = clear_job_intermediates(
+                    workspace=config.workspace, retention_days=days, preview=files,
+                )
+            except (OSError, ResearchError, sqlite3.Error) as exc:
+                LOGGER.warning("Could not recheck research intermediates: %s", exc)
+                st.error(f"Could not recheck the cleanup preview. {exc}")
+                return
+            st.session_state[result_key] = (
+                scope, len(removed), sum(item.size for item in removed), len(files) - len(removed),
+            )
+            st.rerun()
+
+
+def render_jobs(*, config: ResearchConfig, connection: object | None = None) -> None:
     """Display durable status, diagnostics and verified downloadable scientific artifacts.
 
     Args:
         config: Writable research workspace.
+        connection: Published E3 resource, if this is an E3 workbench session.
     """
     render_page_guidance(section="Jobs")
+    render_workspace_storage(config=config)
     if st.button(
         "Refresh job status", help="Reload saved status. This does not start or resubmit work."
     ):
@@ -2373,7 +2503,9 @@ def render_jobs(*, config: ResearchConfig) -> None:
                     )
         operation = job["operation"]
         if operation == "subcluster":
-            render_subcluster_result(config=config, job_id=selected, manifest=manifest)
+            render_subcluster_result(
+                config=config, job_id=selected, manifest=manifest, connection=connection,
+            )
         elif operation in {"retrieve", "deepclust_retrieve", "import_cluster"}:
             fastas = [
                 name
@@ -2517,7 +2649,7 @@ def render_research_workbench(
                 config=config, dedicated=dedicated, connection=connection,
             ),
             "Annotations": lambda: render_annotations(config=config),
-            "Jobs": lambda: render_jobs(config=config),
+            "Jobs": lambda: render_jobs(config=config, connection=connection),
             "Help & glossary": lambda: render_help(connection=connection),
         }
         renderers[section]()

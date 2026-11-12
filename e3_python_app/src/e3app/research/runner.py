@@ -28,6 +28,7 @@ from .catalogue import (
 )
 from .common import ResearchConfig, ResearchError, atomic_json, file_sha256, utc_now
 from .deepclust_exchange import import_cluster
+from .hog_context import hog_member_metadata
 from .jobs import (
     artifact_path, claim_job, finish_job, get_job, job_directory, job_interproscan_contact,
 )
@@ -308,9 +309,12 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
         alignment = artifact_path(
             workspace=config.workspace, job_id=source_job, artifact="alignment.fasta",
         )
-        metadata = reviewed_metadata(
-            config=config, source=alignment, source_job=source_job, aligned=True,
+        metadata = hog_member_metadata(
+            workspace=config.workspace, parameters=parameters, fasta=alignment, aligned=True,
         )
+        metadata.update(reviewed_metadata(
+            config=config, source=alignment, source_job=source_job, aligned=True,
+        ))
         return infer_protein_tree(
             config=config, alignment=alignment, output=output, metadata=metadata,
         )
@@ -325,7 +329,7 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
             expected_members=parameters.get("expected_members"),
         )
     if operation == "subcluster":
-        from .taxonomy import subcluster_species
+        from .taxonomy import reviewed_metadata, subcluster_species, write_member_taxonomy
 
         transport = parameters.get("subcluster_transport", "local")
         if transport == "ssh":
@@ -340,9 +344,18 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
             result = subcluster(config=config, source=source, output=output, parameters=parameters)
         else:
             raise ResearchError("Choose local or SSH execution for subclustering")
+        source_job = str(parameters.get("source_job", ""))
+        metadata = hog_member_metadata(
+            workspace=config.workspace, parameters=parameters, fasta=source,
+        )
+        member_taxonomy = None
+        if metadata:
+            metadata.update(reviewed_metadata(config=config, source=source, source_job=source_job))
+            member_taxonomy = write_member_taxonomy(output=output, metadata=metadata)
+            result[member_taxonomy.name] = member_taxonomy
         result.update(subcluster_species(
             config=config, membership=result["membership.tsv"], source=source,
-            source_job=str(parameters.get("source_job", "")), output=output,
+            source_job=source_job, output=output, member_taxonomy=member_taxonomy,
         ))
         return result
     if operation == "align":
@@ -360,19 +373,17 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
             parameters=parameters,
             membership=membership,
         )
-        from .taxonomy import reviewed_metadata
-        from .common import write_tsv
+        from .taxonomy import reviewed_metadata, write_member_taxonomy
 
-        metadata = reviewed_metadata(
-            config=config, source=output / "sequences.fasta",
+        selected_fasta = output / "sequences.fasta"
+        metadata = hog_member_metadata(
+            workspace=config.workspace, parameters=parameters, fasta=selected_fasta,
+        )
+        metadata.update(reviewed_metadata(
+            config=config, source=selected_fasta,
             source_job=str(parameters.get("source_job", "")),
-        )
-        metadata_path = output / "member_taxonomy.tsv"
-        write_tsv(
-            path=metadata_path,
-            rows=[{"sequence_id": identifier, **record} for identifier, record in metadata.items()],
-            columns=("sequence_id", "species", "taxon_id"),
-        )
+        ))
+        metadata_path = write_member_taxonomy(output=output, metadata=metadata)
         result[metadata_path.name] = metadata_path
         if "tree.nwk" in result:
             from .analysis import auspice_dataset

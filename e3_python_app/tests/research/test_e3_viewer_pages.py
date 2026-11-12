@@ -5,10 +5,15 @@ from pathlib import Path
 import time
 
 import duckdb
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+from e3app.external_hog import collect_external_hog_members
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
-from e3app.research.jobs import artifact_path, get_job, job_directory, list_jobs
+from e3app.research.common import atomic_json, file_sha256
+from e3app.research.jobs import (
+    artifact_path, claim_job, finish_job, get_job, job_directory, list_jobs, submit_job,
+)
 from test_pocket_review import make_pocket_review
 
 
@@ -161,6 +166,83 @@ def test_prepare_alignment_request_never_queues_a_job(tmp_path, monkeypatch) -> 
     assert list_jobs(workspace=workspace) == []
 
 
+def test_completed_legacy_subcluster_shows_hog_and_recovers_species(
+    *, resource_db, tmp_path, monkeypatch,
+) -> None:
+    """Open an old result with all-unclassified counts and recover exact released species."""
+    workspace = tmp_path / "worker"
+    profile = tmp_path / "research.toml"
+    profile.write_text(f"workspace={json.dumps(str(workspace))}\n", encoding="utf-8")
+    monkeypatch.setenv("E3_RESEARCH_CONFIG", str(profile))
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    hog = "N0.HOG0001"
+    with duckdb.connect(database=str(resource_db), read_only=True) as connection:
+        members = collect_external_hog_members(connection=connection, hog_id=hog)
+    ids = members["fasta_identifier"].tolist()
+    fasta = "".join(
+        f">{row.fasta_identifier}\n{row.protein_sequence}\n" for row in members.itertuples()
+    )
+    source = submit_job(
+        workspace=workspace, operation="align", parameters={"e3_hog_id": hog}, fasta=fasta,
+    )
+    request = {"source_job": source, "source_artifact": "sequences.fasta"}
+    job_id = submit_job(workspace=workspace, operation="subcluster", parameters=request)
+    for identifier, operation, parameters in (
+        (source, "align", {"e3_hog_id": hog}), (job_id, "subcluster", request),
+    ):
+        claim_job(workspace=workspace, job_id=identifier)
+        directory = job_directory(workspace=workspace, job_id=identifier)
+        files = {"sequences.fasta": fasta}
+        if operation == "subcluster":
+            files.update({
+                "subclusters.tsv": pd.DataFrame({
+                    "subcluster_id": ["sub_A", "sub_B"], "representative_id": ids,
+                    "member_count": [1, 1],
+                }).to_csv(sep="\t", index=False),
+                "membership.tsv": pd.DataFrame({
+                    "subcluster_id": ["sub_A", "sub_B"], "sequence_id": ids,
+                    "audited_representative_id": ids, "native_representative_id": ids,
+                    "alignment_status": "CENTROID_SELF", "pident": "", "member_coverage": "",
+                    "representative_coverage": "", "evalue": "", "bitscore": "",
+                }).to_csv(sep="\t", index=False),
+                "cluster_species.tsv": "cluster_id\tspecies\ttaxon_id\tmember_count\n"
+                                       "sub_A\tUNCLASSIFIED\t\t1\nsub_B\tUNCLASSIFIED\t\t1\n",
+            })
+        artifacts = {}
+        for name, contents in files.items():
+            path = directory / name
+            path.write_text(contents, encoding="utf-8")
+            artifacts[name] = {
+                "path": name, "sha256": file_sha256(path=path), "bytes": path.stat().st_size,
+            }
+        atomic_json(path=directory / "manifest.json", value={
+            "schema_version": 1, "job_id": identifier, "operation": operation,
+            "parameters": parameters, "artifacts": artifacts,
+        })
+        finish_job(workspace=workspace, job_id=identifier)
+
+    app = AppTest.from_string(
+        "from os import environ\n"
+        "from duckdb import connect\n"
+        "from e3app.research.ui import render_research_workbench\n"
+        "with connect(database=environ['E3_RESOURCE_DUCKDB'], read_only=True) as connection:\n"
+        "    render_research_workbench(connection=connection, initial_section='Jobs')\n",
+        default_timeout=20,
+    ).run()
+    app.radio(key=f"subcluster_result_view_{job_id}").set_value("Statistics and comparison").run()
+    app.selectbox(key=f"subcluster_network_group_{job_id}").set_value("sub_A").run()
+    assert any(f"Source HOG · {hog}" in line.value for line in app.caption)
+    counts = next(item.value for item in app.dataframe if "Reviewed taxon ID" in item.value)
+    assert counts.set_index("Species")["Input family"].to_dict() == {
+        "Arabidopsis_thaliana": 1, "Homo_sapiens": 1,
+    }
+    assert counts.set_index("Species").loc["Arabidopsis_thaliana", "Selected subcluster"] == 1
+    assert any("Matched to the loaded E3 release" in line.value for line in app.caption)
+    saved = artifact_path(workspace=workspace, job_id=job_id, artifact="cluster_species.tsv")
+    assert "UNCLASSIFIED" in saved.read_text(encoding="utf-8")
+    assert not app.exception and not app.error
+
+
 def test_align_published_hog_directly(resource_db, tmp_path, monkeypatch) -> None:
     """Load exact released members, select a reference and queue the frozen FASTA."""
     workspace = tmp_path / "worker"
@@ -240,6 +322,11 @@ def test_align_published_hog_directly(resource_db, tmp_path, monkeypatch) -> Non
     assert "N0.HOG0001" in label
     assert prepared.startswith(">Q9SA03|") and prepared.count(">") == 1
     assert prepared.splitlines()[1] == "MSTNPKPN"
+    prepared_context = app.session_state["research_prepared_hog"]
+    assert prepared_context["e3_hog_id"] == "N0.HOG0001"
+    assert prepared_context["e3_hog_members"] == {
+        "Arabidopsis_thaliana": {"taxon_id": 3702, "sequence_ids": [prepared.splitlines()[0][1:]]},
+    }
     assert len(list_jobs(workspace=workspace)) == 1
     assert not app.exception and not app.error
 
@@ -291,12 +378,16 @@ def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, mo
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["parameters"]["e3_hog_id"] == "N0.HOG0001"
     assert manifest["parameters"]["execution_target"] == "app_host"
+    taxonomy = artifact_path(workspace=workspace, job_id=job_id, artifact="member_taxonomy.tsv")
+    assert "Arabidopsis_thaliana\t3702\tREVIEWED" in taxonomy.read_text(encoding="utf-8")
     app.run()
     open_alignment = next(button for button in app.button
                           if button.label == "Open completed alignment")
     open_alignment.click().run()
     assert app.radio(key="alignment_view_source").value == "Completed alignment job"
     assert app.selectbox(key="research_alignment_job").value == job_id
+    assert app.selectbox(key="research_alignment_job").options[0].startswith("N0.HOG0001 · ")
+    assert any("Source HOG · N0.HOG0001" in line.value for line in app.caption)
     assert "MAAAN---" in app.get("iframe")[0].proto.srcdoc
 
     next(button for button in app.button if button.label == "Calculate heatmap").click().run()

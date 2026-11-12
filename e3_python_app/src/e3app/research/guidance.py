@@ -11,6 +11,7 @@ from typing import Mapping
 import pandas as pd
 
 from .common import ResearchConfig, ResearchError, interproscan_contact
+from .hog_context import job_hog
 
 SECTIONS = (
     "Start here",
@@ -315,16 +316,19 @@ GLOSSARY = {
 }
 
 
-def job_label(*, job_id: str, record: Mapping[str, object], artifact: str = "") -> str:
+def job_label(
+    *, job_id: str, record: Mapping[str, object], artifact: str = "", workspace: Path | None = None,
+) -> str:
     """Build a readable label while retaining an unambiguous job identifier.
 
     Args:
         job_id: Durable job identifier.
         record: Job summary or completed manifest.
         artifact: Optional source FASTA filename.
+        workspace: Optional workspace for finding the HOG in a saved source job.
 
     Returns:
-        Task, UTC timestamp, optional file and short job ID.
+        Optional HOG, task, UTC timestamp, optional file and short job ID.
     """
     task = OPERATION_NAMES.get(str(record.get("operation", "")), "Research job")
     raw = record.get("completed_at") or record.get("created_at")
@@ -335,7 +339,8 @@ def job_label(*, job_id: str, record: Mapping[str, object], artifact: str = "") 
         stamp = moment.astimezone(timezone.utc).strftime("%d %b %H:%M UTC")
     except ValueError:
         stamp = "time unavailable"
-    parts = [task, stamp]
+    hog = job_hog(record=record, workspace=workspace)
+    parts = [hog, task, stamp] if hog else [task, stamp]
     if artifact:
         parts.append(artifact)
     parts.append(job_id[:12])

@@ -4,6 +4,16 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.10
+
+- Show the recorded source HOG on completed alignment and subclustering
+  selections, including jobs that reused an earlier HOG job's FASTA.
+- Carry exact published HOG species through alignment and subclustering.
+  Show recorded species alongside reviewed taxon IDs and recover older
+  results from exact member ID and sequence matches to the loaded release.
+- Show scratch and saved-job paths in Jobs. Preview and clear disposable
+  indexes from completed jobs after a chosen retention period.
+
 ## v0.23.9
 
 - Browse recorded protein features by selecting a published HOG and then one

@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from typing import Mapping
 
 import duckdb
 
-from .common import ResearchConfig, ResearchError, iter_fasta
-from .jobs import artifact_path, job_directory
+from .common import ResearchConfig, ResearchError, iter_fasta, write_tsv
+from .jobs import artifact_path, source_manifests
+
+CLUSTER_SPECIES_QUERY = """
+    SELECT m.subcluster_id AS cluster_id, coalesce(t.species, 'UNCLASSIFIED') AS species,
+           t.taxon_id, count(*) AS member_count
+    FROM membership m LEFT JOIN member_species t USING(sequence_id)
+    GROUP BY m.subcluster_id, t.species, t.taxon_id
+    ORDER BY m.subcluster_id, member_count DESC, species
+"""
 
 
 def _taxonomy_view(*, config: ResearchConfig, source_job: str, connection: object) -> bool:
@@ -47,18 +55,16 @@ def taxonomy_artifact(*, config: ResearchConfig, source_job: str) -> Path | None
     Raises:
         ResearchError: If source ancestry is cyclic, excessive or corrupt.
     """
-    seen = set()
-    while source_job:
-        if source_job in seen or len(seen) >= 20:
-            raise ResearchError("Taxonomy source-job ancestry is cyclic or exceeds 20 jobs")
-        seen.add(source_job)
-        root = job_directory(workspace=config.workspace, job_id=source_job)
-        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    for manifest in source_manifests(workspace=config.workspace, source_job=source_job):
         if "member_taxonomy.tsv" in manifest.get("artifacts", {}):
-            return artifact_path(
-                workspace=config.workspace, job_id=source_job, artifact="member_taxonomy.tsv",
+            path = artifact_path(
+                workspace=config.workspace, job_id=manifest["job_id"],
+                artifact="member_taxonomy.tsv",
             )
-        source_job = str(manifest.get("parameters", {}).get("source_job", ""))
+            with path.open(encoding="utf-8") as handle:
+                handle.readline()
+                if handle.readline():
+                    return path
     return None
 
 
@@ -101,6 +107,7 @@ def reviewed_metadata(
 
 def subcluster_species(
     *, config: ResearchConfig, membership: Path, source: Path, source_job: str, output: Path,
+    member_taxonomy: Path | None = None,
 ) -> dict[str, Path]:
     """Publish complete reviewed/unclassified species counts for newly audited subclusters.
 
@@ -110,25 +117,52 @@ def subcluster_species(
         source: Complete unaligned family FASTA.
         source_job: Source extraction or ancestor subclustering job.
         output: Owned result directory.
+        member_taxonomy: Optional exact HOG member species snapshot, including unmapped labels.
 
     Returns:
         Count table when taxonomy is available, otherwise no additional artifacts.
     """
     connection = duckdb.connect(config={"memory_limit": f"{config.memory_gb}GB"})
     try:
-        if not _taxonomy_view(config=config, source_job=source_job, connection=connection):
-            return {}
+        if member_taxonomy is not None:
+            connection.read_csv(
+                str(member_taxonomy), delimiter="\t", header=True, all_varchar=True,
+            ).create_view(view_name="member_species")
+        else:
+            if not _taxonomy_view(config=config, source_job=source_job, connection=connection):
+                return {}
+            connection.execute("CREATE VIEW member_species AS SELECT * FROM reviewed_taxonomy")
         connection.read_csv(
             str(membership), delimiter="\t", header=True, all_varchar=True,
         ).create_view(view_name="membership")
-        result = connection.sql(
-            "SELECT m.subcluster_id AS cluster_id,coalesce(t.species,'UNCLASSIFIED') AS species,"
-            "t.taxon_id,count(*) AS member_count FROM membership m LEFT JOIN reviewed_taxonomy t "
-            "USING(sequence_id) GROUP BY m.subcluster_id,t.species,t.taxon_id "
-            "ORDER BY m.subcluster_id,member_count DESC"
-        )
+        result = connection.sql(CLUSTER_SPECIES_QUERY)
         path = output / "cluster_species.tsv"
         result.write_csv(str(path), sep="\t", header=True)
     finally:
         connection.close()
     return {path.name: path}
+
+
+def write_member_taxonomy(
+    *, output: Path, metadata: Mapping[str, Mapping[str, object]],
+) -> Path:
+    """Save exact recorded member species and the status of their taxon mappings.
+
+    Args:
+        output: Owned job result directory.
+        metadata: Taxonomy evidence keyed by exact sequence ID.
+
+    Returns:
+        Member taxonomy TSV for inclusion in the completed manifest.
+    """
+    path = output / "member_taxonomy.tsv"
+    write_tsv(
+        path=path,
+        rows=[
+            {"sequence_id": identifier, **record,
+             "mapping_status": "REVIEWED" if record.get("taxon_id") else "RECORDED_SPECIES"}
+            for identifier, record in metadata.items()
+        ],
+        columns=("sequence_id", "species", "taxon_id", "mapping_status"),
+    )
+    return path

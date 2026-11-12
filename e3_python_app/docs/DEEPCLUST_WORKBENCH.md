@@ -104,6 +104,24 @@ app and worker on denbi with its mounted data, installed tools and shared
 workspace. Existing deployment and tunnel instructions in
 [PROTEIN_RESEARCH.md](../PROTEIN_RESEARCH.md) still apply.
 
+### Research workspace storage
+
+Open **Jobs → Workspace storage** to see the paths on the machine running
+Streamlit. The research TOML's `workspace` defaults to
+`~/.local/share/protein_research`. Saved requests, FASTAs, results and logs
+live in `jobs/<job_id>/` under that workspace. The queue is `jobs.sqlite`
+and cached ESMFold models live in `models/`.
+
+DIAMOND's per-run database and DeepClust DuckDB scratch use the executing
+process's `TMPDIR`, or `<workspace>/temporary` when it is unset. DIAMOND
+database directories are removed when the temporary context exits normally.
+An SSH worker uses its own environment and research profile.
+
+Choose a retention period (30 days by default) and **Preview cleanup**.
+**Clear listed indexes** removes eligible SQLite intermediates from completed
+jobs after rechecking the preview. The scope is the listed indexes in the
+research job workspace.
+
 ## Subclusters, summaries and heatmaps
 
 Under **Family analysis → Stricter subclusters**, select **App host** to run
@@ -130,6 +148,12 @@ nodes represent singleton subclusters. Hover for identity and coverage, choose
 one subcluster to inspect it, or download the displayed network as GraphML for
 Cytoscape. The overview shows up to 12 groups and the network draws at most 360
 proteins. Use the complete membership artifacts in Jobs for all assignments.
+Completed alignment and subclustering selections include the recorded HOG
+when the job or a saved ancestor records one. In **Statistics and comparison**,
+expand **Species composition** for the input and selected-subcluster counts.
+Released species names remain visible when a reviewed taxon ID is unavailable.
+New HOG jobs save per-protein metadata. For older HOG jobs, this view can match
+the saved unaligned sequence and exact member ID against the loaded release.
 **Set up alignment for this subcluster** uses the complete selected subcluster
 from that job.
 

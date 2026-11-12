@@ -97,6 +97,36 @@ def test_overview_singleton_and_missing_source_are_explicit(*, saved_subclusters
         subcluster_statistics(membership=membership, fasta=None, group="unknown")
 
 
+@pytest.mark.parametrize("source", ["saved", "recovered"])
+def test_species_counts_keep_recorded_species_and_exact_selected_members(
+    *, saved_subclusters, tmp_path, source,
+):
+    """Show named species when taxon IDs are missing and retain unclassified members."""
+    membership, fasta, _ = saved_subclusters
+    recorded = {
+        "a": {"species": "Hordeum_vulgare", "taxon_id": 4513},
+        "b": {"species": "Physcomitrella_patens", "taxon_id": None},
+        "d": {"species": "Other_species", "taxon_id": None},
+    }
+    kwargs = {"recovered_taxonomy": recorded}
+    if source == "saved":
+        from e3app.research.taxonomy import write_member_taxonomy
+
+        kwargs = {"member_taxonomy": write_member_taxonomy(output=tmp_path, metadata=recorded)}
+    tables = subcluster_statistics(membership=membership, fasta=fasta, group="sub_A", **kwargs)
+    counts = tables["species_counts"].set_index("species")
+    assert counts["input_family"].to_dict() == {
+        "Hordeum_vulgare": 1, "Physcomitrella_patens": 1, "Other_species": 1, "Unclassified": 3,
+    }
+    assert counts["selected_subcluster"].to_dict() == {
+        "Hordeum_vulgare": 1, "Physcomitrella_patens": 1, "Other_species": 0, "Unclassified": 1,
+    }
+    assert tables["member_taxonomy"]["mapping_status"].tolist() == [
+        "REVIEWED", "RECORDED_SPECIES", "UNCLASSIFIED",
+    ]
+    assert tables["member_taxonomy"]["sequence_id"].tolist() == list("abc")
+
+
 def test_lengths_reject_another_family_with_the_same_size(*, saved_subclusters):
     """A matching protein count cannot substitute for matching exact FASTA IDs."""
     membership, fasta, _taxonomy = saved_subclusters

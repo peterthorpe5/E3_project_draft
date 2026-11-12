@@ -15,6 +15,8 @@ import pytest
 
 from e3app.research.analysis import subcluster
 from e3app.research.common import ResearchConfig, ResearchError, atomic_json, file_sha256
+from e3app.research.guidance import job_label
+from e3app.research.hog_context import hog_input_parameters
 from e3app.research.jobs import artifact_path, claim_job, finish_job, get_job, job_directory
 from e3app.research.jobs import submit_job
 from e3app.research.local_worker import start_queued_subcluster, submit_local_subcluster
@@ -123,6 +125,14 @@ def test_subclustering_workers_build_database_and_publish_audited_network(
     config = ResearchConfig(**{**settings, "workspace": workspace})
     unrelated = submit_job(workspace=workspace, operation="align", parameters={}, fasta=FASTA)
     thresholds = {"identity": 90, "mutual_coverage": 80, "evalue": 1e-10}
+    hog = hog_input_parameters(
+        hog_id="N0.HOG0000390", members=pd.DataFrame({
+            "fasta_identifier": ["a", "b", "c", "d"],
+            "member_species": [
+                "Hordeum_vulgare", "Hordeum_vulgare", "Physcomitrella_patens", "Glycine_max",
+            ],
+        }),
+    )
     if route == "saved":
         job_id = submit_job(
             workspace=workspace, operation="subcluster", parameters=thresholds, fasta=FASTA,
@@ -134,16 +144,21 @@ def test_subclustering_workers_build_database_and_publish_audited_network(
         prior = job_directory(workspace=workspace, job_id=source_job)
         source = prior / "sequences.fasta"
         source.write_text(FASTA, encoding="utf-8")
-        atomic_json(path=prior / "manifest.json", value={"artifacts": {
-            "sequences.fasta": {"path": source.name, "sha256": file_sha256(path=source)},
-        }})
+        atomic_json(path=prior / "manifest.json", value={
+            "parameters": hog,
+            "artifacts": {
+                "sequences.fasta": {"path": source.name, "sha256": file_sha256(path=source)},
+            },
+        })
         finish_job(workspace=workspace, job_id=source_job)
         job_id = submit_local_subcluster(
             config=config, external_vm=True, fasta=None,
             parameters={**thresholds, "source_job": source_job, "source_artifact": source.name},
         )
     else:
-        job_id = submit_local_subcluster(config=config, parameters=thresholds, fasta=FASTA)
+        job_id = submit_local_subcluster(
+            config=config, parameters={**thresholds, **hog}, fasta=FASTA,
+        )
     deadline = time.monotonic() + 45
     job = get_job(workspace=workspace, job_id=job_id)
     while job["status"] in {"QUEUED", "RUNNING"} and time.monotonic() < deadline:
@@ -152,6 +167,23 @@ def test_subclustering_workers_build_database_and_publish_audited_network(
     directory = job_directory(workspace=workspace, job_id=job_id)
     assert job["status"] == "COMPLETE", (job, (directory / "local_worker.log").read_text())
     assert get_job(workspace=workspace, job_id=unrelated)["status"] == "QUEUED"
+    if route != "saved":
+        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        assert job_label(job_id=job_id, record=manifest, workspace=workspace).startswith(
+            "N0.HOG0000390 · "
+        )
+        metadata = pd.read_csv(artifact_path(
+            workspace=workspace, job_id=job_id, artifact="member_taxonomy.tsv",
+        ), sep="\t").set_index("sequence_id")
+        assert metadata.loc["b", "taxon_id"] == 4513
+        assert metadata.loc["c", "species"] == "Physcomitrella_patens"
+        assert metadata.loc["c", "mapping_status"] == "RECORDED_SPECIES"
+        counts = pd.read_csv(artifact_path(
+            workspace=workspace, job_id=job_id, artifact="cluster_species.tsv",
+        ), sep="\t")
+        assert counts.set_index("species")["member_count"].to_dict() == {
+            "Hordeum_vulgare": 2, "Physcomitrella_patens": 1, "Glycine_max": 1,
+        }
     command_file = "vm_commands.jsonl" if route == "vm" else "commands.jsonl"
     path = artifact_path(workspace=workspace, job_id=job_id, artifact=command_file)
     commands = [json.loads(line)["argv"] for line in path.read_text().splitlines()]

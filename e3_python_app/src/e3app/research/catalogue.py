@@ -6,7 +6,6 @@ from contextlib import contextmanager
 import csv
 import hashlib
 import logging
-import os
 from pathlib import Path
 import re
 import sqlite3
@@ -18,7 +17,10 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from .common import ResearchConfig, ResearchError, bounded_number, normalise_protein, write_tsv
+from .common import (
+    ResearchConfig, ResearchError, analysis_temporary_root, bounded_number, normalise_protein,
+    write_tsv,
+)
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_URL = "https://objectstore.hpccloud.mpcdf.mpg.de/deepclust/index.html"
@@ -89,7 +91,7 @@ def open_catalogue(
         Connection with canonical clusters, sequence_map and optional taxonomy views.
     """
     config.workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
-    spill = Path(os.environ.get("TMPDIR", config.workspace / "temporary")).resolve()
+    spill = analysis_temporary_root(config=config)
     spill.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect(
         config={

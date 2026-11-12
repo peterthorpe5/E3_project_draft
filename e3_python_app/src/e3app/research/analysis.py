@@ -29,6 +29,7 @@ import pandas as pd
 from .common import (
     ResearchConfig,
     ResearchError,
+    analysis_temporary_root,
     atomic_json,
     bounded_number,
     iter_fasta,
@@ -347,7 +348,7 @@ def subcluster(
                     identifiers.write(identifier + "\n")
     finally:
         connection.close()
-    temporary_root = Path(os.environ.get("TMPDIR", config.workspace / "temporary"))
+    temporary_root = analysis_temporary_root(config=config)
     temporary_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=temporary_root, prefix="protein-subcluster-") as temporary:
         database = Path(temporary) / "proteins.dmnd"

@@ -227,6 +227,59 @@ def get_job(*, workspace: Path, job_id: str) -> dict[str, object]:
     return dict(row)
 
 
+def completed_jobs_before(*, workspace: Path, cutoff: str) -> list[tuple[str, str]]:
+    """Find completed job identifiers and operations across the full queue history.
+
+    Args:
+        workspace: Queue workspace.
+        cutoff: Exclusive completion cutoff in the queue's UTC ISO 8601 format.
+
+    Returns:
+        Pairs of job identifier and operation, ordered by completion time.
+    """
+    with _connection(workspace=workspace) as connection:
+        rows = connection.execute(
+            "SELECT job_id, operation FROM jobs WHERE status='COMPLETE' AND finished_at < ? "
+            "ORDER BY finished_at, job_id",
+            (cutoff,),
+        ).fetchall()
+    return [(row["job_id"], row["operation"]) for row in rows]
+
+
+def source_manifests(*, workspace: Path, source_job: str) -> Iterator[dict]:
+    """Walk the completed source jobs referenced by one request.
+
+    Args:
+        workspace: Queue workspace containing the saved jobs.
+        source_job: First source job identifier, or an empty string.
+
+    Yields:
+        Completed manifests from the immediate source back to the earliest ancestor.
+
+    Raises:
+        ResearchError: If source ancestry is cyclic, excessive or invalid.
+    """
+    seen = set()
+    while source_job:
+        if source_job in seen or len(seen) >= 20:
+            raise ResearchError("Source-job ancestry is cyclic or exceeds 20 jobs")
+        seen.add(source_job)
+        if get_job(workspace=workspace, job_id=source_job)["status"] != "COMPLETE":
+            raise ResearchError("Source research job must be complete")
+        directory = job_directory(workspace=workspace, job_id=source_job)
+        try:
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            if (
+                not isinstance(manifest, dict) or manifest.get("job_id", source_job) != source_job
+                or not isinstance(manifest.get("parameters", {}), dict)
+            ):
+                raise ValueError("Invalid source manifest")
+        except (OSError, ValueError) as exc:
+            raise ResearchError("Could not read the source job manifest") from exc
+        yield {**manifest, "job_id": source_job}
+        source_job = str(manifest.get("parameters", {}).get("source_job") or "")
+
+
 def is_external_provider_request(
     *, operation: str, parameters: Mapping[str, object],
 ) -> bool:

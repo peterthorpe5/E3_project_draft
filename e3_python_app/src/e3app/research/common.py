@@ -122,6 +122,18 @@ class ResearchConfig:
     species_tree: str = ""
 
 
+def analysis_temporary_root(*, config: ResearchConfig) -> Path:
+    """Resolve the worker's scratch directory for DIAMOND and DeepClust DuckDB queries.
+
+    Args:
+        config: Research profile on the machine running the analysis.
+
+    Returns:
+        The configured TMPDIR or the research workspace's temporary directory.
+    """
+    return Path(os.environ.get("TMPDIR") or config.workspace / "temporary").resolve()
+
+
 def bounded_number(
     *, value: object, label: str, minimum: float, maximum: float, integer: bool = False
 ) -> float | int:

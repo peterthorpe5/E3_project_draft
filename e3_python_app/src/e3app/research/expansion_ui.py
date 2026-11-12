@@ -200,7 +200,7 @@ def render_query_fasta(*, connection: object | None) -> None:
 
 def render_hog_alignment_input(
     *, config: ResearchConfig, connection: object, key: str, browse: bool = False,
-) -> str | None:
+) -> tuple[dict[str, object], str] | None:
     """Select exact released HOG members and prepare their unaligned protein FASTA.
 
     Args:
@@ -210,9 +210,11 @@ def render_hog_alignment_input(
         browse: Use a searchable release HOG selector.
 
     Returns:
-        FASTA for the selected available members, or None until selection is ready.
+        HOG and taxonomy provenance with FASTA, or None until selection is ready.
     """
     from e3app.external_hog import collect_external_hog_members, published_hog_ids
+
+    from .hog_context import hog_input_parameters
 
     group_key = f"{key}_hog"
     resource = _resource_identity(config=config)
@@ -310,7 +312,11 @@ def render_hog_alignment_input(
         file_name=f"{hog}_alignment_ids.tsv", mime="text/tab-separated-values",
         key=f"{key}_hog_mapping",
     )
-    return fasta
+    taxonomy_map = os.environ.get("E3_TAXONOMY_MAP")
+    parameters = hog_input_parameters(
+        hog_id=hog, members=selected, taxonomy_map=Path(taxonomy_map) if taxonomy_map else None,
+    )
+    return parameters, fasta
 
 
 def render_campaign(*, config: ResearchConfig, connection: object | None) -> None:
