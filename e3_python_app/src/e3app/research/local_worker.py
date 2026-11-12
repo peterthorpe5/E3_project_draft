@@ -106,6 +106,61 @@ def submit_local_tree(*, config: ResearchConfig, alignment_job: str) -> str:
     return job_id
 
 
+def submit_local_subcluster(
+    *, config: ResearchConfig, parameters: Mapping[str, object], fasta: str | None,
+    external_vm: bool = False,
+) -> str:
+    """Save one subclustering request and start its exact background worker.
+
+    Args:
+        config: App-host research profile.
+        parameters: Input artifact and audit thresholds.
+        fasta: Optional uploaded or prepared unaligned proteins.
+        external_vm: Send the selected input to the configured VM via SSH.
+
+    Returns:
+        Durable subclustering job ID.
+
+    Raises:
+        ResearchError: If the selected execution route cannot be started.
+    """
+    if external_vm:
+        from .remote import ssh_command
+
+        ssh_command(config=config, command="run-subcluster")
+        if not shutil.which("ssh"):
+            raise ResearchError("SSH is unavailable on the machine running the app.")
+    elif not shutil.which(config.diamond):
+        raise ResearchError(f"DIAMOND is unavailable on the app host: {config.diamond}")
+    request = {
+        **parameters, "execution_target": "app_host",
+        "subcluster_transport": "ssh" if external_vm else "local",
+    }
+    if external_vm:
+        request["subcluster_remote_host"] = config.remote_host
+    job_id = submit_job(
+        workspace=config.workspace, operation="subcluster", fasta=fasta, parameters=request,
+    )
+    _start_local_job(config=config, job_id=job_id, label="subclustering")
+    return job_id
+
+
+def start_queued_subcluster(*, config: ResearchConfig, job_id: str) -> None:
+    """Start an existing subclustering job with its original input and thresholds.
+
+    Args:
+        config: App-host research profile.
+        job_id: Exact queued subclustering job to claim.
+
+    Raises:
+        ResearchError: If the job is ineligible or the worker cannot start.
+    """
+    job = get_job(workspace=config.workspace, job_id=job_id)
+    if job["operation"] != "subcluster" or job["status"] != "QUEUED":
+        raise ResearchError("Select a queued subclustering job")
+    _start_local_job(config=config, job_id=job_id, label="subclustering")
+
+
 def submit_local_provider_job(
     *,
     config: ResearchConfig,

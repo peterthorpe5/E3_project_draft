@@ -106,10 +106,34 @@ workspace. Existing deployment and tunnel instructions in
 
 ## Subclusters, summaries and heatmaps
 
-Native DIAMOND assignments are audited by exact member-to-assigned-centroid
-realignment. Identity, coverage of **both** proteins, E-value and the recorded
-bit-score criterion must pass; failures remain singletons. This does not require
-every within-subcluster pair to pass. MAFFT retains selected IDs/amino acids.
+Under **Family analysis → Stricter subclusters**, select **App host** to run
+DIAMOND where Streamlit is running, **External VM (SSH)** to send the selected
+FASTA to the configured machine, or **Research worker** to queue it in the shared
+workspace. DIAMOND 2.2.1 or newer is required on the execution host. A worker
+builds a temporary DIAMOND database from the input, runs DeepClust and audits the
+native assignments by exact member-to-centroid realignment. Identity, coverage of
+both proteins, E-value and bit score are checked. Failed assignments become
+singletons. Use **Jobs → Start this subclustering job** for an older queued request.
+
+For **External VM (SSH)**, install v0.23.8 or newer at both ends. Set
+`remote_host` to the existing non-interactive SSH alias on the app host and
+`remote_executable` and `remote_config` to the installed CLI and research profile
+on the VM. Set an absolute `diamond` path in that profile if the VM's SSH session
+does not activate the Conda environment. The VM builds the database from the
+selected FASTA and returns checked result files to the same job. Jobs retains the
+SSH log and the VM's DIAMOND version and command log.
+
+Open a completed subclustering job in **Jobs** or select it under **Family
+analysis → Stricter subclusters**. The interactive network shows one node per
+displayed protein and one edge per passing exact centroid assignment. Isolated
+nodes represent singleton subclusters. Hover for identity and coverage, choose
+one subcluster to inspect it, or download the displayed network as GraphML for
+Cytoscape. The overview shows up to 12 groups and the network draws at most 360
+proteins. Use the complete membership artifacts in Jobs for all assignments.
+**Set up alignment for this subcluster** uses the complete selected subcluster
+from that job.
+
+MAFFT retains selected IDs/amino acids.
 Large MSA requests need a smaller audited subcluster or explicit deterministic
 sampling; sampling is never enabled automatically.
 

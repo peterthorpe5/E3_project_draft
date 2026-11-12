@@ -148,9 +148,10 @@ PAGE_GUIDES = {
         "1. Choose a task and protein input. For a new E3 alignment, select Published HOG "
         "members and enter the exact HOG ID. You can also use FASTA or a completed job.\n"
         "2. For a broad family, start with Stricter subclusters. For a small family you can "
-        "choose Alignment and tree immediately.\n"
-        "3. To align one subcluster, select that completed subclustering job as your input "
-        "and choose a subcluster from its audited membership.\n\n"
+        "choose Alignment and tree immediately. Choose App host or External VM (SSH) to "
+        "start subclustering now.\n"
+        "3. Open the completed subclustering job, inspect its centroid network and select a "
+        "group to set up its alignment.\n\n"
         "**Output:** audited subclusters, or a multiple sequence alignment and optional tree. "
         "**Next:** inspect a completed alignment in Alignments and trees. Subclustering and "
         "alignment are separate jobs; creating subclusters does not automatically align them.",

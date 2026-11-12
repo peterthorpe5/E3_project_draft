@@ -14,15 +14,16 @@ identifier_bridge = ""
 cluster_taxonomy = ""
 identifier_prefixes = ["UNIPROT_", "NR_"]
 
-# Optional command-line connection when this worker does not mount the denbi files.
+# Optional command-line connection for DeepClust retrieval or external VM subclustering.
 # Use the EXISTING non-interactive SSH config alias (no password in this profile).
-# Install app 0.22.0+ on both ends; remote_config is an absolute path ON DENBI.
-# Example operator values: remote_host="your-existing-denbi-alias" and
+# Install app 0.23.8+ on both ends for VM subclustering.
+# remote_config is an absolute path ON THE VM. Set its diamond executable there.
+# Example operator values: remote_host="your-existing-vm-alias" and
 # remote_executable="/absolute/conda/env/bin/protein-research-workbench".
 remote_host = ""
 remote_executable = "protein-research-workbench"
 remote_config = ""
-# Maximum response payload; complete extraction fails if over the budget.
+# Maximum result payload and maximum FASTA bytes sent to a subclustering VM.
 transfer_max_bytes = 2000000000
 # Optional reviewed species Newick, tips matching reviewed species labels or taxon IDs.
 species_tree = ""

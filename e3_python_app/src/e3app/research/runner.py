@@ -327,7 +327,19 @@ def execute_job(*, config: ResearchConfig, job: Mapping[str, object]) -> dict[st
     if operation == "subcluster":
         from .taxonomy import subcluster_species
 
-        result = subcluster(config=config, source=source, output=output, parameters=parameters)
+        transport = parameters.get("subcluster_transport", "local")
+        if transport == "ssh":
+            from .subcluster_remote import subcluster_on_vm
+
+            if parameters.get("subcluster_remote_host", config.remote_host) != config.remote_host:
+                raise ResearchError("The configured VM changed since this job was submitted")
+            result = subcluster_on_vm(
+                config=config, source=source, output=output, parameters=parameters,
+            )
+        elif transport == "local":
+            result = subcluster(config=config, source=source, output=output, parameters=parameters)
+        else:
+            raise ResearchError("Choose local or SSH execution for subclustering")
         result.update(subcluster_species(
             config=config, membership=result["membership.tsv"], source=source,
             source_job=str(parameters.get("source_job", "")), output=output,

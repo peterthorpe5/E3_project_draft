@@ -24,7 +24,8 @@ seeds; it does not calculate a medoid. Exact mapping finds global membership,
 then retrieval collects sequences. Select mapped/ranked clusters and use the
 handoff button to populate retrieval without copying IDs. From a completed
 retrieval/import job, **Analyse this family** carries its FASTA into analysis.
-From a completed subclustering job, choose its audited subcluster before aligning.
+From a completed subclustering job, inspect the centroid network and choose an
+audited subcluster before aligning.
 These handoffs select inputs; they never submit a second job automatically.
 
 Job choices show their task, UTC time and job ID. Alignment pages lead with
@@ -191,12 +192,13 @@ A typical sequence of actions is:
    Review Jobs → clusters/length/species summaries and the complete FASTAs.
 3. Family analysis → select that FASTA → Stricter subclusters. Start with 70%
    identity, 80% mutual coverage and E≤1e-10, then choose thresholds appropriate
-   to the family. These defaults are exploratory settings, not universal criteria.
-4. Select the completed subcluster job FASTA, copy an audited subcluster_id into
-   Alignment and tree, and select the reference. Align all selected members or
-   explicitly request a deterministic sample. No oversized cluster is silently
-   truncated. There is no all-pairs similarity guarantee: exact thresholds are
-   audited against assigned representatives.
+   to the family. Choose App host, a configured External VM (SSH), or a research
+   worker sharing the queue. The execution host builds a temporary DIAMOND
+   database from the FASTA.
+4. Open the completed job to explore its audited centroid network. Select a
+   group and use **Set up alignment for this subcluster**. Choose a reference
+   and align the selected members or explicitly request a deterministic sample.
+   Exact thresholds are audited against assigned representatives.
 5. Open **Alignments and trees** to inspect the saved alignment. Use the
    question-mark help in **Statistics** for each metric, or open **Auspice
    tree** to view or infer a protein tree.

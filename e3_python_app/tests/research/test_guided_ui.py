@@ -477,6 +477,47 @@ def test_completed_alignment_can_infer_missing_tree_on_app_host(
     assert "plant_A:0.1,plant_B:0.2" in app.get("iframe")[0].proto.srcdoc
 
 
+def test_subclustering_routes_and_saved_job_launch(*, guided_app, guided_profile, monkeypatch):
+    """Dispatch the selected host route and keep old queued job IDs intact."""
+    profile, config = guided_profile
+    with profile.open(mode="a", encoding="utf-8") as handle:
+        handle.write(
+            f"diamond={json.dumps(sys.executable)}\n"
+            'remote_host="denbi-fixture"\nremote_config="/vm/research.toml"\n'
+        )
+    launch = Mock()
+    monkeypatch.setattr(local_worker, "_start_local_job", launch)
+    app = guided_app
+    app.radio(key="research_section").set_value("Family analysis").run()
+    app.radio(key="analyse_route").set_value("Paste FASTA").run()
+    app.text_area(key="analyse_pasted_fasta").set_value(">a\nACDE\n>b\nACDF\n").run()
+    assert app.radio(key="subcluster_execution").value == "App host"
+    find_control(controls=app.button, label="Run subclustering here").click().run()
+    local_id = launch.call_args.kwargs["job_id"]
+    local = read_request(workspace=config.workspace, job_id=local_id)
+    assert local["parameters"]["subcluster_transport"] == "local"
+    assert local["parameters"]["execution_target"] == "app_host"
+    app.radio(key="subcluster_execution").set_value("External VM (SSH)").run()
+    find_control(controls=app.button, label="Run subclustering on external VM").click().run()
+    vm_id = launch.call_args.kwargs["job_id"]
+    vm = read_request(workspace=config.workspace, job_id=vm_id)
+    assert vm["parameters"]["subcluster_transport"] == "ssh"
+    assert vm["parameters"]["execution_target"] == "app_host"
+    app.radio(key="subcluster_execution").set_value("Research worker").run()
+    find_control(controls=app.button, label="Queue stricter subclustering").click().run()
+    assert launch.call_count == 2
+    jobs = list_jobs(workspace=config.workspace)
+    assert len(jobs) == 3
+    saved_id = jobs[0]["job_id"]
+    request = read_request(workspace=config.workspace, job_id=saved_id)
+    app.radio(key="research_section").set_value("Jobs").run()
+    app.button(key=f"start_subcluster_{saved_id}").click().run()
+    assert launch.call_count == 3 and launch.call_args.kwargs["job_id"] == saved_id
+    assert read_request(workspace=config.workspace, job_id=saved_id) == request
+    assert list_jobs(workspace=config.workspace) == jobs
+    assert not app.exception and not app.error
+
+
 def test_subcluster_handoff_uses_audited_source_and_exact_selection(
     *, guided_app, guided_profile, monkeypatch
 ):
@@ -503,7 +544,12 @@ def test_subcluster_handoff_uses_audited_source_and_exact_selection(
             encoding="utf-8",
         )
         (output / "membership.tsv").write_text(
-            "subcluster_id\tsequence_id\nsub_A\ta\nsub_A\tb\nsub_B\tc\n", encoding="utf-8"
+            "subcluster_id\tsequence_id\taudited_representative_id\talignment_status\tpident\t"
+            "representative_coverage\tmember_coverage\tevalue\tbitscore\n"
+            "sub_A\ta\ta\tCENTROID_SELF\t\t\t\t\t\n"
+            "sub_A\tb\ta\tEXACT_THRESHOLDS_PASS\t85\t100\t100\t1e-12\t100\n"
+            "sub_B\tc\tc\tCENTROID_SELF\t\t\t\t\t\n",
+            encoding="utf-8",
         )
         return {
             name: output / name for name in ("sequences.fasta", "subclusters.tsv", "membership.tsv")
@@ -519,10 +565,14 @@ def test_subcluster_handoff_uses_audited_source_and_exact_selection(
     run_next_job(config=config, job_id=job)
     app = guided_app
     app.radio(key="research_section").set_value("Family analysis").run()
-    find_control(
-        controls=app.button, label="Align a family or subcluster from this job"
-    ).click().run()
-    find_control(controls=app.selectbox, label="Subcluster to align").set_value("sub_A").run()
+    assert app.selectbox(key=f"subcluster_network_group_{job}").value == ""
+    app.radio(key="research_section").set_value("Jobs").run()
+    assert "Download displayed network (GraphML)" in {
+        button.label for button in app.get("download_button")
+    }
+    app.selectbox(key=f"subcluster_network_group_{job}").set_value("sub_A").run()
+    find_control(controls=app.button, label="Set up alignment for this subcluster").click().run()
+    assert app.selectbox(key=f"align_subcluster_{job}").value == "sub_A"
     find_control(controls=app.button, label="Queue alignment and tree").click().run()
     assert not app.exception and not app.error
     queued = read_request(

@@ -4,6 +4,14 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.8
+
+- Run stricter DIAMOND subclustering on the app host or on a configured VM
+  over SSH. Start older queued subclustering requests from Jobs.
+- Build and remove a temporary DIAMOND database on the execution host.
+- Inspect audited centroid networks and singleton proteins, export the
+  displayed GraphML and carry a selected subcluster into alignment.
+
 ## v0.23.7
 
 - Start hosted ESMFold and EMBL-EBI InterProScan jobs from the app. The

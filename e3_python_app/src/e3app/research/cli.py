@@ -35,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
         "export-deepclust", help="Serve one bounded read-only CLI request as a checked ZIP",
     )
     export.add_argument("--request-stdin", action="store_true", required=True)
+    vm_subcluster = commands.add_parser(
+        "run-subcluster", help="Run one checked subclustering request from an app host",
+    )
+    vm_subcluster.add_argument("--request-stdin", action="store_true", required=True)
     cancel = commands.add_parser("cancel", help="Cancel one queued job")
     cancel.add_argument("--job-id", required=True)
     submit = commands.add_parser("submit", help="Queue work without blocking the web process")
@@ -162,6 +166,12 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             if not isinstance(request, dict):
                 raise ResearchError("DeepClust CLI request must be a JSON object")
             write_response(config=config, request=request, destination=sys.stdout.buffer)
+        elif args.command == "run-subcluster":
+            from .subcluster_remote import write_vm_subclusters
+
+            write_vm_subclusters(
+                config=config, source=sys.stdin.buffer, destination=sys.stdout.buffer,
+            )
         elif args.command == "doctor":
             print(json.dumps(installation_status(config=config), indent=2))
         elif args.command == "jobs":

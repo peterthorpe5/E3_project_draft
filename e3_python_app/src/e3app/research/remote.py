@@ -1,4 +1,4 @@
-"""Bounded SSH command-line exchange with an operator-configured DeepClust worker."""
+"""Checksummed research result exchange over the configured SSH connection."""
 
 from __future__ import annotations
 
@@ -55,11 +55,14 @@ def request_bytes(*, request: Mapping[str, object]) -> bytes:
     return payload
 
 
-def ssh_command(*, config: ResearchConfig) -> list[str]:
+def ssh_command(
+    *, config: ResearchConfig, command: str = "export-deepclust",
+) -> list[str]:
     """Build a shell-free local SSH command using the existing operator connection.
 
     Args:
         config: Existing SSH alias and remote command/profile, without passwords.
+        command: Supported research command accepting a standard-input request.
 
     Returns:
         Local argv; remote operands are individually shell-quoted by shlex.
@@ -67,6 +70,8 @@ def ssh_command(*, config: ResearchConfig) -> list[str]:
     Raises:
         ResearchError: If the SSH destination or command/profile is unsafe or absent.
     """
+    if command not in {"export-deepclust", "run-subcluster"}:
+        raise ResearchError("Unsupported research SSH command")
     if not re.fullmatch(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9][A-Za-z0-9_.-]*", config.remote_host):
         raise ResearchError("Configure remote_host as an existing SSH alias or user@host")
     for value in (config.remote_executable, config.remote_config):
@@ -74,7 +79,7 @@ def ssh_command(*, config: ResearchConfig) -> list[str]:
             raise ResearchError("Configure the installed remote command and research profile")
     remote = shlex.join([
         config.remote_executable, "--config", config.remote_config,
-        "export-deepclust", "--request-stdin",
+        command, "--request-stdin",
     ])
     return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=30", "--",
             config.remote_host, remote]
@@ -127,28 +132,45 @@ def write_response(
     Raises:
         ResearchError: If artifact names or response size violate the protocol.
     """
-    encoded = request_bytes(request=request)
     with local_response(config=config, request=request) as (_root, artifacts):
-        inventory = []
-        for name, path in sorted(artifacts.items()):
-            if not SAFE_ARTIFACT.fullmatch(name) or name == MANIFEST_NAME:
-                raise ResearchError("DeepClust response contains an unsafe artifact name")
-            inventory.append({
-                "name": name, "size_bytes": path.stat().st_size,
-                "sha256": file_sha256(path=path),
-            })
-        if sum(row["size_bytes"] for row in inventory) > config.transfer_max_bytes:
-            raise ResearchError("Selected DeepClust response exceeds transfer_max_bytes")
-        manifest = {
-            "protocol_version": PROTOCOL_VERSION, "application_version": __version__,
-            "request_sha256": hashlib.sha256(encoded).hexdigest(), "artifacts": inventory,
-        }
-        with ZipFile(file=destination, mode="w", compression=ZIP_DEFLATED) as archive:
-            archive.writestr(zinfo_or_arcname=MANIFEST_NAME, data=json.dumps(manifest))
-            for name, path in sorted(artifacts.items()):
-                archive.write(filename=path, arcname=name)
+        write_checked_archive(
+            config=config, request=request_bytes(request=request), artifacts=artifacts,
+            manifest_name=MANIFEST_NAME, destination=destination,
+        )
         LOGGER.info("Exported DeepClust %s response: %d artifacts", request["operation"],
-                    len(inventory))
+                    len(artifacts))
+
+
+def write_checked_archive(
+    *, config: ResearchConfig, request: bytes, artifacts: Mapping[str, Path],
+    manifest_name: str, destination: BinaryIO,
+) -> None:
+    """Write a bounded result archive with a checksum inventory and request digest.
+
+    Args:
+        config: Sending profile and transfer budget.
+        request: Encoded request, including the input digest if applicable.
+        artifacts: Declared filenames and their result paths.
+        manifest_name: Protocol-specific inventory filename.
+        destination: Binary result stream.
+    """
+    inventory = []
+    for name, path in sorted(artifacts.items()):
+        if not SAFE_ARTIFACT.fullmatch(name) or name == manifest_name:
+            raise ResearchError("Research response contains an unsafe artifact name")
+        inventory.append({
+            "name": name, "size_bytes": path.stat().st_size, "sha256": file_sha256(path=path),
+        })
+    if sum(row["size_bytes"] for row in inventory) > config.transfer_max_bytes:
+        raise ResearchError("Research response exceeds transfer_max_bytes")
+    manifest = {
+        "protocol_version": PROTOCOL_VERSION, "application_version": __version__,
+        "request_sha256": hashlib.sha256(request).hexdigest(), "artifacts": inventory,
+    }
+    with ZipFile(file=destination, mode="w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr(zinfo_or_arcname=manifest_name, data=json.dumps(manifest))
+        for name, path in sorted(artifacts.items()):
+            archive.write(filename=path, arcname=name)
 
 
 def read_response(
@@ -168,48 +190,76 @@ def read_response(
     Raises:
         ResearchError: If the response is corrupt, mismatched, oversized or unsafe.
     """
-    expected = hashlib.sha256(request_bytes(request=request)).hexdigest()
+    return read_checked_archive(
+        config=config, request=request_bytes(request=request), manifest_name=MANIFEST_NAME,
+        source=source, output=output,
+    )
+
+
+def read_checked_archive(
+    *, config: ResearchConfig, request: bytes, manifest_name: str, source: Path, output: Path,
+    expected_artifacts: frozenset[str] | None = None,
+) -> dict[str, Path]:
+    """Verify a bounded result archive before copying any of its files.
+
+    Args:
+        config: Receiving profile and transfer budget.
+        request: Exact encoded request.
+        manifest_name: Expected protocol-specific inventory filename.
+        source: Received ZIP file.
+        output: Owned destination directory.
+        expected_artifacts: Exact result keys when the workflow has a fixed output set.
+
+    Returns:
+        Verified artifact paths inside the destination.
+    """
+    expected = hashlib.sha256(request).hexdigest()
     if source.stat().st_size > config.transfer_max_bytes:
-        raise ResearchError("DeepClust transfer exceeds transfer_max_bytes")
+        raise ResearchError("Research response exceeds transfer_max_bytes")
     try:
         with ZipFile(file=source) as archive:
             infos = archive.infolist()
             names = [item.filename for item in infos]
             if len(names) != len(set(names)) or not 1 <= len(names) <= 5_000:
-                raise ResearchError("DeepClust response has duplicate or excessive members")
+                raise ResearchError("Research response has duplicate or excessive members")
             if any(not SAFE_ARTIFACT.fullmatch(name) for name in names):
-                raise ResearchError("DeepClust response contains an unsafe artifact name")
+                raise ResearchError("Research response contains an unsafe artifact name")
             expanded = sum(item.file_size for item in infos)
             if expanded > config.transfer_max_bytes + MAX_REQUEST_BYTES:
-                raise ResearchError("Expanded DeepClust response exceeds transfer_max_bytes")
-            metadata = archive.getinfo(name=MANIFEST_NAME)
+                raise ResearchError("Expanded research response exceeds transfer_max_bytes")
+            metadata = archive.getinfo(name=manifest_name)
             if metadata.file_size > MAX_REQUEST_BYTES:
-                raise ResearchError("DeepClust response metadata exceeds 2 MB")
-            manifest = json.loads(archive.read(name=MANIFEST_NAME))
+                raise ResearchError("Research response metadata exceeds 2 MB")
+            if expanded - metadata.file_size > config.transfer_max_bytes:
+                raise ResearchError("Expanded research response exceeds transfer_max_bytes")
+            manifest = json.loads(archive.read(name=manifest_name))
             if manifest["protocol_version"] != PROTOCOL_VERSION:
-                raise ResearchError("Remote DeepClust exchange protocol version differs")
+                raise ResearchError("Remote research exchange protocol version differs")
             if manifest["request_sha256"] != expected:
-                raise ResearchError("DeepClust response belongs to a different request")
+                raise ResearchError("Research response belongs to a different request")
             records = manifest["artifacts"]
             if not isinstance(records, list) or any(not isinstance(row, dict) for row in records):
-                raise ResearchError("DeepClust response artifact inventory is invalid")
-            if len(records) != len(names) - 1 or {row["name"] for row in records} != (
-                set(names) - {MANIFEST_NAME}
+                raise ResearchError("Research response artifact inventory is invalid")
+            artifact_names = set(names) - {manifest_name}
+            if len(records) != len(artifact_names) or {row["name"] for row in records} != (
+                artifact_names
             ):
-                raise ResearchError("DeepClust response inventory does not match its files")
+                raise ResearchError("Research response inventory does not match its files")
+            if expected_artifacts is not None and artifact_names != expected_artifacts:
+                raise ResearchError("Research response is missing or contains unexpected results")
             output.mkdir(parents=True, exist_ok=True)
             for row in records:
                 info = archive.getinfo(name=row["name"])
                 if info.file_size != row["size_bytes"]:
-                    raise ResearchError("DeepClust response artifact size differs")
+                    raise ResearchError("Research response artifact size differs")
                 if (output / row["name"]).exists():
-                    raise ResearchError("Refusing to replace an existing DeepClust result")
+                    raise ResearchError("Refusing to replace an existing research result")
                 digest = hashlib.sha256()
                 with archive.open(name=row["name"]) as handle:
                     while block := handle.read(1024 * 1024):
                         digest.update(block)
                 if digest.hexdigest() != row["sha256"]:
-                    raise ResearchError("DeepClust response artifact checksum differs")
+                    raise ResearchError("Research response artifact checksum differs")
             result = {}
             for row in records:
                 path = output / row["name"]
@@ -219,7 +269,7 @@ def read_response(
                 result[path.name] = path
             return result
     except (BadZipFile, KeyError, TypeError, ValueError, OSError) as exc:
-        raise ResearchError(f"Could not validate DeepClust response: {exc}") from exc
+        raise ResearchError(f"Could not validate research response: {exc}") from exc
 
 
 def exchange(

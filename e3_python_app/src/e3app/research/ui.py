@@ -63,6 +63,7 @@ def navigate_research(
     job_id: str = "",
     input_route: str = "",
     prepared_fasta: tuple[str, str] | None = None,
+    subcluster_id: str = "",
 ) -> None:
     """Move between workflow pages using a widget callback before the next render.
 
@@ -75,6 +76,7 @@ def navigate_research(
         job_id: Optional job to focus in Jobs.
         input_route: Optional completed-job or upload input route.
         prepared_fasta: Optional labelled unaligned sequences to reuse at the destination.
+        subcluster_id: Optional exact audited subcluster to select for alignment.
 
     Raises:
         ResearchError: If a destination or paired source is invalid.
@@ -102,6 +104,10 @@ def navigate_research(
         raise ResearchError("This workbench page does not accept a protein FASTA")
     if prepared_fasta is not None and (source_job or input_route):
         raise ResearchError("Choose one protein input for the destination")
+    if subcluster_id and not (
+        section == "Family analysis" and analysis_task == "Alignment and tree" and source_job
+    ):
+        raise ResearchError("An audited subcluster requires its source job and alignment task")
     stage = st.session_state.get("e3_navigation_stage")
     page = st.session_state.get(f"e3_navigation_page_{stage}")
     if stage in {CANDIDATE_STAGE, DEEPCLUST_STAGE} and page in {
@@ -121,6 +127,8 @@ def navigate_research(
         if source_job:
             route = "Completed job"
             st.session_state[f"{input_key}_source"] = (source_job, source_artifact)
+            if section == "Family analysis" and analysis_task == "Alignment and tree":
+                st.session_state[f"align_subcluster_{source_job}"] = subcluster_id
         elif prepared_fasta is not None:
             route = "Prepared FASTA"
             st.session_state["research_prepared_fasta"] = prepared_fasta
@@ -542,6 +550,7 @@ def queue_action(
     fasta: str | None = None,
     interproscan_email: str | None = None,
     run_on_app_host: bool = False,
+    external_vm: bool = False,
 ) -> None:
     """Save a request, start its worker if selected and show its job ID.
 
@@ -551,17 +560,23 @@ def queue_action(
         parameters: Scientific controls from the visible form.
         fasta: Optional uploaded protein FASTA.
         interproscan_email: Optional contact for the remote annotation job.
-        run_on_app_host: Start a one-shot worker for the consented hosted request.
+        run_on_app_host: Start a one-shot worker from this app.
+        external_vm: Use SSH to run the selected subclustering request on the configured VM.
     """
     if run_on_app_host:
-        from .local_worker import submit_local_provider_job
+        from .local_worker import submit_local_provider_job, submit_local_subcluster
 
-        job_id = submit_local_provider_job(
-            config=config, operation=operation, parameters=parameters, fasta=fasta,
-            interproscan_email=interproscan_email,
-        )
+        if operation == "subcluster":
+            job_id = submit_local_subcluster(
+                config=config, parameters=parameters, fasta=fasta, external_vm=external_vm,
+            )
+        else:
+            job_id = submit_local_provider_job(
+                config=config, operation=operation, parameters=parameters, fasta=fasta,
+                interproscan_email=interproscan_email,
+            )
         st.success(f"Started a background worker for job {job_id}.")
-        st.info("Open Jobs and refresh its status to follow the external request.")
+        st.info("Open Jobs and refresh its status to follow the request.")
     else:
         job_id = submit_job(
             workspace=config.workspace, operation=operation, parameters=parameters, fasta=fasta,
@@ -1044,7 +1059,7 @@ def render_analysis(
         key="research_analysis_task",
         help="Choose Stricter subclusters for a broad family, Alignment and tree to compare "
         "a selected family, or Representative homology search for similarity evidence "
-        "against installed global centroids. Each is a separate queued job.",
+        "against installed global centroids. Each runs as a separate job.",
     )
     source, fasta = render_input(
         config=config, key="analyse",
@@ -1072,12 +1087,15 @@ def render_analysis(
                     for row in table.to_dict(orient="records")
                 }
             )
+            cluster_key = f"align_subcluster_{source['source_job']}"
+            if st.session_state.get(cluster_key) not in labels:
+                st.session_state.pop(cluster_key, None)
             subcluster_choice = st.selectbox(
                 "Subcluster to align",
                 options=list(labels),
                 format_func=labels.__getitem__,
                 help=FIELD_HELP["subcluster"],
-                key=f"align_subcluster_{source['source_job']}",
+                key=cluster_key,
             )
             st.caption(
                 "Shows up to 10,000 audited subclusters. Full membership and summaries "
@@ -1088,7 +1106,34 @@ def render_analysis(
                 "This source is a whole family. To choose an audited subcluster, select "
                 "the FASTA from a completed subclustering job."
             )
-    st.markdown("#### Review settings and queue the analysis")
+    execution = "Research worker"
+    execution_issue = ""
+    if task == "Stricter subclusters":
+        execution = st.radio(
+            "Run subclustering on", ("App host", "External VM (SSH)", "Research worker"),
+            key="subcluster_execution", horizontal=True,
+            help="The app host runs DIAMOND here. The external VM receives the selected FASTA "
+            "over SSH. A research worker picks up the job from this shared workspace.",
+        )
+        if execution == "App host":
+            diamond = shutil.which(config.diamond)
+            if diamond:
+                st.caption(f"DIAMOND executable · {diamond}")
+            else:
+                execution_issue = f"DIAMOND is unavailable on the app host ({config.diamond})."
+        elif execution == "External VM (SSH)":
+            if not config.remote_host or not config.remote_config:
+                execution_issue = (
+                    "Set remote_host and remote_config in the app's research profile "
+                    "to use the external VM."
+                )
+            elif not shutil.which("ssh"):
+                execution_issue = "SSH is unavailable on the machine running the app."
+            else:
+                st.caption(f"The selected FASTA will be sent to {config.remote_host} over SSH.")
+        if execution_issue:
+            st.warning(execution_issue)
+    st.markdown("#### Review analysis settings")
     with st.form("research_analysis"):
         if task == "Stricter subclusters":
             operation = "subcluster"
@@ -1115,11 +1160,9 @@ def render_analysis(
                 help=FIELD_HELP["evalue"],
             )
             st.caption(
-                (
-                    "DIAMOND DeepClust assignments are audited by exact realignment. Failing "
-                    "members become singletons. Thresholds apply to assigned centroids; they "
-                    "do not guarantee all-pairs similarity."
-                )
+                "DIAMOND 2.2.1 or newer builds a database from the selected FASTA, clusters "
+                "it and realigns each member to its assigned centroid. Failed assignments "
+                "become singletons."
             )
         elif task == "Alignment and tree":
             operation = "align"
@@ -1167,26 +1210,36 @@ def render_analysis(
                 "only your chosen representative. Hits are homology evidence, not proof "
                 "of exact cluster membership. Complete hit tables are available in Jobs."
             )
-        queued = st.form_submit_button(
+        submitted = st.form_submit_button(
             {
-                "Stricter subclusters": "Queue stricter subclustering",
+                "Stricter subclusters": {
+                    "App host": "Run subclustering here",
+                    "External VM (SSH)": "Run subclustering on external VM",
+                    "Research worker": "Queue stricter subclustering",
+                }[execution],
                 "Alignment and tree": "Queue alignment and tree",
                 "Representative homology search": "Queue representative search",
             }[task],
-            disabled=not source and not fasta,
-            help="Save this input and these settings as a job. The worker runs it; "
-            "follow progress and errors in Jobs.",
+            disabled=bool(execution_issue) or (not source and not fasta),
+            help="Save this input and these settings. Follow progress and errors in Jobs.",
         )
         prepare = operation == "align" and st.form_submit_button(
             "Prepare files for another machine", disabled=not fasta,
             help="Use uploaded, pasted or prepared FASTA for a self-contained job ZIP.",
         )
-    if queued:
-        queue_action(config=config, operation=operation, parameters=parameters, fasta=fasta)
+    if submitted:
+        queue_action(
+            config=config, operation=operation, parameters=parameters, fasta=fasta,
+            run_on_app_host=execution != "Research worker",
+            external_vm=execution == "External VM (SSH)",
+        )
     if operation == "align":
         render_portable_job(operation=operation, parameters=parameters, fasta=fasta,
                             prepare=prepare)
-    completed = completed_manifests(config=config, operation="subcluster")
+    completed = (
+        completed_manifests(config=config, operation="subcluster")
+        if task == "Stricter subclusters" else {}
+    )
     if completed:
         st.markdown("#### Completed subclustering results")
         labels = {key: job_label(job_id=key, record=value) for key, value in completed.items()}
@@ -1197,28 +1250,86 @@ def render_analysis(
             help="Review this result, then use the button below to carry its source "
             "FASTA into the alignment task. Subcluster IDs are specific to this job.",
         )
-        frame = read_table(
-            path=artifact_path(
-                workspace=config.workspace, job_id=selected, artifact="subclusters.tsv"
-            )
+        render_subcluster_result(config=config, job_id=selected, manifest=completed[selected])
+
+
+def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: dict) -> None:
+    """Show an audited network, size summary and exact alignment handoff.
+
+    Args:
+        config: Workspace containing the completed result.
+        job_id: Owning subclustering job.
+        manifest: Verified result inventory from that job.
+    """
+    from .subcluster_network import (
+        OVERVIEW_GROUPS,
+        load_network_members,
+        network_figure,
+        network_graphml,
+    )
+
+    frame = read_table(path=artifact_path(
+        workspace=config.workspace, job_id=job_id, artifact="subclusters.tsv",
+    ))
+    if frame.empty:
+        st.info("This job recorded no subclusters.")
+        return
+    frame["member_count"] = pd.to_numeric(frame["member_count"])
+    st.markdown("#### Subcluster network")
+    labels = {"": "Largest subclusters"}
+    labels.update({
+        row.subcluster_id: f"{row.representative_id} · {row.member_count:,} proteins"
+        for row in frame.itertuples(index=False)
+    })
+    group = st.selectbox(
+        "Subcluster to inspect", options=list(labels), format_func=labels.__getitem__,
+        key=f"subcluster_network_group_{job_id}",
+        help="The overview shows up to 12 subclusters. Choose one centroid to inspect its group.",
+    )
+    groups = [group] if group else frame["subcluster_id"].head(OVERVIEW_GROUPS).tolist()
+    artifacts = manifest["artifacts"]
+    membership = "membership.parquet" if "membership.parquet" in artifacts else "membership.tsv"
+    try:
+        members = load_network_members(
+            path=artifact_path(workspace=config.workspace, job_id=job_id, artifact=membership),
+            subclusters=groups,
         )
-        st.dataframe(frame, hide_index=True)
-        if not frame.empty:
-            plot = frame.head(50).copy()
-            plot["member_count"] = pd.to_numeric(plot["member_count"])
+    except ResearchError as exc:
+        st.warning(f"The network is unavailable for this result. {exc}")
+    else:
+        if not members.empty:
+            total = members.drop_duplicates("subcluster_id")["cluster_size"].sum()
+            st.caption(
+                f"Showing {len(members):,} of {total:,} proteins in this view. "
+                "Links show passing exact centroid alignments. Isolated nodes are "
+                "singletons. Hover over a protein for its audit evidence."
+            )
             st.plotly_chart(
-                px.bar(plot, x="subcluster_id", y="member_count", log_y=True),
-                key="subcluster_sizes",
+                network_figure(members=members), key=f"subcluster_network_{job_id}",
+                config={"scrollZoom": True, "displaylogo": False},
             )
-        if "sequences.fasta" in completed[selected]["artifacts"]:
-            render_next_action(
-                label="Align a family or subcluster from this job",
-                key="subclusters_to_alignment",
-                section="Family analysis",
-                analysis_task="Alignment and tree",
-                source_job=selected,
-                source_artifact="sequences.fasta",
+            st.download_button(
+                "Download displayed network (GraphML)", data=network_graphml(members=members),
+                file_name=f"subclusters_{job_id[:12]}_{group or 'overview'}.graphml",
+                mime="application/graphml+xml", key=f"subcluster_graphml_{job_id}",
+                on_click="ignore",
             )
+            with st.expander("Displayed proteins and audit evidence"):
+                st.dataframe(members, hide_index=True)
+    if "sequences.fasta" in artifacts:
+        render_next_action(
+            label=("Set up alignment for this subcluster" if group
+                   else "Align a family or subcluster from this job"),
+            key="subclusters_to_alignment", section="Family analysis",
+            analysis_task="Alignment and tree", source_job=job_id,
+            source_artifact="sequences.fasta", subcluster_id=group,
+        )
+    with st.expander("Subcluster sizes and audit summary"):
+        st.dataframe(frame, hide_index=True)
+        st.plotly_chart(
+            px.bar(frame.head(50), x="subcluster_id", y="member_count", log_y=True),
+            key=f"subcluster_sizes_{job_id}",
+        )
 
 
 def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> None:
@@ -2095,7 +2206,17 @@ def render_jobs(*, config: ResearchConfig) -> None:
         cancel_job(workspace=config.workspace, job_id=selected)
         st.rerun()
     if job["status"] == "QUEUED":
-        if job["operation"] in {"annotate", "predict"} and queued_external_provider_job(
+        if job["operation"] == "subcluster":
+            from .local_worker import start_queued_subcluster
+
+            if st.button(
+                "Start this subclustering job", key=f"start_subcluster_{selected}",
+                help="Run the saved job. Earlier jobs use DIAMOND on the app host.",
+                type="primary",
+            ):
+                start_queued_subcluster(config=config, job_id=selected)
+                st.success("Started a worker for this saved request. Refresh for updates.")
+        elif job["operation"] in {"annotate", "predict"} and queued_external_provider_job(
             workspace=config.workspace, job_id=selected,
         ):
             from .local_worker import start_queued_provider_job
@@ -2136,7 +2257,9 @@ def render_jobs(*, config: ResearchConfig) -> None:
                         dict(zip(result["fasta_artifact"], result["cluster_id"], strict=True))
                     )
         operation = job["operation"]
-        if operation in {"retrieve", "deepclust_retrieve", "import_cluster", "subcluster"}:
+        if operation == "subcluster":
+            render_subcluster_result(config=config, job_id=selected, manifest=manifest)
+        elif operation in {"retrieve", "deepclust_retrieve", "import_cluster"}:
             fastas = [
                 name
                 for name in manifest["artifacts"]
@@ -2155,11 +2278,7 @@ def render_jobs(*, config: ResearchConfig) -> None:
                     label="Analyse this family",
                     key="job_to_analysis",
                     section="Family analysis",
-                    analysis_task=(
-                        "Alignment and tree"
-                        if operation == "subcluster"
-                        else "Stricter subclusters"
-                    ),
+                    analysis_task="Stricter subclusters",
                     source_job=selected,
                     source_artifact=fasta_name,
                 )
@@ -2209,6 +2328,9 @@ def render_jobs(*, config: ResearchConfig) -> None:
             "local_worker.log",
             "predictions.tsv",
             "interpro_service_job.json",
+            "subcluster_ssh.log",
+            "vm_worker.log",
+            "vm_commands.jsonl",
             "commands.jsonl",
         ):
             path = directory / name

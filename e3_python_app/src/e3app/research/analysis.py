@@ -11,6 +11,7 @@ import logging
 import math
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import signal
@@ -317,6 +318,20 @@ def subcluster(
     evalue = bounded_number(
         value=parameters.get("evalue", 1e-10), label="E-value", minimum=1e-300, maximum=1
     )
+    base = [config.diamond]
+    version_path = output / "diamond_version.txt"
+    run_command(
+        arguments=[*base, "version"], output=output, config=config, stdout=version_path,
+    )
+    version_text = version_path.read_text(encoding="utf-8").strip()
+    version = re.search(r"(?im)^\s*(?:diamond(?:\s+version)?\s+)?(\d+)\.(\d+)\.(\d+)\b",
+                        version_text)
+    if version is None or tuple(map(int, version.groups())) < (2, 2, 1):
+        detected = version_text.splitlines()[0] if version_text else "no version reported"
+        raise ResearchError(
+            "Stricter subclustering requires DIAMOND 2.2.1 or newer for exact clustering "
+            f"identity. {config.diamond} reported {detected}."
+        )
     sequences = output / "sequences.fasta"
     connection, count = index_fasta(
         source=source, destination=output / "input.sqlite", maximum=config.max_sequences
@@ -332,33 +347,21 @@ def subcluster(
                     identifiers.write(identifier + "\n")
     finally:
         connection.close()
-    base = [config.diamond]
-    run_command(
-        arguments=[*base, "version"],
-        output=output,
-        config=config,
-        stdout=output / "diamond_version.txt",
-    )
-    run_command(
-        arguments=[
-            *base,
-            "makedb",
-            "--in",
-            str(sequences),
-            "--db",
-            str(output / "proteins"),
-            "--threads",
-            str(config.threads),
-        ],
-        output=output,
-        config=config,
-    )
     temporary_root = Path(os.environ.get("TMPDIR", config.workspace / "temporary"))
     temporary_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=temporary_root, prefix="protein-subcluster-") as temporary:
+        database = Path(temporary) / "proteins.dmnd"
+        run_command(
+            arguments=[
+                *base, "makedb", "--in", str(sequences), "--db", str(database.with_suffix("")),
+                "--threads", str(config.threads),
+            ],
+            output=output,
+            config=config,
+        )
         common = [
             "--db",
-            str(output / "proteins.dmnd"),
+            str(database),
             "--threads",
             str(config.threads),
             "--memory-limit",
