@@ -218,6 +218,20 @@ def test_align_published_hog_directly(resource_db, tmp_path, monkeypatch) -> Non
     assert app.selectbox(key="msa_hog_selector").value == "N0.HOG0001"
     assert len(list_jobs(workspace=workspace)) == 1
 
+    app.radio(key="msa_hog_mode_N0.HOG0001").set_value("Choose members").run()
+    member_table = app.session_state["msa_hog_members"][1]
+    chosen = member_table.loc[member_table["identifier"].eq("Q9SA03"), "member_key"].item()
+    app.multiselect(key="msa_hog_choice_N0.HOG0001").select(chosen).run()
+    app.button(key="selected_hog_members_annotate").click().run()
+    assert app.radio(key="research_section").value == "Annotations"
+    assert app.radio(key="annotate_route").value == "Prepared FASTA"
+    label, prepared = app.session_state["research_prepared_fasta"]
+    assert "N0.HOG0001" in label
+    assert prepared.startswith(">Q9SA03|") and prepared.count(">") == 1
+    assert prepared.splitlines()[1] == "MSTNPKPN"
+    assert len(list_jobs(workspace=workspace)) == 1
+    assert not app.exception and not app.error
+
 
 def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, monkeypatch):
     """Start at the HOG selector and open the resulting alignment from a one-shot worker."""
@@ -273,4 +287,45 @@ def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, mo
     assert app.radio(key="alignment_view_source").value == "Completed alignment job"
     assert app.selectbox(key="research_alignment_job").value == job_id
     assert "MAAAN---" in app.get("iframe")[0].proto.srcdoc
+
+    next(button for button in app.button if button.label == "Calculate heatmap").click().run()
+    assert "MAAAN---" in app.get("iframe")[0].proto.srcdoc
+    assert len(app.get("plotly_chart")) == 1
+    selection, comparison = app.session_state["alignment_heatmap_result"]
+    assert selection[0] == job_id
+    assert comparison.similarity.iat[0, 1] == 0.2
+    assert comparison.denominators.iat[0, 1] == 5
+    assert {"Download identity matrix (TSV)", "Download comparable residue counts (TSV)"} <= {
+        button.label for button in app.get("download_button")
+    }
+    first_protein = selection[1][0]
+    proteins_key = f"identity_heatmap_proteins_{job_id}"
+    app.multiselect(key=proteins_key).set_value([first_protein])
+    next(button for button in app.button if button.label == "Calculate heatmap").click().run()
+    updated_selection, updated = app.session_state["alignment_heatmap_result"]
+    assert updated_selection == (job_id, (first_protein,))
+    assert updated.similarity.shape == (1, 1)
+    app.toggle(key="show_alignment_heatmap").set_value(False).run()
+    assert app.get("iframe") and not app.get("plotly_chart")
+    app.toggle(key="show_alignment_heatmap").set_value(True).run()
+    assert app.multiselect(key=proteins_key).value == [first_protein]
+    assert len(app.get("plotly_chart")) == 1
+
+    for action, section, input_key in (
+        ("subcluster", "Family analysis", "analyse"),
+        ("annotate", "Annotations", "annotate"),
+        ("model", "Models", "fold"),
+    ):
+        app.button(key=f"alignment_members_{job_id}_{action}").click().run()
+        assert app.radio(key="research_section").value == section
+        assert app.radio(key=f"{input_key}_route").value == "Completed job"
+        assert app.selectbox(key=f"{input_key}_source").value == (job_id, "sequences.fasta")
+        if action == "subcluster":
+            assert app.radio(key="research_analysis_task").value == "Stricter subclusters"
+        if action == "model":
+            assert app.radio(key="esmfold_view_route").value == "Predict with ESMFold"
+        assert not app.exception and not app.error
+        app.radio(key="research_section").set_value("Alignments and trees").run()
+
+    assert len(list_jobs(workspace=workspace)) == 1
     assert not app.exception and not app.error

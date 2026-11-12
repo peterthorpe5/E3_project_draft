@@ -52,6 +52,7 @@ def navigate_research(
     source_artifact: str = "",
     job_id: str = "",
     input_route: str = "",
+    prepared_fasta: tuple[str, str] | None = None,
 ) -> None:
     """Move between workflow pages using a widget callback before the next render.
 
@@ -63,6 +64,7 @@ def navigate_research(
         source_artifact: Optional unaligned source FASTA.
         job_id: Optional job to focus in Jobs.
         input_route: Optional completed-job or upload input route.
+        prepared_fasta: Optional labelled unaligned sequences to reuse at the destination.
 
     Raises:
         ResearchError: If a destination or paired source is invalid.
@@ -85,6 +87,11 @@ def navigate_research(
         raise ResearchError("Unknown family-analysis task")
     if input_route and input_route not in {"Completed job", "Upload FASTA"}:
         raise ResearchError("Unknown protein input route")
+    input_keys = {"Family analysis": "analyse", "Annotations": "annotate", "Models": "fold"}
+    if (source_job or input_route or prepared_fasta is not None) and section not in input_keys:
+        raise ResearchError("This workbench page does not accept a protein FASTA")
+    if prepared_fasta is not None and (source_job or input_route):
+        raise ResearchError("Choose one protein input for the destination")
     stage = st.session_state.get("e3_navigation_stage")
     page = st.session_state.get(f"e3_navigation_page_{stage}")
     if stage in {CANDIDATE_STAGE, DEEPCLUST_STAGE} and page in {
@@ -98,11 +105,18 @@ def navigate_research(
         st.session_state["research_discovery_mode"] = discovery_mode
     if analysis_task:
         st.session_state["research_analysis_task"] = analysis_task
-    if source_job:
-        st.session_state["analyse_route"] = "Completed job"
-        st.session_state["analyse_source"] = (source_job, source_artifact)
-    elif input_route:
-        st.session_state["analyse_route"] = input_route
+    if source_job or input_route or prepared_fasta is not None:
+        input_key = input_keys[section]
+        route = input_route
+        if source_job:
+            route = "Completed job"
+            st.session_state[f"{input_key}_source"] = (source_job, source_artifact)
+        elif prepared_fasta is not None:
+            route = "Prepared FASTA"
+            st.session_state["research_prepared_fasta"] = prepared_fasta
+        st.session_state[f"{input_key}_route"] = route
+        if section == "Models":
+            st.session_state["esmfold_view_route"] = "Predict with ESMFold"
     if job_id:
         state_key = {
             "Alignments and trees": "research_alignment_job",
@@ -113,7 +127,9 @@ def navigate_research(
         st.session_state[state_key] = job_id
 
 
-def render_next_action(*, label: str, key: str, primary: bool = False, **destination: str) -> None:
+def render_next_action(
+    *, label: str, key: str, primary: bool = False, **destination: str | tuple[str, str],
+) -> None:
     """Offer an explicit next step without submitting another analysis.
 
     Args:
@@ -130,6 +146,37 @@ def render_next_action(*, label: str, key: str, primary: bool = False, **destina
         help="Open the next page and review its inputs. This does not queue a job.",
         type="primary" if primary else "secondary",
     )
+
+
+def render_protein_analysis_links(
+    *, key: str, source_job: str = "", source_artifact: str = "",
+    prepared_fasta: tuple[str, str] | None = None,
+) -> None:
+    """Offer the same unaligned proteins as input to other workbench analyses.
+
+    Args:
+        key: Widget namespace for the current protein selection.
+        source_job: Completed job publishing the unaligned proteins.
+        source_artifact: The exact FASTA artifact in that job.
+        prepared_fasta: Label and unaligned FASTA for a fresh selection.
+    """
+    source = (
+        {"prepared_fasta": prepared_fasta} if prepared_fasta is not None
+        else {"source_job": source_job, "source_artifact": source_artifact}
+    )
+    for column, (label, section, suffix, task) in zip(
+        st.columns(3),
+        (
+            ("Subcluster proteins", "Family analysis", "subcluster", "Stricter subclusters"),
+            ("Annotate proteins", "Annotations", "annotate", ""),
+            ("Predict models", "Models", "model", ""),
+        ),
+        strict=True,
+    ):
+        with column:
+            render_next_action(
+                label=label, key=f"{key}_{suffix}", section=section, analysis_task=task, **source,
+            )
 
 
 def render_page_guidance(*, section: str) -> None:
@@ -1169,6 +1216,11 @@ def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> N
         return
     hog = st.session_state["msa_hog"]
     ids = sorted(line[1:] for line in fasta.splitlines() if line.startswith(">"))
+    st.caption("Use the selected HOG proteins in another analysis.")
+    render_protein_analysis_links(
+        key="selected_hog_members",
+        prepared_fasta=(f"{hog} · {len(ids):,} selected proteins", fasta),
+    )
     parameters = {"e3_hog_id": hog}
     sample_size = len(ids)
     fasttree_ready = bool(shutil.which(config.fasttree))
@@ -1344,6 +1396,12 @@ def render_alignments(
     )
     with st.expander("Technical alignment summary (JSON)"):
         st.json(summary)
+    artifacts = completed[job_id]["artifacts"]
+    if "sequences.fasta" in artifacts:
+        st.caption("Use the proteins from this completed alignment in another analysis.")
+        render_protein_analysis_links(
+            key=f"alignment_members_{job_id}", source_job=job_id, source_artifact="sequences.fasta",
+        )
     view = st.radio(
         "Alignment viewer",
         ["JBrowse MSA", "Alignment Viewer 2", "Auspice tree", "Statistics"],
@@ -1388,7 +1446,6 @@ def render_alignments(
             hide_index=True,
         )
         return
-    artifacts = completed[job_id]["artifacts"]
     if view == "Auspice tree":
         if "auspice.json" not in artifacts:
             st.info(
@@ -1422,10 +1479,20 @@ def render_alignments(
         else ""
     )
     if view == "JBrowse MSA":
-        from .expansion_ui import render_jbrowse, species_view
+        from .expansion_ui import render_alignment_heatmap, render_jbrowse, species_view
 
-        tree = species_view(config=config, job_id=job_id, records=records, default_tree=tree)
-        render_jbrowse(records=ordered, tree=tree, stem=f"{job_id}_jbrowse")
+        show_heatmap = st.toggle(
+            "Show identity heatmap beside JBrowse", value=True, key="show_alignment_heatmap",
+        )
+        viewer_column, heatmap_column = (
+            st.columns((3, 2), gap="medium") if show_heatmap else (st.container(), None)
+        )
+        with viewer_column:
+            tree = species_view(config=config, job_id=job_id, records=records, default_tree=tree)
+            render_jbrowse(records=ordered, tree=tree, stem=f"{job_id}_jbrowse")
+        if heatmap_column is not None:
+            with heatmap_column:
+                render_alignment_heatmap(records=ordered, job_id=job_id)
         return
     msa = "".join(f">{name}\n{sequence}\n" for name, sequence in ordered.items())
     document = viewer_document(

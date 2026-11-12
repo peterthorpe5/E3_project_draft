@@ -4,6 +4,13 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.4
+
+- Calculate a pairwise identity heatmap beside a completed JBrowse alignment.
+  Download the identity fractions and comparable-residue counts as TSV files.
+- Carry the selected HOG proteins or a completed alignment's exact unaligned
+  input into subclustering, annotation or model prediction.
+
 ## v0.23.3
 
 - Start a new alignment from a searchable HOG in JBrowse MSA. Download the

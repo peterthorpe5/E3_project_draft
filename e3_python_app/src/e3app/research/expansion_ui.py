@@ -24,6 +24,7 @@ from e3app.pocket_review import prepare_pocket_review, selected_group_alignment_
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
+from .comparisons import MAX_COMPARISON_CELLS, MAX_COMPARISON_ROWS, alignment_comparison
 from .deepclust_import import PARQUET_UPLOAD_BYTES, extract_family, open_results, results_preview
 from .feature_catalogue import feature_contexts, published_features, recorded_feature_payload
 from .jobs import artifact_path
@@ -441,6 +442,101 @@ def _venn_figure(*, regions: dict[str, int], labels: list[str]) -> go.Figure:
     return figure
 
 
+def _comparison_heatmap_figure(
+    *, similarity: pd.DataFrame, denominators: pd.DataFrame, identity: bool = False,
+) -> go.Figure:
+    """Plot a labelled comparison matrix with its exact per-pair denominator.
+
+    Args:
+        similarity: Similarity fractions in display order.
+        denominators: Matching counts in the same order.
+        identity: Format sequence identity as percentages.
+
+    Returns:
+        A heatmap whose undefined comparisons remain blank.
+    """
+    metric = "Identity" if identity else "Similarity"
+    count_label = "Comparable residues" if identity else "Denominator"
+    value_format = ".1%" if identity else ".3f"
+    colourbar = {"title": metric, "tickformat": ".0%"} if identity else None
+    return go.Figure(data=go.Heatmap(
+        z=similarity.to_numpy(), x=list(similarity.columns), y=list(similarity.index),
+        customdata=denominators.to_numpy(), zmin=0, zmax=1, colorscale="Viridis",
+        colorbar=colourbar, hoverongaps=False,
+        hovertemplate=(
+            f"%{{y}} / %{{x}}<br>{metric}: %{{z:{value_format}}}"
+            f"<br>{count_label}: %{{customdata}}<extra></extra>"
+        ),
+    ))
+
+
+def render_alignment_heatmap(*, records: dict[str, str], job_id: str) -> None:
+    """Calculate and download pairwise identity beside a completed alignment.
+
+    Args:
+        records: Validated aligned protein records in viewer order.
+        job_id: Completed alignment identifier for widget state and downloads.
+    """
+    identifiers = list(records)
+    alignment_length = len(records[identifiers[0]])
+    limit = min(MAX_COMPARISON_ROWS, MAX_COMPARISON_CELLS // alignment_length)
+    st.markdown("#### Identity heatmap")
+    if limit < 1:
+        st.info("This alignment exceeds the comparison cell limit.")
+        return
+    cached = st.session_state.get("alignment_heatmap_result")
+    default_selection = (
+        list(cached[0][1]) if cached and cached[0][0] == job_id else identifiers[:min(200, limit)]
+    )
+    with st.form(key=f"identity_heatmap_{job_id}"):
+        with st.expander("Choose proteins for the heatmap"):
+            selected = st.multiselect(
+                "Aligned proteins to compare",
+                options=identifiers,
+                default=default_selection,
+                max_selections=limit,
+                key=f"identity_heatmap_proteins_{job_id}",
+            )
+        calculate = st.form_submit_button("Calculate heatmap")
+    st.caption(f"{len(selected):,} of {len(identifiers):,} aligned proteins selected.")
+    selection = (job_id, tuple(selected))
+    if calculate:
+        if not selected:
+            st.info("Select at least one aligned protein.")
+            return
+        selected_records = {identifier: records[identifier] for identifier in selected}
+        with st.spinner("Calculating pairwise identity"):
+            result = alignment_comparison(records=selected_records)
+        cached = (selection, result)
+        st.session_state["alignment_heatmap_result"] = cached
+    if not cached or cached[0] != selection:
+        return
+    result = cached[1]
+    order = list(result.order)
+    similarity = result.similarity.loc[order, order]
+    denominators = result.denominators.loc[order, order]
+    figure = _comparison_heatmap_figure(
+        similarity=similarity, denominators=denominators, identity=True,
+    )
+    figure.update_yaxes(autorange="reversed")
+    st.plotly_chart(figure, key=f"alignment_identity_heatmap_{job_id}")
+    st.caption(
+        "Identity uses positions with canonical residues in both proteins. "
+        "Pairs with no comparable positions appear blank."
+    )
+    if result.linkage_matrix:
+        st.caption("Proteins are ordered by average linkage on 1 − identity.")
+    for label, frame, suffix in (
+        ("Download identity matrix (TSV)", similarity, "identity"),
+        ("Download comparable residue counts (TSV)", denominators, "comparable_residues"),
+    ):
+        st.download_button(
+            label, data=frame.rename_axis(index="identifier").to_csv(sep="\t"),
+            file_name=f"{job_id}_{suffix}.tsv", mime="text/tab-separated-values",
+            key=f"alignment_heatmap_{suffix}_{job_id}",
+        )
+
+
 def _render_comparison(*, config: ResearchConfig, job_id: str) -> None:
     """Render a completed worker comparison with exact denominators and display hierarchy."""
     from .ui import read_table
@@ -459,11 +555,10 @@ def _render_comparison(*, config: ResearchConfig, job_id: str) -> None:
                                           artifact="display_order.tsv"))["identifier"].tolist()
     similarity = similarity.loc[order, order]
     counts = counts.loc[order, order]
-    st.plotly_chart(go.Figure(data=go.Heatmap(
-        z=similarity.to_numpy(), x=order, y=order, customdata=counts.to_numpy(), zmin=0, zmax=1,
-        colorscale="Viridis", hovertemplate="%{y} / %{x}<br>Similarity: %{z:.3f}"
-        "<br>Denominator: %{customdata}<extra></extra>",
-    )), key=f"comparison_heatmap_{job_id}")
+    st.plotly_chart(
+        _comparison_heatmap_figure(similarity=similarity, denominators=counts),
+        key=f"comparison_heatmap_{job_id}",
+    )
     hierarchy = read_table(path=artifact_path(workspace=config.workspace, job_id=job_id,
                                               artifact="hierarchy.tsv"))
     if not hierarchy.empty:

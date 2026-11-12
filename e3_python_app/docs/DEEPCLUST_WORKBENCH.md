@@ -149,6 +149,18 @@ JBrowse MSA plugin supplies the viewer. Open **JBrowse MSA** from either
    download the job files for another machine.
 4. Refresh the alignment status and choose **Open completed alignment**.
    FastTree is optional and requires at least three selected proteins.
+5. In the **JBrowse MSA** viewer, choose **Calculate heatmap** in the panel
+   beside the alignment. The app calculates pairwise identity on its host.
+   The first 200 aligned rows are selected by default when they fit the
+   comparison limits. Adjust the selection and download the identity and
+   comparable-residue count matrices as TSV files.
+
+**Subcluster proteins**, **Annotate proteins** and **Predict models** open
+the corresponding workbench forms with the protein input selected. From
+**Align a HOG**, these buttons use the selected HOG sequences. From a
+completed job, they use the exact unaligned proteins that entered MAFFT,
+including any sampling applied to that job. Review the method settings in the
+destination before starting work.
 
 **Published HOG alignment** opens alignments exported with the plant pocket
 review. **Try an example** opens six synthetic sequences. **Upload alignment

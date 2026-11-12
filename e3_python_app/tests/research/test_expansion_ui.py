@@ -3,9 +3,11 @@
 import json
 from pathlib import Path
 
+import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from e3app.research import ui
+from e3app.research.expansion_ui import _comparison_heatmap_figure
 from e3app.research.jobs import get_job, list_jobs
 from e3app.research.runner import run_next_job
 
@@ -15,6 +17,21 @@ from test_campaign_remote import e3_connection
 def control(*, items, label):
     """Find an explicit visible control without relying on widget position."""
     return next(item for item in items if item.label == label)
+
+
+def test_identity_heatmap_keeps_undefined_pairs_blank() -> None:
+    """Show exact counts with defined identity and preserve missing comparisons."""
+    labels = ["p1", "p2"]
+    similarity = pd.DataFrame([[1.0, float("nan")], [float("nan"), 1.0]],
+                              index=labels, columns=labels)
+    counts = pd.DataFrame([[5, 0], [0, 3]], index=labels, columns=labels)
+    figure = _comparison_heatmap_figure(similarity=similarity, denominators=counts, identity=True)
+    trace = figure.data[0]
+    assert list(trace.x) == list(trace.y) == labels
+    assert pd.isna(trace.z[0, 1])
+    assert trace.customdata[0, 0] == 5 and trace.customdata[0, 1] == 0
+    assert trace.hoverongaps is False
+    assert trace.colorbar.tickformat == ".0%"
 
 
 def campaign_app(*, tmp_path, config, monkeypatch, title='DeepClust workbench'):
