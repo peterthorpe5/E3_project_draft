@@ -7,7 +7,7 @@ import duckdb
 from streamlit.testing.v1 import AppTest
 
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
-from e3app.research.jobs import list_jobs
+from e3app.research.jobs import job_directory, list_jobs
 from test_pocket_review import make_pocket_review
 
 
@@ -146,3 +146,73 @@ def test_prepare_alignment_request_never_queues_a_job(tmp_path, monkeypatch) -> 
     assert not app.exception and not app.error
     assert any(item.label == "Download job files (ZIP)" for item in app.get("download_button"))
     assert list_jobs(workspace=workspace) == []
+
+
+def test_align_published_hog_directly(resource_db, tmp_path, monkeypatch) -> None:
+    """Load exact released members, select a reference and queue the frozen FASTA."""
+    workspace = tmp_path / "worker"
+    profile = tmp_path / "research.toml"
+    profile.write_text(f"workspace={json.dumps(str(workspace))}\n", encoding="utf-8")
+    monkeypatch.setenv("E3_RESEARCH_CONFIG", str(profile))
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    with duckdb.connect(str(resource_db)) as connection:
+        connection.execute(
+            "INSERT INTO hierarchical_membership VALUES "
+            "('N0.HOG0001', 'Zea_mays', 'NO_SEQUENCE')"
+        )
+    path = Path(__file__).parents[2] / "src/e3app/streamlit_app.py"
+    app = AppTest.from_file(str(path), default_timeout=30).run()
+    app.radio(key="e3_navigation_stage").set_value(DEEPCLUST_STAGE).run()
+    page = app.radio(key=f"e3_navigation_page_{DEEPCLUST_STAGE}")
+    page.set_value("DeepClust workbench").run()
+    app.radio(key="research_section").set_value("Family analysis").run()
+    app.radio(key="research_analysis_task").set_value("Alignment and tree").run()
+    app.radio(key="analyse_route").set_value("Published HOG members").run()
+    assert list_jobs(workspace=workspace) == []
+    app.text_input(key="analyse_hog_input").set_value("n0.hog0001")
+    next(button for button in app.button if button.label == "Load HOG members").click().run()
+    assert any("2 of 3 members have usable sequences" in line.value for line in app.caption)
+    downloads = [button.label for button in app.get("download_button")]
+    assert "Download HOG protein FASTA" in downloads
+    mode = app.radio(key="analyse_hog_mode_N0.HOG0001")
+    mode.set_value("Choose members").run()
+    members = app.multiselect(key="analyse_hog_choice_N0.HOG0001")
+    member_table = app.session_state["analyse_hog_members"][1]
+    members.select(member_table.loc[member_table["identifier"].eq("Q9SA03"), "member_key"].item())
+    members.run()
+    assert any("1 protein selected" in line.value for line in app.caption)
+    app.radio(key="analyse_hog_mode_N0.HOG0001").set_value("All available members").run()
+    reference = next(item for item in app.selectbox if item.label == "Reference protein")
+    assert len(reference.options) == 3
+    reference.select(next(option for option in reference.options if option.startswith("Q9SA03|")))
+    prepare = next(
+        button for button in app.button if button.label == "Prepare files for another machine"
+    )
+    prepare.click().run()
+    assert "Download job files (ZIP)" in [button.label for button in app.get("download_button")]
+    assert list_jobs(workspace=workspace) == []
+    queue = next(button for button in app.button if button.label == "Queue alignment and tree")
+    queue.click().run()
+    jobs = list_jobs(workspace=workspace)
+    assert len(jobs) == 1 and jobs[0]["operation"] == "align"
+    directory = job_directory(workspace=workspace, job_id=jobs[0]["job_id"])
+    request = json.loads((directory / "request.json").read_text(encoding="utf-8"))
+    assert request["parameters"]["e3_hog_id"] == "N0.HOG0001"
+    assert request["parameters"]["reference_id"].startswith("Q9SA03|")
+    fasta = (directory / "input.fasta").read_text(encoding="utf-8")
+    assert fasta.count(">") == 2 and "MSTNPKPN" in fasta and "MAAAN" in fasta
+    assert "NO_SEQUENCE" not in fasta
+    app.text_input(key="analyse_hog_input").set_value("N0.HOG9999999")
+    next(button for button in app.button if button.label == "Load HOG members").click().run()
+    assert "Download job files (ZIP)" not in [button.label for button in app.get("download_button")]
+    assert not app.exception and not app.error
+    app.radio(key=f"e3_navigation_page_{DEEPCLUST_STAGE}").set_value("JBrowse MSA").run()
+    app.radio(key="alignment_view_source").set_value("Published HOG alignment").run()
+    app.text_input(key="published_alignment_input").set_value("N0.HOG0001")
+    find = next(button for button in app.button if button.label == "Find published alignment")
+    find.click().run()
+    next(button for button in app.button if button.label == "Align this HOG").click().run()
+    assert app.radio(key="research_section").value == "Family analysis"
+    assert app.radio(key="analyse_route").value == "Published HOG members"
+    assert app.text_input(key="analyse_hog_input").value == "N0.HOG0001"
+    assert len(list_jobs(workspace=workspace)) == 1

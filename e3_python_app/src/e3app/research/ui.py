@@ -358,6 +358,7 @@ def read_table(*, path: Path, maximum_rows: int = 10_000) -> pd.DataFrame:
 
 def render_input(
     *, config: ResearchConfig, key: str, published_fasta: tuple[str, str] | None = None,
+    hog_connection: object | None = None,
 ) -> tuple[dict[str, object], str | None]:
     """Select an uploaded FASTA or a complete checksummed prior-job FASTA artifact.
 
@@ -365,6 +366,7 @@ def render_input(
         config: Current workspace.
         key: Unique UI control namespace.
         published_fasta: Label and exact FASTA for an explicitly selected E3 protein.
+        hog_connection: E3 resource for direct HOG member selection during alignment.
 
     Returns:
         Source parameters and optional uploaded FASTA content.
@@ -382,6 +384,8 @@ def render_input(
         routes.append("Prepared FASTA")
     if published_fasta:
         routes.append("Selected E3 protein")
+    if hog_connection is not None:
+        routes.insert(0, "Published HOG members")
     if st.session_state.get(f"{key}_route") not in routes:
         st.session_state.pop(f"{key}_route", None)
     route = st.radio(
@@ -390,8 +394,12 @@ def render_input(
         horizontal=True,
         key=f"{key}_route",
         help=FIELD_HELP["protein_input"],
-        index=0 if options else 1,
+        index=routes.index("Completed job" if options else "Upload FASTA"),
     )
+    if route == "Published HOG members" and hog_connection is not None:
+        from .expansion_ui import render_hog_alignment_input
+
+        return {}, render_hog_alignment_input(config=config, connection=hog_connection, key=key)
     if route == "Prepared FASTA":
         st.caption(f"Prepared protein source: {prepared[0]}")
         return {}, prepared[1]
@@ -944,12 +952,15 @@ def render_discovery(*, config: ResearchConfig, connection: object | None) -> No
             queue_action(config=config, operation="taxonomy_index", parameters={})
 
 
-def render_analysis(*, config: ResearchConfig, enable_search: bool = True) -> None:
+def render_analysis(
+    *, config: ResearchConfig, enable_search: bool = True, connection: object | None = None,
+) -> None:
     """Render exact subclustering, bounded alignment and representative-search requests.
 
     Args:
         config: Tool and workspace profile.
         enable_search: Expose the optional built-in representative search.
+        connection: Optional E3 resource for direct HOG alignment.
     """
     render_page_guidance(section="Family analysis")
     task = st.radio(
@@ -963,8 +974,14 @@ def render_analysis(*, config: ResearchConfig, enable_search: bool = True) -> No
         "a selected family, or Representative homology search for similarity evidence "
         "against installed global centroids. Each is a separate queued job.",
     )
-    source, fasta = render_input(config=config, key="analyse")
+    source, fasta = render_input(
+        config=config, key="analyse",
+        hog_connection=connection if task == "Alignment and tree" else None,
+    )
     parameters = dict(source)
+    hog_source = st.session_state.get("analyse_route") == "Published HOG members"
+    if hog_source and fasta:
+        parameters["e3_hog_id"] = st.session_state["analyse_hog"]
     subcluster_choice = ""
     if task == "Alignment and tree" and source:
         manifest = completed_manifests(config=config).get(source["source_job"], {})
@@ -1035,10 +1052,18 @@ def render_analysis(*, config: ResearchConfig, enable_search: bool = True) -> No
         elif task == "Alignment and tree":
             operation = "align"
             parameters["subcluster_id"] = subcluster_choice
-            parameters["reference_id"] = st.text_input(
-                "Reference/query sequence ID (blank selects first sorted ID)",
-                help=FIELD_HELP["reference"],
-            )
+            if hog_source and fasta:
+                ids = [line[1:] for line in fasta.splitlines() if line.startswith(">")]
+                parameters["reference_id"] = st.selectbox(
+                    label="Reference protein", options=["", *ids],
+                    format_func=lambda value: value or "First protein by sorted ID",
+                    help=FIELD_HELP["reference"],
+                )
+            elif not hog_source:
+                parameters["reference_id"] = st.text_input(
+                    "Reference/query sequence ID (blank selects first sorted ID)",
+                    help=FIELD_HELP["reference"],
+                )
             parameters["allow_sampling"] = st.checkbox(
                 "Use an explicit deterministic sample including the reference",
                 help=FIELD_HELP["sampling"],
@@ -1870,8 +1895,9 @@ def render_research_workbench(
             "Protein features": lambda: render_features(
                 config=config, connection=connection, dedicated=dedicated,
             ),
-            "Family analysis": lambda: render_analysis(config=config,
-                                                       enable_search=not external_search),
+            "Family analysis": lambda: render_analysis(
+                config=config, enable_search=not external_search, connection=connection,
+            ),
             "Alignments and trees": lambda: render_alignments(
                 config=config, dedicated=dedicated, app_config=app_config,
             ),

@@ -83,7 +83,8 @@ PAGE_GUIDES = {
     "Family analysis": (
         "Step 2 · Compare the sequences in your family",
         "Split a broad family into more similar subclusters, or align an existing family directly.",
-        "1. Choose a task and an unaligned protein FASTA from a completed job or an upload.\n"
+        "1. Choose a task and protein input. For a new E3 alignment, select Published HOG "
+        "members and enter the exact HOG ID. You can also use FASTA or a completed job.\n"
         "2. For a broad family, start with Stricter subclusters. For a small family you can "
         "choose Alignment and tree immediately.\n"
         "3. To align one subcluster, select that completed subclustering job as your input "

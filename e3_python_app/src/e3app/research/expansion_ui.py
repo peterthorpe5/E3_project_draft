@@ -194,6 +194,95 @@ def render_query_fasta(*, connection: object | None) -> None:
         st.success("Select Prepared FASTA in Family analysis, Annotations or Models.")
 
 
+def render_hog_alignment_input(
+    *, config: ResearchConfig, connection: object, key: str,
+) -> str | None:
+    """Select exact released HOG members and prepare their unaligned protein FASTA.
+
+    Args:
+        config: Current research profile and resource cache scope.
+        connection: Published E3 resource and its sequence authority.
+        key: Unique input widget namespace.
+
+    Returns:
+        FASTA for the selected available members, or None until selection is ready.
+    """
+    from e3app.external_hog import collect_external_hog_members
+
+    group_key = f"{key}_hog"
+    input_key = f"{key}_hog_input"
+    st.session_state.setdefault(input_key, st.session_state.get(group_key, ""))
+    with st.form(key=f"{key}_hog_lookup"):
+        entered = st.text_input(
+            label="Exact HOG ID", key=input_key, placeholder="N0.HOG0003902",
+        )
+        if st.form_submit_button(label="Load HOG members"):
+            st.session_state[group_key] = entered.strip().upper()
+    hog = st.session_state.get(group_key, "")
+    if not hog:
+        st.caption("Enter a HOG ID from the E3 results to load its published protein sequences.")
+        return None
+    identity = (_resource_identity(config=config), hog)
+    cache_key = f"{key}_hog_members"
+    cached = st.session_state.get(cache_key)
+    if cached is None or cached[0] != identity:
+        try:
+            members = collect_external_hog_members(
+                connection=connection, hog_id=hog, maximum_members=10_000,
+            )
+        except AppError as exc:
+            st.info(str(exc))
+            return None
+        st.session_state[cache_key] = (identity, members)
+    else:
+        members = cached[1]
+    available = members.loc[members["sequence_status"].eq("AVAILABLE")].set_index("member_key")
+    st.caption(f"{hog} · {len(available):,} of {len(members):,} members have usable sequences")
+    with st.expander(label="HOG membership and sequence availability"):
+        st.dataframe(
+            data=members[["identifier", "member_species", "member_raw_identifier",
+                          "sequence_status"]],
+            hide_index=True,
+        )
+    if available.empty:
+        st.info("This release has no usable sequences for the HOG. You can upload its FASTA.")
+        return None
+    mode = st.radio(
+        label="HOG sequences", options=["All available members", "Choose members"],
+        horizontal=True, key=f"{key}_hog_mode_{hog}",
+    )
+    if mode == "Choose members":
+        chosen = st.multiselect(
+            label="Proteins to align", options=list(available.index),
+            format_func=available["label"].to_dict().__getitem__, key=f"{key}_hog_choice_{hog}",
+        )
+        selected = available.loc[chosen]
+    else:
+        selected = available
+    if selected.empty:
+        return None
+    fasta = "".join(
+        f">{row.fasta_identifier}\n{row.protein_sequence}\n" for row in selected.itertuples()
+    )
+    if len(fasta.encode()) > UPLOAD_BYTES:
+        st.info("The selected FASTA exceeds 20 MB. Choose fewer members to continue in the app.")
+        return None
+    unit = "protein" if len(selected) == 1 else "proteins"
+    st.caption(f"{len(selected):,} {unit} selected for alignment")
+    st.download_button(
+        label="Download HOG protein FASTA", data=fasta, file_name=f"{hog}_members.fasta",
+        mime="text/plain", key=f"{key}_hog_fasta",
+    )
+    st.download_button(
+        label="Download HOG sequence ID mapping (TSV)",
+        data=selected[["fasta_identifier", "identifier", "member_species",
+                       "member_raw_identifier"]].to_csv(sep="\t", index=False),
+        file_name=f"{hog}_alignment_ids.tsv", mime="text/tab-separated-values",
+        key=f"{key}_hog_mapping",
+    )
+    return fasta
+
+
 def render_campaign(*, config: ResearchConfig, connection: object | None) -> None:
     """Prepare complete E3 inputs, map via the CLI connection and collect selected global clusters.
 
@@ -490,6 +579,14 @@ def open_e3_viewer(
         st.session_state["deepclust_exchange_mode"] = "Prepare query FASTA"
         st.session_state["ken_query_fasta_source"] = "Published HOG members"
         st.session_state["ken_query_selected_hog"] = group_id
+    elif page == "DeepClust workbench":
+        stage = DEEPCLUST_STAGE
+        st.session_state["research_surface"] = page
+        st.session_state["research_section"] = "Family analysis"
+        st.session_state["research_analysis_task"] = "Alignment and tree"
+        st.session_state["analyse_route"] = "Published HOG members"
+        st.session_state["analyse_hog"] = group_id
+        st.session_state["analyse_hog_input"] = group_id
     else:
         raise ResearchError("Unknown E3 viewer destination")
     st.session_state["e3_navigation_stage"] = stage
@@ -759,6 +856,11 @@ def render_published_alignment(*, config: ResearchConfig, app_config: AppConfig)
     if not group_id:
         return
     st.caption(f"Selected HOG {group_id}")
+    st.button(
+        label="Align this HOG", on_click=open_e3_viewer,
+        kwargs={"page": "DeepClust workbench", "group_id": group_id},
+        help="Set up a new sequence alignment from the HOG's published members.",
+    )
     bundle = prepare_pocket_review(config=app_config)
     if bundle.available:
         hits = bundle.index.loc[bundle.index["primary_group_id"].astype(str).eq(group_id)]

@@ -4,6 +4,12 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.2
+
+- Align published HOG members directly from Family analysis. Choose the full
+  available sequence set or selected members and optionally a reference protein.
+- Open the new-alignment form from the JBrowse HOG page with the HOG ID filled in.
+
 ## v0.23.1
 
 - Opens JBrowse MSA and ESMFold directly from Candidate discovery as well as
