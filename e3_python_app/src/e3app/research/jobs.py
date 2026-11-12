@@ -227,6 +227,49 @@ def get_job(*, workspace: Path, job_id: str) -> dict[str, object]:
     return dict(row)
 
 
+def is_external_provider_request(
+    *, operation: str, parameters: Mapping[str, object],
+) -> bool:
+    """Check whether the request selects a hosted provider and authorises submission.
+
+    Args:
+        operation: Saved research operation.
+        parameters: Saved engine and consent controls.
+
+    Returns:
+        True for consented EMBL-EBI InterProScan or hosted ESMFold requests.
+    """
+    if parameters.get("remote_allowed") is not True:
+        return False
+    return (
+        operation == "annotate" and parameters.get("engine") == "interpro_remote"
+    ) or (
+        operation == "predict" and parameters.get("engine", "atlas")
+        in ("atlas", "huggingface_endpoint")
+    )
+
+
+def queued_external_provider_job(*, workspace: Path, job_id: str) -> bool:
+    """Check the canonical queue for an eligible, unclaimed external request.
+
+    Args:
+        workspace: Research queue workspace.
+        job_id: Exact saved job identifier.
+
+    Returns:
+        True if the selected job is queued and its request authorises the provider.
+    """
+    job_directory(workspace=workspace, job_id=job_id)
+    with _connection(workspace=workspace) as connection:
+        row = connection.execute(
+            "SELECT operation, request FROM jobs WHERE job_id=? AND status='QUEUED'",
+            (job_id,),
+        ).fetchone()
+    return row is not None and is_external_provider_request(
+        operation=row["operation"], parameters=json.loads(row["request"]),
+    )
+
+
 def claim_job(*, workspace: Path, job_id: str | None = None) -> dict[str, object] | None:
     """Atomically claim one queued job so multiple workers cannot execute it twice.
 

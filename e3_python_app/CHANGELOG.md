@@ -4,6 +4,16 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.7
+
+- Start hosted ESMFold and EMBL-EBI InterProScan jobs from the app. The
+  research-worker queue remains an execution option.
+- Start previously queued external requests from the Jobs page.
+
+## v0.23.6
+
+- Install FastTree, DIAMOND and MAFFT through the app's Conda environment.
+
 ## v0.23.5
 
 - Infer a missing FastTree protein tree from a completed alignment. Preview

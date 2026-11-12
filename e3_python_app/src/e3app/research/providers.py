@@ -252,6 +252,7 @@ def predict_one(
         if engine == "local":
             pdb = local_esmfold(sequence=sequence, revision=config.esm_model_revision)
         elif engine == "atlas":
+            LOGGER.info("Requesting an ESMFold model from ESM Atlas")
             pdb = http_request(
                 url=ATLAS_ENDPOINT,
                 method="POST",
@@ -259,6 +260,7 @@ def predict_one(
                 headers={"Content-Type": "text/plain"},
             ).decode("utf-8")
         else:
+            LOGGER.info("Requesting an ESMFold model from the configured endpoint")
             headers = {"Content-Type": "application/json"}
             token = os.environ.get(config.esm_token_env, "")
             if token:
@@ -483,6 +485,7 @@ def remote_interpro(
         body = urlencode(
             {"email": email, "sequence": fasta, "goterms": "true", "pathways": "true"}
         ).encode()
+        LOGGER.info("Submitting one InterProScan request to EMBL-EBI")
         job_id = (
             http_request(
                 url=INTERPRO_ENDPOINT + "/run",
@@ -493,9 +496,11 @@ def remote_interpro(
             .decode()
             .strip()
         )
-        atomic_json(path=checkpoint, value={"service_job_id": job_id})
     if not re.fullmatch(r"[A-Za-z0-9_-]+", job_id):
         raise ResearchError("InterPro service returned an invalid job identifier")
+    if not checkpoint.is_file():
+        atomic_json(path=checkpoint, value={"service_job_id": job_id})
+    LOGGER.info("Waiting for EMBL-EBI InterProScan job %s", job_id)
     deadline = time.monotonic() + config.command_timeout
     while time.monotonic() < deadline:
         status = http_request(url=f"{INTERPRO_ENDPOINT}/status/{job_id}").decode().strip()

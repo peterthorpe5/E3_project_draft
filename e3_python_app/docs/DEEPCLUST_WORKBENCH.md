@@ -96,9 +96,10 @@ default response budget is 2 GB; exceeding configured resource/extraction limits
 fails explicitly. Raising limits is an operator choice. Source Parquet stays
 immutable and the entire global database is never copied.
 
-**Where analyses run.** Queued DIAMOND, MAFFT and annotation jobs run on the
-research worker's machine. In JBrowse, **Run MAFFT on app machine** starts a
-one-shot worker on the host running Streamlit. For large families, run the
+**Where analyses run.** Jobs queued for a research worker run on its machine.
+In JBrowse, **Run MAFFT on app machine** starts a one-shot worker on the host
+running Streamlit. Hosted ESMFold and EMBL-EBI InterProScan also offer **App
+host** to start their worker when you submit the request. For large families, run the
 app and worker on denbi with its mounted data, installed tools and shared
 workspace. Existing deployment and tunnel instructions in
 [PROTEIN_RESEARCH.md](../PROTEIN_RESEARCH.md) still apply.
@@ -202,6 +203,11 @@ open the returned PDB in **ESMFold & models**.
 For new annotation select a completed family/FASTA, upload FASTA or choose
 **Paste FASTA**. Restrict to exact IDs when needed. Shared annotation/model
 forms are also available directly under **Annotations** and **Models**.
+
+Choose **App host** and click **Start** to send a consented external request
+in the background. Choose **Research worker** to queue it for a separate worker.
+In **Jobs**, **Start this external job on the app host** uses the saved request
+and retains its job ID.
 
 - **InterProScan:** installed local tool/databases, or EMBL-EBI REST with
   explicit sequence submission. Enter the contact email in the form or use

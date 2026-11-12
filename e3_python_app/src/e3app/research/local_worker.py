@@ -1,4 +1,4 @@
-"""Start alignment and tree jobs with the existing app-host worker."""
+"""Start one-shot research jobs on the machine hosting the app."""
 
 from __future__ import annotations
 
@@ -10,7 +10,15 @@ from threading import Thread
 from typing import Mapping
 
 from .common import ResearchConfig, ResearchError, bounded_number
-from .jobs import artifact_path, fail_queued_job, get_job, job_directory, submit_job
+from .jobs import (
+    artifact_path,
+    fail_queued_job,
+    get_job,
+    is_external_provider_request,
+    job_directory,
+    queued_external_provider_job,
+    submit_job,
+)
 from .viewer_inputs import uploaded_proteins
 
 LOGGER = logging.getLogger(__name__)
@@ -98,6 +106,57 @@ def submit_local_tree(*, config: ResearchConfig, alignment_job: str) -> str:
     return job_id
 
 
+def submit_local_provider_job(
+    *,
+    config: ResearchConfig,
+    operation: str,
+    parameters: Mapping[str, object],
+    fasta: str | None = None,
+    interproscan_email: str | None = None,
+) -> str:
+    """Save and start one consented external analysis on the app host.
+
+    Args:
+        config: App-host research profile.
+        operation: Annotation or structure prediction.
+        parameters: Selected hosted provider, consent and protein input controls.
+        fasta: Optional uploaded protein FASTA.
+        interproscan_email: Optional private contact for the EBI request.
+
+    Returns:
+        Durable job ID for tracking results.
+
+    Raises:
+        ResearchError: If the provider or worker launch cannot be used.
+    """
+    if not is_external_provider_request(operation=operation, parameters=parameters):
+        raise ResearchError("Choose an external provider and allow sequence submission")
+    job_id = submit_job(
+        workspace=config.workspace,
+        operation=operation,
+        parameters={**parameters, "execution_target": "app_host"},
+        fasta=fasta,
+        interproscan_email=interproscan_email,
+    )
+    _start_local_job(config=config, job_id=job_id, label="external analysis")
+    return job_id
+
+
+def start_queued_provider_job(*, config: ResearchConfig, job_id: str) -> None:
+    """Start an existing consented external request with its original job ID.
+
+    Args:
+        config: App-host research profile.
+        job_id: Exact queued request to claim.
+
+    Raises:
+        ResearchError: If the request is ineligible or the worker cannot start.
+    """
+    if not queued_external_provider_job(workspace=config.workspace, job_id=job_id):
+        raise ResearchError("Select a queued external request with sequence-submission consent")
+    _start_local_job(config=config, job_id=job_id, label="external analysis")
+
+
 def _start_local_job(*, config: ResearchConfig, job_id: str, label: str) -> None:
     """Launch the app-host worker for one reserved job.
 
@@ -111,7 +170,7 @@ def _start_local_job(*, config: ResearchConfig, job_id: str, label: str) -> None
     """
     log_path = job_directory(workspace=config.workspace, job_id=job_id) / "local_worker.log"
     try:
-        with log_path.open(mode="wb") as log:
+        with log_path.open(mode="ab") as log:
             process = subprocess.Popen(
                 args=[sys.executable, "-m", "e3app.research.cli", "worker", "--once",
                       "--job-id", job_id],

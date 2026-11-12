@@ -419,11 +419,20 @@ and normalised tables under `10_integrated_resource/final_results`.
 
 ## Install and validate
 
+Create the app environment on each machine that runs the app or research worker.
+It includes FastTree, DIAMOND and MAFFT.
+
 ```bash
 cd e3_python_app
+conda env create --file environment.yml
+conda activate e3_python_app
 python -m pip install --editable '.[dev]'
 ./run_tests.sh
 ```
+
+For an existing installation, use
+`conda env update --name e3_python_app --file environment.yml` in place of
+`conda env create`.
 
 `run_tests.sh` also puts this checkout's `src/` directory on `PYTHONPATH`, so its
 source tests can run before editable installation. The editable install remains

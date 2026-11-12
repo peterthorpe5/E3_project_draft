@@ -175,8 +175,8 @@ PAGE_GUIDES = {
         "request. Start with one protein; a model job accepts at most 100 proteins.\n"
         "2. Choose a configured route. External routes require your explicit sequence "
         "submission selection. Atlas accepts proteins up to 400 amino acids in this app.\n"
-        "3. Queue the job, then select its completed result below to inspect confidence and "
-        "download PDB models.\n\n"
+        "3. Choose App host to start the external request or Research worker to queue it. "
+        "Select the completed result below to inspect confidence and download PDB models.\n\n"
         "**Output:** PDB models, residue evidence and a per-protein success/failure table. "
         "An optional annotation overlay must describe exactly the same sequence. A failed "
         "provider request remains visible; a model is never substituted for a different sequence.",
@@ -188,8 +188,8 @@ PAGE_GUIDES = {
         "2. Choose InterProScan for domains/signatures, or installed eggNOG-mapper for "
         "orthology-based annotation. Only eggNOG uses the taxonomic scope controls.\n"
         "3. For remote InterProScan, enter a contact email or use the profile default. "
-        "Allow sequence submission, queue the job and inspect the completed annotation audit "
-        "and feature tracks below.\n\n"
+        "Allow sequence submission and choose App host to start the request or Research worker "
+        "to queue it. Inspect the completed annotation audit and feature tracks below.\n\n"
         "**Output:** annotations, per-input no-hit records and positional Nightingale tracks "
         "where domain coordinates exist. These are predictions, not experimentally validated "
         "functions. Eukaryota/2759 is the default eggNOG scope, not a prokaryote-only workflow.",
@@ -198,13 +198,12 @@ PAGE_GUIDES = {
         "Track progress and download results",
         "Follow submitted work, inspect its outcome and obtain the complete result files.",
         "1. Refresh the job list and choose a job by its task, timestamp and identifier.\n"
-        "2. QUEUED means waiting for a worker; RUNNING means a worker has claimed it. A "
-        "running job may be waiting for disk, a mounted file or an external service.\n"
+        "2. QUEUED means waiting for a worker. Use Start this external job on the app host "
+        "for a saved external request. RUNNING means a worker has claimed the job.\n"
         "3. COMPLETE means results were published; choose the next analysis or prepare a "
         "verified download. FAILED means inspect the error and diagnostics before retrying.\n\n"
-        "Only queued jobs can be cancelled here. The browser submits jobs and a separate "
-        "worker executes them using the same research profile/workspace. Closing the browser "
-        "does not cancel queued or running work. The list shows the 200 most recent jobs.",
+        "A worker executes each request using the same research profile and workspace. "
+        "Cancel queued jobs here. The list shows the 200 most recent jobs.",
     ),
 }
 

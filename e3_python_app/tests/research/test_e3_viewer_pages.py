@@ -101,7 +101,7 @@ def test_candidate_viewer_handoffs_keep_the_exact_selection(
     assert any(button.label == "Download selected protein FASTA"
                for button in app.get("download_button"))
     assert next(button for button in app.button
-                if button.label == "Queue ESMFold prediction").proto.disabled
+                if button.label == "Start ESMFold prediction").proto.disabled
     app.radio(key="fold_route").set_value("Upload FASTA").run()
     uploader = app.get("file_uploader")[0].proto
     if hasattr(uploader, "max_upload_size_mb"):

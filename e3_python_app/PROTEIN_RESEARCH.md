@@ -58,12 +58,17 @@ The existing E3 resource remains read-only; new results live in a separate works
 
 ## 1. Install into the E3 app environment
 
-From the repository root, after applying the patch:
+From the repository root, install or update the shared app and worker environment:
 
 ```bash
+conda env update --name e3_python_app --file e3_python_app/environment.yml
+conda activate e3_python_app
 python -m pip install -e 'e3_python_app[dev]'
-conda install -c conda-forge -c bioconda 'diamond>=2.2.1' mafft fasttree
 ```
+
+For a fresh installation, use
+`conda env create --file e3_python_app/environment.yml` in place of
+`conda env update`. The environment includes DIAMOND, MAFFT and FastTree.
 
 The Python package includes the built viewer assets. Node is **not** required by
 the E3 app or generic UI. DIAMOND 2.2.8, MAFFT 7.526 and FastTree 2.2.0 were used
@@ -136,9 +141,9 @@ protein-research-workbench --config /absolute/path/research.toml doctor
 protein-research-workbench --config /absolute/path/research.toml worker
 ```
 
-Keep the second command running in a separate terminal, service or HPC job. No
-scientific work starts simply because a page is opened. `worker --once` processes
-at most one task and exits; `worker --job-id ID` selects an exact queued task.
+Keep the second command running in a separate terminal, service or HPC job for
+requests you queue for a research worker. `worker --once` processes at most one
+task and exits. `worker --once --job-id ID` selects an exact saved request.
 `worker --max-jobs 1` waits for one task, executes it and exits. Multiple workers
 claim different jobs transactionally. Size jobs so each worker's thread/memory
 settings match its scheduler allocation; memory_gb bounds DuckDB/DIAMOND working
@@ -245,6 +250,13 @@ Branch lengths show substitutions per site. FastTree estimates an unrooted
 tree and the viewer uses a root for layout.
 
 ## 5. ESMFold and annotation routes
+
+For hosted ESMFold and EMBL-EBI InterProScan, **App host** starts a background
+worker when you click **Start**. That worker submits the selected proteins to
+the external service after you authorise submission. Choose **Research worker**
+to send the request from a separate worker using the same profile and workspace.
+To start a previously queued external request, select it in **Jobs** and click
+**Start this external job on the app host**. Refresh the status to follow it.
 
 **ESM Atlas:** explicit remote submission to the documented foldSequence PDB
 endpoint. This adapter conservatively caps that route at 400 residues; 400 is not

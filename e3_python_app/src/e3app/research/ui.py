@@ -39,7 +39,15 @@ from .guidance import (
     retrievable_cluster_ids,
     user_guide,
 )
-from .jobs import artifact_path, cancel_job, get_job, job_directory, list_jobs, submit_job
+from .jobs import (
+    artifact_path,
+    cancel_job,
+    get_job,
+    job_directory,
+    list_jobs,
+    queued_external_provider_job,
+    submit_job,
+)
 from .viewers import auspice_dataset_url, nightingale_features, protein_tree_figure, viewer_document
 
 LOGGER = logging.getLogger(__name__)
@@ -533,8 +541,9 @@ def queue_action(
     parameters: Mapping[str, object],
     fasta: str | None = None,
     interproscan_email: str | None = None,
+    run_on_app_host: bool = False,
 ) -> None:
-    """Queue one explicit user action and display its durable job identifier.
+    """Save a request, start its worker if selected and show its job ID.
 
     Args:
         config: Workspace profile.
@@ -542,17 +551,26 @@ def queue_action(
         parameters: Scientific controls from the visible form.
         fasta: Optional uploaded protein FASTA.
         interproscan_email: Optional contact for the remote annotation job.
+        run_on_app_host: Start a one-shot worker for the consented hosted request.
     """
-    job_id = submit_job(
-        workspace=config.workspace, operation=operation, parameters=parameters, fasta=fasta,
-        interproscan_email=interproscan_email,
-    )
-    LOGGER.info("Workbench queued %s job %s", operation, job_id)
-    st.success(f"Queued: {OPERATION_NAMES.get(operation, operation)} · job {job_id}.")
-    st.info(
-        "Open Jobs to see the queue workspace and the command for running this request. "
-        "A worker using that workspace starts the job."
-    )
+    if run_on_app_host:
+        from .local_worker import submit_local_provider_job
+
+        job_id = submit_local_provider_job(
+            config=config, operation=operation, parameters=parameters, fasta=fasta,
+            interproscan_email=interproscan_email,
+        )
+        st.success(f"Started a background worker for job {job_id}.")
+        st.info("Open Jobs and refresh its status to follow the external request.")
+    else:
+        job_id = submit_job(
+            workspace=config.workspace, operation=operation, parameters=parameters, fasta=fasta,
+            interproscan_email=interproscan_email,
+        )
+        LOGGER.info("Workbench queued %s job %s", operation, job_id)
+        st.success(f"Queued {OPERATION_NAMES.get(operation, operation)} · job {job_id}.")
+        st.info("A research worker using this workspace can claim the request. "
+                "Jobs shows the command for starting this exact job from a terminal.")
     render_next_action(
         label="Track this job",
         key=f"track_{job_id}",
@@ -1619,6 +1637,25 @@ def render_alignments(
     )
 
 
+def external_execution_on_app_host(*, key: str) -> bool:
+    """Select where a hosted provider request is sent from.
+
+    Args:
+        key: Unique identifier for the execution selector.
+
+    Returns:
+        Whether the app should start its own worker for the submitted request.
+    """
+    return st.radio(
+        "Send the external request from",
+        ("App host", "Research worker"),
+        horizontal=True,
+        key=key,
+        help="App host starts a background worker now. Research worker saves the request "
+        "for a worker using this workspace. The selected provider performs the analysis.",
+    ) == "App host"
+
+
 def render_models(
     *, config: ResearchConfig, dedicated: bool = False, connection: object | None = None,
 ) -> None:
@@ -1636,8 +1673,8 @@ def render_models(
         render_uploaded_model()
         return
     render_page_guidance(section="Models")
-    st.caption("Queue a prediction for this app’s analysis worker, or prepare the files "
-               "to run on another machine.")
+    st.caption("Start an external prediction, queue a job for a research worker, "
+               "or prepare the files for another machine.")
     published_fasta = None
     selection = st.session_state.get("selected_e3_model_protein") if dedicated else None
     if connection is not None and selection:
@@ -1675,6 +1712,7 @@ def render_models(
     if issue:
         st.warning(issue)
     remote = False
+    run_on_app_host = False
     if engine != "local":
         remote = st.checkbox(
             "Submit these sequences to the selected external provider",
@@ -1683,6 +1721,7 @@ def render_models(
         )
         if not remote:
             st.caption("Select external submission to enable this remote prediction request.")
+        run_on_app_host = external_execution_on_app_host(key="fold_execution")
     if not source and not fasta:
         st.caption("Select a protein FASTA to enable prediction or file preparation.")
     with st.form("research_fold"):
@@ -1702,7 +1741,7 @@ def render_models(
             )
         )
         queued = st.form_submit_button(
-            "Queue ESMFold prediction",
+            "Start ESMFold prediction" if run_on_app_host else "Queue ESMFold prediction",
             disabled=bool(issue)
             or (not source and not fasta)
             or (engine != "local" and not remote),
@@ -1718,6 +1757,7 @@ def render_models(
             operation="predict",
             parameters=parameters,
             fasta=fasta,
+            run_on_app_host=run_on_app_host,
         )
     render_portable_job(operation="predict", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="predict")
@@ -1873,6 +1913,7 @@ def render_annotations(*, config: ResearchConfig) -> None:
     if issue:
         st.warning(issue)
     remote = False
+    run_on_app_host = False
     if engine == "interpro_remote":
         remote = st.checkbox(
             "Submit selected sequences to EMBL-EBI InterProScan",
@@ -1882,6 +1923,7 @@ def render_annotations(*, config: ResearchConfig) -> None:
         )
         if not remote:
             st.caption("Select external submission to enable this remote annotation request.")
+        run_on_app_host = external_execution_on_app_host(key="annotation_execution")
     with st.form("research_annotation"):
         ids = split_identifiers(
             value=st.text_area(
@@ -1909,7 +1951,7 @@ def render_annotations(*, config: ResearchConfig) -> None:
             )
         )
         queued = st.form_submit_button(
-            "Queue annotation",
+            "Start annotation" if run_on_app_host else "Queue annotation",
             disabled=bool(issue)
             or (not source and not fasta)
             or (engine == "interpro_remote" and not remote),
@@ -1927,6 +1969,7 @@ def render_annotations(*, config: ResearchConfig) -> None:
             parameters=parameters,
             fasta=fasta,
             interproscan_email=contact_email,
+            run_on_app_host=run_on_app_host,
         )
     render_portable_job(operation="annotate", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="annotate")
@@ -2033,8 +2076,8 @@ def render_jobs(*, config: ResearchConfig) -> None:
     st.markdown(f"#### {OPERATION_NAMES.get(job['operation'], 'Research job')} · {job['status']}")
     st.caption(f"Job {selected}")
     status_help = {
-        "QUEUED": "Waiting for a worker. It may be busy with another job. If this persists, "
-        "ask the operator to check that a worker is running with this same profile/workspace.",
+        "QUEUED": "Waiting for a worker to claim this job. You can use the command below "
+        "to start this request from a terminal.",
         "RUNNING": "A worker has claimed this job. Low CPU use can mean it is waiting for "
         "a mounted file or external service; refresh status and inspect the worker log if needed.",
         "COMPLETE": "Results were published. Review the summaries, open the next step, "
@@ -2052,14 +2095,29 @@ def render_jobs(*, config: ResearchConfig) -> None:
         cancel_job(workspace=config.workspace, job_id=selected)
         st.rerun()
     if job["status"] == "QUEUED":
+        if job["operation"] in {"annotate", "predict"} and queued_external_provider_job(
+            workspace=config.workspace, job_id=selected,
+        ):
+            from .local_worker import start_queued_provider_job
+
+            if st.button(
+                "Start this external job on the app host",
+                key=f"start_external_job_{selected}",
+                help="Start a background worker for this saved request and its selected provider.",
+                type="primary",
+            ):
+                start_queued_provider_job(config=config, job_id=selected)
+                st.success(
+                    "Started a worker for this saved request. Refresh job status for updates."
+                )
         with st.expander("Run this queued job from a terminal"):
             st.write(f"Queue workspace: `{config.workspace}`")
             command = ["protein-research-workbench"]
             profile = os.environ.get("E3_RESEARCH_CONFIG", "")
             if profile:
                 command.extend(["--config", str(Path(profile).expanduser().resolve())])
-            st.caption("Run on the VM with access to this workspace, using the app’s "
-                       "research profile and the environment with the analysis tools installed.")
+            st.caption("Run on a machine with access to this workspace, using the app's "
+                       "research profile and the research environment.")
             st.code(shlex.join([*command, "doctor"]), language="bash")
             st.code(shlex.join([*command, "worker", "--once", "--job-id", selected]),
                     language="bash")

@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from e3app.research import analysis, providers, ui
+from e3app.research import analysis, local_worker, providers, ui
 from e3app.research.common import ResearchError, iter_fasta
 from e3app.research.guidance import SECTIONS
 from e3app.research.jobs import (
@@ -221,6 +221,7 @@ def test_remote_prediction_requires_explicit_submission_selection(*, guided_app,
     run_next_job(config=config, job_id=job)
     app = guided_app
     app.radio(key="research_section").set_value("Models").run()
+    app.radio(key="fold_execution").set_value("Research worker").run()
     assert find_control(controls=app.button, label="Queue ESMFold prediction").disabled
     app.checkbox(key="fold_consent_atlas").check().run()
     assert not find_control(controls=app.button, label="Queue ESMFold prediction").disabled
@@ -253,7 +254,7 @@ def test_annotation_only_shows_controls_for_the_selected_route(*, guided_app):
     app.selectbox(key="annotation_engine").set_value("interpro_remote").run()
     assert any("contact email" in item.value for item in app.warning)
     assert app.checkbox(key="annotation_remote_consent")
-    assert find_control(controls=app.button, label="Queue annotation").disabled
+    assert find_control(controls=app.button, label="Start annotation").disabled
 
 
 def test_interproscan_contact_reaches_only_the_consented_request(
@@ -266,6 +267,7 @@ def test_interproscan_contact_reaches_only_the_consented_request(
     app.radio(key="annotate_route").set_value("Paste FASTA").run()
     app.text_area(key="annotate_pasted_fasta").set_value(">plant_protein\nACDE\n").run()
     app.selectbox(key="annotation_engine").set_value("interpro_remote").run()
+    app.radio(key="annotation_execution").set_value("Research worker").run()
     app.checkbox(key="annotation_remote_consent").check().run()
     app.text_input(key="interproscan_contact_email").set_value("invalid").run()
     assert find_control(controls=app.button, label="Queue annotation").disabled
@@ -286,7 +288,16 @@ def test_interproscan_contact_reaches_only_the_consented_request(
     assert address not in json.dumps(job)
     http = Mock(side_effect=[b"iprscan5-fixture", b"FINISHED", b""])
     monkeypatch.setattr(providers, "http_request", http)
-    run_next_job(config=replace(config, email="profile@example.org"), job_id=job["job_id"])
+
+    def run_saved_job(*, config, job_id, label):
+        """Exercise the saved job and mocked provider when the app starts its worker."""
+        assert label == "external analysis"
+        run_next_job(config=replace(config, email="profile@example.org"), job_id=job_id)
+
+    monkeypatch.setattr(local_worker, "_start_local_job", run_saved_job)
+    app.radio(key="research_section").set_value("Jobs").run()
+    app.button(key=f"start_external_job_{job['job_id']}").click().run()
+    assert not app.exception
     assert get_job(workspace=config.workspace, job_id=job["job_id"])["status"] == "COMPLETE"
     post = http.call_args_list[0].kwargs
     assert post["method"] == "POST"
@@ -294,6 +305,45 @@ def test_interproscan_contact_reaches_only_the_consented_request(
     assert not contact.exists()
     for path in directory.glob("*.json"):
         assert address not in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("section", ("Models", "Annotations"))
+def test_external_form_defaults_to_starting_the_app_host_worker(
+    *, guided_app, guided_profile, monkeypatch, section,
+):
+    """The hosted route starts the exact worker only after explicit submission consent."""
+    _, config = guided_profile
+    app = guided_app
+    launch = Mock()
+    monkeypatch.setattr(local_worker, "_start_local_job", launch)
+    app.radio(key="research_section").set_value(section).run()
+    if section == "Models":
+        input_key, consent_key = "fold", "fold_consent_atlas"
+        label, operation, engine = "Start ESMFold prediction", "predict", "atlas"
+    else:
+        app.selectbox(key="annotation_engine").set_value("interpro_remote").run()
+        app.text_input(key="interproscan_contact_email").set_value("researcher@example.org").run()
+        input_key, consent_key = "annotate", "annotation_remote_consent"
+        label, operation, engine = "Start annotation", "annotate", "interpro_remote"
+    execution_key = "fold_execution" if section == "Models" else "annotation_execution"
+    assert app.radio(key=execution_key).value == "App host"
+    app.radio(key=f"{input_key}_route").set_value("Paste FASTA").run()
+    app.text_area(key=f"{input_key}_pasted_fasta").set_value(">plant_protein\nAC\n").run()
+    assert find_control(controls=app.button, label=label).disabled
+    assert not launch.called
+    app.checkbox(key=consent_key).check().run()
+    find_control(controls=app.button, label=label).click().run()
+    assert not app.exception
+    (job,) = list_jobs(workspace=config.workspace)
+    assert job["operation"] == operation
+    assert launch.call_args.kwargs["job_id"] == job["job_id"]
+    assert launch.call_count == 1
+    request = read_request(workspace=config.workspace, job_id=job["job_id"])
+    assert request["parameters"]["engine"] == engine
+    assert request["parameters"]["execution_target"] == "app_host"
+    assert request["parameters"]["remote_allowed"] is True
+    app.run()
+    assert launch.call_count == 1
 
 
 def test_alignment_summary_is_readable_and_aligned_fasta_is_not_an_input(

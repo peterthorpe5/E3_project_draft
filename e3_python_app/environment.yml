@@ -1,11 +1,16 @@
 name: e3_python_app
 channels:
   - conda-forge
+  - bioconda
+  - nodefaults
 dependencies:
   - python>=3.11,<3.14
   - pip
   - biopython>=1.85,<2
   - duckdb>=1.4,<2
+  - bioconda::diamond>=2.2.1,<3
+  - bioconda::fasttree
+  - conda-forge::mafft
   - python-kaleido>=0.2.1,<1
   - pandas>=2.2,<3
   - plotly>=6,<7
