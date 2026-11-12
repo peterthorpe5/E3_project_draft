@@ -544,11 +544,12 @@ def test_subcluster_handoff_uses_audited_source_and_exact_selection(
             encoding="utf-8",
         )
         (output / "membership.tsv").write_text(
-            "subcluster_id\tsequence_id\taudited_representative_id\talignment_status\tpident\t"
+            "subcluster_id\tsequence_id\taudited_representative_id\tnative_representative_id\t"
+            "alignment_status\tpident\t"
             "representative_coverage\tmember_coverage\tevalue\tbitscore\n"
-            "sub_A\ta\ta\tCENTROID_SELF\t\t\t\t\t\n"
-            "sub_A\tb\ta\tEXACT_THRESHOLDS_PASS\t85\t100\t100\t1e-12\t100\n"
-            "sub_B\tc\tc\tCENTROID_SELF\t\t\t\t\t\n",
+            "sub_A\ta\ta\ta\tCENTROID_SELF\t\t\t\t\t\n"
+            "sub_A\tb\ta\ta\tEXACT_THRESHOLDS_PASS\t85\t100\t100\t1e-12\t100\n"
+            "sub_B\tc\tc\tc\tCENTROID_SELF\t\t\t\t\t\n",
             encoding="utf-8",
         )
         return {
@@ -571,6 +572,12 @@ def test_subcluster_handoff_uses_audited_source_and_exact_selection(
         button.label for button in app.get("download_button")
     }
     app.selectbox(key=f"subcluster_network_group_{job}").set_value("sub_A").run()
+    app.radio(key=f"subcluster_result_view_{job}").set_value("Statistics and comparison").run()
+    comparison = next(table.value for table in app.dataframe if "Input family (%)" in table.value)
+    assert comparison["Proteins"].tolist() == [3, 2]
+    assert "Download subcluster statistics (ZIP)" in {
+        button.label for button in app.get("download_button")
+    }
     find_control(controls=app.button, label="Set up alignment for this subcluster").click().run()
     assert app.selectbox(key=f"align_subcluster_{job}").value == "sub_A"
     find_control(controls=app.button, label="Queue alignment and tree").click().run()

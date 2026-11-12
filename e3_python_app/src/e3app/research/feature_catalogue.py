@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 
 from e3app.data import list_relations, relation_columns
+from e3app.external_hog import collect_hog_membership
 
 from .common import ResearchError, bounded_number
 
@@ -49,12 +50,41 @@ def feature_contexts(*, connection: object, query: str) -> pd.DataFrame:
     ).fetchdf()
 
 
-def published_features(*, connection: object, accession: str) -> pd.DataFrame:
-    """Retrieve all recorded domain rows for one exact member accession.
+def hog_feature_contexts(*, connection: object, hog_id: str) -> list[tuple[str, str, str, str]]:
+    """List exact HOG members, including those without recorded domain hits.
+
+    Args:
+        connection: Open published E3 resource.
+        hog_id: Exact HOG identifier selected from the membership authority.
+
+    Returns:
+        Member accession or identifier, HOG, species and original raw identifier.
+    """
+    members = collect_hog_membership(connection=connection, hog_id=hog_id)
+    parsed = members["member_parsed_accession"].str.strip().replace("", pd.NA)
+    raw = members["member_raw_identifier"]
+    uniprot = raw.str.extract(r"^(?:sp|tr)\|([^|]+)\|", expand=False)
+    accessions = parsed.fillna(uniprot).fillna(raw)
+    return [
+        (accession, hog_id, species, raw_id)
+        for accession, species, raw_id in zip(
+            accessions, members["member_species"], raw, strict=True,
+        )
+    ]
+
+
+def published_features(
+    *, connection: object, accession: str, group_id: str | None = None,
+    species: str | None = None, raw_identifier: str | None = None,
+) -> pd.DataFrame:
+    """Retrieve recorded rows for an exact accession and optional member context.
 
     Args:
         connection: Immutable E3 resource.
         accession: Exact published member accession; no alias guessing or remote lookup.
+        group_id: Optional exact published group.
+        species: Optional exact species column.
+        raw_identifier: Optional exact HOG member ID when recorded on the hit.
 
     Returns:
         Complete recorded rows, including their original group/species context.
@@ -66,13 +96,22 @@ def published_features(*, connection: object, accession: str) -> pd.DataFrame:
         raise ResearchError("Enter one exact, non-empty published protein accession")
     if "domain_hits" not in list_relations(connection):
         raise ResearchError("This E3 release does not include the recorded domain_hits relation")
-    if not FEATURE_FIELDS.issubset(relation_columns(connection, "domain_hits")):
+    columns = relation_columns(connection=connection, relation="domain_hits")
+    if not FEATURE_FIELDS.issubset(columns):
         raise ResearchError(
             "Recorded domain coordinates or their original protein length are absent")
+    predicates = ["upper(trim(CAST(member_accession AS VARCHAR))) = ?"]
+    parameters = [accession.strip().upper()]
+    for field, value in (
+        ("primary_group_id", group_id), ("species_column", species),
+        ("raw_identifier", raw_identifier),
+    ):
+        if value is not None and field in columns:
+            predicates.append(f"coalesce(CAST({field} AS VARCHAR), '') = ?")
+            parameters.append(value)
     frame = connection.execute(
-        "SELECT DISTINCT * FROM domain_hits "
-        "WHERE upper(trim(CAST(member_accession AS VARCHAR))) = ? LIMIT 100001",
-        [accession.strip().upper()],
+        "SELECT DISTINCT * FROM domain_hits WHERE " + " AND ".join(predicates) + " LIMIT 100001",
+        parameters,
     ).fetchdf()
     if len(frame) > 100_000:
         raise ResearchError("Complete protein annotation exceeds the 100000-row inspection bound")

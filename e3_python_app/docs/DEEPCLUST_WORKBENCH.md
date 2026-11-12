@@ -133,6 +133,15 @@ proteins. Use the complete membership artifacts in Jobs for all assignments.
 **Set up alignment for this subcluster** uses the complete selected subcluster
 from that job.
 
+Choose **Result view → Statistics and comparison** on a completed job. The
+input family is the exact FASTA used for subclustering. Select a subcluster
+to compare protein count, share of the input, sequence lengths and reviewed
+species composition where recorded. The audit shows the native and final
+partitions, the reasons for singleton assignments and minimum, median and
+maximum identity, coverage, E-value and bit score across passing non-self
+centroid alignments. These tables use the complete saved audit and are
+downloadable together as TSV files in a ZIP.
+
 MAFFT retains selected IDs/amino acids.
 Large MSA requests need a smaller audited subcluster or explicit deterministic
 sampling; sampling is never enabled automatically.
@@ -213,12 +222,18 @@ or ambiguous mappings prevent a purported species-tree display.
 
 ## Nightingale, annotation and ESMFold
 
-**Protein features / Protein feature browser** works in both contexts. Normal
-E3 resources can show recorded `domain_hits` for an exact published accession
-and group/species context. Those hits have the recorded protein length, but no
-sequence checksum: Nightingale shows their original length/coordinate axis
-without inventing amino acids or mapping onto a current sequence. Evidence TSV
-and standalone viewer HTML are downloadable.
+**Protein features / Protein feature browser** works in both contexts. Choose
+**HOG**, search the published HOG list, then select **Protein in this HOG** by
+accession or species. The member picker includes proteins for which the release
+has no recorded feature rows. **Accession or group ID** retains the exact search.
+
+The app supplies Nightingale with the InterPro and Pfam feature positions and
+original protein lengths stored in the release's `domain_hits` table. These
+records come from the workflow's domain-annotation stage. The app looks up
+the exact accession, group and species, plus the original member identifier
+where recorded. Nightingale displays the original coordinate axis. The release
+does not supply a sequence checksum for those positions. Evidence TSV and
+standalone viewer HTML are downloadable.
 From the selected record, open JBrowse for its HOG or ESMFold for that
 protein. ESMFold can use the exact HOG/species sequence from the release,
 when available. To run a prediction elsewhere, prepare the job files and

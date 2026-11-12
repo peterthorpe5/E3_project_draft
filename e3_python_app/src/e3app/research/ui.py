@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+from io import BytesIO
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import shlex
 import shutil
 import sys
 from typing import Mapping
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pandas as pd
 import plotly.express as px
@@ -1275,8 +1277,12 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
         st.info("This job recorded no subclusters.")
         return
     frame["member_count"] = pd.to_numeric(frame["member_count"])
-    st.markdown("#### Subcluster network")
-    labels = {"": "Largest subclusters"}
+    st.markdown("#### Subclustering results")
+    view = st.radio(
+        "Result view", options=("Network", "Statistics and comparison"), horizontal=True,
+        key=f"subcluster_result_view_{job_id}",
+    )
+    labels = {"": "Overview"}
     labels.update({
         row.subcluster_id: f"{row.representative_id} · {row.member_count:,} proteins"
         for row in frame.itertuples(index=False)
@@ -1284,38 +1290,44 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
     group = st.selectbox(
         "Subcluster to inspect", options=list(labels), format_func=labels.__getitem__,
         key=f"subcluster_network_group_{job_id}",
-        help="The overview shows up to 12 subclusters. Choose one centroid to inspect its group.",
+        help="The network overview shows the largest 12 subclusters. Statistics cover the "
+        "whole input. Choose a centroid to inspect its subcluster.",
     )
-    groups = [group] if group else frame["subcluster_id"].head(OVERVIEW_GROUPS).tolist()
     artifacts = manifest["artifacts"]
     membership = "membership.parquet" if "membership.parquet" in artifacts else "membership.tsv"
-    try:
-        members = load_network_members(
-            path=artifact_path(workspace=config.workspace, job_id=job_id, artifact=membership),
-            subclusters=groups,
+    if view == "Statistics and comparison":
+        render_subcluster_statistics(
+            config=config, job_id=job_id, manifest=manifest, membership=membership, group=group,
         )
-    except ResearchError as exc:
-        st.warning(f"The network is unavailable for this result. {exc}")
     else:
-        if not members.empty:
-            total = members.drop_duplicates("subcluster_id")["cluster_size"].sum()
-            st.caption(
-                f"Showing {len(members):,} of {total:,} proteins in this view. "
-                "Links show passing exact centroid alignments. Isolated nodes are "
-                "singletons. Hover over a protein for its audit evidence."
+        groups = [group] if group else frame["subcluster_id"].head(OVERVIEW_GROUPS).tolist()
+        try:
+            members = load_network_members(
+                path=artifact_path(workspace=config.workspace, job_id=job_id, artifact=membership),
+                subclusters=groups,
             )
-            st.plotly_chart(
-                network_figure(members=members), key=f"subcluster_network_{job_id}",
-                config={"scrollZoom": True, "displaylogo": False},
-            )
-            st.download_button(
-                "Download displayed network (GraphML)", data=network_graphml(members=members),
-                file_name=f"subclusters_{job_id[:12]}_{group or 'overview'}.graphml",
-                mime="application/graphml+xml", key=f"subcluster_graphml_{job_id}",
-                on_click="ignore",
-            )
-            with st.expander("Displayed proteins and audit evidence"):
-                st.dataframe(members, hide_index=True)
+        except ResearchError as exc:
+            st.warning(f"The network is unavailable for this result. {exc}")
+        else:
+            if not members.empty:
+                total = members.drop_duplicates("subcluster_id")["cluster_size"].sum()
+                st.caption(
+                    f"Showing {len(members):,} of {total:,} proteins in this view. "
+                    "Links show passing exact centroid alignments. Isolated nodes are "
+                    "singletons. Hover over a protein for its audit evidence."
+                )
+                st.plotly_chart(
+                    network_figure(members=members), key=f"subcluster_network_{job_id}",
+                    config={"scrollZoom": True, "displaylogo": False},
+                )
+                st.download_button(
+                    "Download displayed network (GraphML)", data=network_graphml(members=members),
+                    file_name=f"subclusters_{job_id[:12]}_{group or 'overview'}.graphml",
+                    mime="application/graphml+xml", key=f"subcluster_graphml_{job_id}",
+                    on_click="ignore",
+                )
+                with st.expander("Displayed proteins and audit evidence"):
+                    st.dataframe(members, hide_index=True)
     if "sequences.fasta" in artifacts:
         render_next_action(
             label=("Set up alignment for this subcluster" if group
@@ -1330,6 +1342,109 @@ def render_subcluster_result(*, config: ResearchConfig, job_id: str, manifest: d
             px.bar(frame.head(50), x="subcluster_id", y="member_count", log_y=True),
             key=f"subcluster_sizes_{job_id}",
         )
+
+
+def render_subcluster_statistics(
+    *, config: ResearchConfig, job_id: str, manifest: dict, membership: str, group: str,
+) -> None:
+    """Compare an exact subcluster with the original saved input family.
+
+    Args:
+        config: Research workspace profile.
+        job_id: Owning completed subclustering job.
+        manifest: Saved artifact inventory and source parameters.
+        membership: Complete membership artifact key.
+        group: Exact subcluster ID, or empty for the whole result.
+    """
+    from .subcluster_statistics import subcluster_statistics
+
+    requested = (
+        membership, "sequences.fasta", "cluster_species.tsv", "subcluster_settings.json",
+    )
+    try:
+        paths = {
+            name: artifact_path(workspace=config.workspace, job_id=job_id, artifact=name)
+            for name in requested if name in manifest["artifacts"]
+        }
+        if membership not in paths:
+            raise ResearchError("The job has no saved membership artifact.")
+        with st.spinner("Reading the complete saved subclustering result"):
+            tables = subcluster_statistics(
+                membership=paths[membership], fasta=paths.get("sequences.fasta"),
+                taxonomy=paths.get("cluster_species.tsv"), group=group,
+            )
+    except ResearchError as exc:
+        st.warning(str(exc))
+        return
+    parameters = manifest.get("parameters", {})
+    if parameters.get("source_job") and parameters.get("source_artifact"):
+        st.caption(
+            f"Input family · {parameters['source_artifact']} from job "
+            f"{parameters['source_job'][:12]}"
+        )
+    else:
+        st.caption("Input family · the saved FASTA supplied to this subclustering job")
+    if "subcluster_settings.json" in paths:
+        settings = json.loads(paths["subcluster_settings.json"].read_text(encoding="utf-8"))
+        st.caption(
+            f"Audit thresholds · identity ≥ {settings['exact_identity_percent']:g}% · "
+            f"coverage ≥ {settings['mutual_coverage_percent']:g}% in each direction · "
+            f"E-value ≤ {settings['maximum_evalue']:g} · "
+            f"bit score > {settings['minimum_bitscore_exclusive']:g}"
+        )
+    family = tables["input_family_comparison"]
+    audited = tables["partition"].iloc[-1]
+    input_metric, cluster_metric, singleton_metric = st.columns(3)
+    input_metric.metric("Input proteins", f"{family.iloc[0]['proteins']:,}")
+    cluster_metric.metric("Audited subclusters", f"{audited['clusters']:,}")
+    singleton_metric.metric("Singletons after audit", f"{audited['singletons']:,}")
+    if not group:
+        st.caption("Choose a subcluster above to compare it with the input family.")
+    st.markdown("##### Input-family comparison")
+    st.dataframe(family.rename(columns={
+        "scope": "Scope", "proteins": "Proteins", "input_family_percent": "Input family (%)",
+        "minimum_length": "Shortest (aa)", "mean_length": "Mean length (aa)",
+        "median_length": "Median length (aa)", "maximum_length": "Longest (aa)",
+        "reviewed_taxa": "Reviewed taxa",
+        "proteins_with_reviewed_taxonomy": "Proteins with reviewed taxonomy",
+    }), hide_index=True)
+    st.markdown("##### Partition before and after the exact audit")
+    st.dataframe(tables["partition"].rename(columns={
+        "partition": "Partition", "clusters": "Clusters", "multi_member": "Multi-member",
+        "singletons": "Singletons", "smallest_cluster": "Smallest",
+        "median_cluster_size": "Median size", "largest_cluster": "Largest",
+    }), hide_index=True)
+    st.markdown("##### Centroid alignment audit")
+    st.dataframe(tables["audit_outcomes"].rename(columns={
+        "audit_outcome": "Audit outcome", "input_family": "Input family",
+        "selected_subcluster": "Selected subcluster",
+    }), hide_index=True)
+    st.caption("Identity, coverage, E-value and bit-score summaries use passing "
+               "centroid–member alignments. Centroid self-pairs are excluded.")
+    metrics = tables["centroid_metrics"].copy()
+    for name in ("minimum", "median", "maximum"):
+        metrics[name] = metrics[name].map(lambda value: "" if pd.isna(value) else f"{value:.3g}")
+    st.dataframe(metrics.rename(columns={
+        "metric": "Metric", "passing_alignments": "Passing alignments",
+        "minimum": "Minimum", "median": "Median", "maximum": "Maximum",
+    }), hide_index=True)
+    if "species_counts" in tables:
+        with st.expander("Reviewed species composition"):
+            st.dataframe(tables["species_counts"].rename(columns={
+                "reviewed_taxon_id": "Reviewed taxon ID", "species": "Species",
+                "input_family": "Input family", "selected_subcluster": "Selected subcluster",
+            }), hide_index=True)
+    else:
+        st.caption("Reviewed species counts are unavailable for this job.")
+    package = BytesIO()
+    with ZipFile(package, mode="w", compression=ZIP_DEFLATED) as archive:
+        for name, table in tables.items():
+            archive.writestr(f"{name}.tsv", table.to_csv(sep="\t", index=False))
+    st.download_button(
+        "Download subcluster statistics (ZIP)", data=package.getvalue(),
+        file_name=f"subcluster_statistics_{job_id[:12]}_{group or 'overview'}.zip",
+        mime="application/zip", key=f"subcluster_statistics_{job_id}", on_click="ignore",
+    )
 
 
 def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> None:

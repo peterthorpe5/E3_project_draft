@@ -19,6 +19,7 @@ import streamlit.components.v1 as components
 
 from e3app.config import AppConfig
 from e3app.errors import AppError
+from e3app.external_hog import published_hog_ids
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
 from e3app.pocket_review import prepare_pocket_review, selected_group_alignment_fasta_bytes
 
@@ -26,7 +27,9 @@ from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
 from .comparisons import MAX_COMPARISON_CELLS, MAX_COMPARISON_ROWS, alignment_comparison
 from .deepclust_import import PARQUET_UPLOAD_BYTES, extract_family, open_results, results_preview
-from .feature_catalogue import feature_contexts, published_features, recorded_feature_payload
+from .feature_catalogue import (
+    feature_contexts, hog_feature_contexts, published_features, recorded_feature_payload,
+)
 from .jobs import artifact_path
 from .remote import ssh_command
 from .species_tree import species_display_tree
@@ -685,6 +688,7 @@ def open_e3_viewer(
     if page == "Protein feature browser":
         st.session_state["recorded_feature_query"] = group_id
         st.session_state["recorded_feature_search_term"] = group_id
+        st.session_state["recorded_feature_handoff_group"] = group_id
         st.session_state["feature_browser_route"] = "Recorded E3 domain features"
         st.session_state.pop("recorded_feature_context", None)
     elif page == "JBrowse MSA":
@@ -752,7 +756,133 @@ def render_features(
     if route == "ESMFold for selected sequences":
         render_models(config=config)
         return
-    st.caption("Search for an exact accession or HOG ID, or choose a protein from the list.")
+    st.caption("InterPro and Pfam annotations recorded in the loaded E3 release.")
+    choice = select_recorded_feature_context(config=config, connection=connection)
+    if choice is None:
+        return
+    accession, group_id, species, raw_identifier = choice
+    context = " · ".join(item for item in (group_id, species.replace("_", " ")) if item)
+    st.subheader(accession)
+    if context:
+        st.caption(context)
+    if dedicated and group_id:
+        alignment, models = st.columns(2)
+        alignment.button(
+            label="Open this HOG in JBrowse MSA", key="feature_to_msa", on_click=open_e3_viewer,
+            kwargs={"page": "JBrowse MSA", "group_id": group_id},
+        )
+        models.button(
+            label="Open ESMFold for this protein", key="feature_to_models", on_click=open_e3_viewer,
+            kwargs={
+                "page": "ESMFold & models", "group_id": group_id,
+                "accession": accession, "species": species,
+            },
+        )
+    try:
+        selected = published_features(
+            connection=connection, accession=accession, group_id=group_id, species=species,
+            raw_identifier=raw_identifier,
+        )
+    except ResearchError as exc:
+        st.info(f"{exc}. Select Upload annotation results to open your own files.")
+        return
+    if selected.empty:
+        st.info("Recorded features are unavailable for this protein in the selected HOG.")
+        return
+    selected[["primary_group_id", "species_column"]] = selected[
+        ["primary_group_id", "species_column"]].fillna("")
+    coordinates = ["protein_length", "location_start", "location_end"]
+    numeric = selected[coordinates].apply(pd.to_numeric, errors="coerce")
+    usable = numeric.notna().all(axis=1) & numeric.gt(0).all(axis=1)
+    usable &= numeric.mod(1).eq(0).all(axis=1)
+    usable &= numeric.protein_length.le(1_000_000)
+    usable &= numeric.location_start.le(numeric.location_end)
+    usable &= numeric.location_end.le(numeric.protein_length)
+    if not usable.all():
+        st.warning(f"{int((~usable).sum()):,} rows lack usable coordinates. See the full evidence.")
+    for length in sorted(numeric.loc[usable, "protein_length"].unique()):
+        subset = selected.loc[usable & numeric.protein_length.eq(length)].copy()
+        subset["member_accession"] = accession
+        if numeric.loc[usable, "protein_length"].nunique() > 1:
+            st.caption(f"Recorded protein length {int(length):,} residues")
+        stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{int(length)}")
+        show_features(payload=recorded_feature_payload(rows=subset), stem=f"{stem}_features")
+    with st.expander("Recorded feature evidence", expanded=True):
+        columns = ["entry_accession", "entry_name", "location_start", "location_end",
+                   "protein_length", "source_database", "interpro_version"]
+        st.dataframe(selected[[field for field in columns if field in selected]], hide_index=True)
+        st.download_button("Download complete recorded feature evidence (TSV)",
+                           data=selected.to_csv(sep="\t", index=False),
+                           file_name="recorded_protein_features.tsv",
+                           mime="text/tab-separated-values")
+
+
+def select_recorded_feature_context(
+    *, config: ResearchConfig, connection: object,
+) -> tuple[str, str, str, str | None] | None:
+    """Offer HOG membership browsing and preserve the exact recorded-protein search.
+
+    Args:
+        config: Research profile used to scope the release cache.
+        connection: Open E3 resource with optional membership and domain tables.
+
+    Returns:
+        Accession, group and species, with an original identifier for HOG selections.
+    """
+    resource = _resource_identity(config=config)
+    cached = st.session_state.get("recorded_feature_hog_ids")
+    if cached is None or cached[0] != resource:
+        try:
+            ids = published_hog_ids(connection=connection)
+        except AppError as exc:
+            st.info(str(exc))
+            ids = ()
+        st.session_state["recorded_feature_hog_ids"] = (resource, ids)
+    else:
+        ids = cached[1]
+    mode_key = "recorded_feature_browse_mode"
+    requested = st.session_state.pop("recorded_feature_handoff_group", "")
+    if requested:
+        st.session_state[mode_key] = "HOG" if requested in ids else "Accession or group ID"
+        st.session_state["recorded_feature_selected_hog"] = requested
+        st.session_state.pop("recorded_feature_hog_picker", None)
+        st.session_state.pop("recorded_feature_hog_selection", None)
+    if ids and st.radio(
+        "Find proteins by", options=("HOG", "Accession or group ID"), horizontal=True, key=mode_key,
+    ) == "HOG":
+        previous = st.session_state.get("recorded_feature_selected_hog", "")
+        hog = st.selectbox(
+            "HOG", options=ids, index=ids.index(previous) if previous in ids else None,
+            placeholder="Type part of a HOG ID or choose from the list",
+            key="recorded_feature_hog_picker",
+        )
+        st.session_state["recorded_feature_selected_hog"] = hog
+        if hog is None:
+            return None
+        identity = (resource, hog)
+        cached_members = st.session_state.get("recorded_feature_hog_members")
+        if cached_members is None or cached_members[0] != identity:
+            try:
+                contexts = hog_feature_contexts(connection=connection, hog_id=hog)
+            except AppError as exc:
+                st.info(str(exc))
+                return None
+            st.session_state["recorded_feature_hog_members"] = (identity, contexts)
+        else:
+            contexts = cached_members[1]
+        previous_member = st.session_state.get("recorded_feature_hog_selection")
+        index = contexts.index(previous_member) if previous_member in contexts else None
+        st.caption(f"{len(contexts):,} published members in {hog}")
+        selected = st.selectbox(
+            "Protein in this HOG", options=contexts, index=index,
+            format_func=lambda row: f"{row[0]} · {row[2].replace('_', ' ')}"
+            + (f" · {row[3]}" if row[0] != row[3] else ""),
+            placeholder="Type an accession or species, or choose a protein",
+            key=f"recorded_feature_hog_protein_{hog}",
+        )
+        st.session_state["recorded_feature_hog_selection"] = selected
+        return selected
+
     st.session_state.setdefault(
         "recorded_feature_search_term", st.session_state.get("recorded_feature_query", ""),
     )
@@ -785,56 +915,7 @@ def render_features(
         key="recorded_feature_context",
         index=0 if query and len(contexts) == 1 else None, placeholder="Select a recorded protein",
     )
-    if choice is None:
-        return
-    accession, group_id, species = choice
-    context = " · ".join(item for item in (group_id, species.replace("_", " ")) if item)
-    st.subheader(accession)
-    if context:
-        st.caption(context)
-    if dedicated and group_id:
-        alignment, models = st.columns(2)
-        alignment.button(
-            label="Open this HOG in JBrowse MSA", key="feature_to_msa", on_click=open_e3_viewer,
-            kwargs={"page": "JBrowse MSA", "group_id": group_id},
-        )
-        models.button(
-            label="Open ESMFold for this protein", key="feature_to_models", on_click=open_e3_viewer,
-            kwargs={
-                "page": "ESMFold & models", "group_id": group_id,
-                "accession": accession, "species": species,
-            },
-        )
-    rows = published_features(connection=connection, accession=accession)
-    selected = rows.loc[rows["primary_group_id"].fillna("").astype(str).eq(group_id)
-                        & rows["species_column"].fillna("").astype(str).eq(species)
-                        & rows["member_accession"].astype(str).str.strip().eq(accession)].copy()
-    selected[["primary_group_id", "species_column"]] = selected[
-        ["primary_group_id", "species_column"]].fillna("")
-    coordinates = ["protein_length", "location_start", "location_end"]
-    numeric = selected[coordinates].apply(pd.to_numeric, errors="coerce")
-    usable = numeric.notna().all(axis=1) & numeric.gt(0).all(axis=1)
-    usable &= numeric.mod(1).eq(0).all(axis=1)
-    usable &= numeric.protein_length.le(1_000_000)
-    usable &= numeric.location_start.le(numeric.location_end)
-    usable &= numeric.location_end.le(numeric.protein_length)
-    if not usable.all():
-        st.warning(f"{int((~usable).sum()):,} rows lack usable coordinates. See the full evidence.")
-    for length in sorted(numeric.loc[usable, "protein_length"].unique()):
-        subset = selected.loc[usable & numeric.protein_length.eq(length)].copy()
-        subset["member_accession"] = accession
-        if numeric.loc[usable, "protein_length"].nunique() > 1:
-            st.caption(f"Recorded protein length {int(length):,} residues")
-        stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{int(length)}")
-        show_features(payload=recorded_feature_payload(rows=subset), stem=f"{stem}_features")
-    with st.expander("Recorded feature evidence", expanded=True):
-        columns = ["entry_accession", "entry_name", "location_start", "location_end",
-                   "protein_length", "source_database"]
-        st.dataframe(selected[[field for field in columns if field in selected]], hide_index=True)
-        st.download_button("Download complete recorded feature evidence (TSV)",
-                           data=selected.to_csv(sep="\t", index=False),
-                           file_name="recorded_protein_features.tsv",
-                           mime="text/tab-separated-values")
+    return (*choice, None) if choice is not None else None
 
 
 def show_features(*, payload: dict[str, object], stem: str) -> None:
@@ -846,8 +927,8 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
     """
     document = viewer_document(viewer="nightingale", payload=payload)
     features = {(feature["accession"], feature["description"]) for feature in payload["features"]}
-    base_height = 160 if payload.get("sequence") else 122
-    height = min(620, max(160, base_height + 43 * len(features)))
+    base_height = 182 if payload.get("sequence") else 144
+    height = min(620, max(160, base_height + 50 * len(features)))
     components.html(document, height=height, scrolling=True)
     st.download_button("Download Nightingale viewer (HTML)", data=document,
                        file_name=f"{stem}.html", key=f"nightingale_{stem}", mime="text/html")

@@ -11,7 +11,9 @@ import pytest
 
 from e3app.research.common import ResearchError
 from e3app.research.deepclust_import import extract_family, open_results, results_preview
-from e3app.research.feature_catalogue import feature_contexts, published_features
+from e3app.research.feature_catalogue import (
+    feature_contexts, hog_feature_contexts, published_features,
+)
 from e3app.research.viewer_inputs import (
     portable_job_archive,
     read_species_mapping,
@@ -142,3 +144,37 @@ def test_recorded_features_can_be_selected_by_hog_or_accession() -> None:
                 "Q5ZC88"
             ]
         assert len(published_features(connection=connection, accession=" q5zc88 ")) == 2
+
+
+def test_hog_feature_members_keep_exact_context_and_unannotated_members() -> None:
+    """Keep isoforms and all HOG members distinct even without a saved protein sequence."""
+    with duckdb.connect() as connection:
+        connection.execute("""
+            CREATE TABLE hierarchical_membership(
+                group_id VARCHAR, species VARCHAR, raw_identifier VARCHAR, parsed_accession VARCHAR
+            );
+            INSERT INTO hierarchical_membership VALUES
+                ('N0.HOG1','Plant_one','sp|Q5ZC88|NAME','Q5ZC88'),
+                ('N0.HOG1','Plant_one','sp|Q5ZC88-2|NAME',NULL),
+                ('N0.HOG2','Plant_one','sp|Q5ZC88|NAME','Q5ZC88');
+            INSERT INTO hierarchical_membership
+            SELECT 'N0.HOG1', 'Plant_two', 'member_' || n, NULL FROM range(101) t(n);
+            CREATE TABLE domain_hits(
+                member_accession VARCHAR, primary_group_id VARCHAR, species_column VARCHAR,
+                protein_length INTEGER, location_start INTEGER, location_end INTEGER,
+                entry_accession VARCHAR, entry_name VARCHAR, raw_identifier VARCHAR
+            );
+            INSERT INTO domain_hits VALUES
+                ('Q5ZC88','N0.HOG1','Plant_one',744,1,744,'PF1','Exact','sp|Q5ZC88|NAME'),
+                ('Q5ZC88','N0.HOG1','Plant_one',700,1,700,'PF2','Other','sp|Q5ZC88-2|NAME'),
+                ('Q5ZC88','N0.HOG2','Plant_one',250,1,250,'PF3','Other HOG','sp|Q5ZC88|NAME');
+        """)
+        contexts = hog_feature_contexts(connection=connection, hog_id="N0.HOG1")
+        assert len(contexts) == 103
+        assert ("Q5ZC88-2", "N0.HOG1", "Plant_one", "sp|Q5ZC88-2|NAME") in contexts
+        assert ("member_100", "N0.HOG1", "Plant_two", "member_100") in contexts
+        records = published_features(
+            connection=connection, accession="Q5ZC88", group_id="N0.HOG1",
+            species="Plant_one", raw_identifier="sp|Q5ZC88|NAME",
+        )
+        assert records["entry_accession"].tolist() == ["PF1"]

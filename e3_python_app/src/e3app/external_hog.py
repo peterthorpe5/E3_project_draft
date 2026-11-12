@@ -103,10 +103,10 @@ def _sequence_lookup(*, connection: object, hog_id: str) -> dict[tuple[str, str]
     return lookup
 
 
-def collect_external_hog_members(
+def collect_hog_membership(
     *, connection: object, hog_id: str, maximum_members: int = 100_000,
 ) -> pd.DataFrame:
-    """Collect one complete HOG's exact members and available sequence inputs.
+    """Read a complete HOG's exact membership without loading its sequences.
 
     Args:
         connection: Open read-only resource connection.
@@ -114,8 +114,7 @@ def collect_external_hog_members(
         maximum_members: Defensive interactive cap; excess members cause an error.
 
     Returns:
-        Stable member keys, original identifiers/species, optional canonical accessions
-        and exact sequence availability. Conflicting or invalid sequences stay unavailable.
+        Distinct original member identifiers, species and recorded parsed accessions.
 
     Raises:
         AppError: If the HOG, membership schema, cap or resource query is invalid.
@@ -144,9 +143,6 @@ def collect_external_hog_members(
             f"LIMIT {maximum_members + 1}",
             [hog_id],
         ).fetchdf()
-        sequences = _sequence_lookup(connection=connection, hog_id=hog_id) if (
-            len(members) <= maximum_members
-        ) else {}
     except duckdb.Error as exc:
         raise AppError(f"Could not load selected HOG inputs: {exc}") from exc
     if len(members) > maximum_members:
@@ -158,11 +154,40 @@ def collect_external_hog_members(
     members["member_parsed_accession"] = members["member_parsed_accession"].fillna("")
     if members.duplicated(["member_species", "member_raw_identifier"]).any():
         raise AppError("Conflicting accession mappings exist for a HOG member")
+    if members[["member_species", "member_raw_identifier"]].apply(
+        lambda column: column.str.strip().eq("").any()
+    ).any():
+        raise AppError("HOG members require explicit species and raw identifiers")
+    return members
+
+
+def collect_external_hog_members(
+    *, connection: object, hog_id: str, maximum_members: int = 100_000,
+) -> pd.DataFrame:
+    """Collect one complete HOG's exact members and available sequence inputs.
+
+    Args:
+        connection: Open read-only resource connection.
+        hog_id: Exact root HOG selected from the loaded resource.
+        maximum_members: Defensive interactive cap; excess members cause an error.
+
+    Returns:
+        Stable member keys, original identifiers/species, optional canonical accessions
+        and exact sequence availability. Conflicting or invalid sequences stay unavailable.
+
+    Raises:
+        AppError: If the HOG, membership schema, cap or resource query is invalid.
+    """
+    members = collect_hog_membership(
+        connection=connection, hog_id=hog_id, maximum_members=maximum_members,
+    )
+    try:
+        sequences = _sequence_lookup(connection=connection, hog_id=hog_id)
+    except duckdb.Error as exc:
+        raise AppError(f"Could not load selected HOG inputs: {exc}") from exc
     records = []
     for _, member in members.iterrows():
         species, raw = str(member["member_species"]), str(member["member_raw_identifier"])
-        if not species.strip() or not raw.strip():
-            raise AppError("HOG members require explicit species and raw identifiers")
         candidates = hog_model_candidates(members=pd.DataFrame([member]))
         canonical = candidates[0].accession if candidates else ""
         identifier = canonical or raw

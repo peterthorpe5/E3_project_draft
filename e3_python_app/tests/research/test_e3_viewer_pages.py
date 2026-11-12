@@ -44,6 +44,8 @@ def test_main_e3_pages_and_both_workbench_entries(resource_db, tmp_path, monkeyp
     app.radio(key=page_key).set_value("Protein feature browser").run()
     assert not any(item.label == "Workbench page" for item in app.radio)
     assert not app.get("iframe")
+    assert app.radio(key="recorded_feature_browse_mode").value == "HOG"
+    app.radio(key="recorded_feature_browse_mode").set_value("Accession or group ID").run()
     app.text_input(key="recorded_feature_search_term").set_value("Q5ZC88")
     next(button for button in app.button if button.label == "Find recorded proteins").click().run()
     assert app.selectbox(key="recorded_feature_context").value[0] == "Q5ZC88"
@@ -92,8 +94,16 @@ def test_candidate_viewer_handoffs_keep_the_exact_selection(
     app.radio(key=page_key).set_value("Visual explorer").run()
     app.button(key="visual_candidate_protein_features").click().run()
     assert app.radio(key=page_key).value == "Protein feature browser"
-    assert app.text_input(key="recorded_feature_search_term").value == "N0.HOG0001"
-    assert app.selectbox(key="recorded_feature_context").value[0] == "Q9SA03"
+    assert app.selectbox(key="recorded_feature_hog_picker").value == "N0.HOG0001"
+    key = "recorded_feature_hog_protein_N0.HOG0001"
+    assert app.selectbox(key=key).value is None
+    without_features = ("P38398", "N0.HOG0001", "Homo_sapiens", "sp|P38398|BRCA1_HUMAN")
+    app.selectbox(key=key).set_value(without_features).run()
+    assert any("Recorded features are unavailable" in item.value for item in app.info)
+    assert not app.get("iframe")
+    annotated = ("Q9SA03", "N0.HOG0001", "Arabidopsis_thaliana", "sp|Q9SA03|FB27_ARATH")
+    app.selectbox(key=key).set_value(annotated).run()
+    assert "Example domain" in app.get("iframe")[0].proto.srcdoc
     app.button(key="feature_to_models").click().run()
     assert app.radio(key=page_key).value == "ESMFold & models"
     assert app.radio(key="fold_route").value == "Selected E3 protein"
@@ -107,6 +117,7 @@ def test_candidate_viewer_handoffs_keep_the_exact_selection(
     if hasattr(uploader, "max_upload_size_mb"):
         assert uploader.max_upload_size_mb == 20
     app.radio(key=page_key).set_value("Protein feature browser").run()
+    assert app.selectbox(key=key).value == annotated
     app.button(key="feature_to_msa").click().run()
     assert app.radio(key=page_key).value == "JBrowse MSA"
     assert app.radio(key="alignment_view_source").value == "Published HOG alignment"

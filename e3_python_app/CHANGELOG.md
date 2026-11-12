@@ -4,6 +4,15 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.9
+
+- Browse recorded protein features by selecting a published HOG and then one
+  of its members. Preserve exact accession, species and member context, and
+  show when the release has no recorded features.
+- Compare any completed subcluster with its saved input family using the
+  complete audit. Inspect size and length summaries, reviewed taxonomy,
+  native and audited partitions, and passing centroid alignment metrics.
+
 ## v0.23.8
 
 - Run stricter DIAMOND subclustering on the app host or on a configured VM

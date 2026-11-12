@@ -46,8 +46,8 @@ TOP_LEVEL_TAB_HELP = {
         "for a configured CPU or GPU worker.",
     ),
     "Protein feature browser": TabHelpEntry(
-        instruction="Find recorded domain coordinates by protein accession or HOG, or "
-        "upload the normalised annotation table and its original FASTA. A selected record "
+        instruction="Choose a HOG and then one of its protein members, search by accession, "
+        "or upload the normalised annotation table and its original FASTA. A selected record "
         "can open the matching HOG alignment or its protein in the models page.",
         yields="Labelled Nightingale feature tracks, recorded coordinate evidence and an offline "
         "HTML viewer download.",
