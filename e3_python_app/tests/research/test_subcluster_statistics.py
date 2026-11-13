@@ -88,7 +88,10 @@ def test_overview_singleton_and_missing_source_are_explicit(*, saved_subclusters
     overview = subcluster_statistics(membership=membership, fasta=None)
     family = overview["input_family_comparison"]
     assert family["scope"].tolist() == ["Input family"]
-    assert "median_length" not in family and "species_counts" not in overview
+    assert "median_length" not in family
+    assert overview["species_counts"].set_index("species")["input_family"].to_dict() == {
+        "Unclassified": 6,
+    }
     assert "selected_subcluster" not in overview["audit_outcomes"]
     singleton = subcluster_statistics(membership=membership, fasta=None, group="sub_E")
     assert singleton["centroid_metrics"]["passing_alignments"].eq(0).all()

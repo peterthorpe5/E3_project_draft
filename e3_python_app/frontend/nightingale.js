@@ -4,6 +4,8 @@ import Navigation from "@nightingale-elements/nightingale-navigation";
 import Track from "@nightingale-elements/nightingale-track";
 import Linegraph from "@nightingale-elements/nightingale-linegraph-track";
 import { mountStructureTrace, HIGHLIGHT_COLOURS } from "./structure-trace.js";
+import { mountSequenceSearch, rangePositions } from "./sequence-search.js";
+import "../src/e3app/resources/viewer_pdf.js";
 
 const components = {
   sequence: Sequence, navigation: Navigation, track: Track, "linegraph-track": Linegraph,
@@ -25,6 +27,8 @@ const active = new Map();
 const colourInputs = new Map();
 let trace = null;
 let resetColours = null;
+let sequenceSearch = null;
+let sequenceSearchLabel = "";
 let displayStart = 1, displayEnd = length;
 const scope = data.coordinate_scope || "Exact sequence coordinates";
 status.textContent = "Nightingale · " + length + " residues · " + scope;
@@ -64,7 +68,8 @@ detail.setAttribute("aria-live", "polite");
 const clear = button(selection, "Clear selection", () => {
   for (const item of active.values()) item.control?.setAttribute("aria-pressed", "false");
   active.clear();
-  updateSelection();
+  if (sequenceSearch) sequenceSearch.clear();
+  else updateSelection();
 });
 clear.disabled = true;
 
@@ -88,9 +93,13 @@ function updateSelection() {
   const highlights = {};
   const labels = [];
   for (const [kind, { ranges, label, colour }] of active) {
-    const positions = [...model.keys()].filter(position =>
-      ranges.some(({ start, end }) => start <= position && position <= end));
+    const positions = model.size
+      ? [...rangePositions(ranges)].filter(position => model.has(position)) : [];
     highlights[kind] = { positions, colour };
+    if (kind === "sequence") {
+      labels.push(`Sequence matches · ${positions.length} model residues`);
+      continue;
+    }
     const coordinates = ranges.slice(0, 12).map(({ start, end }) =>
       start === end ? String(start) : start + "–" + end).join(", ");
     const shown = coordinates + (ranges.length > 12 ? ", …" : "");
@@ -104,7 +113,7 @@ function updateSelection() {
     input.disabled = !item;
   }
   if (resetColours) {
-    resetColours.disabled = !trackElements.some(({ selection }) =>
+    resetColours.disabled = !sequenceSearch?.colourChanged && !trackElements.some(({ selection }) =>
       selection && selection.colour !== selection.defaultColour);
   }
   clear.disabled = !active.size;
@@ -247,7 +256,24 @@ if (model.size) {
   residueInput.max = length;
   residueInput.addEventListener("change", () => pickResidue(Number(residueInput.value), true));
   element("p", structure, "", "Drag to rotate. Click a point to select its sequence position.");
-  if (trackElements.some(track => track.selection)) {
+  if (data.sequence) {
+    const row = element("div", tracks, "protein-feature-row");
+    row.hidden = true;
+    element("div", row, "protein-feature-label", "Amino-acid sequence matches");
+    const matchTrack = addTrack("track", row, 16);
+    sequenceSearch = mountSequenceSearch(structure, ({ ranges, colour, summary, query }) => {
+      row.hidden = !ranges.length;
+      sequenceSearchLabel = `${query} · ${summary}`;
+      matchTrack.data = ranges.length ? [{
+        accession: "sequence-matches", color: colour, locations: [{ fragments: ranges }],
+      }] : [];
+      if (ranges.length) active.set("sequence", { ranges, colour });
+      else active.delete("sequence");
+      updateSelection();
+    });
+    sequenceSearch.setSequence(data.sequence);
+  }
+  if (sequenceSearch || trackElements.some(track => track.selection)) {
     const colours = element("div", structure, "trace-colour-controls");
     for (const [kind, label] of [["domain", "Domain colour"], ["pocket", "Pocket colour"]]) {
       const first = trackElements.find(track => track.selection?.kind === kind)?.selection;
@@ -272,19 +298,47 @@ if (model.size) {
           setTrackColour(selection, selection.defaultColour);
         }
       }
+      sequenceSearch?.resetColour();
       updateSelection();
     });
   }
   const legend = element("div", structure, "trace-legend");
   const picked = element("span", legend, "", "Selected residue");
   picked.style.setProperty("--trace-colour", HIGHLIGHT_COLOURS.residue);
-  for (const [colour, label] of [
+  const confidenceColours = [
     ["#1856a1", "90–100"], ["#188499", "70–<90"], ["#bc872b", "50–<70"],
     ["#a95729", "<50"], ["#8d9aa7", "Unavailable"],
-  ]) {
+  ];
+  for (const [colour, label] of confidenceColours) {
     const item = element("span", legend, "", label);
     item.style.setProperty("--trace-colour", colour);
   }
+  const exportRow = element("div", structure, "structure-controls");
+  const exportStatus = element("span", exportRow, "", "");
+  exportStatus.setAttribute("role", "status");
+  button(exportRow, "Download 3D view (PDF)", () => {
+    const { canvasPdf, downloadBlob, safePdfName } = globalThis.E3ViewerPdf;
+    const highlights = [...active].map(([kind, item]) => ({
+      label: kind === "sequence" ? `Matches: ${sequenceSearchLabel}` : item.label,
+      colour: item.colour ?? HIGHLIGHT_COLOURS[kind],
+    }));
+    const confidence = [...model.values()].some(residue => residue.plddt != null);
+    const key = highlights.concat(confidence
+      ? confidenceColours.map(([colour, label]) => ({ colour, label: `pLDDT ${label}` }))
+      : [{ colour: "#8d9aa7", label: "pLDDT unavailable" }]);
+    const title = data.model_label || "Protein structure";
+    try {
+      const canvas = structure.querySelector(".linked-trace");
+      downloadBlob(canvasPdf({
+        canvas: trace.snapshot(), title, subtitle: `Cα trace · ${scope}`, legend: key,
+        background: getComputedStyle(canvas).backgroundColor,
+      }), `${safePdfName(data.file_stem || title)}_3d_view.pdf`);
+      exportStatus.textContent = "";
+    } catch (error) {
+      exportStatus.textContent = error.message;
+    }
+  });
+  exportRow.appendChild(exportStatus);
   updateSelection();
 }
 

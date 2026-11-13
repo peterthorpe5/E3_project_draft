@@ -7,16 +7,17 @@ export function mountStructureTrace(container, residues, onPick) {
   canvas.setAttribute("aria-label", "Rotatable C-alpha trace of the selected model");
   canvas.tabIndex = 0;
   container.appendChild(canvas);
-  const context = canvas.getContext("2d");
   let azimuth = .55;
   let elevation = -.28;
   let zoom = 1;
   let projected = [];
   let domains = new Set();
   let pockets = new Set();
+  let matches = new Set();
   let selectedResidues = new Set();
   let domainColour = HIGHLIGHT_COLOURS.domain;
   let pocketColour = HIGHLIGHT_COLOURS.pocket;
+  let matchColour;
   let drag = null;
   let moved = false;
 
@@ -39,18 +40,16 @@ export function mountStructureTrace(container, residues, onPick) {
     return "#a95729";
   }
 
-  function draw() {
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    if (!width || !height) return;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = width * ratio;
-    canvas.height = height * ratio;
+  function paint({ surface, width, height, ratio }) {
+    if (!width || !height) return [];
+    surface.width = Math.round(width * ratio);
+    surface.height = Math.round(height * ratio);
+    const context = surface.getContext("2d");
     context.scale(ratio, ratio);
     const scale = Math.min(width, height) * .44 / radius * zoom;
     const cy = Math.cos(azimuth), sy = Math.sin(azimuth);
     const cx = Math.cos(elevation), sx = Math.sin(elevation);
-    projected = points.map(point => {
+    const projection = points.map(point => {
       const depth = point.z * cy - point.x * sy;
       return {
         x: width / 2 + (point.x * cy + point.z * sy) * scale,
@@ -60,11 +59,12 @@ export function mountStructureTrace(container, residues, onPick) {
       };
     });
 
-    const hasHighlights = Boolean(domains.size || pockets.size || selectedResidues.size);
+    const hasHighlights = Boolean(domains.size || pockets.size || matches.size
+      || selectedResidues.size);
     context.lineCap = "round";
     const domainSegments = new Path2D();
-    for (let index = 1; index < projected.length; index += 1) {
-      const previous = projected[index - 1], next = projected[index];
+    for (let index = 1; index < projection.length; index += 1) {
+      const previous = projection[index - 1], next = projection[index];
       if (next.residue.position !== previous.residue.position + 1) continue;
       if (domains.has(previous.residue.position) && domains.has(next.residue.position)) {
         domainSegments.moveTo(previous.x, previous.y);
@@ -79,11 +79,11 @@ export function mountStructureTrace(container, residues, onPick) {
       context.lineTo(next.x, next.y);
       context.stroke();
     }
-    const depthOrder = [...projected].sort((a, b) => a.z - b.z);
+    const depthOrder = [...projection].sort((a, b) => a.z - b.z);
     context.globalAlpha = hasHighlights ? .36 : 1;
     for (const point of depthOrder) {
       const position = point.residue.position;
-      if (domains.has(position) || pockets.has(position)) continue;
+      if (domains.has(position) || pockets.has(position) || matches.has(position)) continue;
       context.beginPath();
       context.fillStyle = colour(point.residue.plddt);
       context.arc(point.x, point.y, 2, 0, 2 * Math.PI);
@@ -105,6 +105,7 @@ export function mountStructureTrace(container, residues, onPick) {
       const position = point.residue.position;
       const inDomain = domains.has(position);
       const inPocket = pockets.has(position);
+      const inMatch = matches.has(position);
       const selected = selectedResidues.has(position);
       if (inPocket || inDomain) {
         context.beginPath();
@@ -130,15 +131,35 @@ export function mountStructureTrace(container, residues, onPick) {
           context.stroke();
         }
       }
+      if (inMatch) {
+        context.beginPath();
+        context.arc(point.x, point.y, inPocket ? 8.3 : 4.5, 0, 2 * Math.PI);
+        if (!inPocket && !inDomain) {
+          context.fillStyle = matchColour;
+          context.fill();
+        }
+        context.strokeStyle = "#fff";
+        context.lineWidth = 4;
+        context.stroke();
+        context.strokeStyle = matchColour;
+        context.lineWidth = 2.5;
+        context.stroke();
+      }
       if (selected) {
         context.beginPath();
-        context.arc(point.x, point.y, 7, 0, 2 * Math.PI);
+        context.arc(point.x, point.y, inMatch && inPocket ? 11 : 7, 0, 2 * Math.PI);
         context.lineWidth = 2;
         context.strokeStyle = HIGHLIGHT_COLOURS.residue;
         context.stroke();
       }
     }
     context.globalAlpha = 1;
+    return projection;
+  }
+
+  function draw() {
+    projected = paint({ surface: canvas, width: canvas.clientWidth, height: canvas.clientHeight,
+      ratio: window.devicePixelRatio || 1 });
   }
 
   function fit() {
@@ -208,14 +229,23 @@ export function mountStructureTrace(container, residues, onPick) {
   draw();
   return {
     fit, magnify,
-    highlight({ domain, pocket, residue }) {
+    snapshot() {
+      const surface = document.createElement("canvas");
+      const width = canvas.clientWidth, height = canvas.clientHeight;
+      paint({ surface, width, height, ratio: Math.min(3, 3200 / Math.max(width, height)) });
+      return surface;
+    },
+    highlight({ domain, pocket, residue, sequence }) {
       domains = new Set(domain?.positions);
       pockets = new Set(pocket?.positions);
+      matches = new Set(sequence?.positions);
+      matchColour = sequence?.colour;
       selectedResidues = new Set(residue?.positions);
       domainColour = domain?.colour ?? HIGHLIGHT_COLOURS.domain;
       pocketColour = pocket?.colour ?? HIGHLIGHT_COLOURS.pocket;
       canvas.dataset.domainCount = String(domains.size);
       canvas.dataset.pocketCount = String(pockets.size);
+      canvas.dataset.sequenceCount = String(matches.size);
       canvas.dataset.residueCount = String(selectedResidues.size);
       draw();
     },

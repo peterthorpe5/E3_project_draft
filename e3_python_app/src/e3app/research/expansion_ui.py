@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from functools import lru_cache
 from hashlib import sha256
 from inspect import signature
 from io import StringIO
@@ -24,7 +25,9 @@ from e3app.external_hog import published_hog_ids, released_member_sequence
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
 from e3app.pocket_review import (
     discover_pocket_review_dir, prepare_pocket_review, selected_group_alignment_fasta_bytes,
+    selected_group_members,
 )
+from e3app.species_composition import member_species_counts, render_species_counts
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
@@ -35,8 +38,10 @@ from .feature_catalogue import (
 )
 from .guidance import job_label
 from .jobs import artifact_path
-from .linked_features import linked_domain_features, linked_review_evidence
+from .linked_features import linked_domain_features, linked_review_evidence, monomer_view_payload
+from .providers import mmcif_evidence
 from .remote import ssh_command
+from .retrieval_ui import render_alphafold_retrieval, render_sequence_retrieval
 from .species_tree import species_display_tree
 from .viewer_inputs import (
     TREE_BYTES, UPLOAD_BYTES, read_species_mapping, uploaded_proteins, validate_protein_tree,
@@ -187,6 +192,10 @@ def render_query_fasta(*, connection: object | None) -> None:
             return
         available = members.loc[members.sequence_status.eq("AVAILABLE")].set_index("member_key")
         st.caption(f"{len(available):,} of {len(members):,} HOG members have usable sequences.")
+        render_species_counts(
+            counts=member_species_counts(rows=members, species_column="member_species"),
+            key=f"deepclust_{hog}", description=f"All published members of {hog}.",
+        )
         chosen = st.multiselect("Proteins to include", list(available.index),
                                 format_func=available.label.to_dict().__getitem__,
                                 key=f"ken_query_members_{hog}")
@@ -224,6 +233,7 @@ def render_query_fasta(*, connection: object | None) -> None:
 
 def render_hog_alignment_input(
     *, config: ResearchConfig, connection: object, key: str, browse: bool = False,
+    app_config: AppConfig | None = None,
 ) -> tuple[dict[str, object], str] | None:
     """Select exact released HOG members and prepare their unaligned protein FASTA.
 
@@ -232,6 +242,7 @@ def render_hog_alignment_input(
         connection: Published E3 resource and its sequence authority.
         key: Unique input widget namespace.
         browse: Use a searchable release HOG selector.
+        app_config: Optional pocket-review locations for locating published models.
 
     Returns:
         HOG and taxonomy provenance with FASTA, or None until selection is ready.
@@ -291,12 +302,40 @@ def render_hog_alignment_input(
         st.session_state[cache_key] = (identity, members)
     else:
         members = cached[1]
-    available = members.loc[members["sequence_status"].eq("AVAILABLE")].set_index("member_key")
+    released = members["sequence_status"].eq("AVAILABLE")
+    render_species_counts(
+        counts=member_species_counts(
+            rows=members, species_column="member_species",
+            subsets={"released_sequences": released},
+        ),
+        key=f"{key}_{hog}",
+        description=f"All published members of {hog} and sequences available in the release.",
+        series={"sequence_count": "HOG members", "released_sequences": "Released sequences"},
+    )
+    scope = repr(identity)
+    retrieved = render_sequence_retrieval(
+        members=members.loc[members["sequence_status"].eq("UNAVAILABLE")],
+        scope=scope, key=f"{key}_hog",
+    )
+    render_hog_alignment_models(
+        members=members, group_id=hog, scope=scope, key=f"{key}_hog", app_config=app_config,
+    )
+    members = members.assign(sequence_source=released.map({True: "E3 release", False: ""}),
+                             retrieved_accession="")
+    for member, record in retrieved.items():
+        match = members["member_key"].eq(member)
+        members.loc[match, ["protein_sequence", "sequence_status",
+                            "sequence_source", "retrieved_accession"]] = (
+            record.sequence, "RETRIEVED", record.source, record.accession,
+        )
+    available = members.loc[members["sequence_status"].isin(
+        ("AVAILABLE", "RETRIEVED"),
+    )].set_index("member_key")
     st.caption(f"{hog} · {len(available):,} of {len(members):,} members have usable sequences")
     with st.expander(label="HOG membership and sequence availability"):
         st.dataframe(
             data=members[["identifier", "member_species", "member_raw_identifier",
-                          "sequence_status"]],
+                          "sequence_status", "sequence_source", "retrieved_accession"]],
             hide_index=True,
         )
     if available.empty:
@@ -325,6 +364,11 @@ def render_hog_alignment_input(
         return None
     unit = "protein" if len(selected) == 1 else "proteins"
     st.caption(f"{len(selected):,} {unit} selected for alignment")
+    render_species_counts(
+        counts=member_species_counts(rows=selected, species_column="member_species"),
+        key=f"{key}_{hog}_selected", description="Proteins selected for this alignment.",
+        label="Species in the alignment input",
+    )
     st.download_button(
         label="Download HOG protein FASTA", data=fasta, file_name=f"{hog}_members.fasta",
         mime="text/plain", key=f"{key}_hog_fasta",
@@ -332,7 +376,8 @@ def render_hog_alignment_input(
     st.download_button(
         label="Download HOG sequence ID mapping (TSV)",
         data=selected[["fasta_identifier", "identifier", "member_species",
-                       "member_raw_identifier"]].to_csv(sep="\t", index=False),
+                       "member_raw_identifier", "sequence_source",
+                       "retrieved_accession"]].to_csv(sep="\t", index=False),
         file_name=f"{hog}_alignment_ids.tsv", mime="text/tab-separated-values",
         key=f"{key}_hog_mapping",
     )
@@ -340,7 +385,82 @@ def render_hog_alignment_input(
     parameters = hog_input_parameters(
         hog_id=hog, members=selected, taxonomy_map=Path(taxonomy_map) if taxonomy_map else None,
     )
+    external = selected.loc[selected["sequence_status"].eq("RETRIEVED")]
+    if not external.empty:
+        parameters["e3_retrieved_sequences"] = {
+            row.fasta_identifier: {"source": row.sequence_source,
+                                   "accession": row.retrieved_accession}
+            for row in external.itertuples()
+        }
     return parameters, fasta
+
+
+@lru_cache(maxsize=8)
+def published_model_members(*, inventory: Path, modified_ns: int, size: int) -> pd.DataFrame:
+    """Load model inventory records once per file version for HOG alignment browsing.
+
+    Args:
+        inventory: Configured portable review model inventory.
+        modified_ns: Inventory modification time used as a cache version.
+        size: File size used as a cache version and read bound.
+
+    Returns:
+        Group, accession and species rows with a published coordinate model.
+    """
+    columns = ["primary_group_id", "candidate_accession", "species_column", "model_status"]
+    if size > 32_000_000:
+        raise AppError("The model inventory exceeds the interactive read bound.")
+    try:
+        frame = pd.read_csv(inventory, sep="\t", usecols=columns, dtype=str)
+    except (ValueError, OSError) as exc:
+        raise AppError("The review model inventory could not be read.") from exc
+    return frame.loc[frame["model_status"].eq("MODEL_AVAILABLE"), columns[:3]]
+
+
+def render_hog_alignment_models(
+    *, members: pd.DataFrame, group_id: str, scope: str, key: str,
+    app_config: AppConfig | None,
+) -> None:
+    """Offer retrieval for HOG accessions without coordinates in the configured reviews.
+
+    Args:
+        members: Candidate HOG rows in the current selection.
+        group_id: Exact published group.
+        scope: Current resource or job identity.
+        key: Widget namespace.
+        app_config: Optional plant and human/plant review directories.
+    """
+    published = set()
+    if app_config is not None:
+        for root in dict.fromkeys((discover_pocket_review_dir(app_config),
+                                   app_config.human_plant_review_dir)):
+            if root is None:
+                continue
+            inventory = root / "tables" / "protein_model_inventory.tsv"
+            try:
+                stamp = inventory.stat()
+                models = published_model_members(
+                    inventory=inventory, modified_ns=stamp.st_mtime_ns, size=stamp.st_size,
+                )
+            except (OSError, AppError):
+                continue
+            group = models.loc[models["primary_group_id"].eq(group_id)]
+            published.update(group[["candidate_accession", "species_column"]].itertuples(
+                index=False, name=None,
+            ))
+    missing = members
+    if published:
+        accession = members["member_parsed_accession"].fillna("").astype(str)
+        if "canonical_accession" in members:
+            accession = members["canonical_accession"].where(
+                members["canonical_accession"].ne(""), accession,
+            )
+        missing = members.loc[[
+            (protein, species) not in published
+            for protein, species in zip(accession, members["member_species"], strict=True)
+        ]]
+    if not missing.empty:
+        render_alphafold_retrieval(members=missing, group_id=group_id, scope=scope, key=key)
 
 
 def render_campaign(*, config: ResearchConfig, connection: object | None) -> None:
@@ -820,9 +940,7 @@ def render_features(
         selected = pd.DataFrame()
     if selected.empty:
         st.info("Recorded features are unavailable for this protein in the selected HOG.")
-    if app_config is not None and group_id and species and (
-        discover_pocket_review_dir(config=app_config) or app_config.human_plant_review_dir
-    ):
+    if app_config is not None and group_id and species:
         view = st.radio(
             "Protein view", ("Recorded domains", "Linked structure and pockets"),
             key="recorded_feature_view", horizontal=True,
@@ -878,6 +996,8 @@ def render_linked_features(
         domains: Recorded E3 domain rows for the selected context.
     """
     accession, group_id, species, raw_identifier = choice
+    sequence = ""
+    evidence = None
     try:
         if raw_identifier is None:
             matches = [
@@ -889,18 +1009,61 @@ def render_linked_features(
         sequence = released_member_sequence(
             connection=connection, hog_id=group_id, species=species, raw_identifier=raw_identifier,
         ) if raw_identifier else ""
-        evidence = linked_review_evidence(
-            config=app_config, accession=accession, group_id=group_id, species=species,
-            sequence=sequence,
-        )
     except (AppError, ResearchError) as exc:
         st.info(str(exc))
-        return
+    scope = repr((_resource_identity(config=config), choice))
+    retrieved_sequence = False
+    if not sequence:
+        lookup = pd.DataFrame([{
+            "member_key": accession, "identifier": accession, "label": accession,
+            "member_raw_identifier": raw_identifier or accession,
+        }])
+        retrieved = render_sequence_retrieval(members=lookup, scope=scope, key="linked_protein")
+        if accession in retrieved:
+            sequence = retrieved[accession].sequence
+            retrieved_sequence = True
+    else:
+        try:
+            evidence = linked_review_evidence(
+                config=app_config, accession=accession, group_id=group_id, species=species,
+                sequence=sequence,
+            )
+        except (AppError, ResearchError) as exc:
+            st.info(str(exc))
     if evidence is None:
-        st.info("No review model could be matched to this exact released protein sequence.")
-        return
+        st.info("A matching review model is unavailable for this protein.")
+        member = pd.DataFrame([{
+            "member_parsed_accession": accession, "member_species": species,
+            "member_raw_identifier": raw_identifier or accession,
+        }])
+        downloaded = render_alphafold_retrieval(
+            members=member, group_id=group_id, scope=scope, key="linked_protein", single=True,
+        )
+        if downloaded is None:
+            return
+        model, model_url = downloaded
+        try:
+            residues = mmcif_evidence(cif=model, expected_sequence=sequence or None)
+            evidence = monomer_view_payload(
+                residues=pd.DataFrame(residues), coordinate_scope=(
+                    "Verified sequence axis" if sequence else "AlphaFold model sequence"
+                ),
+            )
+        except ResearchError as exc:
+            st.info(
+                f"The model is available to download. The viewer could not map its sequence. {exc}"
+            )
+            return
+        evidence.update(model_source="AlphaFold Database", pockets=[])
+        st.link_button("Open source mmCIF", model_url)
+        if retrieved_sequence:
+            evidence["coordinate_scope"] = "AlphaFold model matched to retrieved sequence"
+        if not sequence:
+            sequence = str(evidence["sequence"])
+            # A public model alone does not establish identity with historical domain coordinates.
+            domains = pd.DataFrame()
 
-    st.caption(f"Structure and pocket evidence · {evidence['model_source']}")
+    st.caption(f"Structure source · {evidence['model_source']}")
     if not evidence["pockets"]:
         st.caption("No mapped pocket residues were available on this model's sequence axis.")
     features = linked_domain_features(
@@ -918,19 +1081,25 @@ def render_linked_features(
         st.caption("The recorded domain coordinates are available under Recorded domains.")
     stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{species}")
     show_features(
-        payload={**evidence, "features": features, "coordinate_scope": "Verified sequence axis"},
+        payload={
+            "coordinate_scope": "Verified sequence axis", **evidence, "features": features,
+            "model_label": f"{accession} · {group_id} · {species}",
+        },
         stem=f"{stem}_linked_features",
     )
 
 
 def select_linked_annotations(
-    *, config: ResearchConfig, sequence: str,
+    *, config: ResearchConfig, sequence: str, label: str = "Exact-sequence annotation job",
+    key: str = "linked_annotation_job",
 ) -> list[dict[str, object]]:
     """Attach positional hits from a completed annotation job with the same sequence.
 
     Args:
         config: Workbench profile for completed, checksummed job artifacts.
         sequence: Exact selected protein sequence.
+        label: User-facing label for the annotation selector.
+        key: Widget namespace for this viewer.
 
     Returns:
         Nightingale feature tracks for matching positional hits.
@@ -945,8 +1114,8 @@ def select_linked_annotations(
     if not labels:
         return []
     source = st.selectbox(
-        "Exact-sequence annotation job", list(labels), index=None, format_func=labels.__getitem__,
-        key="linked_annotation_job", placeholder="Choose a completed InterProScan job",
+        label, list(labels), index=None, format_func=labels.__getitem__,
+        key=key, placeholder="Choose a completed InterProScan job",
         help="Positional hits appear only when their sequence SHA-256 matches this protein.",
     )
     if source is None:
@@ -1074,14 +1243,14 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
         payload: Validated feature tracks and coordinate axis.
         stem: Filename and widget namespace for this selection.
     """
-    document = viewer_document(viewer="nightingale", payload=payload)
+    document = viewer_document(viewer="nightingale", payload={**payload, "file_stem": stem})
     features = {
         (feature["accession"], feature["description"], feature.get("provenance"))
         for feature in payload["features"]
     }
     base_height = 182 if payload.get("sequence") else 144
     height = (
-        min(850, max(630, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
+        min(950, max(780, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
         if payload.get("model") else min(620, max(160, base_height + 50 * len(features)))
     )
     components.html(document, height=height, scrolling=True)
@@ -1170,6 +1339,21 @@ def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) 
     records = uploaded_proteins(text=msa, aligned=True,
                                 maximum_records=config.max_alignment_sequences,
                                 maximum_cells=config.max_alignment_cells)
+    with st.expander("Species metadata for this alignment"):
+        mapping = upload_text(
+            label="Sequence-to-species mapping (TSV)", types=["tsv"], key="viewer_species_mapping",
+            help_text="Use sequence_id, species and taxon_id columns. Match the FASTA IDs exactly.",
+        )
+    metadata = read_species_mapping(text=mapping) if mapping else {}
+    render_species_counts(
+        counts=member_species_counts(
+            rows=pd.DataFrame({"species": [
+                metadata.get(identifier, {}).get("species") for identifier in records
+            ]}), species_column="species",
+        ),
+        key="uploaded_alignment",
+        description="Proteins in the uploaded FASTA, classified using the supplied mapping.",
+    )
     tree = ""
     kind = st.radio(
         label="Tree beside the MSA", options=["No tree", "Protein tree", "Reviewed species tree"],
@@ -1181,12 +1365,10 @@ def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) 
         if kind == "Protein tree" and newick:
             tree = validate_protein_tree(newick=newick, identifiers=list(records))
         elif kind == "Reviewed species tree":
-            mapping = upload_text(label="Reviewed sequence-to-species mapping (TSV)",
-                                  types=["tsv"], key="viewer_species_mapping")
-            if newick and mapping:
+            if newick and metadata:
                 tree, audit = species_display_tree(
                     newick=newick, sequence_ids=list(records),
-                    metadata=read_species_mapping(text=mapping),
+                    metadata=metadata,
                 )
                 st.download_button("Download species-tree mapping audit (TSV)",
                                    data=pd.DataFrame(audit).to_csv(sep="\t", index=False),
@@ -1198,14 +1380,14 @@ def render_uploaded_alignment(*, config: ResearchConfig, example: bool = False) 
 
 
 def render_published_alignment(
-    *, config: ResearchConfig, app_config: AppConfig, can_align_hog: bool = False,
+    *, config: ResearchConfig, app_config: AppConfig, connection: object | None = None,
 ) -> None:
     """Open an exact HOG's recorded plant review alignment, if exported.
 
     Args:
         config: Protein alignment rendering limits.
         app_config: Loaded resource and optional plant review bundle.
-        can_align_hog: Published HOG inputs can be selected on this page.
+        connection: Optional released HOG membership for model and sequence actions.
     """
     st.caption("Look up the aligned sequences exported with the plant pocket review.")
     st.session_state.setdefault(
@@ -1218,7 +1400,7 @@ def render_published_alignment(
         if st.form_submit_button(label="Find published alignment"):
             st.session_state["published_alignment_group"] = entered.strip().upper()
     group_id = st.session_state.get("published_alignment_group", "")
-    if can_align_hog:
+    if connection is not None:
         st.button(
             label="Align this HOG" if group_id else "Start a new HOG alignment",
             on_click=open_e3_viewer, kwargs={"page": "Align a HOG", "group_id": group_id},
@@ -1227,7 +1409,21 @@ def render_published_alignment(
     if not group_id:
         return
     st.caption(f"Selected HOG {group_id}")
-    if not can_align_hog:
+    hog_members = None
+    if connection is not None:
+        from e3app.external_hog import collect_hog_membership
+
+        try:
+            hog_members = collect_hog_membership(connection=connection, hog_id=group_id)
+        except AppError:
+            pass
+        if hog_members is not None:
+            render_hog_alignment_models(
+                members=hog_members, group_id=group_id,
+                scope=repr(_resource_identity(config=config)),
+                key="published_hog", app_config=app_config,
+            )
+    if connection is None:
         st.button(
             label="Align this HOG", on_click=open_e3_viewer,
             kwargs={"page": "DeepClust workbench", "group_id": group_id},
@@ -1251,6 +1447,29 @@ def render_published_alignment(
                 )
                 st.caption("Published MAFFT alignment from the plant pocket-review sequence set.")
                 stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", group_id)
+                review_rank = int(hits.iloc[0]["review_rank"])
+                members = selected_group_members(bundle, review_rank, "alignment")
+                unique = members.drop_duplicates(subset="fasta_identifier", keep=False)
+                species_by_id = unique.set_index("fasta_identifier")["species_column"]
+                aligned_rows = pd.DataFrame({
+                    "species_column": [species_by_id.get(identifier) for identifier in records],
+                })
+                render_species_counts(
+                    counts=member_species_counts(
+                        rows=aligned_rows, species_column="species_column",
+                    ),
+                    key=f"{stem}_published_alignment",
+                    description="Protein sequences in the published pocket-review alignment.",
+                )
+                models = members.rename(columns={
+                    "candidate_accession": "member_parsed_accession",
+                    "species_column": "member_species",
+                })
+                if hog_members is None and "member_parsed_accession" in models:
+                    render_hog_alignment_models(
+                        members=models, group_id=group_id, scope=str(bundle.path),
+                        key="published_hog", app_config=app_config,
+                    )
                 render_jbrowse(records=records, tree="", stem=f"{stem}_pocket_review_msa")
                 st.download_button(
                     label="Download published aligned FASTA", data=fasta,

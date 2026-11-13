@@ -975,10 +975,10 @@ def _quality_by_structure_locator(
 def _pocket_review_pdf_compatibility_script() -> str:
     """Return the packaged browser-side PDF exporter for legacy reports."""
     try:
-        return (
-            files("e3app")
-            .joinpath("resources", "pocket_review_pdf_compat.js")
-            .read_text(encoding="utf-8")
+        resources = files("e3app").joinpath("resources")
+        return "\n".join(
+            resources.joinpath(name).read_text(encoding="utf-8")
+            for name in ("viewer_pdf.js", "pocket_review_pdf_compat.js")
         )
     except (FileNotFoundError, OSError, UnicodeError) as exc:
         raise AppError(

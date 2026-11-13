@@ -4,6 +4,18 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.14
+
+- Highlight an exact amino-acid sequence on the model and Nightingale track,
+  with a choice of all occurrences or one occurrence and a separate colour.
+- Add domain and sequence highlights to native pocket and superposition
+  viewers where the residue mapping is verified. Export the current 3D view
+  with its visible highlights as a PDF.
+- Retrieve current AlphaFold Database models and missing public protein FASTA
+  records. Save the source accession for retrieved alignment inputs.
+- Add species tables, bar charts and TSV downloads to HOG, alignment and
+  audited subcluster views.
+
 ## v0.23.13
 
 - Give highlighted domains a high-contrast outline and match each pocket's

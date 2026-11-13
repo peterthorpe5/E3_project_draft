@@ -3,6 +3,7 @@ import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 const directory = process.argv[2];
 if (!directory) throw new Error("Supply the synthetic viewer-document directory");
 
@@ -20,6 +21,21 @@ async function assertTraceColours(trace, ...colours) {
   }, colours);
   for (const [index, count] of counts.entries()) {
     assert.ok(count > 0, `${colours[index]} is drawn on the trace`);
+  }
+}
+
+/** Check that the view creates a PDF containing the current colour key. */
+async function assertViewPdf(page, button, ...labels) {
+  const pending = page.waitForEvent("download");
+  await button.click();
+  const download = await pending;
+  assert.match(download.suggestedFilename(), /_3d_view\.pdf$/);
+  const contents = await readFile(await download.path());
+  assert.match(contents.subarray(0, 8).toString("ascii"), /^%PDF-1.4/);
+  assert.ok(contents.includes("/Subtype /Image"), "the current model image is embedded");
+  for (const label of labels) assert.ok(contents.includes(label), `PDF contains ${label}`);
+  if (process.env.E3_VIEWER_PDF_QA && labels.includes("Synthetic model")) {
+    await download.saveAs(process.env.E3_VIEWER_PDF_QA);
   }
 }
 
@@ -128,6 +144,35 @@ try {
         assert.equal(await pocketColour.inputValue(), "#c24e00");
         assert.ok(await reset.isDisabled());
         await assertTraceColours(trace, "#182554", "#c24e00");
+        const query = page.getByRole("textbox", { name: "Amino-acid sequence" });
+        const mode = page.getByLabel("Highlight", { exact: true });
+        const matchColour = page.getByLabel("Match colour");
+        await query.fill("ac d");
+        await query.press("Enter");
+        assert.equal(await trace.getAttribute("data-sequence-count"), "6");
+        await assertTraceColours(trace, "#182554", "#c24e00", "#e32860");
+        await mode.selectOption("one");
+        await page.getByLabel("Match number").fill("2");
+        await page.getByLabel("Match number").press("Tab");
+        assert.equal(await trace.getAttribute("data-sequence-count"), "3");
+        assert.match(await page.locator(".sequence-search p").innerText(), /Match 2 of 2 · 18–20/);
+        await matchColour.fill("#f019aa");
+        await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+        await assertTraceColours(trace, "#f019aa");
+        await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
+          "Synthetic model", "SYNTHETIC_DOMAIN", "Pocket 4", "Matches: ACD", "Match 2 of 2");
+        await page.getByRole("button", { name: "Fit model" }).click();
+        await query.fill("A.D");
+        await query.press("Enter");
+        assert.equal(await trace.getAttribute("data-sequence-count"), "0");
+        assert.match(await page.locator(".sequence-search p").innerText(), /Use amino-acid/);
+        await query.fill("QWFAA");
+        await query.press("Enter");
+        assert.match(await page.locator(".sequence-search p").innerText(), /No exact matches/);
+        await page.getByRole("button", { name: "Clear matches" }).click();
+        await reset.click();
+        assert.equal(await matchColour.inputValue(), "#e32860");
+        assert.equal(await trace.getAttribute("data-domain-count"), "9");
         const graphPoint = await graph.evaluate(track => ({
           x: track.getXFromSeqPosition(4.5), y: 40,
         }));
@@ -155,7 +200,7 @@ try {
         assert.match(await selected.innerText(), /N12/);
         assert.equal(await graph.getAttribute("highlight"), "12:12");
         await page.getByRole("button", { name: "Clear selection" }).click();
-        for (const kind of ["domain", "pocket", "residue"])
+        for (const kind of ["domain", "pocket", "residue", "sequence"])
           assert.equal(await trace.getAttribute(`data-${kind}-count`), "0");
         await page.setViewportSize({ width: 620, height: 1000 });
         assert.ok(await trace.isVisible());
@@ -166,5 +211,47 @@ try {
     assert.deepEqual(errors, [], name + " JavaScript errors after interactions");
     assert.deepEqual(outbound, [], name + " must remain offline during interactions");
     console.log(JSON.stringify({ viewer: name, drawn, status: await page.locator("#status").innerText() }));
+  }
+  for (const name of ["review-group", "review-pair"]) {
+    const page = await browser.newPage({ viewport: { width: 1240, height: 900 } });
+    const errors = [];
+    const outbound = [];
+    page.on("pageerror", error => errors.push(error.message));
+    page.on("request", request => {
+      if (/^https?:/.test(request.url())) outbound.push(request.url());
+    });
+    await page.goto(pathToFileURL(path.join(directory, name + ".html")).href);
+    const trace = page.locator("#viewer");
+    const domain = page.getByLabel("Protein domain", { exact: true });
+    await domain.selectOption("0");
+    assert.equal(await trace.getAttribute("data-domain-count"), "3");
+    const query = page.getByRole("textbox", { name: "Amino-acid sequence" });
+    await query.fill("QWFAA");
+    await query.press("Enter");
+    assert.equal(await trace.getAttribute("data-sequence-count"), "10");
+    await page.getByLabel("Match colour").fill("#f019aa");
+    await page.getByLabel("Domain colour").fill("#a8deff");
+    await assertTraceColours(trace, "#f019aa", "#a8deff");
+    await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
+      "N0.HOG1", "Domain: PF00001", "Matches: QWFAA",
+      name === "review-pair" ? "Reference pocket" : "Pocket rank 1");
+    if (name === "review-pair") {
+      await page.getByLabel("Structure to highlight").selectOption("mobile");
+      assert.equal(await trace.getAttribute("data-domain-count"), "0");
+      assert.equal(await trace.getAttribute("data-sequence-count"), "10");
+      await page.locator("#showMobile").uncheck();
+      assert.equal(await trace.getAttribute("data-sequence-count"), "0");
+      await page.locator("#showMobile").check();
+    } else {
+      await page.locator("#proteinSelect").selectOption("Q12345");
+      assert.equal(await trace.getAttribute("data-domain-count"), "0");
+      assert.equal(await trace.getAttribute("data-sequence-count"), "10");
+    }
+    await page.getByRole("button", { name: "Clear matches" }).click();
+    assert.equal(await trace.getAttribute("data-sequence-count"), "0");
+    assert.deepEqual(errors, [], name + " JavaScript errors");
+    assert.deepEqual(outbound, [], name + " must remain offline");
+    console.log(JSON.stringify({ viewer: name, highlights: true, pdf: true }));
+    await page.close();
   }
 } finally { await browser.close(); }

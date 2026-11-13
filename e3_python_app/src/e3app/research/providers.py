@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlparse
 
 import requests
 
-from Bio.PDB import PDBParser
+from Bio.PDB import MMCIFParser, PDBParser
 from Bio.PDB.PDBExceptions import PDBConstructionException
 from Bio.SeqUtils import seq1
 
@@ -110,8 +110,56 @@ def pdb_evidence(*, pdb: str, expected_sequence: str) -> list[dict[str, object]]
     """
     if "ATOM  " not in pdb or len(pdb.encode("utf-8")) > 20_000_000:
         raise ResearchError("Structure provider did not return a bounded PDB coordinate model")
+    return _monomer_evidence(
+        parser=PDBParser(QUIET=True), text=pdb, expected_sequence=expected_sequence,
+    )
+
+
+def mmcif_evidence(*, cif: bytes, expected_sequence: str | None) -> list[dict[str, object]]:
+    """Read one AlphaFold Database chain and optionally verify its exact input sequence.
+
+    Args:
+        cif: Downloaded UTF-8 coordinate bytes.
+        expected_sequence: Published or accession-resolved protein, when available.
+
+    Returns:
+        Validated, sequentially numbered C-alpha records with model confidence.
+
+    Raises:
+        ResearchError: If the coordinate data or residue mapping is invalid.
+    """
+    if not cif or len(cif) > 20_000_000:
+        raise ResearchError("The mmCIF exceeds the structure viewer's size limit.")
     try:
-        structure = PDBParser(QUIET=True).get_structure("prediction", io.StringIO(pdb))
+        text = cif.decode("utf-8")
+    except UnicodeError as exc:
+        raise ResearchError("The model did not contain UTF-8 mmCIF coordinates.") from exc
+    return _monomer_evidence(
+        parser=MMCIFParser(QUIET=True, auth_chains=False, auth_residues=False),
+        text=text, expected_sequence=expected_sequence, require_contiguous=True,
+    )
+
+
+def _monomer_evidence(
+    *, parser: PDBParser | MMCIFParser, text: str, expected_sequence: str | None,
+    require_contiguous: bool = False,
+) -> list[dict[str, object]]:
+    """Extract finite C-alpha coordinates from a single-chain coordinate model.
+
+    Args:
+        parser: Biopython parser for the coordinate format.
+        text: Bounded model document.
+        expected_sequence: Exact expected input when known.
+        require_contiguous: Require the mmCIF label axis to start at one and have no gaps.
+
+    Returns:
+        Validated monomer residue evidence.
+
+    Raises:
+        ResearchError: If parsing, sequence verification or confidence validation fails.
+    """
+    try:
+        structure = parser.get_structure("prediction", io.StringIO(text))
         model = next(structure.get_models())
         records = []
         for chain in model:
@@ -132,8 +180,16 @@ def pdb_evidence(*, pdb: str, expected_sequence: str) -> list[dict[str, object]]
                     }
                 )
     except (ValueError, KeyError, StopIteration, TypeError, PDBConstructionException) as exc:
-        raise ResearchError("Could not parse the predicted PDB model") from exc
-    if "".join(record["residue"] for record in records) != expected_sequence:
+        raise ResearchError("Could not parse the predicted coordinate model") from exc
+    if not records or len({record["chain_id"] for record in records}) != 1:
+        raise ResearchError("The prediction must provide a single C-alpha chain")
+    if require_contiguous and any(
+        record["pdb_residue_number"] != record["residue_index"] for record in records
+    ):
+        raise ResearchError("The mmCIF model has incomplete or non-contiguous sequence positions")
+    if expected_sequence is not None and (
+        "".join(record["residue"] for record in records) != expected_sequence
+    ):
         raise ResearchError("Predicted model residues do not match the complete input sequence")
     if any(not 0 <= record["confidence_b_factor"] <= 100 for record in records):
         raise ResearchError("Reported model confidence is outside its supported 0–100 range")

@@ -19,12 +19,56 @@ from e3app.config import AppConfig
 from e3app.errors import AppError
 from e3app.pocket_review import discover_pocket_review_dir, read_review_page
 
-from .common import ResearchError, bounded_number, normalise_protein
+from .common import PROTEIN, ResearchError, bounded_number, normalise_protein
 from .feature_catalogue import recorded_feature_payload
 
 LOGGER = logging.getLogger(__name__)
 MAX_LINKED_RESIDUES = 20_000
 POCKET_COLOURS = ("#c24e00", "#007d7c", "#aa3377", "#54772a", "#bd7900")
+
+
+def monomer_view_payload(
+    *, residues: pd.DataFrame, features: list[dict[str, object]] | None = None,
+    coordinate_scope: str = "Exact model input sequence",
+) -> dict[str, object]:
+    """Prepare the shared Nightingale payload from validated model residue records.
+
+    Args:
+        residues: Per-residue PDB or mmCIF evidence in sequence order.
+        features: Optional annotations already mapped to this sequence.
+        coordinate_scope: Source description shown beside the sequence length.
+
+    Returns:
+        Complete sequence and trace using the same one-based axis.
+
+    Raises:
+        ResearchError: If a saved trace lacks a valid single-chain coordinate axis.
+    """
+    columns = {
+        "residue_index", "chain_id", "residue", "confidence_b_factor", "x", "y", "z",
+    }
+    if residues.empty or len(residues) > MAX_LINKED_RESIDUES or not columns.issubset(residues):
+        raise ResearchError("The model lacks a bounded set of C-alpha coordinates.")
+    model = residues[list(sorted(columns))].rename(columns={
+        "residue_index": "position", "chain_id": "chain", "confidence_b_factor": "plddt",
+    })
+    numeric = ["position", "x", "y", "z", "plddt"]
+    model[numeric] = model[numeric].apply(pd.to_numeric, errors="coerce")
+    model = model.sort_values("position")
+    sequence = "".join(model["residue"].astype(str))
+    if (
+        len(sequence) != len(model) or not PROTEIN.fullmatch(sequence)
+        or model["chain"].nunique(dropna=False) != 1
+        or model["position"].tolist() != list(range(1, len(model) + 1))
+        or not model[numeric].map(math.isfinite).all().all()
+        or not model["plddt"].between(0, 100).all()
+    ):
+        raise ResearchError("The model's residues, coordinates or confidence are invalid.")
+    model["position"] = model["position"].astype(int)
+    return {
+        "sequence": sequence, "model": model.to_dict(orient="records"),
+        "features": features or [], "coordinate_scope": coordinate_scope,
+    }
 
 
 class _ReviewDataParser(HTMLParser):

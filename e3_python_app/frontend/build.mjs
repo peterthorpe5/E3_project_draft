@@ -7,7 +7,7 @@ import * as sass from "sass";
 import { scssExports } from "./style-exports.mjs";
 const destination = "../src/e3app/resources/research_viewers";
 await mkdir(destination, { recursive: true });
-for (const entry of ["alignment.jsx", "nightingale.js"]) {
+for (const entry of ["alignment.jsx", "nightingale.js", "review-highlights.js"]) {
   await build({ entryPoints: [entry], bundle: true, minify: true, legalComments: "eof",
     outfile: path.join(destination, entry === "alignment.jsx" ? "alignment.js" : entry),
     define: { "process.env.NODE_ENV": '"production"', "process.env": '{}' }, loader: { ".woff": "dataurl", ".woff2": "dataurl", ".ttf": "dataurl" },

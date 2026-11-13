@@ -64,9 +64,11 @@ from e3app.external_actions import (
     selected_pair_fasta_bytes,
 )
 from e3app.external_resources import EXTERNAL_RESOURCES, PROTEIN_IMAGER_URL
+from e3app.group_lookup import quick_group_profile
 from e3app.external_hog import (
     collect_external_hog_members,
     collect_external_hogs,
+    collect_hog_membership,
     external_hog_pair_fasta,
     prepared_hog_model,
 )
@@ -134,6 +136,8 @@ from e3app.prestructure_hogs import (
     collect_prestructure_ranked_hogs,
     prestructure_hog_capability,
 )
+from e3app.research.review_highlights import add_review_highlights
+from e3app.species_composition import member_species_counts, render_species_counts
 from e3app.orthology import (
     collect_orthology_group_summary,
     collect_orthology_metrics,
@@ -742,6 +746,10 @@ def _render_external_hog_context(
         _display_dataframe(frame=members[[
             "identifier", "member_species", "member_raw_identifier", "sequence_status",
         ]])
+    render_species_counts(
+        counts=member_species_counts(rows=members, species_column="member_species"),
+        key=f"external_{selected_hog}", description=f"All published members of {selected_hog}.",
+    )
     _render_external_hog_pair(members=members, selected_hog=str(selected_hog))
     _render_hog_model_bundle(
         selected_hog=str(selected_hog), members=members, key_prefix="external_links",
@@ -1163,6 +1171,18 @@ def _render_orthofinder_explorer(
             excel_label="Download filtered groups as Excel",
             key="orthology_group_summary_download",
         )
+        composition_group = st.selectbox(
+            "Group for species composition", options=groups["group_id"].tolist(), index=None,
+            key="orthology_composition_group",
+        )
+        if composition_group:
+            profile = quick_group_profile(
+                connection=connection, group_id=str(composition_group), maximum_rows=1,
+            )
+            render_species_counts(
+                counts=profile["species_composition"], key=f"orthology_{composition_group}",
+                description=f"All recorded members of {composition_group}.", expanded=True,
+            )
     with st.expander("Browse the underlying orthology relations"):
         _render_section(
             connection=connection,
@@ -2309,6 +2329,28 @@ def _render_human_hog_explorer(
         excel_label="Download complete HOG summary as Excel",
         key=f"{stem}_summary_download",
     )
+    if not summary.empty:
+        chosen_group = st.selectbox(
+            "HOG for species composition", options=summary["hog_id"].tolist(),
+            index=None, key=f"{stem}_species_group",
+            placeholder="Choose a HOG to count its full membership",
+        )
+        if chosen_group:
+            try:
+                composition_members = collect_hog_membership(
+                    connection=connection, hog_id=str(chosen_group),
+                )
+            except AppError as exc:
+                st.caption(str(exc))
+            else:
+                render_species_counts(
+                    counts=member_species_counts(
+                        rows=composition_members, species_column="member_species",
+                    ),
+                    key=f"{stem}_{chosen_group}",
+                    description=f"All published members of {chosen_group}.",
+                    expanded=True,
+                )
     st.markdown("#### Human sequence annotations")
     _display_dataframe(frame=human_members.head(display_rows), height=560)
     render_table_downloads(
@@ -2437,6 +2479,11 @@ def _render_seed_group_explorer(
     members = all_members[
         all_members["primary_group_id"].astype(str).isin(selected_groups)
     ].copy()
+    render_species_counts(
+        counts=member_species_counts(rows=members, species_column="species"),
+        key="seed_search_groups",
+        description="Recorded member rows in the selected groups before the species filter.",
+    )
     if selected_species:
         members = members[members["species"].astype(str).isin(selected_species)]
     st.markdown("#### Species and members in the selected groups")
@@ -2702,6 +2749,7 @@ def _render_structural_superposition(
     key_prefix: str,
     heading: str,
     group_page: str | None = None,
+    connection: object | None = None,
 ) -> None:
     """Render one validated, portable pairwise structural superposition."""
     st.markdown(f"#### {heading}")
@@ -2799,12 +2847,9 @@ def _render_structural_superposition(
         comparison_accession=comparison["mobile_accession"],
         key_prefix=key_prefix,
     )
+    group_document = read_review_html(bundle, str(group_row["group_review_html"]))
     pair_document = merge_pair_viewer_plddt(
-        pair_document=read_review_html(bundle, viewer_path),
-        group_document=read_review_html(
-            bundle,
-            str(group_row["group_review_html"]),
-        ),
+        pair_document=read_review_html(bundle, viewer_path), group_document=group_document,
     )
     pair_document = merge_downloaded_pair_plddt(
         pair_document=pair_document,
@@ -2814,6 +2859,14 @@ def _render_structural_superposition(
         annotate_pair_evidence_html(
             document=pair_document
         )
+    )
+    viewer_document = add_review_highlights(
+        document=viewer_document, group_document=group_document, connection=connection,
+        group_id=str(group_row["primary_group_id"]),
+        pair_members={
+            role: (str(comparison[f"{role}_accession"]), str(comparison[f"{role}_species"]))
+            for role in ("reference", "mobile")
+        },
     )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
@@ -2870,6 +2923,7 @@ def _render_structural_alignment_section(
         bundle=bundle,
         key_prefix="plant_structural_alignment",
         heading="Interactive plant structural superposition",
+        connection=connection,
     )
     st.markdown("#### Release-wide 3D alignment evidence map")
     st.info(
@@ -4005,6 +4059,7 @@ def _render_pocket_review(
     bundle: PocketReviewBundle,
     focus: str,
     key_prefix: str = "pocket_review",
+    connection: object | None = None,
 ) -> None:
     """Render a selected self-contained structure or alignment group page."""
     title = (
@@ -4031,6 +4086,7 @@ def _render_pocket_review(
         group_page=group_page,
         key_prefix=key_prefix,
         include_evidence_matrix=True,
+        connection=connection,
     )
 
 
@@ -4041,6 +4097,7 @@ def _render_selected_pocket_review(
     group_page: str,
     key_prefix: str,
     include_evidence_matrix: bool,
+    connection: object | None = None,
 ) -> None:
     """Render one already-selected structure or alignment group page.
 
@@ -4050,6 +4107,7 @@ def _render_selected_pocket_review(
         group_page: Bundle-relative HTML page selected by the caller.
         key_prefix: Unique prefix for Streamlit widget state.
         include_evidence_matrix: Whether to offer the release-wide matrix.
+        connection: Optional release for domain coordinates.
     """
     row = selected_group_row(bundle, group_page)
     if focus == "structure":
@@ -4083,6 +4141,9 @@ def _render_selected_pocket_review(
         f"{row['alignment_sequence_count']} aligned sequences"
     )
     document = read_group_html(bundle, group_page, focus)
+    document = add_review_highlights(
+        document=document, group_id=str(row["primary_group_id"]), connection=connection,
+    )
     st.caption(
         "Use **Download current view PDF** or **Download alignment PDF** inside "
         "the embedded report. Legacy compatible reports receive these controls "
@@ -4109,6 +4170,11 @@ def _render_selected_pocket_review(
         key=f"{key_prefix}_{focus}_members_download",
     )
     if focus == "alignment":
+        render_species_counts(
+            counts=member_species_counts(rows=members, species_column="species_column"),
+            key=f"{key_prefix}_{safe_group}",
+            description="Protein sequences represented in this pocket-review alignment.",
+        )
         try:
             alignment_fasta = selected_group_alignment_fasta_bytes(
                 bundle=bundle,
@@ -4184,7 +4250,7 @@ def _render_selected_pocket_review(
 
 
 def _render_human_plant_structural_review(
-    *, bundle: PocketReviewBundle
+    *, bundle: PocketReviewBundle, connection: object | None = None,
 ) -> None:
     """Render the separate human-and-plant structural extension."""
     if not bundle.available:
@@ -4267,6 +4333,7 @@ def _render_human_plant_structural_review(
             key_prefix="human_plant_structural_alignment",
             heading="Interactive human and plant structural superposition",
             group_page=group_page,
+            connection=connection,
         )
     with review_tabs[1]:
         st.markdown("#### Select protein models and retained pockets")
@@ -4282,6 +4349,7 @@ def _render_human_plant_structural_review(
             group_page=group_page,
             key_prefix="human_plant_structure",
             include_evidence_matrix=False,
+            connection=connection,
         )
     with review_tabs[2]:
         st.markdown("#### Pocket positions on the aligned protein sequences")
@@ -4295,6 +4363,7 @@ def _render_human_plant_structural_review(
             group_page=group_page,
             key_prefix="human_plant_alignment",
             include_evidence_matrix=False,
+            connection=connection,
         )
     with review_tabs[3]:
         st.markdown("#### Human-and-plant review index")
@@ -4596,6 +4665,18 @@ def _render_hog_model_comparison(
             f"bundle view loaded {len(members):,}. Increase E3_MAX_TABLE_ROWS up to "
             f"{MAX_BUNDLE_MODELS:,} before treating this as a complete HOG export."
         )
+    try:
+        composition_members = collect_hog_membership(
+            connection=connection, hog_id=str(selected_hog),
+        )
+    except AppError as exc:
+        LOGGER.debug("HOG species composition unavailable for %s: %s", selected_hog, exc)
+    else:
+        render_species_counts(
+            counts=member_species_counts(rows=composition_members, species_column="member_species"),
+            key=f"model_comparison_{selected_hog}",
+            description=f"All published members of {selected_hog}.",
+        )
     _render_hog_model_bundle(selected_hog=str(selected_hog), members=members)
 
 
@@ -4755,6 +4836,18 @@ def _render_within_hog_ranking(
     )
     selected_overview = hogs.loc[hogs["hog_id"].eq(selected_hog)].iloc[0]
     total_members = int(selected_overview["hog_member_count"])
+    try:
+        composition_members = collect_hog_membership(
+            connection=connection, hog_id=str(selected_hog),
+        )
+    except AppError as exc:
+        LOGGER.debug("HOG species composition unavailable for %s: %s", selected_hog, exc)
+    else:
+        render_species_counts(
+            counts=member_species_counts(rows=composition_members, species_column="member_species"),
+            key=f"within_hog_{selected_hog}",
+            description=f"All published members of {selected_hog}.",
+        )
     if summary.member_count < total_members:
         st.warning(
             f"This HOG contains {total_members:,} members, but the current bounded "
@@ -5735,11 +5828,11 @@ def render_app() -> None:
                 ),
                 "3D structures & pockets": lambda: _render_pocket_review(
                     bundle=prepare_pocket_review(config),
-                    focus="structure",
+                    focus="structure", connection=connection,
                 ),
                 "Pocket-aligned sequences": lambda: _render_pocket_review(
                     bundle=prepare_pocket_review(config),
-                    focus="alignment",
+                    focus="alignment", connection=connection,
                 ),
                 "3D alignment": lambda: _render_structural_alignment_section(
                     connection=connection,
@@ -5748,7 +5841,7 @@ def render_app() -> None:
                 ),
                 "Human & plant 3D alignment": lambda: (
                     _render_human_plant_structural_review(
-                        bundle=prepare_human_plant_review(config),
+                        bundle=prepare_human_plant_review(config), connection=connection,
                     )
                 ),
                 "HOG model comparison": lambda: _render_hog_model_comparison(

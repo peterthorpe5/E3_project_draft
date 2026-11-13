@@ -74,14 +74,14 @@ def hog_feature_contexts(*, connection: object, hog_id: str) -> list[tuple[str, 
 
 
 def published_features(
-    *, connection: object, accession: str, group_id: str | None = None,
+    *, connection: object, accession: str | None, group_id: str | None = None,
     species: str | None = None, raw_identifier: str | None = None,
 ) -> pd.DataFrame:
     """Retrieve recorded rows for an exact accession and optional member context.
 
     Args:
         connection: Immutable E3 resource.
-        accession: Exact published member accession; no alias guessing or remote lookup.
+        accession: Exact published member accession, or None for one exact group's hits.
         group_id: Optional exact published group.
         species: Optional exact species column.
         raw_identifier: Optional exact HOG member ID when recorded on the hit.
@@ -92,7 +92,10 @@ def published_features(
     Raises:
         ResearchError: If identifiers, domain schema or complete bounds are invalid.
     """
-    if not accession.strip() or len(accession) > 1000 or any(ord(c) < 32 for c in accession):
+    if accession is None:
+        if not group_id:
+            raise ResearchError("Select an exact protein or group for recorded features")
+    elif not accession.strip() or len(accession) > 1000 or any(ord(c) < 32 for c in accession):
         raise ResearchError("Enter one exact, non-empty published protein accession")
     if "domain_hits" not in list_relations(connection):
         raise ResearchError("This E3 release does not include the recorded domain_hits relation")
@@ -100,8 +103,11 @@ def published_features(
     if not FEATURE_FIELDS.issubset(columns):
         raise ResearchError(
             "Recorded domain coordinates or their original protein length are absent")
-    predicates = ["upper(trim(CAST(member_accession AS VARCHAR))) = ?"]
-    parameters = [accession.strip().upper()]
+    predicates = []
+    parameters = []
+    if accession is not None:
+        predicates.append("upper(trim(CAST(member_accession AS VARCHAR))) = ?")
+        parameters.append(accession.strip().upper())
     for field, value in (
         ("primary_group_id", group_id), ("species_column", species),
         ("raw_identifier", raw_identifier),
@@ -114,8 +120,8 @@ def published_features(
         parameters,
     ).fetchdf()
     if len(frame) > 100_000:
-        raise ResearchError("Complete protein annotation exceeds the 100000-row inspection bound")
-    LOGGER.info("Loaded %d recorded E3 feature rows for exact accession %s", len(frame), accession)
+        raise ResearchError("Recorded features exceed the 100000-row inspection bound")
+    LOGGER.info("Loaded %d recorded E3 feature rows for %s", len(frame), accession or group_id)
     return frame
 
 

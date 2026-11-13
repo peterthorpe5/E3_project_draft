@@ -231,6 +231,15 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .trace-legend{display:flex;gap:5px 9px;flex-wrap:wrap;font-size:11px;color:#344a65}
     .trace-legend span::before{content:"";display:inline-block;width:8px;height:8px;
       border-radius:50%;margin-right:4px;background:var(--trace-colour)}
+    .sequence-search{border-top:1px solid #dae3ed;margin-top:10px;padding-top:8px;font-size:12px}
+    .sequence-search form,.sequence-search-options{display:flex;gap:6px 8px;
+      flex-wrap:wrap;align-items:end;margin:0 0 6px}
+    .sequence-search form label{flex:1 1 130px}
+    .sequence-search input:not([type=color]),.sequence-search select{border:1px solid #c8d4e2;
+      border-radius:5px;padding:5px 6px;font:inherit;background:white;color:inherit}
+    .sequence-search input[type=text]{display:block;width:100%;box-sizing:border-box}
+    .sequence-search input[type=number]{width:4em}
+    .sequence-search p:empty{display:none}
     .confidence-axis{position:absolute;right:2px;top:22px;height:77px;pointer-events:none;
       display:flex;flex-direction:column;justify-content:space-between;align-items:end;
       font-size:10px;color:#425671}

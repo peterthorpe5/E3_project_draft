@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import hashlib
 from io import BytesIO
 import json
@@ -26,6 +25,7 @@ import streamlit.components.v1 as components
 from e3app.config import AppConfig
 from e3app.errors import AppError
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
+from e3app.species_composition import member_species_counts, render_species_counts
 
 from .catalogue import browse_clusters, open_catalogue
 from .common import ResearchConfig, ResearchError, analysis_temporary_root, iter_fasta, load_config
@@ -43,7 +43,7 @@ from .guidance import (
     retrievable_cluster_ids,
     user_guide,
 )
-from .hog_context import job_hog, recover_hog_metadata
+from .hog_context import hog_member_metadata, job_hog, recover_hog_metadata
 from .jobs import (
     artifact_path,
     cancel_job,
@@ -53,6 +53,7 @@ from .jobs import (
     queued_external_provider_job,
     submit_job,
 )
+from .linked_features import monomer_view_payload
 from .viewers import auspice_dataset_url, nightingale_features, protein_tree_figure, viewer_document
 
 LOGGER = logging.getLogger(__name__)
@@ -1395,8 +1396,14 @@ def render_subcluster_statistics(
         if membership not in paths:
             raise ResearchError("The job has no saved membership artifact.")
         recovered = {}
+        member_taxonomy = paths.get("member_taxonomy.tsv")
+        has_saved_species = False
+        if member_taxonomy is not None:
+            with member_taxonomy.open(encoding="utf-8") as handle:
+                handle.readline()
+                has_saved_species = bool(handle.readline())
         if hog_id and connection is not None and "sequences.fasta" in paths and (
-            "member_taxonomy.tsv" not in paths
+            not has_saved_species
         ):
             taxonomy_map = os.environ.get("E3_TAXONOMY_MAP")
             try:
@@ -1410,7 +1417,7 @@ def render_subcluster_statistics(
             tables = subcluster_statistics(
                 membership=paths[membership], fasta=paths.get("sequences.fasta"),
                 taxonomy=paths.get("cluster_species.tsv"), group=group,
-                member_taxonomy=paths.get("member_taxonomy.tsv"), recovered_taxonomy=recovered,
+                member_taxonomy=member_taxonomy, recovered_taxonomy=recovered,
             )
     except ResearchError as exc:
         st.warning(str(exc))
@@ -1467,19 +1474,19 @@ def render_subcluster_statistics(
         "metric": "Metric", "passing_alignments": "Passing alignments",
         "minimum": "Minimum", "median": "Median", "maximum": "Maximum",
     }), hide_index=True)
-    if "species_counts" in tables:
-        with st.expander("Species composition"):
-            if recovered:
-                st.caption("Matched to the loaded E3 release by exact member ID and sequence.")
-            st.caption("Species names come with reviewed taxon IDs where available.")
-            st.dataframe(tables["species_counts"].rename(columns={
-                "reviewed_taxon_id": "Reviewed taxon ID", "species": "Species",
-                "input_family": "Input family", "selected_subcluster": "Selected subcluster",
-            }), hide_index=True)
-            if "member_taxonomy" in tables:
-                st.dataframe(tables["member_taxonomy"], hide_index=True)
-    else:
-        st.caption("Reviewed species counts are unavailable for this job.")
+    series = {"input_family": "Input family"}
+    if group:
+        series = {"selected_subcluster": "Selected subcluster", **series}
+    source = (" Matched to the loaded release by exact member ID and sequence."
+              if recovered else "")
+    render_species_counts(
+        counts=tables["species_counts"], key=f"subcluster_{job_id[:12]}",
+        description="Counts cover the complete audited membership." + source,
+        series=series, expanded=True,
+    )
+    if "member_taxonomy" in tables:
+        with st.expander("Member taxonomy evidence"):
+            st.dataframe(tables["member_taxonomy"], hide_index=True)
     package = BytesIO()
     with ZipFile(package, mode="w", compression=ZIP_DEFLATED) as archive:
         for name, table in tables.items():
@@ -1491,19 +1498,22 @@ def render_subcluster_statistics(
     )
 
 
-def render_new_hog_alignment(*, config: ResearchConfig, connection: object) -> None:
+def render_new_hog_alignment(
+    *, config: ResearchConfig, connection: object, app_config: AppConfig | None = None,
+) -> None:
     """Prepare HOG sequences and run or export an alignment from the viewer page.
 
     Args:
         config: Research workspace, executable paths and analysis limits.
         connection: Open E3 release with its HOG membership and protein sequences.
+        app_config: Optional published review locations used to identify missing models.
     """
     from .expansion_ui import render_hog_alignment_input
     from .local_worker import submit_local_alignment
 
     st.caption("Select a HOG to prepare its unaligned protein sequences from this release.")
     selection = render_hog_alignment_input(
-        config=config, connection=connection, key="msa", browse=True,
+        config=config, connection=connection, key="msa", browse=True, app_config=app_config,
     )
     if selection is None:
         return
@@ -1759,11 +1769,11 @@ def render_alignments(
                       index=options.index("Completed alignment job") if completed else 0,
                       help="Start with HOG sequences or open an existing protein alignment.")
     if source == "Align a HOG":
-        render_new_hog_alignment(config=config, connection=connection)
+        render_new_hog_alignment(config=config, connection=connection, app_config=app_config)
         return
     if source == "Published HOG alignment":
         render_published_alignment(
-            config=config, app_config=app_config, can_align_hog=connection is not None,
+            config=config, app_config=app_config, connection=connection,
         )
         return
     if source != "Completed alignment job":
@@ -1827,6 +1837,55 @@ def render_alignments(
     with st.expander("Technical alignment summary (JSON)"):
         st.json(summary)
     artifacts = completed[job_id]["artifacts"]
+    path = artifact_path(workspace=config.workspace, job_id=job_id, artifact="alignment.fasta")
+    records = dict(iter_fasta(path=path, aligned=True))
+    metadata = {}
+    if "member_taxonomy.tsv" in artifacts:
+        taxonomy = read_table(path=artifact_path(
+            workspace=config.workspace, job_id=job_id, artifact="member_taxonomy.tsv",
+        ), maximum_rows=config.max_alignment_sequences)
+        for row in taxonomy.itertuples():
+            if pd.notna(row.species) and str(row.species).strip():
+                metadata[row.sequence_id] = {"species": row.species}
+    if not metadata:
+        metadata = hog_member_metadata(
+            workspace=config.workspace, parameters=completed[job_id].get("parameters", {}),
+            fasta=path, aligned=True,
+        )
+    if not metadata and connection is not None and hog_id and "sequences.fasta" in artifacts:
+        try:
+            taxonomy_map = os.environ.get("E3_TAXONOMY_MAP")
+            metadata = recover_hog_metadata(
+                connection=connection, hog_id=hog_id,
+                fasta=artifact_path(workspace=config.workspace, job_id=job_id,
+                                    artifact="sequences.fasta"),
+                taxonomy_map=Path(taxonomy_map) if taxonomy_map else None,
+            )
+        except AppError as exc:
+            LOGGER.info("Could not recover alignment species for %s: %s", hog_id, exc)
+    render_species_counts(
+        counts=member_species_counts(
+            rows=pd.DataFrame({"species": [
+                metadata.get(identifier, {}).get("species") for identifier in records
+            ]}),
+            species_column="species",
+        ),
+        key=f"alignment_{job_id[:12]}",
+        description="Proteins in this saved alignment. Missing assignments are unclassified.",
+    )
+    if connection is not None and hog_id:
+        from e3app.external_hog import collect_hog_membership
+        from .expansion_ui import render_hog_alignment_models
+
+        try:
+            model_members = collect_hog_membership(connection=connection, hog_id=hog_id)
+        except AppError as exc:
+            LOGGER.info("Could not load HOG model choices for %s: %s", hog_id, exc)
+        else:
+            render_hog_alignment_models(
+                members=model_members, group_id=hog_id, scope=job_id, key="completed_hog",
+                app_config=app_config,
+            )
     if "sequences.fasta" in artifacts:
         st.caption("Use the proteins from this completed alignment in another analysis.")
         render_protein_analysis_links(
@@ -1874,8 +1933,6 @@ def render_alignments(
                 count=int(summary["aligned_sequence_count"]), jobs=tree_jobs,
             )
         return
-    path = artifact_path(workspace=config.workspace, job_id=job_id, artifact="alignment.fasta")
-    records = dict(iter_fasta(path=path, aligned=True))
     reference = summary["reference_id"]
     ordered = {reference: records[reference], **records}
     tree = (
@@ -1947,7 +2004,7 @@ def render_models(
                      horizontal=True, index=0 if dedicated else 1, key="esmfold_view_route",
                      help="Inspect a model file or open the prediction and completed-job forms.")
     if route == "Open an existing PDB":
-        render_uploaded_model()
+        render_uploaded_model(config=config)
         return
     render_page_guidance(section="Models")
     st.caption("Start an external prediction, queue a job for a research worker, "
@@ -2071,39 +2128,18 @@ def render_models(
             workspace=config.workspace, job_id=selected, artifact=row["residue_artifact"]
         )
     ).copy()
-    render_model_trace(residues=residues)
-    sequence = "".join(residues["residue"])
+    payload = monomer_view_payload(residues=residues)
+    sequence = str(payload["sequence"])
     if hashlib.sha256(sequence.encode()).hexdigest() != row["sequence_sha256"]:
         raise ResearchError("Model residue evidence differs from its input sequence")
-    annotations = completed_manifests(config=config, operation="annotate")
-    labels = {
-        "": "No annotation overlay",
-        **{key: job_label(job_id=key, record=value) for key, value in annotations.items()},
-    }
-    annotation_job = st.selectbox(
-        "Optional annotation overlay",
-        options=list(labels),
-        format_func=labels.__getitem__,
-        help="Choose an annotation job containing this exact protein sequence. A different "
-        "isoform or modified sequence cannot be overlaid on this model.",
+    from .expansion_ui import select_linked_annotations
+
+    payload["features"] = select_linked_annotations(
+        config=config, sequence=sequence, label="Optional annotation overlay",
+        key="predicted_model_annotation",
     )
-    hits = []
-    if annotation_job:
-        table = artifact_path(
-            workspace=config.workspace, job_id=annotation_job, artifact="annotations.tsv"
-        )
-        with table.open(encoding="utf-8") as handle:
-            hits = [
-                item
-                for item in csv.DictReader(handle, delimiter="\t")
-                if item["sequence_id"] == identifier
-            ]
-    features = nightingale_features(sequence_id=identifier, sequence=sequence, annotations=hits)
-    components.html(
-        viewer_document(viewer="nightingale", payload={"sequence": sequence, "features": features}),
-        height=300,
-        scrolling=True,
-    )
+    render_model_trace(payload=payload, stem=f"model_{selected[:12]}",
+                       identifier=str(identifier))
     st.caption(
         (
             "Reported ESMFold confidence is model evidence. This C-alpha view and "
@@ -2113,31 +2149,26 @@ def render_models(
     )
 
 
-def render_model_trace(*, residues: pd.DataFrame) -> None:
-    """Show coordinates and reported per-residue confidence for a predicted model.
+def render_model_trace(*, payload: dict[str, object], stem: str, identifier: str) -> None:
+    """Show a prediction with the same selection tools used in the feature browser.
 
     Args:
-        residues: Validated per-residue coordinate evidence.
+        payload: Validated exact sequence, coordinates and compatible annotation features.
+        stem: Unique output filename stem.
+        identifier: Display label for the exact model.
     """
-    residues = residues.copy()
-    for column in ("x", "y", "z", "residue_index", "confidence_b_factor"):
-        residues[column] = pd.to_numeric(residues[column])
-    figure = go.Figure(go.Scatter3d(
-        x=residues.x, y=residues.y, z=residues.z, mode="lines+markers",
-        marker={"size": 3, "color": residues.confidence_b_factor, "cmin": 0, "cmax": 100,
-                "colorscale": "Viridis", "colorbar": {"title": "Confidence"}},
-        text=residues.residue + residues.residue_index.astype(str),
-        hovertemplate="%{text}<extra></extra>",
-    ))
-    figure.update_layout(scene={"aspectmode": "data"}, title="Predicted model · C-alpha trace")
-    st.plotly_chart(figure, key="predicted_model_trace")
-    st.plotly_chart(px.line(residues, x="residue_index", y="confidence_b_factor", range_y=[0, 100]),
-                    key="model_confidence")
+    from .expansion_ui import show_features
+
+    show_features(payload={**payload, "model_label": identifier}, stem=stem)
 
 
-def render_uploaded_model() -> None:
-    """Inspect an externally produced monomer PDB against its exact FASTA sequence."""
-    from .expansion_ui import upload_text
+def render_uploaded_model(*, config: ResearchConfig) -> None:
+    """Inspect an uploaded monomer with optional exact-sequence annotations.
+
+    Args:
+        config: Workspace with completed positional annotation jobs.
+    """
+    from .expansion_ui import select_linked_annotations, upload_text
     from .providers import pdb_evidence
     from .viewer_inputs import uploaded_proteins
 
@@ -2149,8 +2180,13 @@ def render_uploaded_model() -> None:
     if pdb and fasta:
         records = uploaded_proteins(text=fasta)
         identifier = st.selectbox("Original protein ID", options=list(records))
-        residues = pdb_evidence(pdb=pdb, expected_sequence=records[identifier])
-        render_model_trace(residues=pd.DataFrame(residues))
+        sequence = records[identifier]
+        residues = pdb_evidence(pdb=pdb, expected_sequence=sequence)
+        payload = monomer_view_payload(
+            residues=pd.DataFrame(residues),
+            features=select_linked_annotations(config=config, sequence=sequence),
+        )
+        render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier)
 
 
 def render_annotations(*, config: ResearchConfig) -> None:

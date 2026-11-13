@@ -394,7 +394,10 @@ def test_alignment_summary_is_readable_and_aligned_fasta_is_not_an_input(
     assert all(item.proto.help for item in app.metric)
     app.radio(key="completed_alignment_view").set_value("Statistics").run()
     assert not app.exception
-    positions, members = app.dataframe
+    species, positions, members = app.dataframe
+    assert species.value.set_index("Species")["Protein sequences"].to_dict() == {
+        "Unclassified": 3,
+    }
     position_config = json.loads(positions.proto.columns)
     member_config = json.loads(members.proto.columns)
     assert all(position_config[column]["help"] for column in positions.value.columns)
@@ -403,13 +406,13 @@ def test_alignment_summary_is_readable_and_aligned_fasta_is_not_an_input(
     assert "number of comparable positions" in (
         member_config["blosum62_sum_over_comparable_positions"]["help"]
     )
-    assert len(app.get("plotly_chart")) == 1
+    assert len(app.get("plotly_chart")) == 2
     manifest_path = job_directory(workspace=config.workspace, job_id=alignment) / "manifest.json"
     legacy_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     del legacy_manifest["artifacts"]["auspice.json"]
     manifest_path.write_text(json.dumps(legacy_manifest), encoding="utf-8")
     app.radio(key="completed_alignment_view").set_value("Auspice tree").run()
-    assert not app.exception and len(app.get("plotly_chart")) == 1
+    assert not app.exception and len(app.get("plotly_chart")) == 2
     assert "Download Auspice dataset" in {button.label for button in app.get("download_button")}
     app.radio(key="research_section").set_value("Family analysis").run()
     source = app.selectbox(key="analyse_source")
@@ -469,7 +472,7 @@ def test_completed_alignment_can_infer_missing_tree_on_app_host(
     assert len(list_jobs(workspace=config.workspace, operation="align")) == 1
     app.run()
     assert not app.exception and not app.error
-    assert not app.get("iframe") and len(app.get("plotly_chart")) == 1
+    assert not app.get("iframe") and len(app.get("plotly_chart")) == 2
     assert {"Download Newick tree", "Download Auspice dataset"} <= {
         button.label for button in app.get("download_button")
     }

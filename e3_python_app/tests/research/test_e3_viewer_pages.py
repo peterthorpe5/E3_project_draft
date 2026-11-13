@@ -234,10 +234,12 @@ def test_completed_legacy_subcluster_shows_hog_and_recovers_species(
     assert any(f"Source HOG · {hog}" in line.value for line in app.caption)
     counts = next(item.value for item in app.dataframe if "Reviewed taxon ID" in item.value)
     assert counts.set_index("Species")["Input family"].to_dict() == {
-        "Arabidopsis_thaliana": 1, "Homo_sapiens": 1,
+        "Arabidopsis thaliana": 1, "Homo sapiens": 1,
     }
-    assert counts.set_index("Species").loc["Arabidopsis_thaliana", "Selected subcluster"] == 1
-    assert any("Matched to the loaded E3 release" in line.value for line in app.caption)
+    assert counts.set_index("Species").loc["Arabidopsis thaliana", "Selected subcluster"] == 1
+    assert any("Matched to the loaded release" in line.value for line in app.caption)
+    assert any(chart.key == f"subcluster_{job_id[:12]}_species_plot"
+               for chart in app.get("plotly_chart"))
     saved = artifact_path(workspace=workspace, job_id=job_id, artifact="cluster_species.tsv")
     assert "UNCLASSIFIED" in saved.read_text(encoding="utf-8")
     assert not app.exception and not app.error
@@ -392,7 +394,13 @@ def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, mo
 
     next(button for button in app.button if button.label == "Calculate heatmap").click().run()
     assert "MAAAN---" in app.get("iframe")[0].proto.srcdoc
-    assert len(app.get("plotly_chart")) == 1
+    assert {chart.key for chart in app.get("plotly_chart")} == {
+        f"alignment_{job_id[:12]}_species_plot", f"alignment_identity_heatmap_{job_id}",
+    }
+    counts = next(item.value for item in app.dataframe if "Protein sequences" in item.value)
+    assert counts.set_index("Species")["Protein sequences"].to_dict() == {
+        "Arabidopsis thaliana": 1, "Homo sapiens": 1,
+    }
     selection, comparison = app.session_state["alignment_heatmap_result"]
     assert selection[0] == job_id
     assert comparison.similarity.iat[0, 1] == 0.2
@@ -408,10 +416,15 @@ def test_jbrowse_aligns_a_selected_hog_on_the_app_host(resource_db, tmp_path, mo
     assert updated_selection == (job_id, (first_protein,))
     assert updated.similarity.shape == (1, 1)
     app.toggle(key="show_alignment_heatmap").set_value(False).run()
-    assert app.get("iframe") and not app.get("plotly_chart")
+    assert app.get("iframe")
+    assert [chart.key for chart in app.get("plotly_chart")] == [
+        f"alignment_{job_id[:12]}_species_plot",
+    ]
     app.toggle(key="show_alignment_heatmap").set_value(True).run()
     assert app.multiselect(key=proteins_key).value == [first_protein]
-    assert len(app.get("plotly_chart")) == 1
+    assert {chart.key for chart in app.get("plotly_chart")} == {
+        f"alignment_{job_id[:12]}_species_plot", f"alignment_identity_heatmap_{job_id}",
+    }
 
     for action, section, input_key in (
         ("subcluster", "Family analysis", "analyse"),

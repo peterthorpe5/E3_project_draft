@@ -109,7 +109,7 @@ def subcluster_statistics(
         recovered_taxonomy: Exact member evidence recovered from a published HOG.
 
     Returns:
-        Partition, family comparison, audit counts, centroid metrics and optional species tables.
+        Partition, family comparison, audit counts, centroid metrics and species counts.
 
     Raises:
         ResearchError: If a required result, selection or source identity is invalid.
@@ -240,12 +240,16 @@ def subcluster_statistics(
                         comparison.loc[scope, "reviewed_taxa"] = int(reviewed[column].gt(0).sum())
                         comparison.loc[scope, "proteins_with_reviewed_taxonomy"] = count
                 tables["species_counts"] = species
+            else:
+                tables["species_counts"] = pd.DataFrame([{
+                    "reviewed_taxon_id": None, "species": "Unclassified",
+                    "input_family": total, "selected_subcluster": selected_count,
+                }])
             if not group:
                 counts = counts.drop(columns="selected_subcluster")
-                if "species_counts" in tables:
-                    tables["species_counts"] = tables["species_counts"].drop(
-                        columns="selected_subcluster",
-                    )
+                tables["species_counts"] = tables["species_counts"].drop(
+                    columns="selected_subcluster",
+                )
             tables["input_family_comparison"] = comparison.reset_index()
             tables["audit_outcomes"] = counts
             LOGGER.info("Summarised %d audited proteins for subcluster %s", total, group or "all")

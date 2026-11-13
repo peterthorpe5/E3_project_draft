@@ -207,6 +207,7 @@ def quick_group_profile(
         "species_count": None,
         "membership_source": None,
         "members": pd.DataFrame(),
+        "species_composition": pd.DataFrame(),
     }
     sources = [
         "hierarchical_membership",
@@ -229,11 +230,21 @@ def quick_group_profile(
         )
         where = conditions[0][1]
         species = next((field for field in ("species", "species_column") if field in columns), None)
-        species_count = f"count(DISTINCT {quote_identifier(species)})" if species else "NULL"
-        count, represented = connection.execute(
-            f"SELECT count(*), {species_count} FROM {quote_identifier(relation)} WHERE {where}",
-            parameters,
-        ).fetchone()
+        scoped = f"FROM {quote_identifier(relation)} WHERE {where}"
+        composition = pd.DataFrame()
+        if species:
+            name = f"trim(CAST({quote_identifier(species)} AS VARCHAR))"
+            composition = connection.execute(
+                f"SELECT CASE WHEN coalesce(upper({name}), '') IN "
+                f"('', 'UNKNOWN', 'UNCLASSIFIED', 'NAN') THEN 'Unclassified' "
+                f"ELSE {name} END AS species, count(*) AS sequence_count "
+                f"{scoped} GROUP BY 1 ORDER BY 2 DESC, 1", parameters,
+            ).fetchdf()
+            count = composition["sequence_count"].sum()
+            represented = int(composition["species"].ne("Unclassified").sum())
+        else:
+            count = connection.execute(f"SELECT count(*) {scoped}", parameters).fetchone()[0]
+            represented = None
         if not count:
             continue
         metadata = [
@@ -263,6 +274,7 @@ def quick_group_profile(
                 "member_count": int(count),
                 "species_count": represented,
                 "membership_source": relation,
+                "species_composition": composition,
                 "members": preview_query(
                     connection=connection, query=query, maximum_rows=maximum_rows
                 ),

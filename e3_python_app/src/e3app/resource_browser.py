@@ -23,6 +23,7 @@ from e3app.enriched_hogs import (
     enriched_hog_columns,
 )
 from e3app.errors import AppError
+from e3app.species_composition import render_species_counts
 from e3app.group_lookup import (
     exact_group_terms,
     find_exact_groups,
@@ -412,6 +413,11 @@ def _render_group_dossier(
     )
     if not ranks.empty:
         _show_table(frame=ranks.drop(columns="numeric_rank"), height=150)
+    if members is not None:
+        render_species_counts(
+            counts=profile["species_composition"], key=f"search_{group_id}",
+            description=f"All recorded members of {group_id} in {profile['membership_source']}.",
+        )
     if not profile["members"].empty:
         st.caption(
             f"Member preview from {profile['membership_source']}: "

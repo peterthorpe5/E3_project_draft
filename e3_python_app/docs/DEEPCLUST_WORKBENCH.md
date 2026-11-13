@@ -42,6 +42,19 @@ The confidence trace uses a 0–100 scale and shows gaps where the review has no
 confidence value. Use **Download Nightingale viewer (HTML)** for the same
 controls offline. The download opens with the default colours.
 
+Enter a sequence such as `QWFAA` in **Amino-acid sequence** and choose
+**Find matches**. The search uses literal amino-acid letters on the ungapped
+protein, ignores case and spaces, and includes overlapping matches. Choose
+**All matches** or **One match** and set the match number. **Match colour**
+changes the search highlight. **Download 3D view (PDF)** captures the current
+angle, zoom and highlight colours with a labelled key.
+
+The same controls are available in the app's uploaded PDB and ESMFold model
+views. The native pocket-review and pairwise superposition viewers offer
+**Highlight residues** when the review has a mappable sequence. A pair lets
+you choose the reference or aligned member. External viewers use their own
+controls.
+
 Historical InterPro and Pfam features can be overlaid when the release's exact
 member context and recorded protein length match the model sequence axis.
 These tracks carry a **Recorded coordinates** label and indicate approximate
@@ -51,6 +64,12 @@ records are still available under **Recorded domains**.
 
 Select a completed InterProScan job to add its **Sequence verified** annotations.
 **Set up annotation for this protein** opens the workbench with its FASTA prepared.
+
+When the selected protein has no matching review model, **Retrieve AlphaFold
+model** fetches the current public mmCIF for its canonical UniProt accession.
+It becomes downloadable and opens in Nightingale if its residue axis can be
+verified. Review pocket annotations remain associated with the published
+review model.
 
 ## Built-in search and the Top-200 campaign
 
@@ -258,6 +277,21 @@ destination before starting work.
 **Published HOG alignment** opens alignments exported with the plant pocket
 review. **Try an example** opens six synthetic sequences. **Upload alignment
 files** accepts a previously aligned protein FASTA and an optional tree.
+
+Use **Retrieve missing protein sequences** under **Align a HOG** for missing
+public accessions. NCBI Protein and UniProt requests resolve the exact
+identifier, including an accession version or isoform where supplied. The
+returned accession and source appear in the sequence ID mapping TSV and the
+alignment job parameters. The app host makes these lookups on request.
+Operators can set `E3_NCBI_EMAIL` for the NCBI E-utilities contact.
+
+**Species composition** gives a bar chart, complete table and TSV. The HOG
+input shows published membership and the proteins selected for alignment. The
+completed view counts only the saved aligned proteins, including any sample.
+For uploaded alignments, supply a sequence-to-species TSV if available.
+Unknown assignments appear as **Unclassified**. In subcluster
+**Statistics and comparison**, select a subcluster to compare its species
+counts with those of the original input family.
 
 Protein data is not sent to a CDN.
 Choose the inferred FastTree protein tree or **Reviewed species tree**. Upload

@@ -299,6 +299,8 @@ def test_smoke_document_generator_is_reproducible(tmp_path):
         "nightingale-linked.html",
         "nightingale-recorded.html",
         "nightingale.html",
+        "review-group.html",
+        "review-pair.html",
     ]
 
 
