@@ -5,6 +5,24 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 const directory = process.argv[2];
 if (!directory) throw new Error("Supply the synthetic viewer-document directory");
+
+/** Count exact colour pixels to check the rendered model as well as the UI state. */
+async function assertTraceColours(trace, ...colours) {
+  const counts = await trace.evaluate((canvas, values) => {
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    const counts = Object.fromEntries(values.map(value => [Number.parseInt(value.slice(1), 16), 0]));
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] < 220) continue;
+      const rgb = (pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2];
+      if (Object.hasOwn(counts, rgb)) counts[rgb] += 1;
+    }
+    return values.map(value => counts[Number.parseInt(value.slice(1), 16)]);
+  }, colours);
+  for (const [index, count] of counts.entries()) {
+    assert.ok(count > 0, `${colours[index]} is drawn on the trace`);
+  }
+}
+
 const browser = await chromium.launch({ headless: true,
   executablePath: process.env.CHROMIUM_EXECUTABLE || undefined,
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
@@ -27,6 +45,7 @@ try {
     assert.deepEqual(outbound, [], name + " must remain offline");
     const drawn = await page.locator(nightingale ? "svg" : "canvas").count();
     assert.ok(drawn > 0, name + " must draw the actual data");
+    if (name !== "nightingale-linked") assert.equal(await page.locator('input[type="color"]').count(), 0);
     if (nightingale) {
       const expectedLength = name === "nightingale-recorded" ? "100" : "20";
       const track = page.locator("nightingale-track").first();
@@ -38,6 +57,11 @@ try {
       assert.equal(await track.getAttribute("display-end"), "10");
       if (name === "nightingale-recorded")
         assert.equal(await page.locator("nightingale-sequence").count(), 0);
+      if (name === "nightingale-linked") {
+        for (const label of ["Domain colour", "Pocket colour"]) {
+          assert.ok(await page.getByLabel(label).isDisabled());
+        }
+      }
       await page.locator("nightingale-track").first().locator("rect.feature").first().click();
       assert.match(await page.locator(".feature-selection-detail").innerText(), /2–10/);
       if (name === "nightingale-linked") {
@@ -46,44 +70,64 @@ try {
         const domain = page.getByRole("button", { name: "SYNTHETIC_DOMAIN", exact: true });
         const recorded = page.getByRole("button", { name: /RECORDED_DOMAIN/ });
         const pocket = page.getByRole("button", { name: "Pocket 4 · rank 1" });
+        const otherPocket = page.getByRole("button", { name: "Pocket 2 · rank 2" });
+        const domainColour = page.getByLabel("Domain colour");
+        const pocketColour = page.getByLabel("Pocket colour");
+        const reset = page.getByRole("button", { name: "Reset colours" });
+        const pocketTrack = page.locator("nightingale-track").nth(2);
         const selected = page.locator(".feature-selection-detail");
         assert.equal(await domain.getAttribute("aria-pressed"), "true");
         assert.equal(await trace.getAttribute("data-domain-count"), "9");
         assert.equal(await track.getAttribute("highlight"), "2:10");
-        assert.equal(await track.getAttribute("highlight-color"), "#7b38b5");
+        assert.equal(await track.getAttribute("highlight-color"), "#182554");
+        assert.equal(await domainColour.inputValue(), "#182554");
+        assert.ok(await pocketColour.isDisabled());
+        assert.ok(await reset.isDisabled());
         assert.equal(await graph.getAttribute("display-start"), "2");
         assert.equal(await graph.evaluate(track => track.data[0].values[9].value), null);
         await pocket.click();
         assert.equal(await trace.getAttribute("data-pocket-count"), "2");
         assert.equal(await trace.getAttribute("data-domain-count"), "9");
-        const colours = await trace.evaluate(canvas => {
-          const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
-          const counts = { purple: 0, amber: 0 };
-          for (let i = 0; i < pixels.length; i += 4) {
-            if (pixels[i + 3] < 220) continue;
-            const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
-            if (r === 123 && g === 56 && b === 181) counts.purple += 1;
-            if (r === 239 && g === 172 && b === 49) counts.amber += 1;
-          }
-          return counts;
-        });
-        assert.ok(colours.purple > 0 && colours.amber > 0, "Both colours appear on the trace");
-        const pocketTrack = page.locator("nightingale-track").last();
+        await assertTraceColours(trace, "#182554", "#c24e00");
         assert.equal(await pocketTrack.getAttribute("highlight"), "3:3,5:5");
-        assert.equal(await pocketTrack.getAttribute("highlight-color"), "#efac31");
+        assert.equal(await pocketColour.inputValue(), "#c24e00");
+        await domainColour.fill("#a62bd0");
+        await pocketColour.fill("#097a30");
+        await assertTraceColours(trace, "#a62bd0", "#097a30");
+        assert.equal(await track.getAttribute("highlight-color"), "#a62bd0");
+        assert.equal(await track.locator("path.feature").first().getAttribute("stroke"), "#a62bd0");
+        assert.equal(await pocketTrack.getAttribute("highlight-color"), "#097a30");
+        assert.equal(await pocketTrack.locator("path.feature").first().getAttribute("stroke"), "#097a30");
+        assert.equal(await pocket.evaluate(node => node.style.getPropertyValue("--selection-colour")), "#097a30");
+        assert.equal(await domain.getAttribute("aria-pressed"), "true");
+        await otherPocket.click();
+        assert.equal(await pocketColour.inputValue(), "#007d7c");
+        await assertTraceColours(trace, "#a62bd0", "#007d7c");
+        assert.equal(await trace.getAttribute("data-pocket-count"), "3");
+        await pocket.click();
+        assert.equal(await pocketColour.inputValue(), "#097a30");
+        await assertTraceColours(trace, "#a62bd0", "#097a30");
         await page.locator("nightingale-track").first().locator("rect.feature").first().click();
         assert.equal(await domain.getAttribute("aria-pressed"), "false");
         assert.equal(await trace.getAttribute("data-domain-count"), "0");
+        assert.ok(await domainColour.isDisabled());
         assert.equal(await trace.getAttribute("data-pocket-count"), "2");
         assert.match(await page.locator(".domain-provenance").innerText(), /overlay is approximate/);
         assert.match(await recorded.locator("..").innerText(), /4–7 · Recorded coordinates/);
         assert.equal(await page.locator("nightingale-track").nth(1).locator("rect.feature").count(), 1);
         await recorded.press("Enter");
+        assert.equal(await domainColour.inputValue(), "#182554");
         assert.equal(await trace.getAttribute("data-domain-count"), "4");
         assert.equal(await trace.getAttribute("data-pocket-count"), "2");
         await recorded.click();
         assert.equal(await trace.getAttribute("data-domain-count"), "0");
         await domain.click();
+        assert.equal(await domainColour.inputValue(), "#a62bd0");
+        await reset.click();
+        assert.equal(await domainColour.inputValue(), "#182554");
+        assert.equal(await pocketColour.inputValue(), "#c24e00");
+        assert.ok(await reset.isDisabled());
+        await assertTraceColours(trace, "#182554", "#c24e00");
         const graphPoint = await graph.evaluate(track => ({
           x: track.getXFromSeqPosition(4.5), y: 40,
         }));
@@ -115,6 +159,8 @@ try {
           assert.equal(await trace.getAttribute(`data-${kind}-count`), "0");
         await page.setViewportSize({ width: 620, height: 1000 });
         assert.ok(await trace.isVisible());
+        assert.ok(await domainColour.isVisible());
+        assert.ok(await pocketColour.isVisible());
       }
     }
     assert.deepEqual(errors, [], name + " JavaScript errors after interactions");

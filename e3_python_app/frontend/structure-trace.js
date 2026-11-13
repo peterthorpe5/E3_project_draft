@@ -1,5 +1,5 @@
 /** An offline, residue-indexed C-alpha trace for the Nightingale view. */
-export const HIGHLIGHT_COLOURS = { domain: "#7b38b5", pocket: "#efac31", residue: "#167d74" };
+export const HIGHLIGHT_COLOURS = { domain: "#182554", pocket: "#c24e00", residue: "#167d74" };
 
 export function mountStructureTrace(container, residues, onPick) {
   const canvas = document.createElement("canvas");
@@ -15,6 +15,8 @@ export function mountStructureTrace(container, residues, onPick) {
   let domains = new Set();
   let pockets = new Set();
   let selectedResidues = new Set();
+  let domainColour = HIGHLIGHT_COLOURS.domain;
+  let pocketColour = HIGHLIGHT_COLOURS.pocket;
   let drag = null;
   let moved = false;
 
@@ -60,34 +62,73 @@ export function mountStructureTrace(container, residues, onPick) {
 
     const hasHighlights = Boolean(domains.size || pockets.size || selectedResidues.size);
     context.lineCap = "round";
+    const domainSegments = new Path2D();
     for (let index = 1; index < projected.length; index += 1) {
       const previous = projected[index - 1], next = projected[index];
       if (next.residue.position !== previous.residue.position + 1) continue;
+      if (domains.has(previous.residue.position) && domains.has(next.residue.position)) {
+        domainSegments.moveTo(previous.x, previous.y);
+        domainSegments.lineTo(next.x, next.y);
+        continue;
+      }
       context.beginPath();
-      const domainSegment = domains.has(previous.residue.position) && domains.has(next.residue.position);
-      context.strokeStyle = domainSegment ? HIGHLIGHT_COLOURS.domain : colour(next.residue.plddt);
-      context.lineWidth = domainSegment ? 3.6 : 1.65;
-      context.globalAlpha = domainSegment ? .95 : hasHighlights ? .52 : .78;
+      context.strokeStyle = colour(next.residue.plddt);
+      context.lineWidth = 1.65;
+      context.globalAlpha = hasHighlights ? .42 : .78;
       context.moveTo(previous.x, previous.y);
       context.lineTo(next.x, next.y);
       context.stroke();
     }
     const depthOrder = [...projected].sort((a, b) => a.z - b.z);
+    context.globalAlpha = hasHighlights ? .36 : 1;
+    for (const point of depthOrder) {
+      const position = point.residue.position;
+      if (domains.has(position) || pockets.has(position)) continue;
+      context.beginPath();
+      context.fillStyle = colour(point.residue.plddt);
+      context.arc(point.x, point.y, 2, 0, 2 * Math.PI);
+      context.fill();
+    }
+    context.globalAlpha = 1;
+    if (domains.size) {
+      context.strokeStyle = "#243246";
+      context.lineWidth = 6.5;
+      context.stroke(domainSegments);
+      context.strokeStyle = "#fff";
+      context.lineWidth = 5;
+      context.stroke(domainSegments);
+      context.strokeStyle = domainColour;
+      context.lineWidth = 3.8;
+      context.stroke(domainSegments);
+    }
     for (const point of depthOrder) {
       const position = point.residue.position;
       const inDomain = domains.has(position);
       const inPocket = pockets.has(position);
       const selected = selectedResidues.has(position);
-      context.beginPath();
-      context.globalAlpha = selected || inDomain || inPocket || !hasHighlights ? 1 : .45;
-      context.fillStyle = inPocket ? HIGHLIGHT_COLOURS.pocket
-        : inDomain ? HIGHLIGHT_COLOURS.domain : colour(point.residue.plddt);
-      context.arc(point.x, point.y, inPocket ? 4.5 : inDomain ? 3 : 2, 0, 2 * Math.PI);
-      context.fill();
-      if (inPocket) {
-        context.lineWidth = inDomain ? 2 : 1;
-        context.strokeStyle = inDomain ? HIGHLIGHT_COLOURS.domain : "#624613";
+      if (inPocket || inDomain) {
+        context.beginPath();
+        context.arc(point.x, point.y, inPocket ? 4.5 : 2.8, 0, 2 * Math.PI);
+        context.fillStyle = inPocket ? pocketColour : domainColour;
+        context.fill();
+        context.lineWidth = inPocket ? 1.5 : 2.2;
+        context.strokeStyle = "#243246";
         context.stroke();
+        if (!inPocket) {
+          context.lineWidth = 0.8;
+          context.strokeStyle = "#fff";
+          context.stroke();
+        }
+        if (inPocket && inDomain) {
+          context.beginPath();
+          context.arc(point.x, point.y, 6, 0, 2 * Math.PI);
+          context.strokeStyle = "#fff";
+          context.lineWidth = 2.8;
+          context.stroke();
+          context.strokeStyle = domainColour;
+          context.lineWidth = 1.6;
+          context.stroke();
+        }
       }
       if (selected) {
         context.beginPath();
@@ -167,10 +208,12 @@ export function mountStructureTrace(container, residues, onPick) {
   draw();
   return {
     fit, magnify,
-    highlight({ domain = [], pocket = [], residue = [] }) {
-      domains = new Set(domain);
-      pockets = new Set(pocket);
-      selectedResidues = new Set(residue);
+    highlight({ domain, pocket, residue }) {
+      domains = new Set(domain?.positions);
+      pockets = new Set(pocket?.positions);
+      selectedResidues = new Set(residue?.positions);
+      domainColour = domain?.colour ?? HIGHLIGHT_COLOURS.domain;
+      pocketColour = pocket?.colour ?? HIGHLIGHT_COLOURS.pocket;
       canvas.dataset.domainCount = String(domains.size);
       canvas.dataset.pocketCount = String(pockets.size);
       canvas.dataset.residueCount = String(selectedResidues.size);

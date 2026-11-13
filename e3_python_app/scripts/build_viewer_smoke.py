@@ -56,7 +56,10 @@ def main(*, argv: Sequence[str] | None = None) -> int:
                     "locations": [{"fragments": [{"start": 4, "end": 7}]}] * 2,
                 },
             ],
-            "pockets": [{"number": 4, "rank": 1, "positions": [3, 5], "color": "#ad4e23"}],
+            "pockets": [
+                {"number": 4, "rank": 1, "positions": [3, 5], "color": "#c24e00"},
+                {"number": 2, "rank": 2, "positions": [6, 8, 12], "color": "#007d7c"},
+            ],
             "model": [
                 {"position": index, "residue": residue, "x": index * .8,
                  "y": (index % 4) * .7, "z": (index % 5) * .6,

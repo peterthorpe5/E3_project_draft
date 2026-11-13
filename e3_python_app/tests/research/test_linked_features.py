@@ -115,6 +115,26 @@ def test_linked_view_can_use_the_other_review(*, linked_review, tmp_path):
     assert evidence["model_source"] == root.name
 
 
+def test_pocket_colours_follow_rank(*, linked_review):
+    """Keep each pocket's default when an intervening rank has no mapped residues."""
+    root, group = linked_review
+    atom = group["proteins"][0]["atoms"][2]
+    atom["pockets"].append({"selection_rank": 3, "pocket_number": 12})
+    record = group["alignment"]["records"][0]
+    record["pocket_annotations"].append({
+        "fasta_position": 3, "fasta_residue": SEQUENCE[2], "structure_label_chain": "A",
+        "structure_label_seq_id": "3", "selection_rank": 3, "pocket_number": 12,
+    })
+    write_group(root=root, group=group)
+    evidence = linked_review_evidence(
+        config=AppConfig(pocket_review_dir=root), accession=ACCESSION,
+        group_id=HOG, species=SPECIES, sequence=SEQUENCE,
+    )
+    assert [(pocket["rank"], pocket["color"]) for pocket in evidence["pockets"]] == [
+        (1, "#c24e00"), (3, "#aa3377"),
+    ]
+
+
 @pytest.mark.parametrize("failure", ["traversal", "group", "script"])
 def test_review_payload_rejects_mismatched_or_uncontained_group(*, linked_review, failure):
     """Read one contained inert data block belonging to the selected group."""

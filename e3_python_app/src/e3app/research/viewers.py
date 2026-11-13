@@ -210,7 +210,8 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
       color:#244f7c;font-size:13px;font-weight:600;text-align:left;text-decoration:underline;
       text-underline-offset:2px}
     .protein-feature-viewer button.feature-track-label[aria-pressed="true"]{
-      box-shadow:inset 3px 0 var(--selection-colour);background:#f0f2f7;padding:2px 6px}
+      box-shadow:inset 3px 0 var(--selection-colour);background:#f0f2f7;padding:2px 6px;
+      font-weight:700;text-decoration:none}
     .protein-feature-viewer p.domain-provenance{color:#425671;font-size:12px}
     .protein-feature-viewer :focus-visible{outline:2px solid #206a87;outline-offset:2px}
     .linked-structure{min-width:0;border:1px solid #dae3ed;border-radius:8px;padding:10px;
@@ -222,6 +223,11 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .structure-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
       font-size:12px}
     .feature-residue-input{width:60px}
+    .trace-colour-controls{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:8px 0}
+    .trace-colour-picker{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+    .trace-colour-picker input{width:36px;height:27px;border:1px solid #c8d4e2;border-radius:4px;
+      padding:2px;background:white;cursor:pointer;box-sizing:border-box}
+    .trace-colour-picker input:disabled{opacity:.55;cursor:default}
     .trace-legend{display:flex;gap:5px 9px;flex-wrap:wrap;font-size:11px;color:#344a65}
     .trace-legend span::before{content:"";display:inline-block;width:8px;height:8px;
       border-radius:50%;margin-right:4px;background:var(--trace-colour)}

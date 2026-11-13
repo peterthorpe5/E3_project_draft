@@ -1081,7 +1081,7 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
     }
     base_height = 182 if payload.get("sequence") else 144
     height = (
-        min(850, max(585, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
+        min(850, max(630, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
         if payload.get("model") else min(620, max(160, base_height + 50 * len(features)))
     )
     components.html(document, height=height, scrolling=True)

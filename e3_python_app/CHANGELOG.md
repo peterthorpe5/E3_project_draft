@@ -4,6 +4,13 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.13
+
+- Give highlighted domains a high-contrast outline and match each pocket's
+  default marker colour to its Nightingale track.
+- Change the selected domain or pocket colour beside the 3D model. Each track
+  keeps its own choice while the viewer is open, with a reset to defaults.
+
 ## v0.23.12
 
 - Show compatible recorded InterPro and Pfam domains beside the structure.

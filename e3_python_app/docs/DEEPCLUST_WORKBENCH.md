@@ -32,12 +32,15 @@ review. The app checks the group, accession and species, compares the ungapped
 review sequence with the selected release member, and verifies model residues
 and mapped pockets against that sequence.
 
-Click a domain track to highlight its backbone in purple and a pocket track
-to show its mapped residues in amber. Both highlights can be visible together.
-Click the active track again to remove its highlight. Click a model point or
-the pLDDT graph to mark one residue in teal while retaining the two tracks.
+Click a domain track to highlight its backbone in navy. Pocket markers use the
+colour of their matching track, with defaults set by pocket rank. Use **Domain
+colour** or **Pocket colour** below the model to change the active track. Each
+track keeps its colour while the viewer is open. **Reset colours** restores
+the defaults. Click the active track again to remove its highlight. Click a
+model point or the pLDDT graph to mark a residue while retaining both tracks.
 The confidence trace uses a 0–100 scale and shows gaps where the review has no
-confidence value. Use **Download Nightingale viewer (HTML)** for offline review.
+confidence value. Use **Download Nightingale viewer (HTML)** for the same
+controls offline. The download opens with the default colours.
 
 Historical InterPro and Pfam features can be overlaid when the release's exact
 member context and recorded protein length match the model sequence axis.

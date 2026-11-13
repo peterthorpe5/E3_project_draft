@@ -24,7 +24,7 @@ from .feature_catalogue import recorded_feature_payload
 
 LOGGER = logging.getLogger(__name__)
 MAX_LINKED_RESIDUES = 20_000
-POCKET_COLOURS = ("#ac4319", "#8161b1", "#087b83", "#ae4165", "#80600c")
+POCKET_COLOURS = ("#c24e00", "#007d7c", "#aa3377", "#54772a", "#bd7900")
 
 
 class _ReviewDataParser(HTMLParser):

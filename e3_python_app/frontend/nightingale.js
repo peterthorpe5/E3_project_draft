@@ -22,7 +22,9 @@ const model = new Map((data.model || []).map(residue => [residue.position, resid
 const pockets = data.pockets || [];
 const trackElements = [];
 const active = new Map();
+const colourInputs = new Map();
 let trace = null;
+let resetColours = null;
 let displayStart = 1, displayEnd = length;
 const scope = data.coordinate_scope || "Exact sequence coordinates";
 status.textContent = "Nightingale · " + length + " residues · " + scope;
@@ -85,16 +87,26 @@ function updateSelection() {
   }
   const highlights = {};
   const labels = [];
-  for (const [kind, { ranges, label }] of active) {
+  for (const [kind, { ranges, label, colour }] of active) {
     const positions = [...model.keys()].filter(position =>
       ranges.some(({ start, end }) => start <= position && position <= end));
-    highlights[kind] = positions;
+    highlights[kind] = { positions, colour };
     const coordinates = ranges.slice(0, 12).map(({ start, end }) =>
       start === end ? String(start) : start + "–" + end).join(", ");
     const shown = coordinates + (ranges.length > 12 ? ", …" : "");
     labels.push(`${label} · ${shown}` + (model.size ? ` · ${positions.length} model residues` : ""));
   }
   trace?.highlight(highlights);
+  for (const [kind, { input, first }] of colourInputs) {
+    const item = active.get(kind);
+    const colour = (item ?? first).colour;
+    if (input.value !== colour) input.value = colour;
+    input.disabled = !item;
+  }
+  if (resetColours) {
+    resetColours.disabled = !trackElements.some(({ selection }) =>
+      selection && selection.colour !== selection.defaultColour);
+  }
   clear.disabled = !active.size;
   detail.textContent = labels.join(" | ") || prompt;
 }
@@ -150,21 +162,29 @@ if (model.size) {
   }
 }
 
+/** Apply one feature's colour to both its Nightingale marks and its selection control. */
+function setTrackColour(item, colour) {
+  item.colour = colour;
+  item.control.style.setProperty("--selection-colour", colour);
+  item.track.setAttribute("highlight-color", colour);
+  item.track.data = [model.size ? { ...item.feature, color: colour } : item.feature];
+}
+
 function featureRow(parent, feature, label, kind) {
   const row = element("div", parent, "protein-feature-row");
   const header = element("div", row, "protein-feature-label");
   const ranges = feature.locations.flatMap(location => location.fragments);
-  const item = { ranges, label, kind };
+  const defaultColour = kind === "pocket" && /^#[\da-f]{6}$/i.test(feature.color)
+    ? feature.color.toLowerCase() : HIGHLIGHT_COLOURS[kind];
+  const item = { ranges, label, kind, feature, defaultColour };
   item.control = button(header, label, () => toggleTrack(item), "feature-track-label");
   item.control.setAttribute("aria-pressed", "false");
-  item.control.style.setProperty("--selection-colour", HIGHLIGHT_COLOURS[kind]);
   const text = feature.rangeText || ranges.map(({ start, end }) =>
     start === end ? String(start) : start + "–" + end).join(", ");
   element("span", header, "", text);
-  const track = addTrack("track", row, 20);
-  track.selection = item;
-  track.setAttribute("highlight-color", HIGHLIGHT_COLOURS[kind]);
-  track.data = [feature];
+  item.track = addTrack("track", row, 20);
+  item.track.selection = item;
+  setTrackColour(item, defaultColour);
 }
 
 const domains = new Map();
@@ -227,12 +247,37 @@ if (model.size) {
   residueInput.max = length;
   residueInput.addEventListener("change", () => pickResidue(Number(residueInput.value), true));
   element("p", structure, "", "Drag to rotate. Click a point to select its sequence position.");
-  const highlights = element("div", structure, "trace-legend");
-  for (const [kind, label] of [["domain", "Domain"], ["pocket", "Pocket"], ["residue", "Selected residue"]]) {
-    const item = element("span", highlights, "", label);
-    item.style.setProperty("--trace-colour", HIGHLIGHT_COLOURS[kind]);
+  if (trackElements.some(track => track.selection)) {
+    const colours = element("div", structure, "trace-colour-controls");
+    for (const [kind, label] of [["domain", "Domain colour"], ["pocket", "Pocket colour"]]) {
+      const first = trackElements.find(track => track.selection?.kind === kind)?.selection;
+      if (!first) continue;
+      const field = element("label", colours, "trace-colour-picker", label);
+      field.title = `Select a ${kind} track to change its colour`;
+      const input = element("input", field);
+      input.type = "color";
+      const change = () => {
+        const item = active.get(kind);
+        if (!item || item.colour === input.value) return;
+        setTrackColour(item, input.value);
+        updateSelection();
+      };
+      input.addEventListener("input", change);
+      input.addEventListener("change", change);
+      colourInputs.set(kind, { input, first });
+    }
+    resetColours = button(colours, "Reset colours", () => {
+      for (const { selection } of trackElements) {
+        if (selection && selection.colour !== selection.defaultColour) {
+          setTrackColour(selection, selection.defaultColour);
+        }
+      }
+      updateSelection();
+    });
   }
   const legend = element("div", structure, "trace-legend");
+  const picked = element("span", legend, "", "Selected residue");
+  picked.style.setProperty("--trace-colour", HIGHLIGHT_COLOURS.residue);
   for (const [colour, label] of [
     ["#1856a1", "90–100"], ["#188499", "70–<90"], ["#bc872b", "50–<70"],
     ["#a95729", "<50"], ["#8d9aa7", "Unavailable"],
@@ -240,6 +285,7 @@ if (model.size) {
     const item = element("span", legend, "", label);
     item.style.setProperty("--trace-colour", colour);
   }
+  updateSelection();
 }
 
 container.addEventListener("change", event => {
