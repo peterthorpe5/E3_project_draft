@@ -48,9 +48,10 @@ TOP_LEVEL_TAB_HELP = {
     "Protein feature browser": TabHelpEntry(
         instruction="Choose a HOG and then one of its protein members, search by accession, "
         "or upload the normalised annotation table and its original FASTA. A selected record "
-        "can open the matching HOG alignment or its protein in the models page.",
-        yields="Labelled Nightingale feature tracks, recorded coordinate evidence and an offline "
-        "HTML viewer download.",
+        "can open the matching HOG alignment or its protein in the models page. Choose "
+        "Linked structure and pockets for models in the configured pocket review.",
+        yields="Clickable domain tracks, mapped pocket residues, model pLDDT and a linked "
+        "C-alpha trace for exact sequence matches, with a standalone HTML download.",
     ),
     "External links": TabHelpEntry(
         instruction=(

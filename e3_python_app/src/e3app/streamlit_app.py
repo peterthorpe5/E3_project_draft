@@ -5621,7 +5621,7 @@ def render_app() -> None:
                 ),
                 "DeepClust workbench": lambda: render_research_workbench(
                     connection=connection, initial_section="Discover", external_search=True,
-                    title="DeepClust workbench",
+                    title="DeepClust workbench", app_config=config,
                 ),
                 "JBrowse MSA": lambda: render_research_workbench(
                     connection=connection, initial_section="Alignments and trees",
@@ -5634,10 +5634,11 @@ def render_app() -> None:
                 ),
                 "Protein feature browser": lambda: render_research_workbench(
                     connection=connection, initial_section="Protein features",
-                    title="Protein feature browser", dedicated=True,
+                    title="Protein feature browser", dedicated=True, app_config=config,
                 ),
                 "Protein research workbench": lambda: render_research_workbench(
                     connection=connection, initial_section="Discover", external_search=True,
+                    app_config=config,
                 ),
                 "Overview": lambda: _render_overview(
                     connection=connection,

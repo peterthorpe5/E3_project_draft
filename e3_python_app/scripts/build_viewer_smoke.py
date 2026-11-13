@@ -44,6 +44,19 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             "coordinate_scope": "Recorded annotation coordinates; amino-acid sequence not verified",
         }), encoding="utf-8",
     )
+    (output / "nightingale-linked.html").write_text(
+        viewer_document(viewer="nightingale", payload={
+            **payload,
+            "coordinate_scope": "Verified sequence axis",
+            "pockets": [{"number": 4, "rank": 1, "positions": [3, 5], "color": "#ad4e23"}],
+            "model": [
+                {"position": index, "residue": residue, "x": index * .8,
+                 "y": (index % 4) * .7, "z": (index % 5) * .6,
+                 "plddt": 64 + index if index != 10 else None}
+                for index, residue in enumerate(payload["sequence"], start=1)
+            ],
+        }), encoding="utf-8",
+    )
     species, _audit = species_display_tree(
         newick="(Human:1,Plant:1);", sequence_ids=["query", "member"],
         metadata={"query": {"species": "Human"}, "member": {"species": "Plant"}},

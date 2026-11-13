@@ -2638,6 +2638,7 @@ def render_research_workbench(
             "Cluster comparisons": lambda: render_comparisons(config=config),
             "Protein features": lambda: render_features(
                 config=config, connection=connection, dedicated=dedicated,
+                app_config=app_config,
             ),
             "Family analysis": lambda: render_analysis(
                 config=config, enable_search=not external_search, connection=connection,

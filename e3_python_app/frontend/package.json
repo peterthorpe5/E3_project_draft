@@ -8,6 +8,7 @@
     "test": "node --test *.test.mjs"
   },
   "dependencies": {
+    "@nightingale-elements/nightingale-linegraph-track": "5.11.0",
     "@nightingale-elements/nightingale-navigation": "5.11.0",
     "@nightingale-elements/nightingale-sequence": "5.11.0",
     "@nightingale-elements/nightingale-track": "5.11.1",

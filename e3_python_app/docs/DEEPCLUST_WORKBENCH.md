@@ -24,6 +24,24 @@ orthology context → Protein research workbench**.
 The Parquet importer uses explicit column selection while Ken’s export and
 API/CLI contract are being defined. The FASTA download is the current handoff.
 
+## Linked structure and pockets in Nightingale
+
+Open **Protein feature browser**, select a HOG and member, then choose
+**Linked structure and pockets**. This uses the configured portable pocket
+review. The app checks the group, accession and species, compares the ungapped
+review sequence with the selected release member, and verifies model residues
+and mapped pockets against that sequence.
+
+Click a domain or pocket track to highlight its residues in the C-alpha trace.
+Click a model point or the pLDDT graph to locate the residue on the sequence.
+The confidence trace uses a 0–100 scale and shows gaps where the review has no
+confidence value. Use **Download Nightingale viewer (HTML)** for offline review.
+
+Select a completed InterProScan job to add its exact-sequence annotations.
+**Set up annotation for this protein** opens the workbench with its FASTA
+prepared. Legacy InterPro and Pfam rows without a sequence checksum are
+available under **Recorded domains** on their original coordinate axis.
+
 ## Built-in search and the Top-200 campaign
 
 Open **Built-in DeepClust search** under **DeepClust results & FASTA** and select

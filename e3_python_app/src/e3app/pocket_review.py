@@ -206,6 +206,28 @@ def _safe_group_page(review_dir: Path, relative_path: str) -> Path:
     return resolved
 
 
+def read_review_page(*, review_dir: Path, relative_path: str) -> str:
+    """Read one contained review page without loading the full portable report.
+
+    Args:
+        review_dir: Configured portable pocket-review directory.
+        relative_path: Page path from its report index.
+
+    Returns:
+        Bounded UTF-8 HTML for the selected group.
+
+    Raises:
+        AppError: If the page path, size or encoding is invalid.
+    """
+    page = _safe_group_page(review_dir, relative_path)
+    if page.stat().st_size > MAX_HTML_BYTES:
+        raise AppError(f"Pocket-review page exceeds the 100 MiB size limit: {page}")
+    try:
+        return page.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise AppError(f"Could not read pocket-review page {page}: {exc}") from exc
+
+
 def load_pocket_review(review_dir: Path) -> PocketReviewBundle:
     """Load and validate one complete portable pocket-review bundle.
 
@@ -630,13 +652,7 @@ def read_review_html(
     """
     if bundle.path is None:
         raise AppError("Pocket-review visualisations are unavailable")
-    page = _safe_group_page(bundle.path, relative_path)
-    if page.stat().st_size > MAX_HTML_BYTES:
-        raise AppError(f"Pocket-review page exceeds the 100 MiB safety limit: {page}")
-    try:
-        return page.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise AppError(f"Could not read pocket-review page {page}: {exc}") from exc
+    return read_review_page(review_dir=bundle.path, relative_path=relative_path)
 
 
 def repair_pocket_review_viewer_controls(document: str) -> str:

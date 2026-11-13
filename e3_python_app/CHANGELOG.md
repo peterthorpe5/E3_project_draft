@@ -4,6 +4,14 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.11
+
+- Inspect clickable Nightingale domains and sequence-verified pocket residues,
+  per-residue pLDDT and a linked rotatable C-alpha trace from the portable
+  pocket review. Download the interactive viewer as standalone HTML.
+- Match completed positional annotation jobs to the model by exact sequence
+  SHA-256. Legacy release domains retain their recorded-coordinate view.
+
 ## v0.23.10
 
 - Show the recorded source HOG on completed alignment and subclustering

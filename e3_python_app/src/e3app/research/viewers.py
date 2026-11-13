@@ -187,12 +187,47 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     html,body{margin:0;font-family:Arial,sans-serif;background:white;color:#18243b}
     #status{padding:8px;font-size:13px}#viewer{width:100%;position:relative}
     #viewer.alignment-viewer{height:680px}
-    nightingale-navigation,nightingale-sequence,nightingale-track{display:block;width:100%}
+    nightingale-navigation,nightingale-sequence,nightingale-track,
+    nightingale-linegraph-track{display:block;width:100%}
     #viewer.protein-feature-viewer{height:auto;box-sizing:border-box;padding:0 10px 10px}
     .protein-feature-viewer p{font-size:13px;margin:8px 0}
-    .protein-feature-row{border-top:1px solid #d9e1eb;padding:5px 0 2px}
+    .protein-feature-row{border-top:1px solid #d9e1eb;padding:5px 0 2px;position:relative}
     .protein-feature-label{font-size:13px;font-weight:600;overflow-wrap:anywhere}
-    .protein-feature-label span{font-size:12px;font-weight:400;margin-left:10px;color:#425671}
+    .protein-feature-label span{font-size:12px;font-weight:400;margin-left:8px;color:#425671}
+    .protein-feature-viewer h3{font-size:14px;margin:14px 0 7px}
+    .feature-layout.linked{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);
+      align-items:start;gap:20px}
+    .feature-tracks{min-width:0}
+    .feature-selection{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;
+      background:#edf3fa;border:1px solid #dbe6f2;border-radius:6px;padding:6px 10px;
+      margin:3px 0 10px}
+    .feature-selection p{margin:0;overflow-wrap:anywhere;flex:1 1 200px}
+    .protein-feature-viewer button,.feature-residue-input{background:white;color:#18243b;
+      border:1px solid #c8d4e2;border-radius:5px;padding:5px 8px;font:inherit;font-size:12px}
+    .protein-feature-viewer button{cursor:pointer}
+    .protein-feature-viewer button:disabled{opacity:.55;cursor:default}
+    .protein-feature-viewer button.feature-track-label{border:0;background:none;padding:0;
+      color:#244f7c;font-size:13px;font-weight:600;text-align:left;text-decoration:underline;
+      text-underline-offset:2px}
+    .protein-feature-viewer :focus-visible{outline:2px solid #206a87;outline-offset:2px}
+    .linked-structure{min-width:0;border:1px solid #dae3ed;border-radius:8px;padding:10px;
+      background:#f6f9fc}
+    .linked-structure h3{margin:0 0 7px}
+    .linked-trace{display:block;width:100%;height:345px;background:#fdfefe;
+      border-radius:5px;cursor:grab;touch-action:none}
+    .linked-trace:active{cursor:grabbing}
+    .structure-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
+      font-size:12px}
+    .feature-residue-input{width:60px}
+    .trace-legend{display:flex;gap:5px 9px;flex-wrap:wrap;font-size:11px;color:#344a65}
+    .trace-legend span::before{content:"";display:inline-block;width:8px;height:8px;
+      border-radius:50%;margin-right:4px;background:var(--confidence-colour)}
+    .confidence-axis{position:absolute;right:2px;top:22px;height:77px;pointer-events:none;
+      display:flex;flex-direction:column;justify-content:space-between;align-items:end;
+      font-size:10px;color:#425671}
+    .confidence-axis span{background:#fffffff0;padding:0 2px}
+    @media(max-width:750px){.feature-layout.linked{grid-template-columns:minmax(0,1fr)}
+      .linked-trace{height:290px}}
     """
         + css
         + '</style></head><body><div id="status" role="status">Loading viewer…</div>'

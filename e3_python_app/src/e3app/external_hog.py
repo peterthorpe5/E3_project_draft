@@ -73,12 +73,15 @@ def collect_external_hogs(*, connection: object) -> pd.DataFrame:
     )
 
 
-def _sequence_lookup(*, connection: object, hog_id: str) -> dict[tuple[str, str], set[str]]:
+def _sequence_lookup(
+    *, connection: object, hog_id: str, member: tuple[str, str] | None = None,
+) -> dict[tuple[str, str], set[str]]:
     """Read distinct sequences from the exact HOG/species/raw-identifier authority.
 
     Args:
         connection: Read-only source connection.
         hog_id: Exact root HOG whose published sequences are requested.
+        member: Optional exact species and raw identifier to load only that member.
 
     Returns:
         Distinct normalised sequence strings per exact species/raw identifier.
@@ -88,12 +91,14 @@ def _sequence_lookup(*, connection: object, hog_id: str) -> dict[tuple[str, str]
         relation_columns(connection=connection, relation=SEQUENCE_RELATION)
     ):
         return {}
+    predicate = " AND species = ? AND raw_identifier = ?" if member is not None else ""
     rows = connection.execute(
         f"SELECT species, raw_identifier, protein_sequence "
         f"FROM {quote_identifier(SEQUENCE_RELATION)} "
         "WHERE CAST(group_id AS VARCHAR) = ? "
-        "AND upper(trim(CAST(record_type AS VARCHAR))) = 'HIERARCHICAL_ORTHOGROUP'",
-        [hog_id],
+        "AND upper(trim(CAST(record_type AS VARCHAR))) = 'HIERARCHICAL_ORTHOGROUP'"
+        + predicate,
+        [hog_id, *(member or ())],
     ).fetchall()
     lookup: dict[tuple[str, str], set[str]] = {}
     for species, identifier, sequence in rows:
@@ -101,6 +106,27 @@ def _sequence_lookup(*, connection: object, hog_id: str) -> dict[tuple[str, str]
             normalised = re.sub(r"\s+", "", str(sequence)).upper()
             lookup.setdefault((str(species), str(identifier)), set()).add(normalised)
     return lookup
+
+
+def released_member_sequence(
+    *, connection: object, hog_id: str, species: str, raw_identifier: str,
+) -> str:
+    """Read a unique sequence for one exact released HOG member.
+
+    Args:
+        connection: Read-only E3 release connection.
+        hog_id: Exact HOG identifier.
+        species: Exact release species label.
+        raw_identifier: Original member identifier.
+
+    Returns:
+        The unique released sequence, or empty text when absent or conflicting.
+    """
+    member = (species, raw_identifier)
+    choices = _sequence_lookup(
+        connection=connection, hog_id=hog_id, member=member,
+    ).get(member, set())
+    return next(iter(choices)) if len(choices) == 1 else ""
 
 
 def collect_hog_membership(

@@ -296,6 +296,7 @@ def test_smoke_document_generator_is_reproducible(tmp_path):
         "alignment.html",
         "jbrowse-species.html",
         "jbrowse.html",
+        "nightingale-linked.html",
         "nightingale-recorded.html",
         "nightingale.html",
     ]

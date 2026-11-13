@@ -151,7 +151,8 @@ def recorded_feature_payload(*, rows: pd.DataFrame) -> dict[str, object]:
         features.append({
             "accession": str(row["entry_accession"]), "description": str(row["entry_name"]),
             "locations": [{"fragments": [{"start": start, "end": end}]}],
-            "color": "#4c5fc3",
+            "color": "#2b699d" if str(row.get("source_database")).casefold() == "pfam"
+            else "#6454ae",
         })
     return {
         "sequence": "", "length": length, "features": features,

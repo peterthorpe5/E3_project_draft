@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from hashlib import sha256
 from inspect import signature
 from io import StringIO
 import json
@@ -19,9 +20,11 @@ import streamlit.components.v1 as components
 
 from e3app.config import AppConfig
 from e3app.errors import AppError
-from e3app.external_hog import published_hog_ids
+from e3app.external_hog import published_hog_ids, released_member_sequence
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
-from e3app.pocket_review import prepare_pocket_review, selected_group_alignment_fasta_bytes
+from e3app.pocket_review import (
+    discover_pocket_review_dir, prepare_pocket_review, selected_group_alignment_fasta_bytes,
+)
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
@@ -30,7 +33,9 @@ from .deepclust_import import PARQUET_UPLOAD_BYTES, extract_family, open_results
 from .feature_catalogue import (
     feature_contexts, hog_feature_contexts, published_features, recorded_feature_payload,
 )
+from .guidance import job_label
 from .jobs import artifact_path
+from .linked_features import linked_review_evidence, verified_domain_features
 from .remote import ssh_command
 from .species_tree import species_display_tree
 from .viewer_inputs import (
@@ -61,6 +66,25 @@ def _resource_identity(*, config: ResearchConfig) -> tuple:
         stamp = path.stat().st_mtime_ns if path is not None and path.exists() else None
         values.append((key, value, stamp))
     return tuple(values)
+
+
+def _open_linked_annotations(*, accession: str, group_id: str, sequence: str) -> None:
+    """Open the shared annotation form with the exact selected protein prepared.
+
+    Args:
+        accession: Current protein accession.
+        group_id: Current HOG.
+        sequence: Verified ungapped model input sequence.
+    """
+    from .ui import navigate_research
+
+    st.session_state["e3_navigation_stage"] = DEEPCLUST_STAGE
+    st.session_state[f"e3_navigation_page_{DEEPCLUST_STAGE}"] = "DeepClust workbench"
+    st.session_state["research_surface"] = "DeepClust workbench"
+    navigate_research(
+        section="Annotations",
+        prepared_fasta=(f"{accession} · {group_id}", f">{accession}\n{sequence}\n"),
+    )
 
 
 def render_deepclust_exchange(*, config: ResearchConfig, connection: object | None) -> None:
@@ -731,6 +755,7 @@ def open_e3_viewer(
 
 def render_features(
     *, config: ResearchConfig, connection: object | None, dedicated: bool = False,
+    app_config: AppConfig | None = None,
 ) -> None:
     """Share Nightingale, arbitrary-sequence annotation and ESMFold across both app contexts.
 
@@ -738,6 +763,7 @@ def render_features(
         config: Analysis profile and jobs.
         connection: Optional immutable E3 domain evidence.
         dedicated: Focus the E3 entry point on feature viewing.
+        app_config: Optional E3 release and published pocket review locations.
     """
     from .ui import render_annotations, render_models
 
@@ -790,10 +816,25 @@ def render_features(
             raw_identifier=raw_identifier,
         )
     except ResearchError as exc:
-        st.info(f"{exc}. Select Upload annotation results to open your own files.")
-        return
+        st.caption(str(exc))
+        selected = pd.DataFrame()
     if selected.empty:
         st.info("Recorded features are unavailable for this protein in the selected HOG.")
+    if app_config is not None and group_id and species and (
+        discover_pocket_review_dir(config=app_config) or app_config.human_plant_review_dir
+    ):
+        view = st.radio(
+            "Protein view", ("Recorded domains", "Linked structure and pockets"),
+            key="recorded_feature_view", horizontal=True,
+            help="Open the model, mapped pocket residues and pLDDT on a verified sequence axis.",
+        )
+        if view == "Linked structure and pockets":
+            render_linked_features(
+                config=config, app_config=app_config, connection=connection, choice=choice,
+                domains=selected,
+            )
+            return
+    if selected.empty:
         return
     selected[["primary_group_id", "species_column"]] = selected[
         ["primary_group_id", "species_column"]].fillna("")
@@ -821,6 +862,107 @@ def render_features(
                            data=selected.to_csv(sep="\t", index=False),
                            file_name="recorded_protein_features.tsv",
                            mime="text/tab-separated-values")
+
+
+def render_linked_features(
+    *, config: ResearchConfig, app_config: AppConfig, connection: object,
+    choice: tuple[str, str, str, str | None], domains: pd.DataFrame,
+) -> None:
+    """Display one selected member's sequence-verified structure, pockets and domains.
+
+    Args:
+        config: Research workspace containing optional exact-sequence annotation results.
+        app_config: Published resource and review bundle paths.
+        connection: Open E3 release connection.
+        choice: Selected accession, HOG, species and raw member identifier.
+        domains: Recorded E3 domain rows for the selected context.
+    """
+    accession, group_id, species, raw_identifier = choice
+    try:
+        if raw_identifier is None:
+            matches = [
+                row[3] for row in hog_feature_contexts(connection=connection, hog_id=group_id)
+                if row[:3] == (accession, group_id, species)
+            ]
+            if len(matches) == 1:
+                raw_identifier = matches[0]
+        sequence = released_member_sequence(
+            connection=connection, hog_id=group_id, species=species, raw_identifier=raw_identifier,
+        ) if raw_identifier else ""
+        evidence = linked_review_evidence(
+            config=app_config, accession=accession, group_id=group_id, species=species,
+            sequence=sequence,
+        )
+    except (AppError, ResearchError) as exc:
+        st.info(str(exc))
+        return
+    if evidence is None:
+        st.info("No review model could be matched to this exact released protein sequence.")
+        return
+
+    features = verified_domain_features(rows=domains, sequence=sequence)
+    st.caption(f"Structure and pocket evidence · {evidence['model_source']}")
+    if not evidence["pockets"]:
+        st.caption("No mapped pocket residues were available on this model's sequence axis.")
+    features.extend(select_linked_annotations(config=config, sequence=sequence))
+    if not features:
+        if not domains.empty:
+            st.caption("Published domains are available under Recorded domains. Add annotations "
+                       "for this exact sequence to link domain positions to the model.")
+        st.button(
+            "Set up annotation for this protein", key="linked_feature_annotate",
+            on_click=_open_linked_annotations,
+            kwargs={"accession": accession, "group_id": group_id, "sequence": sequence},
+            help="Prepare this protein in the annotation workbench for review.",
+        )
+    stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{species}")
+    show_features(
+        payload={**evidence, "features": features, "coordinate_scope": "Verified sequence axis"},
+        stem=f"{stem}_linked_features",
+    )
+
+
+def select_linked_annotations(
+    *, config: ResearchConfig, sequence: str,
+) -> list[dict[str, object]]:
+    """Attach positional hits from a completed annotation job with the same sequence.
+
+    Args:
+        config: Workbench profile for completed, checksummed job artifacts.
+        sequence: Exact selected protein sequence.
+
+    Returns:
+        Nightingale feature tracks for matching positional hits.
+    """
+    from .ui import completed_manifests
+
+    jobs = completed_manifests(config=config, operation="annotate")
+    labels = {
+        key: job_label(job_id=key, record=value) for key, value in jobs.items()
+        if "annotations.tsv" in value["artifacts"]
+    }
+    if not labels:
+        return []
+    source = st.selectbox(
+        "Exact-sequence annotation job", list(labels), index=None, format_func=labels.__getitem__,
+        key="linked_annotation_job", placeholder="Choose a completed InterProScan job",
+        help="Positional hits appear only when their sequence SHA-256 matches this protein.",
+    )
+    if source is None:
+        return []
+    path = artifact_path(workspace=config.workspace, job_id=source, artifact="annotations.tsv")
+    digest = sha256(sequence.encode("ascii")).hexdigest()
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = [
+            row for row in csv.DictReader(handle, delimiter="\t")
+            if row.get("sequence_sha256") == digest and row.get("start")
+        ]
+    if not rows:
+        st.info("This job contains no positional hits for the selected sequence.")
+        return []
+    # Identical input sequences can appear under several job identifiers.
+    identifier = rows[0]["sequence_id"]
+    return nightingale_features(sequence_id=identifier, sequence=sequence, annotations=rows)
 
 
 def select_recorded_feature_context(
@@ -934,7 +1076,10 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
     document = viewer_document(viewer="nightingale", payload=payload)
     features = {(feature["accession"], feature["description"]) for feature in payload["features"]}
     base_height = 182 if payload.get("sequence") else 144
-    height = min(620, max(160, base_height + 50 * len(features)))
+    height = (
+        min(910, 760 + 41 * (len(features) + len(payload.get("pockets", ()))))
+        if payload.get("model") else min(620, max(160, base_height + 50 * len(features)))
+    )
     components.html(document, height=height, scrolling=True)
     st.download_button("Download Nightingale viewer (HTML)", data=document,
                        file_name=f"{stem}.html", key=f"nightingale_{stem}", mime="text/html")
