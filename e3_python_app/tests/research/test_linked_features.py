@@ -16,10 +16,10 @@ from e3app.navigation import CANDIDATE_STAGE
 from e3app.research.common import ResearchError, atomic_json, file_sha256
 from e3app.research.jobs import claim_job, finish_job, job_directory, submit_job
 from e3app.research.linked_features import (
+    linked_domain_features,
     linked_review_evidence,
     model_residues,
     read_group_evidence,
-    verified_domain_features,
 )
 
 HOG = "N0.HOG0001"
@@ -145,8 +145,8 @@ def test_structure_rejects_ambiguous_or_incompatible_coordinates(*, linked_revie
         model_residues(atoms=atoms, sequence=SEQUENCE)
 
 
-def test_recorded_domains_use_their_own_sequence_digest():
-    """Same-length or conflicting annotations must stay on their recorded coordinate axis."""
+def test_linked_domain_coordinates_preserve_sequence_evidence():
+    """Label same-length historical intervals and omit conflicting sequence evidence."""
     values = {
         "member_accession": ACCESSION, "primary_group_id": HOG, "species_column": SPECIES,
         "entry_accession": "PF_TEST", "entry_name": "Test domain", "location_start": 2,
@@ -156,22 +156,46 @@ def test_recorded_domains_use_their_own_sequence_digest():
     digest = md5(SEQUENCE.encode(), usedforsecurity=False).hexdigest()
     rows = pd.DataFrame([
         {**values, "entry_accession": "PF_LEGACY"},
+        {**values, "entry_accession": "PF_LEGACY"},
         {**values, "entry_accession": "PF_WRONG", "sequence_sha256": "a" * 64},
         {**values, "entry_accession": "PF_CONFLICT", "sequence_sha256": sha,
          "sequence_md5": "b" * 32},
         {**values, "entry_accession": "PF_LENGTH", "sequence_sha256": sha, "protein_length": 9},
         {**values, "entry_accession": "PF_MD5", "sequence_md5": digest},
+        {**values, "entry_accession": "PF_BAD_START", "location_start": 2.5},
+        {**values, "entry_accession": "PF_BAD_END", "location_end": 9},
+        {**values, "entry_accession": "PF_LEGACY", "location_start": 6, "location_end": 7},
+        values,
         {**values, "sequence_sha256": sha},
     ])
-    assert [item["accession"] for item in verified_domain_features(
-        rows=rows, sequence=SEQUENCE,
-    )] == ["PF_MD5", "PF_TEST"]
+    features = linked_domain_features(rows=rows, sequence=SEQUENCE)
+    assert [(item["accession"], item["provenance"]) for item in features] == [
+        ("PF_MD5", "sequence_verified"), ("PF_TEST", "sequence_verified"),
+        ("PF_LEGACY", "recorded_coordinates"), ("PF_LEGACY", "recorded_coordinates"),
+    ]
+    assert linked_domain_features(rows=pd.DataFrame(), sequence=SEQUENCE) == []
+    assert linked_domain_features(rows=rows, sequence="MST") == []
+
+
+def test_exact_worker_hit_replaces_only_the_same_domain_interval():
+    """Preserve separate recorded intervals when one domain gains exact-sequence evidence."""
+    base = {"member_accession": ACCESSION, "primary_group_id": HOG, "species_column": SPECIES,
+            "entry_accession": "PF_TEST", "entry_name": "Test domain", "protein_length": 8,
+            "location_start": 2, "location_end": 5}
+    exact = [{"accession": "PF_TEST", "description": "Verified domain", "color": "#5852a3",
+              "locations": [{"fragments": [{"start": 2, "end": 5}]}]}]
+    rows = pd.DataFrame([base, {**base, "location_start": 6, "location_end": 8}])
+    features = linked_domain_features(rows=rows, sequence=SEQUENCE, annotations=exact)
+    assert len(features) == 2
+    assert features[0]["provenance"] == "sequence_verified"
+    assert features[1]["provenance"] == "recorded_coordinates"
+    assert features[1]["locations"][0]["fragments"] == [{"start": 6, "end": 8}]
 
 
 def test_linked_view_uses_release_and_existing_annotation_jobs(
     *, resource_db, linked_review, tmp_path, monkeypatch,
 ):
-    """Open the dedicated E3 browser, keep legacy domains apart and attach exact worker hits."""
+    """Display both historical coordinates and exact worker hits in the linked view."""
     root, _ = linked_review
     workspace = tmp_path / "research"
     profile = tmp_path / "research.toml"
@@ -223,11 +247,13 @@ def test_linked_view_uses_release_and_existing_annotation_jobs(
     app.radio(key="recorded_feature_view").set_value("Linked structure and pockets").run()
     document = app.get("iframe")[0].proto.srcdoc
     assert '"positions": [2, 5]' in document
-    assert "PF_LEGACY" not in document
+    assert "PF_LEGACY" in document and '"provenance": "recorded_coordinates"' in document
     assert "Verified sequence axis" in document
     app.selectbox(key="linked_annotation_job").set_value(job).run()
     document = app.get("iframe")[0].proto.srcdoc
     assert "PF_EXACT" in document and "PF_WRONG" not in document
+    assert '"provenance": "sequence_verified"' in document
+    assert "PF_LEGACY" in document
     assert not app.exception and not app.error
 
     app.selectbox(key="linked_annotation_job").set_value(None).run()

@@ -32,15 +32,22 @@ review. The app checks the group, accession and species, compares the ungapped
 review sequence with the selected release member, and verifies model residues
 and mapped pockets against that sequence.
 
-Click a domain or pocket track to highlight its residues in the C-alpha trace.
-Click a model point or the pLDDT graph to locate the residue on the sequence.
+Click a domain track to highlight its backbone in purple and a pocket track
+to show its mapped residues in amber. Both highlights can be visible together.
+Click the active track again to remove its highlight. Click a model point or
+the pLDDT graph to mark one residue in teal while retaining the two tracks.
 The confidence trace uses a 0–100 scale and shows gaps where the review has no
 confidence value. Use **Download Nightingale viewer (HTML)** for offline review.
 
-Select a completed InterProScan job to add its exact-sequence annotations.
-**Set up annotation for this protein** opens the workbench with its FASTA
-prepared. Legacy InterPro and Pfam rows without a sequence checksum are
-available under **Recorded domains** on their original coordinate axis.
+Historical InterPro and Pfam features can be overlaid when the release's exact
+member context and recorded protein length match the model sequence axis.
+These tracks carry a **Recorded coordinates** label and indicate approximate
+positions because the annotation's input sequence lacks a checksum. An
+explicit sequence mismatch excludes a track from the linked view. The original
+records are still available under **Recorded domains**.
+
+Select a completed InterProScan job to add its **Sequence verified** annotations.
+**Set up annotation for this protein** opens the workbench with its FASTA prepared.
 
 ## Built-in search and the Top-200 campaign
 

@@ -262,22 +262,32 @@ def linked_review_evidence(
     return None
 
 
-def verified_domain_features(*, rows: pd.DataFrame, sequence: str) -> list[dict[str, object]]:
-    """Extract domain tracks whose recorded sequence digest matches the chosen protein.
+def linked_domain_features(
+    *, rows: pd.DataFrame, sequence: str, annotations: list[dict[str, object]] | None = None,
+) -> list[dict[str, object]]:
+    """Map valid recorded coordinates and retain the annotation's sequence evidence.
 
     Args:
-        rows: Recorded domain rows with their original coordinates and optional digests.
-        sequence: Exact sequence used for the model and pocket axis.
+        rows: Recorded hits for one exact accession, group and species.
+        sequence: Exact released sequence already matched to the review model.
+        annotations: Validated hits from an optional exact-sequence InterProScan job.
 
     Returns:
-        Nightingale features supported by the annotation's matching sequence checksum.
+        Tracks with exact checksum matches or explicitly labelled historical coordinates.
+        Conflicting digests, incompatible lengths and invalid positions are excluded.
     """
+    result = [{**feature, "provenance": "sequence_verified"} for feature in annotations or ()]
+    seen_intervals = {
+        (feature["accession"], fragment["start"], fragment["end"])
+        for feature in result for location in feature["locations"]
+        for fragment in location["fragments"]
+    }
+    if rows.empty or not sequence:
+        return result
     columns = {
         "sequence_sha256": sha256(sequence.encode("ascii")).hexdigest(),
         "sequence_md5": md5(sequence.encode("ascii"), usedforsecurity=False).hexdigest(),
     }
-    if rows.empty or not set(columns).intersection(rows):
-        return []
     matches = pd.Series(False, index=rows.index)
     mismatches = pd.Series(False, index=rows.index)
     for name, digest in columns.items():
@@ -285,8 +295,27 @@ def verified_domain_features(*, rows: pd.DataFrame, sequence: str) -> list[dict[
             values = rows[name].fillna("").astype(str).str.strip().str.lower()
             matches |= values.eq(digest)
             mismatches |= values.ne("") & values.ne(digest)
-    lengths = pd.to_numeric(rows["protein_length"], errors="coerce")
-    verified = rows.loc[matches & ~mismatches & lengths.eq(len(sequence))]
-    if verified.empty:
-        return []
-    return recorded_feature_payload(rows=verified)["features"]
+    coordinates = rows[["protein_length", "location_start", "location_end"]].apply(
+        pd.to_numeric, errors="coerce",
+    )
+    valid = (
+        coordinates.protein_length.eq(len(sequence)) & coordinates.location_start.ge(1)
+        & coordinates.location_start.le(coordinates.location_end)
+        & coordinates.location_end.le(len(sequence))
+        & coordinates.mod(1).eq(0).all(axis=1) & ~mismatches
+    )
+    for provenance, subset in (
+        ("sequence_verified", rows.loc[valid & matches]),
+        ("recorded_coordinates", rows.loc[valid & ~matches]),
+    ):
+        if subset.empty:
+            continue
+        for feature in recorded_feature_payload(rows=subset)["features"]:
+            fragment = feature["locations"][0]["fragments"][0]
+            key = (feature["accession"], fragment["start"], fragment["end"])
+            if key in seen_intervals:
+                continue
+            seen_intervals.add(key)
+            result.append({**feature, "provenance": provenance})
+    LOGGER.info("Mapped %d recorded domain intervals to the linked view", len(result))
+    return result

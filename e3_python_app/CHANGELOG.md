@@ -4,6 +4,14 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.12
+
+- Show compatible recorded InterPro and Pfam domains beside the structure.
+  Label historical coordinates and sequence-verified annotations separately.
+- Toggle a domain on the C-alpha trace in purple while retaining amber pocket
+  markers. Repeat a track click to clear that highlight and use the same controls
+  in the standalone offline viewer.
+
 ## v0.23.11
 
 - Inspect clickable Nightingale domains and sequence-verified pocket residues,

@@ -38,23 +38,59 @@ try {
       assert.equal(await track.getAttribute("display-end"), "10");
       if (name === "nightingale-recorded")
         assert.equal(await page.locator("nightingale-sequence").count(), 0);
-      await page.locator("nightingale-track").last().locator("rect.feature").first().click();
+      await page.locator("nightingale-track").first().locator("rect.feature").first().click();
       assert.match(await page.locator(".feature-selection-detail").innerText(), /2–10/);
       if (name === "nightingale-linked") {
         const trace = page.locator("canvas.linked-trace");
         const graph = page.locator("nightingale-linegraph-track");
-        assert.equal(await trace.getAttribute("data-selected-count"), "9");
-        assert.equal(await graph.getAttribute("highlight"), "2:10");
+        const domain = page.getByRole("button", { name: "SYNTHETIC_DOMAIN", exact: true });
+        const recorded = page.getByRole("button", { name: /RECORDED_DOMAIN/ });
+        const pocket = page.getByRole("button", { name: "Pocket 4 · rank 1" });
+        const selected = page.locator(".feature-selection-detail");
+        assert.equal(await domain.getAttribute("aria-pressed"), "true");
+        assert.equal(await trace.getAttribute("data-domain-count"), "9");
+        assert.equal(await track.getAttribute("highlight"), "2:10");
+        assert.equal(await track.getAttribute("highlight-color"), "#7b38b5");
         assert.equal(await graph.getAttribute("display-start"), "2");
         assert.equal(await graph.evaluate(track => track.data[0].values[9].value), null);
-        await page.getByRole("button", { name: "Pocket 4 · rank 1" }).click();
-        assert.equal(await trace.getAttribute("data-selected-count"), "2");
-        assert.equal(await graph.getAttribute("highlight"), "3:3,5:5");
+        await pocket.click();
+        assert.equal(await trace.getAttribute("data-pocket-count"), "2");
+        assert.equal(await trace.getAttribute("data-domain-count"), "9");
+        const colours = await trace.evaluate(canvas => {
+          const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+          const counts = { purple: 0, amber: 0 };
+          for (let i = 0; i < pixels.length; i += 4) {
+            if (pixels[i + 3] < 220) continue;
+            const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+            if (r === 123 && g === 56 && b === 181) counts.purple += 1;
+            if (r === 239 && g === 172 && b === 49) counts.amber += 1;
+          }
+          return counts;
+        });
+        assert.ok(colours.purple > 0 && colours.amber > 0, "Both colours appear on the trace");
+        const pocketTrack = page.locator("nightingale-track").last();
+        assert.equal(await pocketTrack.getAttribute("highlight"), "3:3,5:5");
+        assert.equal(await pocketTrack.getAttribute("highlight-color"), "#efac31");
+        await page.locator("nightingale-track").first().locator("rect.feature").first().click();
+        assert.equal(await domain.getAttribute("aria-pressed"), "false");
+        assert.equal(await trace.getAttribute("data-domain-count"), "0");
+        assert.equal(await trace.getAttribute("data-pocket-count"), "2");
+        assert.match(await page.locator(".domain-provenance").innerText(), /overlay is approximate/);
+        assert.match(await recorded.locator("..").innerText(), /4–7 · Recorded coordinates/);
+        assert.equal(await page.locator("nightingale-track").nth(1).locator("rect.feature").count(), 1);
+        await recorded.press("Enter");
+        assert.equal(await trace.getAttribute("data-domain-count"), "4");
+        assert.equal(await trace.getAttribute("data-pocket-count"), "2");
+        await recorded.click();
+        assert.equal(await trace.getAttribute("data-domain-count"), "0");
+        await domain.click();
         const graphPoint = await graph.evaluate(track => ({
           x: track.getXFromSeqPosition(4.5), y: 40,
         }));
         await graph.click({ position: graphPoint });
-        assert.match(await page.locator(".feature-selection-detail").innerText(), /E4 · pLDDT 68/);
+        assert.match(await selected.innerText(), /E4 · pLDDT 68/);
+        assert.equal(await trace.getAttribute("data-domain-count"), "9");
+        assert.equal(await trace.getAttribute("data-pocket-count"), "2");
         const position = await trace.evaluate(canvas => {
           const az = .55, el = -.28;
           const cy = Math.cos(az), sy = Math.sin(az);
@@ -72,10 +108,11 @@ try {
             y: height / 2 - (y * cx - (z * cy - x * sy) * sx) * scale };
         });
         await trace.click({ position });
-        assert.match(await page.locator(".feature-selection-detail").innerText(), /N12/);
+        assert.match(await selected.innerText(), /N12/);
         assert.equal(await graph.getAttribute("highlight"), "12:12");
         await page.getByRole("button", { name: "Clear selection" }).click();
-        assert.equal(await trace.getAttribute("data-selected-count"), "0");
+        for (const kind of ["domain", "pocket", "residue"])
+          assert.equal(await trace.getAttribute(`data-${kind}-count`), "0");
         await page.setViewportSize({ width: 620, height: 1000 });
         assert.ok(await trace.isVisible());
       }

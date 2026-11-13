@@ -48,6 +48,14 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         viewer_document(viewer="nightingale", payload={
             **payload,
             "coordinate_scope": "Verified sequence axis",
+            "features": [
+                {**payload["features"][0], "provenance": "sequence_verified"},
+                {
+                    "accession": "RECORDED_DOMAIN", "description": "Historical fixture",
+                    "provenance": "recorded_coordinates",
+                    "locations": [{"fragments": [{"start": 4, "end": 7}]}] * 2,
+                },
+            ],
             "pockets": [{"number": 4, "rank": 1, "positions": [3, 5], "color": "#ad4e23"}],
             "model": [
                 {"position": index, "residue": residue, "x": index * .8,

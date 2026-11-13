@@ -35,7 +35,7 @@ from .feature_catalogue import (
 )
 from .guidance import job_label
 from .jobs import artifact_path
-from .linked_features import linked_review_evidence, verified_domain_features
+from .linked_features import linked_domain_features, linked_review_evidence
 from .remote import ssh_command
 from .species_tree import species_display_tree
 from .viewer_inputs import (
@@ -826,7 +826,7 @@ def render_features(
         view = st.radio(
             "Protein view", ("Recorded domains", "Linked structure and pockets"),
             key="recorded_feature_view", horizontal=True,
-            help="Open the model, mapped pocket residues and pLDDT on a verified sequence axis.",
+            help="Open domains, the model, mapped pockets and pLDDT on the same sequence axis.",
         )
         if view == "Linked structure and pockets":
             render_linked_features(
@@ -868,7 +868,7 @@ def render_linked_features(
     *, config: ResearchConfig, app_config: AppConfig, connection: object,
     choice: tuple[str, str, str, str | None], domains: pd.DataFrame,
 ) -> None:
-    """Display one selected member's sequence-verified structure, pockets and domains.
+    """Display a selected member's model and the provenance of linked domain tracks.
 
     Args:
         config: Research workspace containing optional exact-sequence annotation results.
@@ -900,21 +900,22 @@ def render_linked_features(
         st.info("No review model could be matched to this exact released protein sequence.")
         return
 
-    features = verified_domain_features(rows=domains, sequence=sequence)
     st.caption(f"Structure and pocket evidence · {evidence['model_source']}")
     if not evidence["pockets"]:
         st.caption("No mapped pocket residues were available on this model's sequence axis.")
-    features.extend(select_linked_annotations(config=config, sequence=sequence))
-    if not features:
-        if not domains.empty:
-            st.caption("Published domains are available under Recorded domains. Add annotations "
-                       "for this exact sequence to link domain positions to the model.")
+    features = linked_domain_features(
+        rows=domains, sequence=sequence,
+        annotations=select_linked_annotations(config=config, sequence=sequence),
+    )
+    if not any(feature["provenance"] == "sequence_verified" for feature in features):
         st.button(
             "Set up annotation for this protein", key="linked_feature_annotate",
             on_click=_open_linked_annotations,
             kwargs={"accession": accession, "group_id": group_id, "sequence": sequence},
             help="Prepare this protein in the annotation workbench for review.",
         )
+    if not features and not domains.empty:
+        st.caption("The recorded domain coordinates are available under Recorded domains.")
     stem = re.sub(r"[^a-zA-Z0-9_.-]", "_", f"{accession}_{group_id}_{species}")
     show_features(
         payload={**evidence, "features": features, "coordinate_scope": "Verified sequence axis"},
@@ -1074,10 +1075,13 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
         stem: Filename and widget namespace for this selection.
     """
     document = viewer_document(viewer="nightingale", payload=payload)
-    features = {(feature["accession"], feature["description"]) for feature in payload["features"]}
+    features = {
+        (feature["accession"], feature["description"], feature.get("provenance"))
+        for feature in payload["features"]
+    }
     base_height = 182 if payload.get("sequence") else 144
     height = (
-        min(910, 760 + 41 * (len(features) + len(payload.get("pockets", ()))))
+        min(850, max(585, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
         if payload.get("model") else min(620, max(160, base_height + 50 * len(features)))
     )
     components.html(document, height=height, scrolling=True)

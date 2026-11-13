@@ -209,6 +209,9 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .protein-feature-viewer button.feature-track-label{border:0;background:none;padding:0;
       color:#244f7c;font-size:13px;font-weight:600;text-align:left;text-decoration:underline;
       text-underline-offset:2px}
+    .protein-feature-viewer button.feature-track-label[aria-pressed="true"]{
+      box-shadow:inset 3px 0 var(--selection-colour);background:#f0f2f7;padding:2px 6px}
+    .protein-feature-viewer p.domain-provenance{color:#425671;font-size:12px}
     .protein-feature-viewer :focus-visible{outline:2px solid #206a87;outline-offset:2px}
     .linked-structure{min-width:0;border:1px solid #dae3ed;border-radius:8px;padding:10px;
       background:#f6f9fc}
@@ -221,7 +224,7 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .feature-residue-input{width:60px}
     .trace-legend{display:flex;gap:5px 9px;flex-wrap:wrap;font-size:11px;color:#344a65}
     .trace-legend span::before{content:"";display:inline-block;width:8px;height:8px;
-      border-radius:50%;margin-right:4px;background:var(--confidence-colour)}
+      border-radius:50%;margin-right:4px;background:var(--trace-colour)}
     .confidence-axis{position:absolute;right:2px;top:22px;height:77px;pointer-events:none;
       display:flex;flex-direction:column;justify-content:space-between;align-items:end;
       font-size:10px;color:#425671}
