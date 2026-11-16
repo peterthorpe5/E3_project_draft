@@ -16,16 +16,21 @@ cd "${LOCAL_REPO}/e3_python_app"
 
 
 LOCAL_PARENT_ROOT="/Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_all1972_v0_16_0_20260909"
-
 LOCAL_EXTENSION_ROOT="/Users/PThorpe001/e3_app_cache/grant_human_plant_structural_top200_v0_16_0_20260826"
 
 LOCAL_DB="${LOCAL_PARENT_ROOT}/10_integrated_resource/duckdb/e3_integrated_resource.duckdb"
-
 LOCAL_PLANT_REVIEW="${LOCAL_EXTENSION_ROOT}/plant_pocket_review"
 
 LOCAL_COMBINED_REVIEW="${LOCAL_EXTENSION_ROOT}/pocket_review"
 
-
+  E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
+  git clone --depth 1 --branch v1.0.0 https://github.com/Schymkowitz/WhatRes.git "$E3_WHATRES_DIR" &&
+    make -C "$E3_WHATRES_DIR/whatres-features" &&
+    conda run --name e3_python_app python -m venv "$E3_WHATRES_DIR/.venv" &&
+    "$E3_WHATRES_DIR/.venv/bin/python" -m pip install -r "$E3_WHATRES_DIR/requirements.txt" &&
+    (cd "$E3_WHATRES_DIR" && .venv/bin/python -m whatres.cli fetch-models) &&
+    export E3_WHATRES_DIR
+    
 ./run_e3_python_app.sh \
   --resource-duckdb /Users/PThorpe001/e3_app_cache/grant_aligned_corrected_expression_structural_all1972_v0_16_0_20260909/duckdb/e3_integrated_resource.duckdb \
   --pocket-review-dir "${LOCAL_PLANT_REVIEW}" \
