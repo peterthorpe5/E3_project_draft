@@ -18,6 +18,7 @@ from e3app.research.jobs import claim_job, finish_job, job_directory, submit_job
 from e3app.research.linked_features import (
     linked_domain_features,
     linked_review_evidence,
+    merge_review_plddt,
     model_residues,
     read_group_evidence,
 )
@@ -98,6 +99,49 @@ def test_pocket_review_requires_exact_member_and_residue_matches(*, linked_revie
     write_group(root=root, group=group)
     evidence = linked_review_evidence(**values, sequence=SEQUENCE)
     assert evidence["pockets"][0]["positions"] == [5]
+
+
+def test_merge_review_plddt_preserves_review_coordinates_and_pockets() -> None:
+    """Restore confidence on a rounded and incomplete review trace without mutating it."""
+    digest = "a" * 64
+    first = {"position": 1, "residue": "A", "x": 2.0, "y": 2.0, "z": 3.0, "plddt": None}
+    original = {
+        "model_sha256": digest.upper(), "sequence": "AG", "model": [first],
+        "pockets": [{"positions": [1]}], "model_source": "Review",
+    }
+    downloaded = {
+        "model_sha256": digest, "sequence": "AG",
+        "model": [
+            {**first, "x": 2.0003, "plddt": 80.4},
+            {**first, "position": 2, "residue": "G", "plddt": 60.4},
+        ],
+    }
+    scored = merge_review_plddt(review=original, alphafold=downloaded)
+    assert scored["model"] == [{**first, "plddt": 80.4}]
+    assert scored["pockets"] == original["pockets"]
+    assert scored["model_source"] == original["model_source"]
+    assert scored["confidence_source"] == "Checksum-matched AlphaFold Database"
+    assert original["model"][0]["plddt"] is None
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"model_sha256": ""},
+        {"model_sha256": "b" * 64},
+        {"sequence": "S"},
+        {"model": [{"position": 2}]},
+        {"model": [{"position": 1, "residue": "V"}]},
+        {"model": [{"position": 1, "residue": "A", "x": 12.0}]},
+    ],
+)
+def test_merge_review_plddt_rejects_incompatible_evidence(*, override: dict) -> None:
+    """Reject confidence transfers with conflicting identity, residues or positions."""
+    point = {"position": 1, "residue": "A", "x": 2.0, "y": 2.0, "z": 3.0, "plddt": None}
+    review = {"model_sha256": "a" * 64, "sequence": "A", "model": [point]}
+    with pytest.raises(ResearchError, match="original review model|mapped to the review trace"):
+        merge_review_plddt(review=review, alphafold={**review, **override})
+    assert point["plddt"] is None
 
 
 def test_linked_view_can_use_the_other_review(*, linked_review, tmp_path):
@@ -264,8 +308,14 @@ def test_linked_view_uses_release_and_existing_annotation_jobs(
         (ACCESSION, HOG, SPECIES, RAW_ID),
     ).run()
     assert "PF_LEGACY" in app.get("iframe")[0].proto.srcdoc
+    assert any("Linked structure and pockets** for **Model geometry (WhatRes)" in caption.value
+               for caption in app.caption)
     app.radio(key="recorded_feature_view").set_value("Linked structure and pockets").run()
     document = app.get("iframe")[0].proto.srcdoc
+    assert any(panel.label == "Model geometry (WhatRes)" for panel in app.expander)
+    assert any(
+        button.label == "Retrieve full model from AlphaFold Database" for button in app.button
+    )
     assert '"positions": [2, 5]' in document
     assert "PF_LEGACY" in document and '"provenance": "recorded_coordinates"' in document
     assert "Verified sequence axis" in document

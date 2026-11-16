@@ -78,6 +78,23 @@ try {
         for (const label of ["Domain colour", "Pocket colour"]) {
           assert.ok(await page.getByLabel(label).isDisabled());
         }
+        const trace = page.locator("canvas.linked-trace");
+        const colouring = page.getByRole("checkbox", { name: "Colour trace by pLDDT" });
+        assert.ok(await colouring.isChecked());
+        assert.match(await page.locator(".confidence-summary").innerText(),
+          /Mean pLDDT 74\.5 · 19\/20 residues/);
+        await page.getByText("pLDDT help", { exact: false }).click();
+        assert.ok(await page.getByText(/pLDDT is local prediction confidence/).isVisible());
+        await page.getByText("pLDDT help", { exact: false }).click();
+        await assertTraceColours(trace, "#188499", "#bc872b");
+        await colouring.uncheck();
+        assert.ok(await page.getByText("Uncoloured trace", { exact: true }).isVisible());
+        assert.ok(await page.getByText("70–<90", { exact: true }).isHidden());
+        await assertTraceColours(trace, "#8d9aa7");
+        await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
+          "Uncoloured trace");
+        await colouring.check();
+        await assertTraceColours(trace, "#188499", "#bc872b");
       }
       await page.locator("nightingale-track").first().locator("rect.feature").first().click();
       assert.match(await page.locator(".feature-selection-detail").innerText(), /2–10/);
@@ -106,6 +123,10 @@ try {
         assert.equal(await trace.getAttribute("data-pocket-count"), "2");
         assert.equal(await trace.getAttribute("data-domain-count"), "9");
         await assertTraceColours(trace, "#182554", "#c24e00");
+        const colouring = page.getByRole("checkbox", { name: "Colour trace by pLDDT" });
+        await colouring.uncheck();
+        await assertTraceColours(trace, "#182554", "#c24e00");
+        await colouring.check();
         assert.equal(await pocketTrack.getAttribute("highlight"), "3:3,5:5");
         assert.equal(await pocketColour.inputValue(), "#c24e00");
         await domainColour.fill("#a62bd0");

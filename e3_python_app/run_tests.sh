@@ -13,6 +13,7 @@ python -m coverage run --branch -m pytest -q "${SCRIPT_DIR}/tests"
 python -m coverage report --fail-under=95
 if command -v node >/dev/null 2>&1; then
     node "${SCRIPT_DIR}/tests/js/test_terminal_trim_core.js"
+    node --test "${SCRIPT_DIR}/frontend/structure-trace.test.mjs"
 else
     printf '%s\n' "WARNING: node was not found; JavaScript unit tests were not run." >&2
 fi

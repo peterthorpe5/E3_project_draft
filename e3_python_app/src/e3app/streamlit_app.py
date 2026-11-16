@@ -139,7 +139,7 @@ from e3app.prestructure_hogs import (
 from e3app.research.review_highlights import add_review_highlights
 from e3app.species_composition import member_species_counts, render_species_counts
 from e3app.whatres import WhatResTarget, recorded_whatres_targets
-from e3app.whatres_ui import render_whatres
+from e3app.whatres_ui import render_whatres, render_whatres_bundle
 from e3app.orthology import (
     collect_orthology_group_summary,
     collect_orthology_metrics,
@@ -2834,6 +2834,17 @@ def _render_structural_superposition(
         f"— {mobile_species}  \n"
         f"**Recorded aligner:** {comparison['alignment_tool']}"
     )
+    pair_members = {
+        role: (str(comparison[f"{role}_accession"]), str(comparison[f"{role}_species"]))
+        for role in ("reference", "mobile")
+    }
+    render_whatres(
+        models=recorded_whatres_targets(
+            inventory=bundle.models, review_rank=int(group_row["review_rank"]),
+            group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
+        ),
+        key=key_prefix, recorded=True,
+    )
     with st.expander("❓ Why was this structural reference selected?"):
         st.markdown(
             reference_selection_help_markdown(
@@ -2862,10 +2873,6 @@ def _render_structural_superposition(
             document=pair_document
         )
     )
-    pair_members = {
-        role: (str(comparison[f"{role}_accession"]), str(comparison[f"{role}_species"]))
-        for role in ("reference", "mobile")
-    }
     viewer_document = add_review_highlights(
         document=viewer_document, group_document=group_document, connection=connection,
         group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
@@ -2878,13 +2885,6 @@ def _render_structural_superposition(
         "display choices are reversible and never alter the underlying evidence."
     )
     components.html(viewer_document, height=1480, scrolling=True)
-    render_whatres(
-        models=recorded_whatres_targets(
-            inventory=bundle.models, review_rank=int(group_row["review_rank"]),
-            group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
-        ),
-        key=key_prefix, recorded=True,
-    )
     with st.expander("❓ Define the pair-evidence terms"):
         st.markdown(pair_evidence_help_markdown())
         st.caption(
@@ -4120,6 +4120,13 @@ def _render_selected_pocket_review(
     """
     row = selected_group_row(bundle, group_page)
     if focus == "structure":
+        render_whatres(
+            models=recorded_whatres_targets(
+                inventory=bundle.models, review_rank=int(row["review_rank"]),
+                group_id=str(row["primary_group_id"]),
+            ),
+            key=key_prefix, recorded=True,
+        )
         model_members = selected_group_members(bundle, int(row["review_rank"]), "structure")
         sequence_members = selected_group_members(bundle, int(row["review_rank"]), "alignment")
         supplementary = selected_group_supplementary_sequences(
@@ -4159,14 +4166,6 @@ def _render_selected_pocket_review(
         "automatically."
     )
     components.html(document, height=1100, scrolling=True)
-    if focus == "structure":
-        render_whatres(
-            models=recorded_whatres_targets(
-                inventory=bundle.models, review_rank=int(row["review_rank"]),
-                group_id=str(row["primary_group_id"]),
-            ),
-            key=key_prefix, recorded=True,
-        )
     members = selected_group_members(bundle, int(row["review_rank"]), focus)
     member_title = (
         "Displayed protein models"
@@ -4519,7 +4518,7 @@ def _render_hog_model_bundle(
         key=f"{key_prefix}_prepare_alphafold_{selected_hog}",
         help=(
             "Downloads available mmCIF models and PAE documents from AlphaFold "
-            "Database, then creates one ZIP for manual upload."
+            "Database, then creates one ZIP. You can download it or score the models below."
         ),
     ):
         try:
@@ -4549,6 +4548,11 @@ def _render_hog_model_bundle(
     ):
         bundle = stored["bundle"]
     if bundle is None:
+        render_whatres_bundle(bundle=None, hog_id=selected_hog, key=key_prefix)
+        render_whatres(
+            models=(), key=f"{key_prefix}_prepared_hog_model",
+            prompt="Prepare the model ZIP above, then choose an individual model to score.",
+        )
         st.caption(
             "After the ZIP is prepared, download it here, open the external "
             "Inspector and upload the ZIP using its file chooser. The E3 app does "
@@ -4596,6 +4600,7 @@ def _render_hog_model_bundle(
         "Manual hand-off: download the ZIP, open the Inspector, choose the ZIP, "
         "and use manifest.tsv to map its Model numbers back to accessions and species."
     )
+    render_whatres_bundle(bundle=bundle, hog_id=selected_hog, key=key_prefix)
     if bundle.included_count:
         _render_prepared_hog_model(
             bundle=bundle, selected_hog=selected_hog, key_prefix=key_prefix,
@@ -4611,8 +4616,8 @@ def _render_hog_model_comparison(
     """Render a dedicated HOG-to-external-Inspector model hand-off."""
     st.subheader("HOG AlphaFold model comparison")
     st.write(
-        "Choose one root HOG, select its members and prepare a model bundle for "
-        "manual upload to the external AlphaFold 3 Multi-Model Inspector."
+        "Choose one root HOG and prepare its AlphaFold Database models. Download "
+        "the ZIP, calculate WhatRes scores, or open the models in the external Inspector."
     )
     capability = enriched_hog_capability(connection=connection)
     if not capability["membership_available"]:
@@ -4680,13 +4685,12 @@ def _render_hog_model_comparison(
             "The loaded HOG membership does not contain a usable accession source."
         )
         return
-    maximum_rows = min(config.max_rows, MAX_BUNDLE_MODELS)
     try:
         members = collect_enriched_hog_results(
             connection=connection,
             result=ENRICHED_HOG_MEMBERS,
             selected_columns=selected_columns,
-            maximum_rows=maximum_rows,
+            maximum_rows=MAX_BUNDLE_MODELS,
             hog_ids=(str(selected_hog),),
         )
     except AppError as exc:
@@ -4697,9 +4701,8 @@ def _render_hog_model_comparison(
     )
     if len(members) < total_members:
         st.warning(
-            f"This HOG contains {total_members:,} member rows, but the safe model "
-            f"bundle view loaded {len(members):,}. Increase E3_MAX_TABLE_ROWS up to "
-            f"{MAX_BUNDLE_MODELS:,} before treating this as a complete HOG export."
+            f"This HOG contains {total_members:,} member rows. This view loads "
+            f"{len(members):,}. Use External links to choose batches from the full membership."
         )
     try:
         composition_members = collect_hog_membership(
@@ -4713,7 +4716,10 @@ def _render_hog_model_comparison(
             key=f"model_comparison_{selected_hog}",
             description=f"All published members of {selected_hog}.",
         )
-    _render_hog_model_bundle(selected_hog=str(selected_hog), members=members)
+    _render_hog_model_bundle(
+        selected_hog=str(selected_hog), members=members,
+        context_identity=source_identity(config=config),
+    )
 
 
 def _render_within_hog_ranking(

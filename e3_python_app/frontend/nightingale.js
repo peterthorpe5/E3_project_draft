@@ -3,7 +3,9 @@ import Sequence from "@nightingale-elements/nightingale-sequence";
 import Navigation from "@nightingale-elements/nightingale-navigation";
 import Track from "@nightingale-elements/nightingale-track";
 import Linegraph from "@nightingale-elements/nightingale-linegraph-track";
-import { mountStructureTrace, HIGHLIGHT_COLOURS } from "./structure-trace.js";
+import {
+  CONFIDENCE_BANDS, HIGHLIGHT_COLOURS, NEUTRAL_TRACE_COLOUR, mountStructureTrace,
+} from "./structure-trace.js";
 import { mountSequenceSearch, rangePositions } from "./sequence-search.js";
 import "../src/e3app/resources/viewer_pdf.js";
 
@@ -21,6 +23,8 @@ const status = document.getElementById("status");
 const length = data.sequence ? data.sequence.length : data.length;
 if (!Number.isInteger(length) || length < 1) throw new Error("Missing protein coordinate length");
 const model = new Map((data.model || []).map(residue => [residue.position, residue]));
+const confidenceValues = [...model.values()].map(residue => residue.plddt).filter(Number.isFinite);
+const hasConfidence = confidenceValues.length > 0;
 const pockets = data.pockets || [];
 const trackElements = [];
 const active = new Map();
@@ -152,7 +156,6 @@ const ruler = element("div", tracks, "feature-ruler");
 addTrack("navigation", ruler, 52);
 if (data.sequence) addTrack("sequence", tracks, 31).sequence = data.sequence;
 if (model.size) {
-  const hasConfidence = [...model.values()].some(residue => residue.plddt !== null);
   if (hasConfidence) {
     const row = element("div", tracks, "protein-feature-row");
     element("div", row, "protein-feature-label", "Model confidence · pLDDT");
@@ -166,6 +169,17 @@ if (model.size) {
         position: index + 1, value: model.get(index + 1)?.plddt ?? null,
       })),
     }];
+    const mean = confidenceValues.reduce((total, value) => total + value, 0)
+      / confidenceValues.length;
+    const source = data.confidence_source ? " · " + data.confidence_source : "";
+    const score = "Mean pLDDT " + mean.toFixed(1)
+      + " · " + confidenceValues.length + "/" + length + " residues" + source;
+    element("p", row, "confidence-summary", score);
+    const help = element("details", row, "confidence-help");
+    element("summary", help, "", "❓ pLDDT help");
+    element("p", help, "", "pLDDT is local prediction confidence on a 0–100 scale. "
+      + "Select a residue to read its score. The mean uses residues with a confidence value. "
+      + "WhatRes realism and apparent resolution describe the geometry of the whole model.");
   } else {
     element("p", tracks, "", "Per-residue pLDDT is unavailable in this review.");
   }
@@ -249,6 +263,14 @@ if (model.size) {
   button(controls, "Fit model", trace.fit);
   button(controls, "Zoom in", () => trace.magnify(1.2));
   button(controls, "Zoom out", () => trace.magnify(1 / 1.2));
+  let colourByConfidence = null;
+  if (hasConfidence) {
+    const label = element("label", controls, "confidence-colouring");
+    colourByConfidence = element("input", label);
+    colourByConfidence.type = "checkbox";
+    colourByConfidence.checked = true;
+    label.append(" Colour trace by pLDDT");
+  }
   const residueLabel = element("label", controls, "", "Residue ");
   const residueInput = element("input", residueLabel, "feature-residue-input");
   residueInput.type = "number";
@@ -308,13 +330,24 @@ if (model.size) {
   const picked = element("span", legend, "", "Selected residue");
   picked.style.setProperty("--trace-colour", HIGHLIGHT_COLOURS.residue);
   const confidenceColours = [
-    ["#1856a1", "90–100"], ["#188499", "70–<90"], ["#bc872b", "50–<70"],
-    ["#a95729", "<50"], ["#8d9aa7", "Unavailable"],
+    ...CONFIDENCE_BANDS, { colour: NEUTRAL_TRACE_COLOUR, label: "Unavailable" },
   ];
-  for (const [colour, label] of confidenceColours) {
+  const bands = confidenceColours.map(({ colour, label }) => {
     const item = element("span", legend, "", label);
     item.style.setProperty("--trace-colour", colour);
-  }
+    item.hidden = !hasConfidence;
+    return item;
+  });
+  const neutralLabel = hasConfidence ? "Uncoloured trace" : "pLDDT unavailable";
+  const neutral = element("span", legend, "", neutralLabel);
+  neutral.style.setProperty("--trace-colour", NEUTRAL_TRACE_COLOUR);
+  neutral.hidden = hasConfidence;
+  colourByConfidence?.addEventListener("change", () => {
+    const enabled = colourByConfidence.checked;
+    trace.setConfidenceColouring({ enabled });
+    for (const item of bands) item.hidden = !enabled;
+    neutral.hidden = enabled;
+  });
   const exportRow = element("div", structure, "structure-controls");
   const exportStatus = element("span", exportRow, "", "");
   exportStatus.setAttribute("role", "status");
@@ -324,10 +357,9 @@ if (model.size) {
       label: kind === "sequence" ? `Matches: ${sequenceSearchLabel}` : item.label,
       colour: item.colour ?? HIGHLIGHT_COLOURS[kind],
     }));
-    const confidence = [...model.values()].some(residue => residue.plddt != null);
-    const key = highlights.concat(confidence
-      ? confidenceColours.map(([colour, label]) => ({ colour, label: `pLDDT ${label}` }))
-      : [{ colour: "#8d9aa7", label: "pLDDT unavailable" }]);
+    const key = highlights.concat(colourByConfidence?.checked
+      ? confidenceColours.map(({ colour, label }) => ({ colour, label: `pLDDT ${label}` }))
+      : [{ colour: NEUTRAL_TRACE_COLOUR, label: neutralLabel }]);
     const title = data.model_label || "Protein structure";
     try {
       const canvas = structure.querySelector(".linked-trace");

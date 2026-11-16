@@ -2,19 +2,69 @@
 
 ## WhatRes model geometry
 
-Open **Model geometry (WhatRes)** below a linked Nightingale model, a prepared
-AlphaFold Database model, an uploaded PDB or a completed ESMFold model. Group
-and pairwise pocket reviews accept the original full-atom PDB or mmCIF matching
-the recorded SHA-256. The score follows the original native model in those
-reviews, before any display trimming. Score a model on demand and download
-the results and coordinate checksums as TSV. The calculated values are available
-throughout the current app session.
+**Model geometry (WhatRes)** shows whether WhatRes is ready on the machine
+running the app. **❓ WhatRes help** explains the inputs, scores and setup.
 
-WhatRes assesses whole-model geometry. Realism ranges from 0 to 100, with
-higher values indicating more experimental-like geometry at a given apparent
-resolution. Apparent resolution is an estimate in Å based on the coordinates.
-These are model diagnostics alongside pLDDT, pocket and alignment evidence.
-[WhatRes preprint](https://doi.org/10.64898/2026.11.06.764824)
+| App page | Where to score a model |
+| --- | --- |
+| **ESMFold & models** | Choose **Open an existing PDB** and upload a full-atom PDB. The panel is just below the PDB upload. The FASTA is optional for scoring. For an ESMFold prediction, select its PDB under **Inspect completed models**. |
+| **Protein feature browser** | Select a protein and switch **Protein view** to **Linked structure and pockets**. The panel is above the linked viewer. |
+| **3D structures & pockets**, **3D alignment**, or **Human & plant 3D alignment** | Select a group or pair. Choose a member under **Model geometry (WhatRes)** above the viewer. |
+| **HOG model comparison** or **External links** | Prepare the model ZIP. Use **HOG geometry (WhatRes)** for all prepared models, or choose one model for individual scoring. |
+
+Portable reports store Cα positions for the viewer. WhatRes also needs the
+backbone and side-chain atoms. For a member with a UniProt accession, choose
+**AlphaFold Database** and click **Retrieve full model from AlphaFold Database**.
+You can save the returned mmCIF. When its SHA-256 matches the review, WhatRes
+assigns the score to the reviewed model. Other downloaded files are scored
+under **current AlphaFold Database**. Choose **Original review file** to upload
+the unchanged full-atom PDB or mmCIF from the run where its SHA-256 is available.
+
+Choose **Calculate WhatRes scores** to assess the full model before any viewer
+trimming. **Download WhatRes scores (TSV)** includes both geometry metrics and
+the coordinate checksums. Realism ranges from 0 to 100. Higher values indicate
+geometry more typical of experimental structures at a similar apparent
+resolution. Apparent resolution is an estimate in Å from the coordinates.
+Read these diagnostics alongside pLDDT, pocket and alignment evidence.
+
+### Confidence on downloaded AlphaFold models
+
+In **Protein feature browser → Linked structure and pockets**, retrieve the
+full model from AlphaFold Database. The viewer displays a per-residue pLDDT
+track, the mean across residues with a value, and coverage. **Colour trace by
+pLDDT** switches between confidence colours and a neutral trace. Click a
+residue to read its pLDDT. Domain, pocket and sequence highlights have their
+own colours. The confidence display works with the AlphaFold download alone.
+
+When the original file and Cα mapping match the review, the existing trace
+and pocket tracks receive the downloaded confidence values. Otherwise, a
+sequence-matched download appears as its own trace. Use **3D trace → Reviewed
+model and pockets** to return to the pocket tracks.
+
+### Download and score a HOG
+
+1. Open **Structural comparison → HOG model comparison** and choose a root
+   HOG. All listed canonical UniProt accessions are selected by default.
+2. Select **Prepare Inspector ZIP for selected members**, then use
+   **Download ZIP for manual Inspector upload** to save the available mmCIFs,
+   any available PAE and the retrieval manifest.
+3. Under **HOG geometry (WhatRes)**, select **Calculate WhatRes scores for
+   prepared HOG models**. This uses the mmCIFs in the prepared ZIP. Keep the
+   browser tab open while the app processes them.
+4. Use **Download HOG WhatRes scores (TSV)** to save realism, apparent
+   resolution, coordinate provenance and status for each requested accession.
+   Missing downloads and failed scores have blank metric cells. The app shows
+   the median of each metric across the models scored successfully.
+
+The same workflow is available under **External links** after **Prepare models
+for external tools**. Models require a canonical UniProt accession and
+coordinates available in AlphaFold Database. For a HOG beyond the 1,000-model
+ZIP limit, choose batches from the complete member list in **External links**.
+
+van der Kant, R., Delgado Blanco, J., Serrano, L., Schymkowitz, J., & Rousseau, F.
+(2026). *Realism and resolution: How AI-predicted protein structures differ
+from experimental structures*. bioRxiv preprint.
+[doi:10.64898/2026.11.06.764824](https://doi.org/10.64898/2026.11.06.764824)
 
 ### Optional local setup
 
@@ -32,11 +82,16 @@ git clone --depth 1 --branch v1.0.0 https://github.com/Schymkowitz/WhatRes.git "
   export E3_WHATRES_DIR
 ```
 
-Export `E3_WHATRES_DIR` in the launch environment and restart the app. Scoring
-runs locally with the authors' tool and models. It uses the first model in a
-coordinate file. mmCIF inputs must fit the PDB format used by WhatRes. The TSV
-records the original and the scored PDB checksums, plus any out-of-fold note
-returned for a standard PDB ID filename.
+For an existing installation, export the checkout path again in the terminal
+you use to launch Streamlit and restart the app.
+
+```bash
+export E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
+```
+
+Scoring uses the first model in a coordinate file. mmCIF inputs must fit the
+PDB format used by WhatRes. The TSV records the original and scored PDB
+checksums and any out-of-fold note returned for a standard PDB ID filename.
 [WhatRes v1.0.0](https://github.com/Schymkowitz/WhatRes/tree/v1.0.0)
 
 Version **0.22.1** makes search downloads visible beside their preparation

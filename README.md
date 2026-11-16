@@ -834,6 +834,9 @@ python -m pip install --editable '.[dev]'
 
 It can alternatively use `--resource-parquet` or `--resource-run-dir`.
 
+See the [WhatRes installation and app guide](e3_python_app/README.md#whatres-model-geometry)
+for full-model geometry scoring.
+
 ### `E3_shiny_app`
 
 Purpose: read-only R Shiny exploration using the same integrated resource contract.

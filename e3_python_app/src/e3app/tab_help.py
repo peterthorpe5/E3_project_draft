@@ -39,17 +39,19 @@ TOP_LEVEL_TAB_HELP = {
         "with an optional tree and a portable HTML download.",
     ),
     "ESMFold & models": TabHelpEntry(
-        instruction="Open an existing PDB with its original protein FASTA, or select a protein "
-        "from the feature browser and prepare its ESMFold prediction. Use a configured worker "
-        "or download the inputs to run on another machine.",
+        instruction="Upload a full-atom PDB under Open an existing PDB and use Model geometry "
+        "(WhatRes) below it. Add the original FASTA for the linked viewer. To score an "
+        "ESMFold prediction, select its PDB under Inspect completed models.",
         yields="Interactive structure and confidence plots, or downloadable prediction inputs "
-        "for a configured CPU or GPU worker.",
+        "for a configured CPU or GPU worker. WhatRes can export both geometry scores as TSV.",
     ),
     "Protein feature browser": TabHelpEntry(
         instruction="Choose a HOG and then one of its protein members, search by accession, "
         "or upload the normalised annotation table and its original FASTA. A selected record "
         "can open the matching HOG alignment or its protein in the models page. Choose "
-        "Linked structure and pockets for models in the configured pocket review.",
+        "Linked structure and pockets to see Model geometry (WhatRes) above the viewer. "
+        "Retrieve the full model from AlphaFold Database to see its pLDDT, or upload the "
+        "original review file to score its geometry.",
         yields="Clickable domain tracks, mapped pocket residues, model pLDDT and a linked "
         "C-alpha trace for exact sequence matches, with a standalone HTML download.",
     ),
@@ -57,7 +59,8 @@ TOP_LEVEL_TAB_HELP = {
         instruction=(
             "Choose a HOG and its proteins here for populated Mol*/AlphaFold/EMERALD links "
             "and exact pair FASTA. Select members and explicitly prepare models for the "
-            "Inspector ZIP or an individual Protein Imager mmCIF download."
+            "Inspector ZIP or an individual Protein Imager mmCIF download. Use HOG geometry "
+            "(WhatRes) to score all prepared models together."
         ),
         yields=(
             "Selected-HOG protein/pair links and auditable model/sequence downloads, plus "
@@ -287,7 +290,8 @@ TOP_LEVEL_TAB_HELP = {
     "3D structures & pockets": TabHelpEntry(
         instruction=(
             "Select a group and member, rotate the structure and inspect the mapped pocket "
-            "location before using the download controls for review evidence."
+            "location. Model geometry (WhatRes) above the viewer offers full coordinates "
+            "for scoring."
         ),
         yields=(
             "Portable interactive C-alpha and pocket-residue views, selected-group and member "
@@ -309,7 +313,8 @@ TOP_LEVEL_TAB_HELP = {
     "3D alignment": TabHelpEntry(
         instruction=(
             "Select a plant group, aligned member and aligner to rotate the recorded "
-            "superposition, then inspect the release-wide global and pocket-local evidence."
+            "superposition. Choose the reference or mobile member in Model geometry (WhatRes) "
+            "to calculate scores from full atomic coordinates."
         ),
         yields=(
             "A rotatable pairwise C-alpha and pocket-residue superposition, a downloadable "
@@ -321,7 +326,7 @@ TOP_LEVEL_TAB_HELP = {
         instruction=(
             "Select a ranked HOG and compare each human or plant member with the preserved "
             "plant reference; use the sequence and structure sub-tabs to inspect the supporting "
-            "pocket evidence before downloading it."
+            "pocket evidence. Find Model geometry (WhatRes) above the structure and pair views."
         ),
         yields=(
             "A separate human-inclusive set of rotatable structural superpositions, "
@@ -332,13 +337,13 @@ TOP_LEVEL_TAB_HELP = {
     "HOG model comparison": TabHelpEntry(
         instruction=(
             "Choose one root HOG, keep all canonical UniProt members selected or narrow the "
-            "list, then prepare and download the compatibility ZIP before uploading it manually "
-            "to the external Inspector."
+            "list, then prepare the model ZIP. Download it to inspect the coordinates or upload "
+            "it to the external Inspector. Use HOG geometry (WhatRes) to score all prepared models."
         ),
         yields=(
             "An audited ZIP containing every available selected AlphaFold Database mmCIF model, "
-            "optional PAE data, a Model-number-to-accession manifest, missing-model statuses and "
-            "clear guidance on which Inspector panels can be interpreted."
+            "optional PAE data, and a Model-number-to-accession manifest. Download a WhatRes TSV "
+            "with realism, apparent resolution and the retrieval and scoring status per accession."
         ),
     ),
     "Computational chemistry": TabHelpEntry(

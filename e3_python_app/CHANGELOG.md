@@ -4,6 +4,23 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.18
+
+- Show per-residue pLDDT, its mean and coverage after a full AlphaFold Database
+  download in the linked protein viewer. Toggle pLDDT colouring on the Cα trace.
+- Keep mapped pockets on the reviewed trace and offer a separate trace for a
+  current download when the original coordinate file cannot be matched.
+- Score all prepared HOG models with WhatRes and export per-accession realism,
+  apparent resolution, download and scoring status, and coordinate provenance.
+
+## v0.23.17
+
+- Show WhatRes above the linked and portable structure viewers and before a PDB
+  upload. Add question-mark help, the preprint citation and a visible setup status.
+- Offer full AlphaFold Database retrieval for reviewed members with UniProt
+  accessions. Check retrieved files against the recorded SHA-256 and label
+  scores for a different model with the current database source.
+
 ## v0.23.16
 
 - Score full-atom models locally with WhatRes v1.0.0 and download the realism,

@@ -77,6 +77,7 @@ def render_sequence_retrieval(
 
 def render_alphafold_retrieval(
     *, members: pd.DataFrame, group_id: str, scope: str, key: str, single: bool = False,
+    button_label: str = "Retrieve AlphaFold model",
 ) -> tuple[bytes, str] | None:
     """Fetch current AlphaFold models on demand through the existing model downloader.
 
@@ -86,6 +87,7 @@ def render_alphafold_retrieval(
         scope: Current release and selection identity, to prevent stale reuse.
         key: Widget namespace.
         single: Show a single-protein action and return its model for an in-app view.
+        button_label: Label for the explicit AlphaFold Database request.
 
     Returns:
         Downloaded mmCIF and source URL in single-protein mode, otherwise None.
@@ -112,7 +114,7 @@ def render_alphafold_retrieval(
             st.session_state.pop(state_key)
             stored = None
         st.caption("Retrieves the current AlphaFold Database mmCIF for the selected accession.")
-        if st.button("Retrieve AlphaFold model", key=f"{key}_fetch_alphafold"):
+        if st.button(button_label, key=f"{key}_fetch_alphafold"):
             try:
                 with st.spinner(f"Fetching AlphaFold model for {accession}"):
                     bundle = build_alphafold_hog_bundle(

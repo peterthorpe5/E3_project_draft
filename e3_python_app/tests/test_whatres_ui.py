@@ -20,6 +20,8 @@ from e3app.research import expansion_ui
 from e3app.research.common import atomic_json, file_sha256
 from e3app.research.jobs import claim_job, finish_job, job_directory, submit_job
 from e3app.research.providers import pdb_evidence
+from e3app.whatres import WhatResTarget
+from e3app.whatres_ui import FULL_MODEL_BUTTON, _score_identity
 from test_external_hog import make_model_bundle
 from test_pocket_review import make_pocket_review
 from test_streamlit_app import _navigate
@@ -31,6 +33,9 @@ STRUCTURE = "🟡 5 · Structural comparison"
 PANEL = "Model geometry (WhatRes)"
 CONTROL = "Calculate WhatRes scores"
 EXPORT = "Download WhatRes scores (TSV)"
+BATCH_PANEL = "HOG geometry (WhatRes)"
+BATCH_CONTROL = "Calculate WhatRes scores for prepared HOG models"
+BATCH_EXPORT = "Download HOG WhatRes scores (TSV)"
 
 
 def uploaded_file(*, content: bytes, name: str) -> SimpleNamespace:
@@ -60,6 +65,13 @@ def geometry_panel(*, app: AppTest):
     return next(panel for panel in app.expander if panel.label == PANEL)
 
 
+def linked_payload(*, app: AppTest) -> dict:
+    """Read the evidence actually delivered to the linked Nightingale iframe."""
+    iframe = app.get("iframe")[0].proto.srcdoc
+    body = iframe.split('<script id="protein-data" type="application/json">', 1)[1]
+    return json.loads(body.split("</script>", 1)[0])
+
+
 def calculate(*, app: AppTest) -> None:
     """Click the actual Streamlit button and wait for the local scoring call."""
     button = next(item for item in geometry_panel(app=app).button if item.label == CONTROL)
@@ -73,7 +85,35 @@ def assert_result(*, app: AppTest, label: str) -> None:
         "Model": label, "Realism (0–100)": 42.5, "Apparent resolution (Å)": 2.35,
         "WhatRes note": "",
     }
-    assert panel.get("download_button")[0].label == EXPORT
+    assert any(button.label == EXPORT for button in panel.get("download_button"))
+
+
+def model_bundle(*, content: bytes, accession: str, hog_id: str):
+    """Package one valid mmCIF under the normal retrieval audit and ZIP contract."""
+    bundle = make_model_bundle(accessions=(accession,), hog_id=hog_id)
+    output = BytesIO()
+    with ZipFile(output, mode="w") as archive:
+        archive.writestr(f"e3_{hog_id}_model_0.cif", content)
+    record = replace(
+        bundle.records[0], model_bytes=len(content), model_sha256=sha256(content).hexdigest(),
+    )
+    return replace(bundle, payload=output.getvalue(), records=(record,))
+
+
+def test_score_identity_distinguishes_a_coordinate_file_from_a_review_trace(
+    *, tmp_path: Path,
+) -> None:
+    """Only original hashes or available coordinate bytes identify a reusable score."""
+    assert _score_identity(
+        target=WhatResTarget(label="model", content=PDB, filename="9hki.pdb"),
+        directory=tmp_path,
+    ) == (tmp_path, sha256(PDB).hexdigest(), "9hki")
+    assert _score_identity(
+        target=WhatResTarget(label="review", model_sha256="a" * 64), directory=tmp_path,
+    ) == (tmp_path, "a" * 64, "e3_model")
+    assert _score_identity(
+        target=WhatResTarget(label="public", alphafold_accession="Q6NKN8"), directory=tmp_path,
+    ) == (tmp_path, "", "e3_model")
 
 
 def test_render_whatres_shows_optional_setup_errors_and_unavailable_originals(
@@ -86,13 +126,22 @@ def test_render_whatres_shows_optional_setup_errors_and_unavailable_originals(
         "render_whatres(models=(), key='test', recorded=True)\n"
     )
     app = AppTest.from_string(script).run()
-    assert "Set E3_WHATRES_DIR" in geometry_panel(app=app).caption[0].value
+    panel = geometry_panel(app=app)
+    assert panel.proto.expanded
+    assert panel.get("popover")
+    assert any("WhatRes setup needed" in item.value for item in panel.markdown)
+    assert any("e3_python_app/README.md#optional-local-setup" in item.value
+               for item in panel.markdown)
+    assert any("doi.org/10.64898/2026.11.06.764824" in item.value for item in panel.markdown)
+    assert any("side-chain atoms" in item.value and "Cα positions" in item.value
+               for item in panel.markdown)
+    assert panel.button[0].disabled
     monkeypatch.setenv("E3_WHATRES_DIR", str(tmp_path / "absent"))
     app.run()
     assert "WhatRes checkout" in geometry_panel(app=app).warning[0].value
     monkeypatch.setenv("E3_WHATRES_DIR", str(local_whatres))
     app.run()
-    assert "no unambiguous original-model checksum" in geometry_panel(app=app).caption[0].value
+    assert any("no saved checksum" in item.value for item in geometry_panel(app=app).caption)
 
 
 def test_group_then_pair_ui_checks_original_files_and_reuses_the_exact_score(
@@ -131,8 +180,8 @@ def test_group_then_pair_ui_checks_original_files_and_reuses_the_exact_score(
     assert geometry_panel(app=app).button[0].disabled
     uploads["structure"] = uploaded_file(content=alternate, name="wrong.pdb")
     app.run()
-    calculate(app=app)
     assert "differs from the original review model" in geometry_panel(app=app).warning[0].value
+    assert geometry_panel(app=app).button[0].disabled
     assert not geometry_panel(app=app).dataframe
     uploads["structure"] = uploaded_file(content=PDB, name="native.pdb")
     app.run()
@@ -203,30 +252,137 @@ def test_linked_features_score_the_specific_review_or_current_alphafold_model(
     assert score.model_sha256 == sha256(PDB if recorded else model).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "source", ["matching", "different", "no checksum", "sequence mismatch", "trace mismatch"],
+)
+def test_linked_trace_offers_full_model_retrieval_and_labels_its_scores(
+    *, source: str, configured_app: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retrieve a full model from a portable trace and verify both types of scores."""
+    atoms = PDB.replace(b" GLY ", b" VAL ") if source == "sequence mismatch" else PDB
+    model = make_mmcif(pdb=atoms)
+    model_digest = sha256(model).hexdigest()
+    digest = {"different": "b" * 64, "no checksum": ""}.get(source, model_digest)
+    residues = pdb_evidence(pdb=PDB.decode(), expected_sequence="AG")
+    evidence = expansion_ui.monomer_view_payload(residues=pd.DataFrame(residues))
+    pocket = {"number": 4, "rank": 1, "positions": [1], "color": "#c24e00"}
+    evidence.update(model_source="Portable test review", model_sha256=digest, pockets=[pocket])
+    for point in evidence["model"]:
+        point["plddt"] = None
+    if source == "trace mismatch":
+        evidence["model"][0]["x"] += 1
+    monkeypatch.setattr(expansion_ui, "released_member_sequence", Mock(return_value="AG"))
+    monkeypatch.setattr(expansion_ui, "linked_review_evidence", Mock(return_value=evidence))
+    retrieve = Mock(return_value=model_bundle(content=model, accession="Q6NKN8", hog_id="HOG1"))
+    monkeypatch.setattr("e3app.research.retrieval_ui.build_alphafold_hog_bundle", retrieve)
+    if source == "no checksum":
+        monkeypatch.delenv("E3_WHATRES_DIR")
+    workspace = str(configured_app["workspace"])
+    app = AppTest.from_string(
+        "import pandas as pd\n"
+        "from pathlib import Path\n"
+        "from e3app.config import AppConfig\n"
+        "from e3app.research.common import ResearchConfig\n"
+        "from e3app.research.expansion_ui import render_linked_features\n"
+        "render_linked_features(\n"
+        f"    config=ResearchConfig(workspace=Path({workspace!r})), app_config=AppConfig(),\n"
+        "    connection=None, choice=('Q6NKN8', 'HOG1', 'Arabidopsis_thaliana', 'Q6NKN8'),\n"
+        "    domains=pd.DataFrame(),\n"
+        ")\n",
+    ).run()
+    assert app.get("iframe") and not retrieve.called
+    original = linked_payload(app=app)
+    assert original["pockets"] == [pocket]
+    assert [point["plddt"] for point in original["model"]] == [None, None]
+    panel = geometry_panel(app=app)
+    assert next(button for button in panel.button if button.label == CONTROL).disabled
+    next(button for button in panel.button if button.label == FULL_MODEL_BUTTON).click().run()
+    retrieve.assert_called_once_with(hog_id="HOG1", accessions=["Q6NKN8"], include_pae=False)
+    panel = geometry_panel(app=app)
+    assert any(item.label == "Download AlphaFold model (mmCIF)"
+               for item in panel.get("download_button"))
+    assert any("match the original review" in item.value for item in panel.caption) == (
+        digest == model_digest
+    )
+    displayed = linked_payload(app=app)
+    if source == "sequence mismatch":
+        assert displayed == original
+        assert any("could not be used for pLDDT" in item.value for item in app.info)
+    else:
+        assert [point["plddt"] for point in displayed["model"]] == [80, 60]
+        if source == "matching":
+            assert displayed["pockets"] == [pocket]
+            assert displayed["confidence_source"] == "Checksum-matched AlphaFold Database"
+            assert displayed["model_source"] == "Portable test review"
+        else:
+            assert displayed["pockets"] == []
+            assert displayed["confidence_source"] == "AlphaFold Database"
+            assert displayed["model_sha256"] == model_digest
+            if source == "trace mismatch":
+                assert any("mapped to the review trace" in item.value for item in app.info)
+            next(item for item in app.radio if item.label == "3D trace").set_value(
+                "Reviewed model and pockets",
+            ).run()
+            assert linked_payload(app=app) == original
+            next(item for item in app.radio if item.label == "3D trace").set_value(
+                "Retrieved AlphaFold Database model",
+            ).run()
+            assert linked_payload(app=app) == displayed
+    if source == "different":
+        assert any("different SHA-256" in item.value for item in panel.info)
+    if source == "no checksum":
+        assert next(button for button in panel.button if button.label == CONTROL).disabled
+        monkeypatch.setenv("E3_WHATRES_DIR", str(configured_app["whatres"]))
+        app.run()
+    calculate(app=app)
+    label = "Q6NKN8 · Arabidopsis thaliana"
+    if digest != model_digest:
+        label += " · current AlphaFold Database"
+    assert_result(app=app, label=label)
+    score = next(iter(app.session_state["whatres_session_scores"].values()))
+    assert score.model_sha256 == model_digest
+    if source == "different":
+        panel = geometry_panel(app=app)
+        panel.radio(key="linked_protein_whatres_source").set_value("Original review file").run()
+        assert not geometry_panel(app=app).dataframe
+        assert any(digest in item.value for item in geometry_panel(app=app).caption)
+
+
 def test_uploaded_pdb_scores_without_fasta_and_does_not_reuse_changed_coordinates(
     *, configured_app: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the normal ESMFold model upload route and a changed coordinate file."""
     monkeypatch.setattr("e3app.whatres_ui.MAX_SESSION_SCORES", 1)
-    uploads = {"viewer_model_pdb": uploaded_file(content=PDB, name="uploaded.pdb")}
+    uploads = {}
     monkeypatch.setattr(st, "file_uploader", Mock(side_effect=lambda **kwargs: uploads.get(
         kwargs.get("key"),
     )))
     app = AppTest.from_file(str(APP_SCRIPT), default_timeout=30).run()
     _navigate(app, stage=CANDIDATES, page="ESMFold & models")
+    panel = geometry_panel(app=app)
+    assert any("Upload a full-atom PDB above" in item.value for item in panel.caption)
+    assert panel.button[0].disabled
+    uploads["viewer_model_pdb"] = uploaded_file(content=PDB, name="uploaded.pdb")
+    app.run()
     calculate(app=app)
     assert_result(app=app, label="uploaded.pdb")
     uploads["viewer_model_fasta"] = uploaded_file(content=b">ag\nAG\n", name="model.fasta")
     app.run()
     assert app.get("iframe")
-    assert_result(app=app, label="ag")
+    assert_result(app=app, label="uploaded.pdb")
     uploads["viewer_model_pdb"] = uploaded_file(content=PDB + b"\n", name="uploaded.pdb")
     app.run()
     assert not geometry_panel(app=app).dataframe
     calculate(app=app)
-    assert_result(app=app, label="ag")
+    assert_result(app=app, label="uploaded.pdb")
     cache = app.session_state["whatres_session_scores"]
     assert [score.model_sha256 for score in cache.values()] == [sha256(PDB + b"\n").hexdigest()]
+    uploads["viewer_model_fasta"] = uploaded_file(content=b">wrong\nGG\n", name="wrong.fasta")
+    app.run()
+    assert_result(app=app, label="uploaded.pdb")
+    assert any(
+        "Could not open the linked sequence viewer" in warning.value for warning in app.warning
+    )
 
 
 def test_completed_esmfold_model_scores_the_saved_manifest_artifact(
@@ -266,14 +422,9 @@ def test_prepared_hog_model_scores_the_downloadable_alpha_fold_coordinates(
 ) -> None:
     """Reuse the exact mmCIF from the prepared model picker for geometry scoring."""
     model = make_mmcif()
-    bundle = make_model_bundle(accessions=("Q9SA03",), hog_id="N0.HOG0001")
-    output = BytesIO()
-    with ZipFile(output, mode="w") as archive:
-        archive.writestr("e3_N0.HOG0001_model_0.cif", model)
-    record = replace(
-        bundle.records[0], model_bytes=len(model), model_sha256=sha256(model).hexdigest(),
+    prepare = Mock(
+        return_value=model_bundle(content=model, accession="Q9SA03", hog_id="N0.HOG0001"),
     )
-    prepare = Mock(return_value=replace(bundle, payload=output.getvalue(), records=(record,)))
     monkeypatch.setattr("e3app.alphafold_hog_bundle.build_alphafold_hog_bundle", prepare)
     app = AppTest.from_file(str(APP_SCRIPT), default_timeout=30).run()
     _navigate(app, stage=STRUCTURE, page="HOG model comparison")
@@ -287,3 +438,67 @@ def test_prepared_hog_model_scores_the_downloadable_alpha_fold_coordinates(
     assert_result(app=app, label="Q9SA03 · AlphaFold Database")
     score = next(iter(app.session_state["whatres_session_scores"].values()))
     assert score.model_sha256 == sha256(model).hexdigest()
+
+
+@pytest.mark.parametrize("page", ["HOG model comparison", "External links"])
+def test_prepared_hog_scores_and_downloads_the_whole_current_selection(
+    *, page: str, configured_app: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Download the model ZIP and score its members through both actual app entry points."""
+    monkeypatch.setenv("E3_MAX_TABLE_ROWS", "1")
+    hog = "N0.HOG0001"
+    model = make_mmcif()
+    bundle = model_bundle(content=model, accession="Q9SA03", hog_id=hog)
+    absent = replace(
+        bundle.records[0], model_index=1, accession="P38398", species="Homo_sapiens",
+        status="not_available", model_sha256="", model_bytes=0, model_url="",
+        detail="No model available",
+    )
+    prepare = Mock(return_value=replace(bundle, records=(*bundle.records, absent)))
+    monkeypatch.setattr("e3app.alphafold_hog_bundle.build_alphafold_hog_bundle", prepare)
+    downloads = Mock(wraps=st.download_button)
+    monkeypatch.setattr(st, "download_button", downloads)
+    app = AppTest.from_file(str(APP_SCRIPT), default_timeout=30).run()
+    stage = STRUCTURE if page == "HOG model comparison" else "🔵 1 · Information"
+    _navigate(app, stage=stage, page=page)
+    panel = next(item for item in app.expander if item.label == BATCH_PANEL)
+    assert panel.get("popover")
+    assert any("doi.org/10.64898/2026.11.06.764824" in item.value for item in panel.markdown)
+    assert not panel.button
+    button = ("Prepare Inspector ZIP for selected members" if page == "HOG model comparison"
+              else "Prepare models for external tools")
+    next(item for item in app.button if item.label == button).click().run()
+    assert not app.exception and not app.error
+    assert prepare.call_args.kwargs["hog_id"] == hog
+    assert list(prepare.call_args.kwargs["accessions"]) == ["Q9SA03", "P38398"]
+    zip_download = next(item for item in downloads.call_args_list
+                        if item.args == ("Download ZIP for manual Inspector upload",))
+    with ZipFile(BytesIO(zip_download.kwargs["data"])) as archive:
+        assert archive.read(f"e3_{hog}_model_0.cif") == model
+
+    panel = next(item for item in app.expander if item.label == BATCH_PANEL)
+    next(item for item in panel.button if item.label == BATCH_CONTROL).click().run()
+    assert not app.exception and not app.error
+    prepare.assert_called_once()
+    panel = next(item for item in app.expander if item.label == BATCH_PANEL)
+    assert {item.label: item.value for item in panel.metric} == {
+        "Models scored": "1 / 2", "Median realism": "42.50",
+        "Median apparent resolution": "2.35 Å",
+    }
+    assert panel.dataframe[0].value["Accession"].tolist() == ["Q9SA03", "P38398"]
+    assert any(item.label == BATCH_EXPORT for item in panel.get("download_button"))
+    tsv = next(item.kwargs["data"] for item in downloads.call_args_list
+               if item.kwargs.get("label") == BATCH_EXPORT)
+    table = pd.read_csv(StringIO(tsv), sep="\t")
+    assert table.loc[0, "model_sha256"] == sha256(model).hexdigest()
+    assert table.loc[0, ["realism", "apparent_resolution"]].tolist() == [42.5, 2.35]
+    assert table.loc[1, "retrieval_status"] == "not_available"
+    assert table.loc[1, "scoring_status"] == "not_attempted"
+    assert table.loc[1, ["realism", "apparent_resolution"]].isna().all()
+
+    app.run()
+    assert any(item.label == BATCH_EXPORT for item in app.get("download_button"))
+    next(item for item in app.multiselect
+         if item.label == "HOG members to include in the model ZIP").set_value(["Q9SA03"]).run()
+    assert not any(item.label == BATCH_EXPORT for item in app.get("download_button"))
+    assert not any(item.label == "Models scored" for item in app.metric)

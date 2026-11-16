@@ -71,6 +71,40 @@ def monomer_view_payload(
     }
 
 
+def merge_review_plddt(*, review: dict, alphafold: dict) -> dict:
+    """Add confidence from the original AlphaFold file to its reviewed Cα trace.
+
+    Args:
+        review: Validated sequence, trace and mapped pockets from a portable review.
+        alphafold: Validated trace from an AlphaFold Database download, with its SHA-256.
+
+    Returns:
+        A copy of the review with pLDDT from the downloaded model's corresponding residues.
+
+    Raises:
+        ResearchError: If the files, sequences or Cα positions cannot be matched.
+    """
+    digest = str(review.get("model_sha256", "")).lower()
+    if (
+        not re.fullmatch(r"[a-f0-9]{64}", digest) or digest != alphafold.get("model_sha256")
+        or review["sequence"] != alphafold["sequence"]
+    ):
+        raise ResearchError("The download could not be identified as the original review model.")
+    by_position = {point["position"]: point for point in alphafold["model"]}
+    resolved = []
+    for point in review["model"]:
+        other = by_position.get(point["position"])
+        if other is None or point["residue"] != other["residue"] or any(
+            not math.isclose(point[axis], other[axis], rel_tol=0.0, abs_tol=0.001)
+            for axis in ("x", "y", "z")
+        ):
+            LOGGER.warning("Review trace differs from AlphaFold model %s at residue %s",
+                           digest, point["position"])
+            raise ResearchError("AlphaFold coordinates could not be mapped to the review trace.")
+        resolved.append({**point, "plddt": other["plddt"]})
+    return {**review, "model": resolved, "confidence_source": "Checksum-matched AlphaFold Database"}
+
+
 class _ReviewDataParser(HTMLParser):
     """Collect the inert reviewData JSON block from a portable group page."""
 

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import replace
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
+from unittest.mock import Mock, call
 
 import pandas as pd
 import pytest
@@ -14,6 +16,7 @@ from Bio.PDB import MMCIFIO, MMCIFParser, PDBParser
 
 from e3app import whatres
 from e3app.errors import AppError
+from test_external_hog import make_model_bundle
 
 PDB = (
     "ATOM      1  N   ALA A   1       1.000   2.000   3.000  1.00 80.00           N  \n"
@@ -152,6 +155,24 @@ def test_recorded_targets_bind_native_hashes_to_group_species_and_pair_roles() -
     )
 
 
+def test_legacy_review_can_retrieve_a_full_model_by_uniprot_accession() -> None:
+    """Provide a public lookup without claiming that it identifies the reviewed coordinate file."""
+    inventory = pd.DataFrame([{
+        "review_rank": 1, "primary_group_id": "HOG1", "candidate_accession": "Q6NKN8",
+        "species_column": "Arabidopsis_thaliana",
+    }])
+    targets = whatres.recorded_whatres_targets(
+        inventory=inventory, review_rank=1, group_id="HOG1",
+    )
+    assert targets == (whatres.WhatResTarget(
+        label="Q6NKN8 · Arabidopsis thaliana", alphafold_accession="Q6NKN8",
+        group_id="HOG1", species="Arabidopsis_thaliana",
+    ),)
+    assert not whatres.recorded_whatres_targets(
+        inventory=inventory.iloc[:0], review_rank=1, group_id="HOG1",
+    )
+
+
 def test_prepare_pdb_retains_all_atom_coordinates_and_confidence() -> None:
     """Keep a PDB byte-for-byte and convert each original atom from an mmCIF."""
     assert whatres._prepare_pdb(content=PDB, filename="source.PDB") == (PDB, "PDB")
@@ -217,6 +238,68 @@ def test_read_whatres_row_requires_one_complete_identity_bound_result(
         whatres._read_whatres_row(path=table, structure_id="e3_model")
     with pytest.raises(AppError, match="invalid missing.tsv"):
         whatres._read_whatres_row(path=tmp_path / "missing.tsv", structure_id="e3_model")
+
+
+def test_score_whatres_bundle_keeps_audit_and_scores_after_failures(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Score verified ZIP members independently and preserve the full request order."""
+    hog = "N0.HOG0001"
+    accessions = ("P38398", "Q9SA03", "Q12345", "Q6NKN8")
+    bundle = make_model_bundle(accessions=accessions, hog_id=hog)
+    missing, broken, mismatched, included = bundle.records
+    bundle = replace(bundle, records=(
+        replace(missing, status="not_available", model_sha256="", detail="Unavailable"),
+        broken, replace(mismatched, model_sha256="f" * 64), included,
+    ))
+    score = whatres.WhatResScore(
+        model_sha256=included.model_sha256, scored_pdb_sha256="a" * 64,
+        input_format="mmCIF", structure_id="e3_model", realism=45.6, apparent_resolution=2.1,
+        note="",
+    )
+    assess = Mock(side_effect=[AppError("Geometry failed"), score])
+    monkeypatch.setattr(whatres, "score_whatres", assess)
+    progress = Mock()
+    report = whatres.score_whatres_bundle(
+        directory=tmp_path, bundle=bundle, hog_id=hog, progress=progress,
+    )
+    assert report["hog_id"].tolist() == [hog] * len(accessions)
+    assert report["accession"].tolist() == list(accessions)
+    assert report["retrieval_status"].tolist() == ["not_available"] + ["included"] * 3
+    assert report["scoring_status"].tolist() == ["not_attempted", "error", "error", "scored"]
+    assert report["detail"].tolist() == [
+        "Unavailable", "Geometry failed",
+        "Prepared model checksum differs from its audit record", "",
+    ]
+    assert report.loc[:2, ["realism", "apparent_resolution"]].isna().all().all()
+    assert report.loc[3, ["realism", "apparent_resolution"]].tolist() == [45.6, 2.1]
+    assert report.loc[3, "model_url"] == included.model_url
+    assert report.loc[3, "scored_pdb_sha256"] == "a" * 64
+    assert report.loc[3, "whatres_version"] == "1.0.0"
+    assert assess.call_args_list == [
+        call(
+            directory=tmp_path,
+            content=f"data_{row.accession}\n# exact test coordinate bytes\n".encode(),
+            filename="alphafold.cif", expected_sha256=row.model_sha256,
+        )
+        for row in (broken, included)
+    ]
+    assert progress.call_args_list == [
+        call(completed=index, total=len(accessions)) for index in range(1, len(accessions) + 1)
+    ]
+
+
+def test_score_whatres_bundle_with_no_downloads_returns_blank_metrics(*, tmp_path: Path) -> None:
+    """Keep the TSV schema even when every requested model is unavailable."""
+    hog = "N0.HOG0001"
+    bundle = make_model_bundle(accessions=("Q9SA03",), hog_id=hog)
+    record = replace(bundle.records[0], status="error", model_sha256="", detail="Connection error")
+    report = whatres.score_whatres_bundle(
+        directory=tmp_path, bundle=replace(bundle, records=(record,)), hog_id=hog,
+    )
+    assert tuple(report.columns) == whatres.HOG_SCORE_COLUMNS
+    assert report.loc[0, "scoring_status"] == "not_attempted"
+    assert report.loc[0, ["realism", "apparent_resolution"]].isna().all()
 
 
 def test_score_whatres_runs_the_cli_with_private_scratch_and_checks_provenance(

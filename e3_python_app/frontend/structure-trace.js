@@ -1,5 +1,18 @@
 /** An offline, residue-indexed C-alpha trace for the Nightingale view. */
 export const HIGHLIGHT_COLOURS = { domain: "#182554", pocket: "#c24e00", residue: "#167d74" };
+export const NEUTRAL_TRACE_COLOUR = "#8d9aa7";
+export const CONFIDENCE_BANDS = [
+  { minimum: 90, colour: "#1856a1", label: "90–100" },
+  { minimum: 70, colour: "#188499", label: "70–<90" },
+  { minimum: 50, colour: "#bc872b", label: "50–<70" },
+  { minimum: 0, colour: "#a95729", label: "<50" },
+];
+
+/** Return the trace colour for a residue's pLDDT and the current display setting. */
+export function confidenceColour({ value, enabled }) {
+  if (!enabled || !Number.isFinite(value) || value < 0 || value > 100) return NEUTRAL_TRACE_COLOUR;
+  return CONFIDENCE_BANDS.find(band => value >= band.minimum).colour;
+}
 
 export function mountStructureTrace(container, residues, onPick) {
   const canvas = document.createElement("canvas");
@@ -18,6 +31,7 @@ export function mountStructureTrace(container, residues, onPick) {
   let domainColour = HIGHLIGHT_COLOURS.domain;
   let pocketColour = HIGHLIGHT_COLOURS.pocket;
   let matchColour;
+  let colourByConfidence = true;
   let drag = null;
   let moved = false;
 
@@ -31,14 +45,6 @@ export function mountStructureTrace(container, residues, onPick) {
     x: residue.x - centre[0], y: residue.y - centre[1], z: residue.z - centre[2], residue,
   }));
   const radius = points.reduce((maximum, p) => Math.max(maximum, Math.hypot(p.x, p.y, p.z)), 1);
-
-  function colour(confidence) {
-    if (confidence === null) return "#8d9aa7";
-    if (confidence >= 90) return "#1856a1";
-    if (confidence >= 70) return "#188499";
-    if (confidence >= 50) return "#bc872b";
-    return "#a95729";
-  }
 
   function paint({ surface, width, height, ratio }) {
     if (!width || !height) return [];
@@ -72,7 +78,7 @@ export function mountStructureTrace(container, residues, onPick) {
         continue;
       }
       context.beginPath();
-      context.strokeStyle = colour(next.residue.plddt);
+      context.strokeStyle = confidenceColour({ value: next.residue.plddt, enabled: colourByConfidence });
       context.lineWidth = 1.65;
       context.globalAlpha = hasHighlights ? .42 : .78;
       context.moveTo(previous.x, previous.y);
@@ -85,7 +91,7 @@ export function mountStructureTrace(container, residues, onPick) {
       const position = point.residue.position;
       if (domains.has(position) || pockets.has(position) || matches.has(position)) continue;
       context.beginPath();
-      context.fillStyle = colour(point.residue.plddt);
+      context.fillStyle = confidenceColour({ value: point.residue.plddt, enabled: colourByConfidence });
       context.arc(point.x, point.y, 2, 0, 2 * Math.PI);
       context.fill();
     }
@@ -229,6 +235,10 @@ export function mountStructureTrace(container, residues, onPick) {
   draw();
   return {
     fit, magnify,
+    setConfidenceColouring({ enabled }) {
+      colourByConfidence = enabled;
+      draw();
+    },
     snapshot() {
       const surface = document.createElement("canvas");
       const width = canvas.clientWidth, height = canvas.clientHeight;

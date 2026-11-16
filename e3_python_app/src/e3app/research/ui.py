@@ -2004,7 +2004,7 @@ def render_models(
     """
     route = st.radio("Model workflow", ["Open an existing PDB", "Predict with ESMFold"],
                      horizontal=True, index=0 if dedicated else 1, key="esmfold_view_route",
-                     help="Inspect a model file or open the prediction and completed-job forms.")
+                     help="Score an uploaded PDB or choose a completed prediction for WhatRes.")
     if route == "Open an existing PDB":
         render_uploaded_model(config=config)
         return
@@ -2098,6 +2098,10 @@ def render_models(
     render_portable_job(operation="predict", parameters=parameters, fasta=fasta, prepare=prepare)
     completed = completed_manifests(config=config, operation="predict")
     if not completed:
+        render_whatres(
+            models=(), key="predicted_model",
+            prompt="Once an ESMFold prediction finishes, choose it here to score its geometry.",
+        )
         return
     st.markdown("#### Inspect completed models")
     labels = {key: job_label(job_id=key, record=value) for key, value in completed.items()}
@@ -2115,6 +2119,10 @@ def render_models(
     st.dataframe(predictions, hide_index=True)
     available = predictions[predictions["status"].isin(["PREDICTED", "REUSED"])]
     if available.empty:
+        render_whatres(
+            models=(), key="predicted_model",
+            prompt="Choose a completed job with an available PDB to score its geometry.",
+        )
         return
     identifier = st.selectbox(
         "Model to interrogate",
@@ -2126,6 +2134,10 @@ def render_models(
     model = artifact_path(workspace=config.workspace, job_id=selected, artifact=row["pdb_artifact"])
     model_bytes = model.read_bytes()
     st.download_button("Download predicted PDB", data=model_bytes, file_name=model.name)
+    render_whatres(
+        models=(WhatResTarget(label=str(identifier), content=model_bytes, filename="esmfold.pdb"),),
+        key="predicted_model",
+    )
     residues = read_table(
         path=artifact_path(
             workspace=config.workspace, job_id=selected, artifact=row["residue_artifact"]
@@ -2143,10 +2155,6 @@ def render_models(
     )
     render_model_trace(payload=payload, stem=f"model_{selected[:12]}",
                        identifier=str(identifier))
-    render_whatres(
-        models=(WhatResTarget(label=str(identifier), content=model_bytes, filename="esmfold.pdb"),),
-        key="predicted_model",
-    )
     st.caption(
         (
             "Reported ESMFold confidence is model evidence. This C-alpha view and "
@@ -2179,39 +2187,43 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
     from .providers import pdb_evidence
     from .viewer_inputs import uploaded_proteins
 
-    st.caption("Open a PDB to score its geometry. Add its original protein FASTA to view the "
-               "predicted monomer with confidence from the PDB B-factor field.")
     uploaded = st.file_uploader(
         label="Predicted monomer PDB", type=["pdb"], key="viewer_model_pdb",
-        help="Upload a PDB of up to 20 MB.",
+        help="Upload a full-atom PDB of up to 20 MB for WhatRes.",
     )
-    fasta = upload_text(label="Original model input FASTA", types=["fa", "faa", "fasta"],
-                        key="viewer_model_fasta")
-    if uploaded is None:
+    models = ()
+    if uploaded is not None:
+        if uploaded.size > MAX_COORDINATE_BYTES:
+            st.warning("The PDB exceeds 20 MB.")
+        else:
+            models = (WhatResTarget(
+                label=uploaded.name, content=uploaded.getvalue(), filename=uploaded.name,
+            ),)
+    render_whatres(
+        models=models, key="uploaded_protein_model",
+        prompt="Upload a full-atom PDB above to enable scoring.",
+    )
+    fasta = upload_text(
+        label="Original model input FASTA", types=["fa", "faa", "fasta"], key="viewer_model_fasta",
+        help_text="Optional. Use the exact input FASTA to open the linked sequence and "
+        "3D confidence viewer.",
+    )
+    if not models or not fasta:
         return
-    if uploaded.size > MAX_COORDINATE_BYTES:
-        raise ResearchError("Predicted monomer PDB exceeds 20 MB")
-    original = uploaded.getvalue()
-    label = uploaded.name
-    if fasta:
-        try:
-            pdb = original.decode("utf-8-sig")
-        except UnicodeDecodeError as exc:
-            raise ResearchError("Predicted monomer PDB must contain UTF-8 text") from exc
+    try:
+        pdb = models[0].content.decode("utf-8-sig")
         records = uploaded_proteins(text=fasta)
         identifier = st.selectbox("Original protein ID", options=list(records))
         sequence = records[identifier]
         residues = pdb_evidence(pdb=pdb, expected_sequence=sequence)
-        payload = monomer_view_payload(
-            residues=pd.DataFrame(residues),
-            features=select_linked_annotations(config=config, sequence=sequence),
-        )
-        render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier)
-        label = str(identifier)
-    render_whatres(
-        models=(WhatResTarget(label=label, content=original, filename=uploaded.name),),
-        key="uploaded_protein_model",
+    except (UnicodeDecodeError, ResearchError) as exc:
+        st.warning(f"Could not open the linked sequence viewer. {exc}")
+        return
+    payload = monomer_view_payload(
+        residues=pd.DataFrame(residues),
+        features=select_linked_annotations(config=config, sequence=sequence),
     )
+    render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier)
 
 
 def render_annotations(*, config: ResearchConfig) -> None:

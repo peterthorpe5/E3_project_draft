@@ -222,6 +222,7 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .linked-trace:active{cursor:grabbing}
     .structure-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
       font-size:12px}
+    .confidence-colouring{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
     .feature-residue-input{width:60px}
     .trace-colour-controls{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:8px 0}
     .trace-colour-picker{display:inline-flex;align-items:center;gap:6px;font-size:12px}
@@ -245,6 +246,8 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
       display:flex;flex-direction:column;justify-content:space-between;align-items:end;
       font-size:10px;color:#425671}
     .confidence-axis span{background:#fffffff0;padding:0 2px}
+    .protein-feature-viewer .confidence-summary,.confidence-help{font-size:12px;color:#344a65}
+    .confidence-help summary{cursor:pointer;width:fit-content}
     @media(max-width:750px){.feature-layout.linked{grid-template-columns:minmax(0,1fr)}
       .linked-trace{height:290px}}
     """

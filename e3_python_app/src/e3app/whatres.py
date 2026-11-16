@@ -10,36 +10,53 @@ import re
 import signal
 import subprocess
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Mapping
+from typing import Callable, Mapping
 
 import pandas as pd
 from Bio.PDB import MMCIFParser, PDBIO, PDBParser
 from Bio.PDB.PDBExceptions import PDBConstructionException, PDBIOException
 
+from e3app.alphafold_hog_bundle import AlphaFoldHogBundle
 from e3app.errors import AppError
+from e3app.external_actions import normalise_uniprot_accession
+from e3app.external_hog import prepared_hog_model
 
 LOGGER = logging.getLogger(__name__)
 WHATRES_VERSION = "1.0.0"
 WHATRES_PAPER = "https://doi.org/10.64898/2026.11.06.764824"
+WHATRES_CITATION = (
+    "van der Kant, R., Delgado Blanco, J., Serrano, L., Schymkowitz, J., & Rousseau, F. (2026). "
+    "*Realism and resolution: How AI-predicted protein structures differ from experimental "
+    f"structures.* bioRxiv preprint. [doi:10.64898/2026.11.06.764824]({WHATRES_PAPER})"
+)
 MAX_COORDINATE_BYTES = 20_000_000
 SCORE_TIMEOUT_SECONDS = 120
 MODEL_ID = "e3_model"
 SHA256_PATTERN = re.compile(r"[a-f0-9]{64}")
+HOG_SCORE_COLUMNS = (
+    "hog_id", "accession", "species", "retrieval_status", "scoring_status",
+    "realism", "apparent_resolution", "note", "detail", "whatres_version",
+    "model_url", "model_sha256", "scored_pdb_sha256", "structure_id", "input_format",
+)
 
 
 @dataclass(frozen=True, kw_only=True)
 class WhatResTarget:
-    """An exact model selection with coordinates or its recorded checksum."""
+    """A model selection with coordinates, a review checksum or a public accession."""
 
     label: str
     content: bytes | None = None
     filename: str = ""
     model_sha256: str = ""
+    alphafold_accession: str = ""
+    group_id: str = ""
+    species: str = ""
+    from_alphafold_database: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -125,7 +142,7 @@ def recorded_whatres_targets(
     *, inventory: pd.DataFrame, review_rank: int, group_id: str,
     pair_members: Mapping[str, tuple[str, str]] | None = None,
 ) -> tuple[WhatResTarget, ...]:
-    """Find native model checksums for an exact review group or its selected member pair.
+    """Find eligible original or public coordinates for the selected group or pair.
 
     Args:
         inventory: Portable review model inventory, potentially from a legacy bundle.
@@ -134,9 +151,9 @@ def recorded_whatres_targets(
         pair_members: Optional role, accession and species from the pair index.
 
     Returns:
-        Models with an unambiguous source row and a recorded SHA-256.
+        Models with an unambiguous source row and a checksum or public accession.
     """
-    if "model_sha256" not in inventory:
+    if inventory.empty:
         return ()
     selected = inventory.loc[
         inventory["review_rank"].eq(review_rank) & inventory["primary_group_id"].eq(group_id)
@@ -144,18 +161,23 @@ def recorded_whatres_targets(
     checksums: dict[tuple[str, str], list[str]] = {}
     for row in selected.itertuples(index=False):
         member = (str(row.candidate_accession), str(row.species_column))
-        checksums.setdefault(member, []).append(str(row.model_sha256).lower())
+        checksums.setdefault(member, []).append(str(getattr(row, "model_sha256", "")).lower())
     choices = pair_members.items() if pair_members is not None else (
         ("", member) for member in checksums
     )
     targets = []
     for role, (accession, species) in choices:
         digests = checksums.get((accession, species), [])
-        if len(digests) == 1 and SHA256_PATTERN.fullmatch(digests[0]):
+        if len(digests) != 1:
+            continue
+        digest = digests[0] if SHA256_PATTERN.fullmatch(digests[0]) else ""
+        public_accession = normalise_uniprot_accession(value=accession) or ""
+        if digest or public_accession:
             prefix = f"{role.capitalize()} · " if role else ""
             targets.append(WhatResTarget(
                 label=f"{prefix}{accession} · {species.replace('_', ' ')}",
-                model_sha256=digests[0],
+                model_sha256=digest, alphafold_accession=public_accession,
+                group_id=group_id, species=species,
             ))
     return tuple(targets)
 
@@ -310,3 +332,44 @@ def score_whatres(
         input_format=input_format, structure_id=structure_id, apparent_resolution=resolution,
         realism=realism, note=note,
     )
+
+
+def score_whatres_bundle(
+    *, directory: Path, bundle: AlphaFoldHogBundle, hog_id: str,
+    progress: Callable[..., None] | None = None,
+) -> pd.DataFrame:
+    """Score each included HOG model while retaining the retrieval audit for all requests.
+
+    Args:
+        directory: Validated WhatRes installation used by the app host.
+        bundle: Prepared AlphaFold Database models and their per-accession manifest.
+        hog_id: Identifier for the selected HOG.
+        progress: Optional callback taking completed and total counts as keyword arguments.
+
+    Returns:
+        One row per requested accession, with blank metrics where scoring was unavailable.
+    """
+    rows = []
+    for index, record in enumerate(bundle.records, start=1):
+        row = {
+            "hog_id": hog_id, "accession": record.accession, "species": record.species,
+            "retrieval_status": record.status, "scoring_status": "not_attempted",
+            "model_url": record.model_url, "model_sha256": record.model_sha256,
+            "detail": record.detail,
+        }
+        if record.status == "included":
+            try:
+                content = prepared_hog_model(bundle=bundle, accession=record.accession)
+                score = score_whatres(
+                    directory=directory, content=content, filename="alphafold.cif",
+                    expected_sha256=record.model_sha256,
+                )
+            except AppError as exc:
+                LOGGER.warning("WhatRes failed for %s in %s: %s", record.accession, hog_id, exc)
+                row.update(scoring_status="error", detail=str(exc))
+            else:
+                row.update(asdict(score), scoring_status="scored")
+        rows.append(row)
+        if progress is not None:
+            progress(completed=index, total=bundle.requested_count)
+    return pd.DataFrame(rows, columns=HOG_SCORE_COLUMNS)
