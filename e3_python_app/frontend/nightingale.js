@@ -261,9 +261,11 @@ if (model.size) {
     row.hidden = true;
     element("div", row, "protein-feature-label", "Amino-acid sequence matches");
     const matchTrack = addTrack("track", row, 16);
-    sequenceSearch = mountSequenceSearch(structure, ({ ranges, colour, summary, query }) => {
+    sequenceSearch = mountSequenceSearch(structure, ({
+      ranges, colour, summary, query, regularExpression,
+    }) => {
       row.hidden = !ranges.length;
-      sequenceSearchLabel = `${query} · ${summary}`;
+      sequenceSearchLabel = `${regularExpression ? "Regex " : ""}${query} · ${summary}`;
       matchTrack.data = ranges.length ? [{
         accession: "sequence-matches", color: colour, locations: [{ fragments: ranges }],
       }] : [];

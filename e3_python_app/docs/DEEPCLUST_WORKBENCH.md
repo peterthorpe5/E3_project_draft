@@ -43,11 +43,16 @@ confidence value. Use **Download Nightingale viewer (HTML)** for the same
 controls offline. The download opens with the default colours.
 
 Enter a sequence such as `QWFAA` in **Amino-acid sequence** and choose
-**Find matches**. The search uses literal amino-acid letters on the ungapped
-protein, ignores case and spaces, and includes overlapping matches. Choose
-**All matches** or **One match** and set the match number. **Match colour**
-changes the search highlight. **Download 3D view (PDF)** captures the current
-angle, zoom and highlight colours with a labelled key.
+**Find matches**. Exact string search ignores case and spaces. Tick **Regular
+expression** to enter a pattern such as `QW.A[AV]`, where `.` matches any
+one residue and `[AV]` matches A or V. Enter the pattern directly, without
+surrounding slashes. Regex matching is case-insensitive and treats spaces as
+part of the pattern. Both modes search the ungapped protein and include
+overlapping matches. Patterns that match zero residues produce no highlight.
+
+Choose **All matches** or **One match** and set the match number. **Match
+colour** changes the search highlight. **Download 3D view (PDF)** captures the
+current angle, zoom and highlight colours with a labelled key.
 
 The same controls are available in the app's uploaded PDB and ESMFold model
 views. The native pocket-review and pairwise superposition viewers offer

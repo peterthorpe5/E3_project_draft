@@ -234,7 +234,8 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .sequence-search{border-top:1px solid #dae3ed;margin-top:10px;padding-top:8px;font-size:12px}
     .sequence-search form,.sequence-search-options{display:flex;gap:6px 8px;
       flex-wrap:wrap;align-items:end;margin:0 0 6px}
-    .sequence-search form label{flex:1 1 130px}
+    .sequence-search-query{flex:1 1 135px}
+    .sequence-search-regex{display:inline-flex;align-items:center;gap:4px;padding-bottom:4px}
     .sequence-search input:not([type=color]),.sequence-search select{border:1px solid #c8d4e2;
       border-radius:5px;padding:5px 6px;font:inherit;background:white;color:inherit}
     .sequence-search input[type=text]{display:block;width:100%;box-sizing:border-box}

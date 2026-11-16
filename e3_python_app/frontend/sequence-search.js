@@ -1,4 +1,4 @@
-/** Literal amino-acid search shared by the offline structure viewers. */
+/** Amino-acid search shared by the offline structure viewers. */
 export const SEQUENCE_COLOUR = "#e32860";
 
 /** Return every inclusive one-based match, including overlapping occurrences. */
@@ -15,6 +15,62 @@ export function sequenceMatches({ sequence, query }) {
     ranges.push({ start: start + 1, end: start + pattern.length });
   }
   return ranges;
+}
+
+/** Find overlapping regex matches on the ungapped sequence, skipping empty spans. */
+export function regexMatches({ sequence, query }) {
+  const expression = new RegExp(query, "gi");
+  const ranges = [];
+  for (let match = expression.exec(sequence); match; match = expression.exec(sequence)) {
+    if (match[0].length) {
+      ranges.push({ start: match.index + 1, end: match.index + match[0].length });
+    }
+    expression.lastIndex = match.index + 1;
+  }
+  return ranges;
+}
+
+/** Run the browser's regex engine off the UI thread and return a cancellation function. */
+function runRegexSearch({ sequence, query, onResult }) {
+  // Only the matching function is embedded in the worker. The pattern arrives as data.
+  const source = `self.onmessage = ({ data }) => {
+    try {
+      self.postMessage({ matches: (${regexMatches.toString()})(data) });
+    } catch (error) {
+      self.postMessage({ error: error.message });
+    }
+  };`;
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  let worker;
+  try {
+    worker = new Worker(url);
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw new Error("Regular expression search is unavailable in this viewer.", { cause: error });
+  }
+  const timer = setTimeout(() => finish({
+    error: "This regular expression took too long. Try a simpler pattern.",
+  }), 2000);
+
+  function stop() {
+    clearTimeout(timer);
+    worker.onmessage = worker.onerror = null;
+    worker.terminate();
+    URL.revokeObjectURL(url);
+  }
+
+  function finish(result) {
+    stop();
+    onResult(result);
+  }
+
+  worker.onmessage = ({ data }) => finish(data);
+  worker.onerror = event => {
+    event.preventDefault();
+    finish({ error: "The viewer could not run this regular expression." });
+  };
+  worker.postMessage({ sequence, query });
+  return stop;
 }
 
 /** Collapse sorted matches to disjoint residue ranges for rendering. */
@@ -43,8 +99,11 @@ export function mountSequenceSearch(parent, onSelection) {
   panel.className = "sequence-search";
   panel.innerHTML = `
     <form>
-      <label>Amino-acid sequence
+      <label class="sequence-search-query">Amino-acid sequence
         <input type="text" placeholder="e.g. QWFAA" spellcheck="false" autocomplete="off">
+      </label>
+      <label class="sequence-search-regex" title="Use a pattern such as QW.A[AV]">
+        <input type="checkbox"> Regular expression
       </label>
       <button type="submit">Find matches</button>
       <button type="button">Clear matches</button>
@@ -63,7 +122,8 @@ export function mountSequenceSearch(parent, onSelection) {
     <p role="status" aria-live="polite"></p>`;
   parent.appendChild(panel);
   const form = panel.querySelector("form");
-  const query = form.querySelector("input");
+  const query = form.querySelector('input[type="text"]');
+  const regex = form.querySelector('input[type="checkbox"]');
   const find = form.querySelector('button[type="submit"]');
   const clear = form.querySelector('button[type="button"]');
   const mode = panel.querySelector("select");
@@ -75,6 +135,7 @@ export function mountSequenceSearch(parent, onSelection) {
   let searched = false;
   let error = "";
   let appliedQuery = "";
+  let cancelRegex = null;
 
   function update() {
     const single = mode.value === "one";
@@ -83,7 +144,7 @@ export function mountSequenceSearch(parent, onSelection) {
     occurrence.max = String(matches.length);
     occurrence.parentElement.hidden = !single || !matches.length;
     mode.disabled = matches.length < 2;
-    query.disabled = find.disabled = !sequence;
+    query.disabled = find.disabled = regex.disabled = !sequence;
     clear.disabled = !searched && !query.value;
     const ranges = single ? matches.slice(index - 1, index) : matches;
     const shown = ranges.slice(0, 8).map(({ start, end }) =>
@@ -92,25 +153,47 @@ export function mountSequenceSearch(parent, onSelection) {
     const summary = single && matches.length > 1
       ? `Match ${index} of ${matches.length}` : `${matches.length} ${matches.length === 1 ? "match" : "matches"}`;
     status.textContent = !sequence ? "A verified sequence is unavailable for this structure."
+      : cancelRegex ? "Searching…"
       : error || (matches.length ? `${summary} · ${coordinates}`
-        : searched ? "No exact matches." : "");
+        : searched ? (regex.checked ? "No matching residues." : "No exact matches.") : "");
     onSelection({ ranges: combineRanges(ranges), colour: colour.value, summary: status.textContent,
-      query: appliedQuery });
+      query: appliedQuery, regularExpression: regex.checked });
+  }
+
+  function showResult({ matches: found = [], error: problem = "" }) {
+    cancelRegex = null;
+    matches = found;
+    error = problem;
+    if (matches.length < 2) mode.value = "all";
+    update();
   }
 
   function search() {
-    searched = Boolean(query.value.trim());
-    matches = [];
-    error = "";
-    appliedQuery = query.value.replace(/\s/g, "").toUpperCase();
+    cancelRegex?.();
+    cancelRegex = null;
+    const value = query.value;
+    appliedQuery = regex.checked ? value : value.replace(/\s/g, "").toUpperCase();
+    searched = Boolean(appliedQuery);
+    query.placeholder = regex.checked ? "e.g. QW.A[AV]" : "e.g. QWFAA";
+    if (regex.checked) query.removeAttribute("maxlength");
+    else query.maxLength = sequence.length + 100;
     occurrence.value = "1";
-    try {
-      matches = sequenceMatches({ sequence, query: query.value });
-    } catch (exc) {
-      error = exc.message;
+    if (!sequence || !searched) {
+      showResult({});
+      return;
     }
-    if (matches.length < 2) mode.value = "all";
-    update();
+    try {
+      if (regex.checked) {
+        cancelRegex = runRegexSearch({ sequence, query: value, onResult: showResult });
+        matches = [];
+        error = "";
+        update();
+      } else {
+        showResult({ matches: sequenceMatches({ sequence, query: value }) });
+      }
+    } catch (exc) {
+      showResult({ error: exc.message });
+    }
   }
 
   form.addEventListener("submit", event => {
@@ -118,6 +201,7 @@ export function mountSequenceSearch(parent, onSelection) {
     search();
   });
   query.addEventListener("input", () => { clear.disabled = !searched && !query.value; });
+  regex.addEventListener("change", search);
   for (const control of [mode, occurrence, colour]) control.addEventListener("change", update);
   colour.addEventListener("input", update);
 
@@ -131,7 +215,6 @@ export function mountSequenceSearch(parent, onSelection) {
   return {
     setSequence(value) {
       sequence = value || "";
-      query.maxLength = Math.max(1, sequence.length + 100);
       search();
     },
     clear: clearMatches,

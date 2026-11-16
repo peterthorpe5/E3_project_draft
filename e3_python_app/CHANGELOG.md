@@ -4,6 +4,12 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.15
+
+- Offer regular expression matching in the 3D amino-acid search. Exact string
+  matching remains the default. Both modes support overlapping occurrences,
+  custom highlight colours and PDF export.
+
 ## v0.23.14
 
 - Highlight an exact amino-acid sequence on the model and Nightingale track,

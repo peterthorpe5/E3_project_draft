@@ -138,9 +138,13 @@ function mountReviewHighlights() {
     if (feature) legend.push({
       colour: domainColour.value, label: `Domain: ${domain.selectedOptions[0].textContent}`,
     });
-    if (matches.size) legend.push({
-      colour: matchSelection.colour, label: `Matches: ${matchSelection.query} · ${matchSelection.summary}`,
-    });
+    if (matches.size) {
+      const pattern = matchSelection.regularExpression ? "Regex " : "";
+      legend.push({
+        colour: matchSelection.colour,
+        label: `Matches: ${pattern}${matchSelection.query} · ${matchSelection.summary}`,
+      });
+    }
     if (pair && typeof colours !== "undefined") {
       for (const role of ["reference", "mobile"]) {
         const label = role === "reference" ? "Reference" : "Aligned member";

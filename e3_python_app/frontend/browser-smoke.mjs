@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
-const directory = process.argv[2];
+const [directory, ...viewers] = process.argv.slice(2);
 if (!directory) throw new Error("Supply the synthetic viewer-document directory");
+const requested = viewer => !viewers.length || viewers.includes(viewer);
 
 /** Count exact colour pixels to check the rendered model as well as the UI state. */
 async function assertTraceColours(trace, ...colours) {
@@ -46,7 +47,7 @@ try {
   for (const name of [
     "alignment", "jbrowse", "nightingale", "nightingale-recorded", "jbrowse-species",
     "nightingale-linked",
-  ]) {
+  ].filter(requested)) {
     const nightingale = name.startsWith("nightingale");
     const page = await browser.newPage({ viewport: { width: 1300, height: 800 } });
     const errors = [], failed = [], outbound = [];
@@ -169,6 +170,51 @@ try {
         await query.fill("QWFAA");
         await query.press("Enter");
         assert.match(await page.locator(".sequence-search p").innerText(), /No exact matches/);
+        const regex = page.getByRole("checkbox", { name: "Regular expression" });
+        assert.equal(await regex.isChecked(), false);
+        await regex.check();
+        await query.fill("a[cf]d");
+        await query.press("Enter");
+        await page.waitForFunction(() => document.querySelector(".linked-trace")
+          .dataset.sequenceCount === "6");
+        await mode.selectOption("one");
+        await page.getByLabel("Match number").fill("2");
+        await page.getByLabel("Match number").press("Tab");
+        assert.match(await page.locator(".sequence-search p").innerText(), /Match 2 of 2 · 18–20/);
+        await assertTraceColours(trace, "#182554", "#c24e00", "#f019aa");
+        await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
+          "Matches: Regex a[cf]d", "Match 2 of 2");
+        await query.fill("[A");
+        await query.press("Enter");
+        await page.getByText(/Invalid regular expression/).waitFor();
+        assert.equal(await trace.getAttribute("data-sequence-count"), "0");
+        await query.fill("(?=A)");
+        await query.press("Enter");
+        await page.getByText("No matching residues.").waitFor();
+        assert.equal(await trace.getAttribute("data-sequence-count"), "0");
+        // A stalled worker makes the timeout and cancellation checks deterministic.
+        await page.evaluate(() => {
+          window.originalWorker = window.Worker;
+          window.terminatedWorkers = 0;
+          window.Worker = class {
+            postMessage() {}
+            terminate() { window.terminatedWorkers += 1; }
+          };
+        });
+        await query.fill("A+");
+        await query.press("Enter");
+        await page.getByText("Searching…", { exact: true }).waitFor();
+        await page.getByText(/This regular expression took too long/).waitFor();
+        await query.press("Enter");
+        await page.getByRole("button", { name: "Clear matches" }).click();
+        assert.equal(await page.evaluate(() => {
+          window.Worker = window.originalWorker;
+          return window.terminatedWorkers;
+        }), 2);
+        await regex.uncheck();
+        await query.fill("ACD");
+        await query.press("Enter");
+        assert.equal(await trace.getAttribute("data-sequence-count"), "6");
         await page.getByRole("button", { name: "Clear matches" }).click();
         await reset.click();
         assert.equal(await matchColour.inputValue(), "#e32860");
@@ -212,7 +258,7 @@ try {
     assert.deepEqual(outbound, [], name + " must remain offline during interactions");
     console.log(JSON.stringify({ viewer: name, drawn, status: await page.locator("#status").innerText() }));
   }
-  for (const name of ["review-group", "review-pair"]) {
+  for (const name of ["review-group", "review-pair"].filter(requested)) {
     const page = await browser.newPage({ viewport: { width: 1240, height: 900 } });
     const errors = [];
     const outbound = [];
@@ -226,17 +272,20 @@ try {
     await domain.selectOption("0");
     assert.equal(await trace.getAttribute("data-domain-count"), "3");
     const query = page.getByRole("textbox", { name: "Amino-acid sequence" });
-    await query.fill("QWFAA");
+    await page.getByRole("checkbox", { name: "Regular expression" }).check();
+    await query.fill("QW.A[AV]");
     await query.press("Enter");
+    await page.waitForFunction(() => document.getElementById("viewer").dataset.sequenceCount === "10");
     assert.equal(await trace.getAttribute("data-sequence-count"), "10");
     await page.getByLabel("Match colour").fill("#f019aa");
     await page.getByLabel("Domain colour").fill("#a8deff");
     await assertTraceColours(trace, "#f019aa", "#a8deff");
     await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
-      "N0.HOG1", "Domain: PF00001", "Matches: QWFAA",
+      "N0.HOG1", "Domain: PF00001", "Matches: Regex QW.A[AV]",
       name === "review-pair" ? "Reference pocket" : "Pocket rank 1");
     if (name === "review-pair") {
       await page.getByLabel("Structure to highlight").selectOption("mobile");
+      await page.waitForFunction(() => document.getElementById("viewer").dataset.sequenceCount === "10");
       assert.equal(await trace.getAttribute("data-domain-count"), "0");
       assert.equal(await trace.getAttribute("data-sequence-count"), "10");
       await page.locator("#showMobile").uncheck();
@@ -244,6 +293,7 @@ try {
       await page.locator("#showMobile").check();
     } else {
       await page.locator("#proteinSelect").selectOption("Q12345");
+      await page.waitForFunction(() => document.getElementById("viewer").dataset.sequenceCount === "10");
       assert.equal(await trace.getAttribute("data-domain-count"), "0");
       assert.equal(await trace.getAttribute("data-sequence-count"), "10");
     }
