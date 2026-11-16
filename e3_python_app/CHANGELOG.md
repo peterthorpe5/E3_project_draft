@@ -4,6 +4,14 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.16
+
+- Score full-atom models locally with WhatRes v1.0.0 and download the realism,
+  apparent resolution and coordinate provenance as TSV.
+- Open the assessment from linked Nightingale structures, ESMFold and prepared
+  AlphaFold models, or use checksum-matched originals in group and pairwise
+  pocket reviews.
+
 ## v0.23.15
 
 - Offer regular expression matching in the 3D amino-acid search. Exact string

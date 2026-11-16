@@ -138,6 +138,8 @@ from e3app.prestructure_hogs import (
 )
 from e3app.research.review_highlights import add_review_highlights
 from e3app.species_composition import member_species_counts, render_species_counts
+from e3app.whatres import WhatResTarget, recorded_whatres_targets
+from e3app.whatres_ui import render_whatres
 from e3app.orthology import (
     collect_orthology_group_summary,
     collect_orthology_metrics,
@@ -2860,13 +2862,13 @@ def _render_structural_superposition(
             document=pair_document
         )
     )
+    pair_members = {
+        role: (str(comparison[f"{role}_accession"]), str(comparison[f"{role}_species"]))
+        for role in ("reference", "mobile")
+    }
     viewer_document = add_review_highlights(
         document=viewer_document, group_document=group_document, connection=connection,
-        group_id=str(group_row["primary_group_id"]),
-        pair_members={
-            role: (str(comparison[f"{role}_accession"]), str(comparison[f"{role}_species"]))
-            for role in ("reference", "mobile")
-        },
+        group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
     )
     st.caption(
         "Drag to rotate, use the mouse wheel to zoom, toggle either Cα trace or "
@@ -2876,6 +2878,13 @@ def _render_structural_superposition(
         "display choices are reversible and never alter the underlying evidence."
     )
     components.html(viewer_document, height=1480, scrolling=True)
+    render_whatres(
+        models=recorded_whatres_targets(
+            inventory=bundle.models, review_rank=int(group_row["review_rank"]),
+            group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
+        ),
+        key=key_prefix, recorded=True,
+    )
     with st.expander("❓ Define the pair-evidence terms"):
         st.markdown(pair_evidence_help_markdown())
         st.caption(
@@ -4150,6 +4159,14 @@ def _render_selected_pocket_review(
         "automatically."
     )
     components.html(document, height=1100, scrolling=True)
+    if focus == "structure":
+        render_whatres(
+            models=recorded_whatres_targets(
+                inventory=bundle.models, review_rank=int(row["review_rank"]),
+                group_id=str(row["primary_group_id"]),
+            ),
+            key=key_prefix, recorded=True,
+        )
     members = selected_group_members(bundle, int(row["review_rank"]), focus)
     member_title = (
         "Displayed protein models"
@@ -4392,12 +4409,23 @@ def _render_search(*, connection: object, config: AppConfig) -> None:
 
 
 def _render_prepared_hog_model(
-    *, bundle: AlphaFoldHogBundle, selected_hog: str, key_prefix: str,
+    *, bundle: AlphaFoldHogBundle, selected_hog: str, key_prefix: str, include_protein_imager: bool,
 ) -> None:
-    """Download one audited full model for manual Protein Imager loading."""
+    """Offer one audited full model for scoring and manual Protein Imager loading.
+
+    Args:
+        bundle: Prepared AlphaFold Database coordinate models and their source audit.
+        selected_hog: HOG containing the prepared proteins.
+        key_prefix: Widget namespace for the calling view.
+        include_protein_imager: Also offer the manual Protein Imager hand-off.
+    """
     included = [row.accession for row in bundle.records if row.status == "included"]
+    label = (
+        "Prepared model for Protein Imager"
+        if include_protein_imager else "Prepared AlphaFold model"
+    )
     accession = st.selectbox(
-        "Prepared model for Protein Imager", options=included,
+        label=label, options=included,
         key=f"{key_prefix}_protein_imager_model_{selected_hog}",
     )
     try:
@@ -4405,16 +4433,23 @@ def _render_prepared_hog_model(
     except AppError as exc:
         st.error(str(exc))
         return
-    st.download_button(
-        "Download selected model for Protein Imager (mmCIF)", data=model,
-        file_name=f"{safe_file_stem(value=selected_hog)}__{accession}_alphafold.cif",
-        mime="chemical/x-mmcif", key=f"{key_prefix}_protein_imager_download",
-    )
-    st.link_button("Open Protein Imager for the downloaded model", PROTEIN_IMAGER_URL)
-    st.caption(
-        "Load the downloaded mmCIF manually. These are current AlphaFold Database models; "
-        "use the original pipeline-retained model when inspecting recorded pocket residue IDs. "
-        "The source URL and checksum are in the bundle audit. Pocket annotations are not uploaded."
+    if include_protein_imager:
+        st.download_button(
+            "Download selected model for Protein Imager (mmCIF)", data=model,
+            file_name=f"{safe_file_stem(value=selected_hog)}__{accession}_alphafold.cif",
+            mime="chemical/x-mmcif", key=f"{key_prefix}_protein_imager_download",
+        )
+        st.link_button("Open Protein Imager for the downloaded model", PROTEIN_IMAGER_URL)
+        st.caption(
+            "Load the downloaded mmCIF manually. These are current AlphaFold Database models; "
+            "use the original pipeline-retained model when inspecting recorded pocket residue IDs. "
+            "The bundle audit records the source URL and checksum."
+        )
+    render_whatres(
+        models=(WhatResTarget(
+            label=f"{accession} · AlphaFold Database", content=model, filename="alphafold.cif",
+        ),),
+        key=f"{key_prefix}_prepared_hog_model",
     )
 
 
@@ -4561,9 +4596,10 @@ def _render_hog_model_bundle(
         "Manual hand-off: download the ZIP, open the Inspector, choose the ZIP, "
         "and use manifest.tsv to map its Model numbers back to accessions and species."
     )
-    if include_protein_imager and bundle.included_count:
+    if bundle.included_count:
         _render_prepared_hog_model(
             bundle=bundle, selected_hog=selected_hog, key_prefix=key_prefix,
+            include_protein_imager=include_protein_imager,
         )
 
 

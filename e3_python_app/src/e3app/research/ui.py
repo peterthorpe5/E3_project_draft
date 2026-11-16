@@ -26,6 +26,8 @@ from e3app.config import AppConfig
 from e3app.errors import AppError
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
 from e3app.species_composition import member_species_counts, render_species_counts
+from e3app.whatres import MAX_COORDINATE_BYTES, WhatResTarget
+from e3app.whatres_ui import render_whatres
 
 from .catalogue import browse_clusters, open_catalogue
 from .common import ResearchConfig, ResearchError, analysis_temporary_root, iter_fasta, load_config
@@ -2122,7 +2124,8 @@ def render_models(
     )
     row = available[available["sequence_id"] == identifier].iloc[0]
     model = artifact_path(workspace=config.workspace, job_id=selected, artifact=row["pdb_artifact"])
-    st.download_button("Download predicted PDB", data=model.read_bytes(), file_name=model.name)
+    model_bytes = model.read_bytes()
+    st.download_button("Download predicted PDB", data=model_bytes, file_name=model.name)
     residues = read_table(
         path=artifact_path(
             workspace=config.workspace, job_id=selected, artifact=row["residue_artifact"]
@@ -2140,6 +2143,10 @@ def render_models(
     )
     render_model_trace(payload=payload, stem=f"model_{selected[:12]}",
                        identifier=str(identifier))
+    render_whatres(
+        models=(WhatResTarget(label=str(identifier), content=model_bytes, filename="esmfold.pdb"),),
+        key="predicted_model",
+    )
     st.caption(
         (
             "Reported ESMFold confidence is model evidence. This C-alpha view and "
@@ -2172,12 +2179,25 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
     from .providers import pdb_evidence
     from .viewer_inputs import uploaded_proteins
 
-    st.caption("Open an ESMFold PDB and its original protein FASTA. Confidence is read from the "
-               "PDB B-factor field.")
-    pdb = upload_text(label="Predicted monomer PDB", types=["pdb"], key="viewer_model_pdb")
+    st.caption("Open a PDB to score its geometry. Add its original protein FASTA to view the "
+               "predicted monomer with confidence from the PDB B-factor field.")
+    uploaded = st.file_uploader(
+        label="Predicted monomer PDB", type=["pdb"], key="viewer_model_pdb",
+        help="Upload a PDB of up to 20 MB.",
+    )
     fasta = upload_text(label="Original model input FASTA", types=["fa", "faa", "fasta"],
                         key="viewer_model_fasta")
-    if pdb and fasta:
+    if uploaded is None:
+        return
+    if uploaded.size > MAX_COORDINATE_BYTES:
+        raise ResearchError("Predicted monomer PDB exceeds 20 MB")
+    original = uploaded.getvalue()
+    label = uploaded.name
+    if fasta:
+        try:
+            pdb = original.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ResearchError("Predicted monomer PDB must contain UTF-8 text") from exc
         records = uploaded_proteins(text=fasta)
         identifier = st.selectbox("Original protein ID", options=list(records))
         sequence = records[identifier]
@@ -2187,6 +2207,11 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
             features=select_linked_annotations(config=config, sequence=sequence),
         )
         render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier)
+        label = str(identifier)
+    render_whatres(
+        models=(WhatResTarget(label=label, content=original, filename=uploaded.name),),
+        key="uploaded_protein_model",
+    )
 
 
 def render_annotations(*, config: ResearchConfig) -> None:

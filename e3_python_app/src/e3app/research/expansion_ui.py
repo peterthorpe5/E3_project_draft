@@ -28,6 +28,8 @@ from e3app.pocket_review import (
     selected_group_members,
 )
 from e3app.species_composition import member_species_counts, render_species_counts
+from e3app.whatres import SHA256_PATTERN, WhatResTarget
+from e3app.whatres_ui import render_whatres
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
 from .common import ResearchConfig, ResearchError, iter_fasta
@@ -998,6 +1000,7 @@ def render_linked_features(
     accession, group_id, species, raw_identifier = choice
     sequence = ""
     evidence = None
+    full_model = None
     try:
         if raw_identifier is None:
             matches = [
@@ -1041,9 +1044,9 @@ def render_linked_features(
         )
         if downloaded is None:
             return
-        model, model_url = downloaded
+        full_model, model_url = downloaded
         try:
-            residues = mmcif_evidence(cif=model, expected_sequence=sequence or None)
+            residues = mmcif_evidence(cif=full_model, expected_sequence=sequence or None)
             evidence = monomer_view_payload(
                 residues=pd.DataFrame(residues), coordinate_scope=(
                     "Verified sequence axis" if sequence else "AlphaFold model sequence"
@@ -1087,6 +1090,15 @@ def render_linked_features(
         },
         stem=f"{stem}_linked_features",
     )
+    model_sha256 = str(evidence.get("model_sha256", "")).lower()
+    targets = ()
+    if full_model is not None or SHA256_PATTERN.fullmatch(model_sha256):
+        targets = (WhatResTarget(
+            label=f"{accession} · {species.replace('_', ' ')}",
+            content=full_model, filename="alphafold.cif" if full_model is not None else "",
+            model_sha256=model_sha256,
+        ),)
+    render_whatres(models=targets, key="linked_protein", recorded=full_model is None)
 
 
 def select_linked_annotations(

@@ -1,5 +1,44 @@
 # ARIA plant E3 Python reporter
 
+## WhatRes model geometry
+
+Open **Model geometry (WhatRes)** below a linked Nightingale model, a prepared
+AlphaFold Database model, an uploaded PDB or a completed ESMFold model. Group
+and pairwise pocket reviews accept the original full-atom PDB or mmCIF matching
+the recorded SHA-256. The score follows the original native model in those
+reviews, before any display trimming. Score a model on demand and download
+the results and coordinate checksums as TSV. The calculated values are available
+throughout the current app session.
+
+WhatRes assesses whole-model geometry. Realism ranges from 0 to 100, with
+higher values indicating more experimental-like geometry at a given apparent
+resolution. Apparent resolution is an estimate in Å based on the coordinates.
+These are model diagnostics alongside pLDDT, pocket and alignment evidence.
+[WhatRes preprint](https://doi.org/10.64898/2026.11.06.764824)
+
+### Optional local setup
+
+Install WhatRes v1.0.0 on the machine running Streamlit. It requires a C++14
+compiler, `make` and Python 3.11 or later. This release supplies the required
+atom-parameter library for Linux x86-64 and both Mac architectures.
+
+```bash
+E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
+git clone --depth 1 --branch v1.0.0 https://github.com/Schymkowitz/WhatRes.git "$E3_WHATRES_DIR" &&
+  make -C "$E3_WHATRES_DIR/whatres-features" &&
+  conda run --name e3_python_app python -m venv "$E3_WHATRES_DIR/.venv" &&
+  "$E3_WHATRES_DIR/.venv/bin/python" -m pip install -r "$E3_WHATRES_DIR/requirements.txt" &&
+  (cd "$E3_WHATRES_DIR" && .venv/bin/python -m whatres.cli fetch-models) &&
+  export E3_WHATRES_DIR
+```
+
+Export `E3_WHATRES_DIR` in the launch environment and restart the app. Scoring
+runs locally with the authors' tool and models. It uses the first model in a
+coordinate file. mmCIF inputs must fit the PDB format used by WhatRes. The TSV
+records the original and the scored PDB checksums, plus any out-of-fold note
+returned for a standard PDB ID filename.
+[WhatRes v1.0.0](https://github.com/Schymkowitz/WhatRes/tree/v1.0.0)
+
 Version **0.22.1** makes search downloads visible beside their preparation
 controls. After preparation, **Download ready** confirms the filename and size;
 select the enabled download button to save the file to your computer. Search
