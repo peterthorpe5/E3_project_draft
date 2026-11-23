@@ -1,242 +1,11 @@
 # ARIA plant E3 Python reporter
 
-## WhatRes model geometry
-
-**Model geometry (WhatRes)** shows whether WhatRes is ready on the machine
-running the app. **❓ WhatRes help** explains the inputs, scores and setup.
-
-| App page | Where to score a model |
-| --- | --- |
-| **ESMFold & models** | Choose **Open an existing PDB** and upload a full-atom PDB. The panel is just below the PDB upload. The FASTA is optional for scoring. For an ESMFold prediction, select its PDB under **Inspect completed models**. |
-| **Protein feature browser** | Select a protein and switch **Protein view** to **Linked structure and pockets**. The panel is above the linked viewer. |
-| **3D structures & pockets**, **3D alignment**, or **Human & plant 3D alignment** | Select a group or pair. Choose a member under **Model geometry (WhatRes)** above the viewer. |
-| **HOG model comparison** or **External links** | Prepare the model ZIP. Use **HOG geometry (WhatRes)** for all prepared models, or choose one model for individual scoring. |
-
-Portable reports store Cα positions for the viewer. WhatRes also needs the
-backbone and side-chain atoms. For a member with a UniProt accession, choose
-**AlphaFold Database** and click **Retrieve full model from AlphaFold Database**.
-You can save the returned mmCIF. When its SHA-256 matches the review, WhatRes
-assigns the score to the reviewed model. Other downloaded files are scored
-under **current AlphaFold Database**. Choose **Original review file** to upload
-the unchanged full-atom PDB or mmCIF from the run where its SHA-256 is available.
-
-Choose **Calculate WhatRes scores** to assess the full model before any viewer
-trimming. **Download WhatRes scores (TSV)** includes both geometry metrics and
-the coordinate checksums. Realism ranges from 0 to 100. Higher values indicate
-geometry more typical of experimental structures at a similar apparent
-resolution. Apparent resolution is an estimate in Å from the coordinates.
-Read these diagnostics alongside pLDDT, pocket and alignment evidence.
-
-### Confidence on downloaded AlphaFold models
-
-In **Protein feature browser → Linked structure and pockets**, retrieve the
-full model from AlphaFold Database. The viewer displays a per-residue pLDDT
-track, the mean across residues with a value, and coverage. **Colour trace by
-pLDDT** switches between confidence colours and a neutral trace. Click a
-residue to read its pLDDT. Domain, pocket and sequence highlights have their
-own colours. The confidence display works with the AlphaFold download alone.
-
-When the original file and Cα mapping match the review, the existing trace
-and pocket tracks receive the downloaded confidence values. Otherwise, a
-sequence-matched download appears as its own trace. Use **3D trace → Reviewed
-model and pockets** to return to the pocket tracks.
-
-### Download and score a HOG
-
-1. Open **Structural comparison → HOG model comparison** and choose a root
-   HOG. All listed canonical UniProt accessions are selected by default.
-2. Select **Prepare Inspector ZIP for selected members**, then use
-   **Download ZIP for manual Inspector upload** to save the available mmCIFs,
-   any available PAE and the retrieval manifest.
-3. Under **HOG geometry (WhatRes)**, select **Calculate WhatRes scores for
-   prepared HOG models**. This uses the mmCIFs in the prepared ZIP. Keep the
-   browser tab open while the app processes them.
-4. Use **Download HOG WhatRes scores (TSV)** to save realism, apparent
-   resolution, coordinate provenance and status for each requested accession.
-   Missing downloads and failed scores have blank metric cells. The app shows
-   the median of each metric across the models scored successfully.
-
-The same workflow is available under **External links** after **Prepare models
-for external tools**. Models require a canonical UniProt accession and
-coordinates available in AlphaFold Database. For a HOG beyond the 1,000-model
-ZIP limit, choose batches from the complete member list in **External links**.
-
-van der Kant, R., Delgado Blanco, J., Serrano, L., Schymkowitz, J., & Rousseau, F.
-(2026). *Realism and resolution: How AI-predicted protein structures differ
-from experimental structures*. bioRxiv preprint.
-[doi:10.64898/2026.11.06.764824](https://doi.org/10.64898/2026.11.06.764824)
-
-### Optional local setup
-
-Install WhatRes v1.0.0 on the machine running Streamlit. It requires a C++14
-compiler, `make` and Python 3.11 or later. This release supplies the required
-atom-parameter library for Linux x86-64 and both Mac architectures.
-
-```bash
-E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
-git clone --depth 1 --branch v1.0.0 https://github.com/Schymkowitz/WhatRes.git "$E3_WHATRES_DIR" &&
-  make -C "$E3_WHATRES_DIR/whatres-features" &&
-  conda run --name e3_python_app python -m venv "$E3_WHATRES_DIR/.venv" &&
-  "$E3_WHATRES_DIR/.venv/bin/python" -m pip install -r "$E3_WHATRES_DIR/requirements.txt" &&
-  (cd "$E3_WHATRES_DIR" && .venv/bin/python -m whatres.cli fetch-models) &&
-  export E3_WHATRES_DIR
-```
-
-For an existing installation, export the checkout path again in the terminal
-you use to launch Streamlit and restart the app.
-
-```bash
-export E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
-```
-
-Scoring uses the first model in a coordinate file. mmCIF inputs must fit the
-PDB format used by WhatRes. The TSV records the original and scored PDB
-checksums and any out-of-fold note returned for a standard PDB ID filename.
-[WhatRes v1.0.0](https://github.com/Schymkowitz/WhatRes/tree/v1.0.0)
-
-Version **0.22.1** makes search downloads visible beside their preparation
-controls. After preparation, **Download ready** confirms the filename and size;
-select the enabled download button to save the file to your computer. Search
-results and linked group evidence have separate download controls, outside
-collapsed previews. See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
-
-Version **0.22.0** adds **🧬 DeepClust research**: prepare complete Top-200
-E3 primary-group inputs, map through the mounted worker or existing SSH
-connection, and retrieve chosen size-ranked external clusters. Refine with
-adjustable mutual coverage, align subclusters, inspect JBrowse MSA with a
-reviewed species tree, and compare proteins/species using hierarchical
-heatmaps and species Venn diagrams. The shared **Protein feature browser**
-adds recorded E3 domains in Nightingale and access to InterProScan,
-eggNOG-mapper and ESMFold for selected/uploaded/pasted proteins. Install on
-both ends of an SSH exchange and include the new SciPy dependency. See the
-[DeepClust workbench guide](docs/DEEPCLUST_WORKBENCH.md) for setup and scope.
-
-Version **0.21.5** includes **recorded pocket inspection files** in Protein
-Imager preparation when the matching plant or human/plant review is configured.
-Download separate protein/pocket mmCIFs and exact residue/score TSVs, then load
-the matching protein and pocket files together. Protein Imager can colour or
-style each pocket as a separate structure. An exact original-model checksum
-and trace match are required for atom-level export; supply the original mmCIF
-if the current download differs. Otherwise files are clearly marked `CA_only`:
-these show pocket location but lack side chains and atomic surface detail.
-See [the upload and pocket guide](docs/EXTERNAL_LINKS.md).
-
-Version **0.21.4** adds **Prepare Protein Imager data** beside each relevant
-link: External links, Ligandability, and the plant and human/plant structure
-reviews. Choose a HOG or protein, prepare the files, download an individual
-mmCIF or a HOG ZIP, then load its `.cif` files in Protein Imager. Selected
-reviews supply their current group automatically. Preparation retrieves full
-AlphaFold coordinate files without fetching unnecessary PAE data.
-
-Version 0.21.3 makes **External links** a working HOG-based preparation page.
-Choose a HOG, select proteins, open populated Mol*/AlphaFold/EMERALD links,
-download an exact pair FASTA, or explicitly prepare selected-member models.
-The prepared models can be downloaded as an Inspector ZIP or an individual
-mmCIF for manual Protein Imager loading. Source, HOG and selection changes
-invalidate prepared downloads. Existing links remain in place.
-
-Version 0.21.2 adds **Protein Imager** to Ligandability and the selected
-structure/pocket reviews. A shared **External links** page under Information
-and Structural prioritisation lists the existing tools and explains their
-required inputs. Pair-specific links and model-bundle preparation remain on
-their existing pages. Protein Imager uses a manual upload of the retained
-PDB/mmCIF model and manual pocket-residue selection; the link does not transfer
-models or annotations. See [the external tools guide](docs/EXTERNAL_LINKS.md).
-
-Version 0.21.1 restores **All results** under **Candidate discovery** and
-keeps its **Search & results** shortcut. Both locations provide identical
-complete downloads. Complete HOG/OG searches now open stored ranks and member
-metadata directly; full evidence dossiers/counts are loaded on request and
-cached while you inspect them. Timed spinners show work in progress. All results
-defaults to the published candidate table, with joined previews/counts optional;
-complete downloads always include every matching row and field.
-
-Version **0.21.0** adds a top-level **🔎 Search & results** section. **Protein &
-HOG search** searches the complete loaded resource, resolves proteins to their
-recorded groups, shows original ranks with their source fields, and exports a
-complete linked evidence dossier. **All results** now filters before preview
-limiting and offers separate complete TSV/Excel downloads containing every
-matching row and field, regardless of `--max-rows` or hidden preview columns.
-See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
-
-Version **0.20.0** refines the **Protein research workbench** with a Start here
-page, a generic three-step workflow, optional E3 entry point, contextual
-question-mark help, FASTA examples, a glossary and downloadable guidance.
-Mapping-to-retrieval and result-to-analysis buttons carry exact selections
-between pages. Jobs now explains status and next steps; technical JSON and logs
-sit inside expanders. Optional model/annotation forms explain missing setup and
-show only relevant controls. The installed research profile and existing jobs
-remain compatible. See [the workbench guide](PROTEIN_RESEARCH.md).
-
-Version 0.18.8 introduced the Streamlit companion's **C-terminal
-conservation** page. It presents a compact selectable group summary, reviewed
-taxonomy filters, species and sequence-coverage evidence, available E3/seed
-annotations and independently filterable member detail. The orthology-first
-screen retains the default of terminal asparagine (`N`) in at least 80% of
-assessed plant members. Arabidopsis supports experimental follow-up and human
-members remain a separate comparison. See the
-[C-terminal review guide](docs/C_TERMINAL_CONSERVATION_REVIEW.md) for exact
-denominators, taxon semantics and export scope.
-
-Version 0.18.4 introduced an
-easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and
-clade filters to reviewed input-specific taxonomy mappings, and compared
-full-model with retained-core mean pLDDT in the reversible terminal-display
-workflow. Unknown species remain explicitly unmapped.
-
-For the persistent University RHEL 9 deployment of this milestone application, see
-the [tested server deployment guide](deployment/rhel9/README.md). That deployment is
-separate from the experimental OrthoFinder interrogation viewer.
+The Python reporter complements the project's Shiny app for browsing completed
+E3 discovery and ligandability results.
 
 Both applications use the same release contract and answer the same grant-facing
 questions across candidate prioritisation, OrthoFinder grouping, domains,
 expression, ligandability, pocket conservation, 3D alignment and provenance.
-
-The 29 pages include a top-level **Search & results** section and six
-colour-marked scientific stages:
-information, candidate discovery, E3 orthology context, structural
-prioritisation, structural comparison, and chemistry and outputs. Search and
-All results are available directly, without entering the chemistry section.
-Only the selected
-section and page are queried and rendered, so an interaction no longer executes
-every application page. Immutable structural-review bundles are fully validated
-once per application process and then reused; explicit deployment validation is
-unchanged.
-
-Recorded structure pairs provide validated EMERALD hand-offs for canonical
-UniProt accessions, exact selected-pair FASTA export and AlphaFold Database
-links. Mol* actions now load each exact AlphaFold accession rather than an empty
-viewer; the unreliable RCSB computed-model pair hand-off is deliberately not
-offered. External results are not scraped or written back into the read-only
-release. The enriched member result also adds a deterministic
-structural-readiness rank within each HOG without changing the authoritative
-HOG ranking.
-
-The embedded group and pairwise 3D views provide reversible N- and C-terminal
-display trimming. The viewer presents a sustained low-confidence recommendation
-first, keeps its sensitivity settings collapsed, and offers manual fine-tuning
-separately. Pair reviewers may apply independent recommendations to both
-structures. When residue-level pLDDT is present, a 460-pixel full-width graph shows
-confidence zones, exact hover values, coverage, current retained residues,
-full-model and retained-core mean pLDDT, their difference, and applied versus
-proposed terminal regions. Missing pLDDT produces an explicit
-recovery message rather than an empty plot. These controls never rewrite the
-model, alignment, pocket evidence, score or ranking, and low pLDDT is not
-labelled as proof of intrinsic disorder.
-
-The human-and-plant 3D tab now uses one synchronised evolutionary-group
-selection for its explicit reference/mobile protein comparison, selectable
-structures and retained pockets, and pocket-annotated MAFFT/FASTA view. Its
-methods state how plant representatives and structural references were chosen,
-how all exact human HOG members were handled and why extension ranks can be
-non-contiguous.
-
-This reporting release foregrounds strict 3D pocket-position support, the
-separate conserved-pocket/chemical gate and assessed-member druggability in
-the complete HOG results. Human, Arabidopsis, rice and barley representatives
-are reported separately. Unified-search matches now have selectable/exportable
-columns, expression identifiers accept pasted lists with direct value-table
-downloads, and expression heatmaps use a white-to-red low-to-high scale.
 
 The app is read-only. It opens a completed DuckDB directly or registers Parquet
 files as views in an in-memory DuckDB. Screen previews have a row cap and only
@@ -246,6 +15,54 @@ download is held by Streamlit until the session/download cache is released;
 large exports should therefore be requested deliberately. The Python app uses
 the native `duckdb` Python client for SQL execution; it does not use `duckplyr`,
 which is an R-specific dplyr translation layer.
+
+## Contents
+
+- [Install and validate](#install-and-validate)
+- [Result-source modes](#result-source-modes)
+- [Interface](#interface)
+- [Portable top-200 visualisation release](#portable-top-200-visualisation-release)
+- [WhatRes model geometry](#whatres-model-geometry)
+- [Protein research workbench](#protein-research-workbench-v0191)
+- [Interpretation boundary](#interpretation-boundary)
+- [Release history](#release-history)
+
+## Install and validate
+
+Create the app environment on each machine that runs the app or research worker.
+It includes FastTree, DIAMOND and MAFFT.
+
+```bash
+cd e3_python_app
+conda env create --file environment.yml
+conda activate e3_python_app
+python -m pip install --editable '.[dev]'
+./run_tests.sh
+```
+
+For an existing installation, use
+`conda env update --name e3_python_app --file environment.yml` in place of
+`conda env create`.
+
+`run_tests.sh` also puts this checkout's `src/` directory on `PYTHONPATH`, so its
+source tests can run before editable installation. The editable install remains
+required for the `e3-python-app` command.
+
+The release quality gate includes focused human-HOG, plant–human-HOG,
+HOG-level human/Arabidopsis representative and
+multi-field list-search tests in addition to branch-aware coverage at or above 95%
+of DuckDB, master-Parquet, run-directory, glossary, expression-context,
+visualisation, threshold, portable-review, Excel export and headless Streamlit
+behaviour.
+
+Legacy resources without `candidate_expression_context_summary` remain
+readable. The Expression tab then shows the older candidate summary plus a
+warning that zero count fields on `NOT_MAPPED` rows mean absent mapping, not
+measured zero expression.
+
+For the persistent University RHEL 9 deployment of this milestone application, see
+the [tested server deployment guide](deployment/rhel9/README.md). That deployment is
+separate from the experimental OrthoFinder interrogation viewer.
 
 ## Result-source modes
 
@@ -293,7 +110,63 @@ cover new species, subspecies, varieties and cultivars. The complete schema and
 fail-closed review rules are documented in
 [`docs/CUSTOM_TAXONOMY_MAPPING.md`](docs/CUSTOM_TAXONOMY_MAPPING.md).
 
+The integrated DuckDB remains the complete relational authority. The single
+master Parquet is a portable wide compatibility summary. The definitive
+one-row-per-evolutionary-group table is
+`final_results/final_evolutionary_candidate_prioritisation.parquet`, available
+through integrated-DuckDB and run-directory modes, while one-to-many group
+members, pockets, domain hits and residue matches remain detailed DuckDB
+relations.
+The structural-completion release also publishes the decision-facing workbook
+and normalised tables under `10_integrated_resource/final_results`.
+
 ## Interface
+
+The 29 pages include a top-level **Search & results** section and six
+colour-marked scientific stages:
+information, candidate discovery, E3 orthology context, structural
+prioritisation, structural comparison, and chemistry and outputs. Search and
+All results are available directly, without entering the chemistry section.
+Only the selected
+section and page are queried and rendered, so an interaction no longer executes
+every application page. Immutable structural-review bundles are fully validated
+once per application process and then reused; explicit deployment validation is
+unchanged.
+
+Recorded structure pairs provide validated EMERALD hand-offs for canonical
+UniProt accessions, exact selected-pair FASTA export and AlphaFold Database
+links. Mol* actions now load each exact AlphaFold accession rather than an empty
+viewer; the unreliable RCSB computed-model pair hand-off is deliberately not
+offered. External results are not scraped or written back into the read-only
+release. The enriched member result also adds a deterministic
+structural-readiness rank within each HOG without changing the authoritative
+HOG ranking.
+
+The embedded group and pairwise 3D views provide reversible N- and C-terminal
+display trimming. The viewer presents a sustained low-confidence recommendation
+first, keeps its sensitivity settings collapsed, and offers manual fine-tuning
+separately. Pair reviewers may apply independent recommendations to both
+structures. When residue-level pLDDT is present, a 460-pixel full-width graph shows
+confidence zones, exact hover values, coverage, current retained residues,
+full-model and retained-core mean pLDDT, their difference, and applied versus
+proposed terminal regions. Missing pLDDT produces an explicit
+recovery message rather than an empty plot. These controls never rewrite the
+model, alignment, pocket evidence, score or ranking, and low pLDDT is not
+labelled as proof of intrinsic disorder.
+
+The human-and-plant 3D tab now uses one synchronised evolutionary-group
+selection for its explicit reference/mobile protein comparison, selectable
+structures and retained pockets, and pocket-annotated MAFFT/FASTA view. Its
+methods state how plant representatives and structural references were chosen,
+how all exact human HOG members were handled and why extension ranks can be
+non-contiguous.
+
+This reporting release foregrounds strict 3D pocket-position support, the
+separate conserved-pocket/chemical gate and assessed-member druggability in
+the complete HOG results. Human, Arabidopsis, rice and barley representatives
+are reported separately. Unified-search matches now have selectable/exportable
+columns, expression identifiers accept pasted lists with direct value-table
+downloads, and expression heatmaps use a white-to-red low-to-high scale.
 
 The reporter provides:
 
@@ -501,49 +374,6 @@ the ranked comparison view, bounded to 30 groups for readable plotting.
 Individual member points remain visible, the shared axis is fixed from zero to
 one, and the dashed threshold line moves with the slider.
 
-The integrated DuckDB remains the complete relational authority. The single
-master Parquet is a portable wide compatibility summary. The definitive
-one-row-per-evolutionary-group table is
-`final_results/final_evolutionary_candidate_prioritisation.parquet`, available
-through integrated-DuckDB and run-directory modes, while one-to-many group
-members, pockets, domain hits and residue matches remain detailed DuckDB
-relations.
-The structural-completion release also publishes the decision-facing workbook
-and normalised tables under `10_integrated_resource/final_results`.
-
-## Install and validate
-
-Create the app environment on each machine that runs the app or research worker.
-It includes FastTree, DIAMOND and MAFFT.
-
-```bash
-cd e3_python_app
-conda env create --file environment.yml
-conda activate e3_python_app
-python -m pip install --editable '.[dev]'
-./run_tests.sh
-```
-
-For an existing installation, use
-`conda env update --name e3_python_app --file environment.yml` in place of
-`conda env create`.
-
-`run_tests.sh` also puts this checkout's `src/` directory on `PYTHONPATH`, so its
-source tests can run before editable installation. The editable install remains
-required for the `e3-python-app` command.
-
-The release quality gate includes focused human-HOG, plant–human-HOG,
-HOG-level human/Arabidopsis representative and
-multi-field list-search tests in addition to branch-aware coverage at or above 95%
-of DuckDB, master-Parquet, run-directory, glossary, expression-context,
-visualisation, threshold, portable-review, Excel export and headless Streamlit
-behaviour.
-
-Legacy resources without `candidate_expression_context_summary` remain
-readable. The Expression tab then shows the older candidate summary plus a
-warning that zero count fields on `NOT_MAPPED` rows mean absent mapping, not
-measured zero expression.
-
 ## Portable top-200 visualisation release
 
 The expected local layout is:
@@ -614,12 +444,99 @@ The structure control is labelled **Fit and centre**. It restores the default
 orientation and auto-fit zoom and displays a confirmation, including for older
 portable pages upgraded in memory by this app.
 
-## Interpretation boundary
+## WhatRes model geometry
 
-These are computational recommendations. OrthoFinder membership, E3-domain
-support, RNA expression, predicted cavities, pocket-region conservation and
-US-align/TM-align agreement do not prove E3 activity, compound binding or
-induced degradation.
+**Model geometry (WhatRes)** shows whether WhatRes is ready on the machine
+running the app. **❓ WhatRes help** explains the inputs, scores and setup.
+
+| App page | Where to score a model |
+| --- | --- |
+| **ESMFold & models** | Choose **Open an existing PDB** and upload a full-atom PDB. The panel is just below the PDB upload. The FASTA is optional for scoring. For an ESMFold prediction, select its PDB under **Inspect completed models**. |
+| **Protein feature browser** | Select a protein and switch **Protein view** to **Linked structure and pockets**. The panel is above the linked viewer. |
+| **3D structures & pockets**, **3D alignment**, or **Human & plant 3D alignment** | Select a group or pair. Choose a member under **Model geometry (WhatRes)** above the viewer. |
+| **HOG model comparison** or **External links** | Prepare the model ZIP. Use **HOG geometry (WhatRes)** for all prepared models, or choose one model for individual scoring. |
+
+Portable reports store Cα positions for the viewer. WhatRes also needs the
+backbone and side-chain atoms. For a member with a UniProt accession, choose
+**AlphaFold Database** and click **Retrieve full model from AlphaFold Database**.
+You can save the returned mmCIF. When its SHA-256 matches the review, WhatRes
+assigns the score to the reviewed model. Other downloaded files are scored
+under **current AlphaFold Database**. Choose **Original review file** to upload
+the unchanged full-atom PDB or mmCIF from the run where its SHA-256 is available.
+
+Choose **Calculate WhatRes scores** to assess the full model before any viewer
+trimming. **Download WhatRes scores (TSV)** includes both geometry metrics and
+the coordinate checksums. Realism ranges from 0 to 100. Higher values indicate
+geometry more typical of experimental structures at a similar apparent
+resolution. Apparent resolution is an estimate in Å from the coordinates.
+Read these diagnostics alongside pLDDT, pocket and alignment evidence.
+
+### Confidence on downloaded AlphaFold models
+
+In **Protein feature browser → Linked structure and pockets**, retrieve the
+full model from AlphaFold Database. The viewer displays a per-residue pLDDT
+track, the mean across residues with a value, and coverage. **Colour trace by
+pLDDT** switches between confidence colours and a neutral trace. Click a
+residue to read its pLDDT. Domain, pocket and sequence highlights have their
+own colours. The confidence display works with the AlphaFold download alone.
+
+When the original file and Cα mapping match the review, the existing trace
+and pocket tracks receive the downloaded confidence values. Otherwise, a
+sequence-matched download appears as its own trace. Use **3D trace → Reviewed
+model and pockets** to return to the pocket tracks.
+
+### Download and score a HOG
+
+1. Open **Structural comparison → HOG model comparison** and choose a root
+   HOG. All listed canonical UniProt accessions are selected by default.
+2. Select **Prepare Inspector ZIP for selected members**, then use
+   **Download ZIP for manual Inspector upload** to save the available mmCIFs,
+   any available PAE and the retrieval manifest.
+3. Under **HOG geometry (WhatRes)**, select **Calculate WhatRes scores for
+   prepared HOG models**. This uses the mmCIFs in the prepared ZIP. Keep the
+   browser tab open while the app processes them.
+4. Use **Download HOG WhatRes scores (TSV)** to save realism, apparent
+   resolution, coordinate provenance and status for each requested accession.
+   Missing downloads and failed scores have blank metric cells. The app shows
+   the median of each metric across the models scored successfully.
+
+The same workflow is available under **External links** after **Prepare models
+for external tools**. Models require a canonical UniProt accession and
+coordinates available in AlphaFold Database. For a HOG beyond the 1,000-model
+ZIP limit, choose batches from the complete member list in **External links**.
+
+van der Kant, R., Delgado Blanco, J., Serrano, L., Schymkowitz, J., & Rousseau, F.
+(2026). *Realism and resolution: How AI-predicted protein structures differ
+from experimental structures*. bioRxiv preprint.
+[doi:10.64898/2026.11.06.764824](https://doi.org/10.64898/2026.11.06.764824)
+
+### Optional local setup
+
+Install WhatRes v1.0.0 on the machine running Streamlit. It requires a C++14
+compiler, `make` and Python 3.11 or later. This release supplies the required
+atom-parameter library for Linux x86-64 and both Mac architectures.
+
+```bash
+E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
+git clone --depth 1 --branch v1.0.0 https://github.com/Schymkowitz/WhatRes.git "$E3_WHATRES_DIR" &&
+  make -C "$E3_WHATRES_DIR/whatres-features" &&
+  conda run --name e3_python_app python -m venv "$E3_WHATRES_DIR/.venv" &&
+  "$E3_WHATRES_DIR/.venv/bin/python" -m pip install -r "$E3_WHATRES_DIR/requirements.txt" &&
+  (cd "$E3_WHATRES_DIR" && .venv/bin/python -m whatres.cli fetch-models) &&
+  export E3_WHATRES_DIR
+```
+
+For an existing installation, export the checkout path again in the terminal
+you use to launch Streamlit and restart the app.
+
+```bash
+export E3_WHATRES_DIR="$HOME/github_repos/WhatRes"
+```
+
+Scoring uses the first model in a coordinate file. mmCIF inputs must fit the
+PDB format used by WhatRes. The TSV records the original and scored PDB
+checksums and any out-of-fold note returned for a standard PDB ID filename.
+[WhatRes v1.0.0](https://github.com/Schymkowitz/WhatRes/tree/v1.0.0)
 
 ## Protein research workbench (v0.19.1)
 
@@ -642,3 +559,102 @@ writable sidecar using `config/protein_research.example.toml`, then add
 `--research-config /absolute/path/research.toml` to your existing E3 launch command.
 The DeepClust release and optional annotation/model databases are separate operator
 installations; they are not downloaded automatically when installing the app.
+
+## Interpretation boundary
+
+These are computational recommendations. OrthoFinder membership, E3-domain
+support, RNA expression, predicted cavities, pocket-region conservation and
+US-align/TM-align agreement do not prove E3 activity, compound binding or
+induced degradation.
+
+## Release history
+
+Version **0.22.1** makes search downloads visible beside their preparation
+controls. After preparation, **Download ready** confirms the filename and size;
+select the enabled download button to save the file to your computer. Search
+results and linked group evidence have separate download controls, outside
+collapsed previews. See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
+
+Version **0.22.0** adds **🧬 DeepClust research**: prepare complete Top-200
+E3 primary-group inputs, map through the mounted worker or existing SSH
+connection, and retrieve chosen size-ranked external clusters. Refine with
+adjustable mutual coverage, align subclusters, inspect JBrowse MSA with a
+reviewed species tree, and compare proteins/species using hierarchical
+heatmaps and species Venn diagrams. The shared **Protein feature browser**
+adds recorded E3 domains in Nightingale and access to InterProScan,
+eggNOG-mapper and ESMFold for selected/uploaded/pasted proteins. Install on
+both ends of an SSH exchange and include the new SciPy dependency. See the
+[DeepClust workbench guide](docs/DEEPCLUST_WORKBENCH.md) for setup and scope.
+
+Version **0.21.5** includes **recorded pocket inspection files** in Protein
+Imager preparation when the matching plant or human/plant review is configured.
+Download separate protein/pocket mmCIFs and exact residue/score TSVs, then load
+the matching protein and pocket files together. Protein Imager can colour or
+style each pocket as a separate structure. An exact original-model checksum
+and trace match are required for atom-level export; supply the original mmCIF
+if the current download differs. Otherwise files are clearly marked `CA_only`:
+these show pocket location but lack side chains and atomic surface detail.
+See [the upload and pocket guide](docs/EXTERNAL_LINKS.md).
+
+Version **0.21.4** adds **Prepare Protein Imager data** beside each relevant
+link: External links, Ligandability, and the plant and human/plant structure
+reviews. Choose a HOG or protein, prepare the files, download an individual
+mmCIF or a HOG ZIP, then load its `.cif` files in Protein Imager. Selected
+reviews supply their current group automatically. Preparation retrieves full
+AlphaFold coordinate files without fetching unnecessary PAE data.
+
+Version 0.21.3 makes **External links** a working HOG-based preparation page.
+Choose a HOG, select proteins, open populated Mol*/AlphaFold/EMERALD links,
+download an exact pair FASTA, or explicitly prepare selected-member models.
+The prepared models can be downloaded as an Inspector ZIP or an individual
+mmCIF for manual Protein Imager loading. Source, HOG and selection changes
+invalidate prepared downloads. Existing links remain in place.
+
+Version 0.21.2 adds **Protein Imager** to Ligandability and the selected
+structure/pocket reviews. A shared **External links** page under Information
+and Structural prioritisation lists the existing tools and explains their
+required inputs. Pair-specific links and model-bundle preparation remain on
+their existing pages. Protein Imager uses a manual upload of the retained
+PDB/mmCIF model and manual pocket-residue selection; the link does not transfer
+models or annotations. See [the external tools guide](docs/EXTERNAL_LINKS.md).
+
+Version 0.21.1 restores **All results** under **Candidate discovery** and
+keeps its **Search & results** shortcut. Both locations provide identical
+complete downloads. Complete HOG/OG searches now open stored ranks and member
+metadata directly; full evidence dossiers/counts are loaded on request and
+cached while you inspect them. Timed spinners show work in progress. All results
+defaults to the published candidate table, with joined previews/counts optional;
+complete downloads always include every matching row and field.
+
+Version **0.21.0** adds a top-level **🔎 Search & results** section. **Protein &
+HOG search** searches the complete loaded resource, resolves proteins to their
+recorded groups, shows original ranks with their source fields, and exports a
+complete linked evidence dossier. **All results** now filters before preview
+limiting and offers separate complete TSV/Excel downloads containing every
+matching row and field, regardless of `--max-rows` or hidden preview columns.
+See [Search and complete downloads](docs/SEARCH_AND_DOWNLOADS.md).
+
+Version **0.20.0** refines the **Protein research workbench** with a Start here
+page, a generic three-step workflow, optional E3 entry point, contextual
+question-mark help, FASTA examples, a glossary and downloadable guidance.
+Mapping-to-retrieval and result-to-analysis buttons carry exact selections
+between pages. Jobs now explains status and next steps; technical JSON and logs
+sit inside expanders. Optional model/annotation forms explain missing setup and
+show only relevant controls. The installed research profile and existing jobs
+remain compatible. See [the workbench guide](PROTEIN_RESEARCH.md).
+
+Version 0.18.8 introduced the Streamlit companion's **C-terminal
+conservation** page. It presents a compact selectable group summary, reviewed
+taxonomy filters, species and sequence-coverage evidence, available E3/seed
+annotations and independently filterable member detail. The orthology-first
+screen retains the default of terminal asparagine (`N`) in at least 80% of
+assessed plant members. Arabidopsis supports experimental follow-up and human
+members remain a separate comparison. See the
+[C-terminal review guide](docs/C_TERMINAL_CONSERVATION_REVIEW.md) for exact
+denominators, taxon semantics and export scope.
+
+Version 0.18.4 introduced an
+easy-to-find **Within-HOG ranking** page, extended composable exact-taxon and
+clade filters to reviewed input-specific taxonomy mappings, and compared
+full-model with retained-core mean pLDDT in the reversible terminal-display
+workflow. Unknown species remain explicitly unmapped.
