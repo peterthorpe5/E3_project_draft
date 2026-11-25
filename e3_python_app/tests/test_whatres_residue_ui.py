@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from contextlib import nullcontext
 from dataclasses import replace
 from hashlib import sha256
 from io import StringIO
@@ -15,11 +17,12 @@ from streamlit.testing.v1 import AppTest
 
 from e3app import whatres_residue_ui as ui
 from e3app.errors import AppError
+from e3app.glossary import POCKET_GEOMETRY_COLUMNS, RESIDUE_GEOMETRY_COLUMNS
 from e3app.research import expansion_ui
 from e3app.research.linked_features import review_member_evidence
 from e3app.research.providers import pdb_evidence
 from e3app.whatres import WHATRES_PAPER, WhatResTarget
-from e3app.whatres_residues import native_geometry_view, score_residue_geometry
+from e3app.whatres_residues import native_geometry_view, pocket_geometry, score_residue_geometry
 from test_whatres import PDB, local_whatres, make_mmcif
 from test_whatres_ui import FULL_MODEL_BUTTON, configured_app, geometry_panel, linked_payload
 from test_whatres_ui import model_bundle
@@ -30,6 +33,66 @@ def target(*, local_whatres: Path) -> WhatResTarget:
     """Provide the scored full model with complete coordinate provenance."""
     report = score_residue_geometry(directory=local_whatres, content=PDB, filename="model.pdb")
     return WhatResTarget(label="Model A", filename="model.pdb", content=PDB, residue_report=report)
+
+
+@pytest.mark.parametrize(("columns", "notes"), [
+    (POCKET_GEOMETRY_COLUMNS, ui.POCKET_HELP),
+    (RESIDUE_GEOMETRY_COLUMNS, ui.RESIDUE_HELP),
+])
+def test_show_geometry_help_defines_every_field_and_explains_the_scale(
+    *, columns: dict, notes: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both keyboard and touch users can read each definition in one question-mark control."""
+    popover, markdown = Mock(return_value=nullcontext()), Mock()
+    monkeypatch.setattr(st, "popover", popover)
+    monkeypatch.setattr(st, "markdown", markdown)
+    ui.show_geometry_help(label="Geometry help", columns=columns, notes=notes)
+    popover.assert_called_once_with(label="Geometry help")
+    content = "\n".join(call.kwargs["body"] for call in markdown.call_args_list)
+    for label, _, definition in columns.values():
+        assert f"**{label}**" in content and definition in content
+    assert content.count("**Geometry surprise**") == 1
+    assert all(term in content for term in ("5th or 95th", "3.32", "1st", "99th", "rama2D", "φ"))
+    assert notes in content and WHATRES_PAPER in content
+
+
+def test_show_geometry_table_keeps_values_and_attaches_header_definitions(
+    *, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain order, zero and missing values while explaining each visible header."""
+    display = Mock()
+    monkeypatch.setattr(st, "dataframe", display)
+    fields = {key: POCKET_GEOMETRY_COLUMNS[key] for key in ("peak_position", "peak_residue_score")}
+    frame = pd.DataFrame({"unused": [1, 2], "peak_residue_score": [0.0, None],
+                          "peak_position": [206, None]})
+    ui.show_geometry_table(frame=frame, columns=fields)
+    args = display.call_args.kwargs
+    table = args["data"]
+    assert list(table) == ["Peak residue", "Peak surprise"]
+    assert table.iloc[0].tolist() == [206, 0] and table.iloc[1].isna().all()
+    assert list(args["column_config"]) == list(table) and args["hide_index"]
+    for label, _, definition in fields.values():
+        assert args["column_config"][label]["help"] == definition
+
+
+@pytest.mark.parametrize("confidence", [None, 0.0])
+def test_pocket_help_matches_available_confidence(
+    *, confidence: float | None, target: WhatResTarget, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hide unavailable pLDDT in both places and retain a measured zero."""
+    display, help_box = Mock(), Mock()
+    monkeypatch.setattr(st, "dataframe", display)
+    monkeypatch.setattr(ui, "show_geometry_help", help_box)
+    monkeypatch.setattr(ui, "geometry_download", Mock())
+    pockets = pocket_geometry(
+        pockets=[{"number": 4, "rank": 1, "positions": [1]}],
+        model=[{"position": 1, "residue_score": 0.0, "n_outliers": 0, "plddt": confidence}],
+    )
+    ui.show_pocket_geometry(evidence={"pockets": pockets}, report=target.residue_report,
+                            target=target, key="test")
+    assert ("Median pLDDT" in display.call_args.kwargs["data"]) == (confidence is not None)
+    assert ("median_plddt" in help_box.call_args.kwargs["columns"]) == (confidence is not None)
+    assert "median_plddt" in POCKET_GEOMETRY_COLUMNS
 
 
 def test_geometry_download_keeps_nulls_and_both_file_identities(
@@ -111,6 +174,7 @@ def test_linked_app_retrieval_to_residue_measurements_pocket_view_and_exports(
     ).run()
     panel = geometry_panel(app=app)
     assert next(item for item in panel.button if item.label == ui.RESIDUE_ACTION).disabled
+    assert any("5th or 95th percentile" in item.value for item in panel.markdown)
     next(item for item in panel.button if item.label == FULL_MODEL_BUTTON).click().run()
     next(item for item in geometry_panel(app=app).button if item.label == ui.RESIDUE_ACTION
          ).click().run()
@@ -135,6 +199,14 @@ def test_linked_app_retrieval_to_residue_measurements_pocket_view_and_exports(
             '<script id="protein-data" type="application/json">', 1)[1].split("</script>", 1)[0]
         assert any("different checksums" in item.value for item in app.info)
     else:
+        assert not app.exception
+        assert any("4 of 12 assessed residues" in item.value for item in app.markdown)
+        pocket_table = next(table for table in app.dataframe if "Peak surprise" in table.value)
+        pocket_headers = json.loads(pocket_table.proto.columns)
+        expected = {label for label, _, _ in POCKET_GEOMETRY_COLUMNS.values()}
+        assert set(pocket_table.value) == expected
+        for label, _, definition in POCKET_GEOMETRY_COLUMNS.values():
+            assert pocket_headers[label]["help"] == definition
         pocket = pd.read_csv(StringIO(exported["Download pocket geometry (TSV)"]), sep="\t")
         assert pocket.iloc[0][["assessed_residues", "flagged_residues", "outlier_count",
                                "median_residue_score", "peak_position"]].tolist() == [
@@ -142,7 +214,11 @@ def test_linked_app_retrieval_to_residue_measurements_pocket_view_and_exports(
         assert pocket.iloc[0]["mapped_positions"] == "1 2"
         assert payload["pockets"][0]["geometry"]["flagged_positions"] == "1"
         next(item for item in panel.checkbox if item.label.startswith("Show only")).check().run()
-        assert len(geometry_panel(app=app).dataframe[0].value) == 1
+        residue_table = geometry_panel(app=app).dataframe[0]
+        assert len(residue_table.value) == 1
+        residue_headers = json.loads(residue_table.proto.columns)
+        for label, _, definition in RESIDUE_GEOMETRY_COLUMNS.values():
+            assert residue_headers[label]["help"] == definition
         assert len(app.session_state["whatres_residue_reports"]) == 1
 
 

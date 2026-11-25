@@ -12,6 +12,11 @@ import streamlit as st
 
 from e3app.errors import AppError
 from e3app.exports import safe_file_stem
+from e3app.glossary import (
+    GEOMETRY_SURPRISE_DEFINITION,
+    POCKET_GEOMETRY_COLUMNS,
+    RESIDUE_GEOMETRY_COLUMNS,
+)
 from e3app.research.linked_features import read_group_evidence, review_member_evidence
 from e3app.whatres import WHATRES_CITATION, WhatResTarget
 from e3app.whatres_residues import (
@@ -21,26 +26,66 @@ from e3app.whatres_residues import (
 LOGGER = logging.getLogger(__name__)
 RESIDUE_ACTION = "Calculate per-residue geometry"
 RESIDUE_HELP = (
-    "WhatRes compares local atomic measurements with experimental reference distributions. "
-    "**Residue surprise** is the sum of the available measurement surprise scores. Higher "
-    "values indicate more unusual geometry. The number of measurable terms varies with "
-    "amino acid and available atoms. In the published settings, flags mark measurements outside "
-    "the 1st–99th percentile interval or a backbone φ/ψ density percentile below 2. "
-    "The **worst metric** is the largest individual surprise and can occur without a flag.\n\n"
-    "The calculation uses the complete first model, including neighbouring chains. "
-    "The residue table gives a status when a site cannot be assessed, for instance when its "
-    "number is ambiguous or reference coverage is insufficient. Grey marks missing geometry.\n\n"
-    "Select a residue to read its values. Colour the trace by surprise or by the number of "
-    "flagged measurements. The graduated surprise scale saturates at the 95th percentile of "
-    "assessed residues across this model. The numeric values retain their full range."
+    "WhatRes assesses the first model with its neighbouring chains. The amino acid and the atoms "
+    "present determine which measurements are available. Select a residue to see its total, "
+    "outliers and worst metric. Grey indicates missing geometry. The darkest surprise colour "
+    "starts at the 95th percentile of assessed residues in this model. The table gives the "
+    "full numeric value."
 )
 POCKET_HELP = (
-    "Each row summarises the unique mapped residues of one pocket in the original model. "
-    "Coverage gives the assessed and mapped counts. The flagged percentage uses assessed "
-    "residues as its denominator. A residue can belong to several pockets. Tied peaks use "
-    "the lowest sequence position. Where available, median pLDDT describes prediction "
-    "confidence. Realism and apparent resolution are reported for the whole model."
+    "For example, if 4 of 12 assessed residues have an outlier, **Flagged (%)** is 33.3%. "
+    "If one of the four has two outliers and the other three have one each, **Total outliers** "
+    "is 5. A residue shared by two pockets contributes to each pocket's summary. WhatRes "
+    "reports realism and apparent resolution for the whole model."
 )
+
+
+def show_geometry_help(
+    *, label: str, columns: dict[str, tuple[str, str, str]], notes: str,
+) -> None:
+    """Explain the scoring method and table terms in a touch-accessible popover.
+
+    Args:
+        label: Visible label of the question-mark control.
+        columns: Display label, unit and definition keyed by measurement field.
+        notes: Interpretation specific to this table.
+    """
+    with st.popover(label=label):
+        st.markdown(body=f"**Geometry surprise** — {GEOMETRY_SURPRISE_DEFINITION}")
+        st.markdown(body=(
+            "For a bond length, the reference median contributes 0. A value at the 5th or 95th "
+            "percentile contributes about 3.32. These contributions add up on a raw score scale. "
+            "Several moderate deviations can raise the total even if none crosses a flag threshold."
+        ))
+        st.markdown(body=(
+            "**Outlier** — With the published settings, a measurement is flagged below the 1st "
+            "or above the 99th reference percentile. The Ramachandran check (**rama2D**) looks "
+            "at the two backbone torsion angles φ and ψ together. It flags pairs below the 2nd "
+            "density percentile for that amino acid."
+        ))
+        st.markdown(body="\n".join(
+            f"- **{title}** — {definition}" for field, (title, _, definition) in columns.items()
+            if field != "residue_score"
+        ))
+        st.markdown(body=notes)
+        st.markdown(body=WHATRES_CITATION)
+
+
+def show_geometry_table(*, frame: pd.DataFrame, columns: dict[str, tuple[str, str, str]]) -> None:
+    """Display the selected measurements with a definition on every column header.
+
+    Args:
+        frame: Source rows with their original numerical values and missing values.
+        columns: Ordered mapping of fields to display labels, units and definitions.
+    """
+    labels = {field: label for field, (label, _, _) in columns.items()}
+    st.dataframe(
+        data=frame[list(labels)].rename(columns=labels), hide_index=True,
+        column_config={
+            label: st.column_config.Column(label=label, help=definition)
+            for label, _, definition in columns.values()
+        },
+    )
 
 
 def geometry_download(
@@ -84,18 +129,14 @@ def show_pocket_geometry(*, evidence: dict, report: ResidueReport,
         st.caption("Pocket geometry needs mapped pocket residues from this exact model.")
         return
     st.markdown("#### Pocket geometry")
-    with st.popover("❓ Pocket geometry help"):
-        st.markdown(POCKET_HELP)
-        st.markdown(WHATRES_CITATION)
     frame = pd.DataFrame(rows)
-    labels = {"pocket": "Pocket", "rank": "Rank", "assessed_residues": "Assessed",
-              "mapped_residues": "Mapped", "flagged_residues": "Flagged residues",
-              "flagged_percent_of_assessed": "Flagged (%)", "outlier_count": "Total outliers",
-              "median_residue_score": "Median surprise", "peak_position": "Peak residue",
-              "peak_residue_score": "Peak surprise"}
-    if frame["median_plddt"].notna().any():
-        labels["median_plddt"] = "Median pLDDT"
-    st.dataframe(frame[list(labels)].rename(columns=labels), hide_index=True)
+    columns = POCKET_GEOMETRY_COLUMNS.copy()
+    if frame["median_plddt"].isna().all():
+        del columns["median_plddt"]
+    st.caption("Higher surprise means more unusual local geometry. One flagged residue can "
+               "have several outlier measurements.")
+    show_geometry_help(label="❓ Pocket geometry help", columns=columns, notes=POCKET_HELP)
+    show_geometry_table(frame=frame, columns=columns)
     geometry_download(frame=frame, report=report, target=target, key=key, kind="pocket")
 
 
@@ -167,9 +208,9 @@ def render_residue_controls(
         The full model and its selected residue report, when available.
     """
     st.markdown("#### Per-residue geometry")
-    with st.popover("❓ Residue geometry help"):
-        st.markdown(RESIDUE_HELP)
-        st.markdown(WHATRES_CITATION)
+    show_geometry_help(
+        label="❓ Residue geometry help", columns=RESIDUE_GEOMETRY_COLUMNS, notes=RESIDUE_HELP,
+    )
     ready = target is not None and target.content is not None
     identity = (directory, sha256(target.content).hexdigest(), Path(target.filename).suffix.lower(),
                 target.model_sha256) if ready else None
@@ -200,12 +241,8 @@ def render_residue_controls(
                f"{int(flagged.sum()):,} residues with flagged geometry")
     with st.expander("Inspect residue measurements"):
         flagged_only = st.checkbox("Show only residues with outliers", key=f"{key}_flagged_only")
-        labels = {"chain": "Chain", "author_number": "Residue number",
-                  "insertion_code": "Insertion",
-                  "residue": "Amino acid", "residue_score": "Geometry surprise",
-                  "n_outliers": "Outliers", "worst_metric": "Worst metric", "status": "Status"}
-        st.dataframe((frame[flagged] if flagged_only else frame)[list(labels)].rename(
-            columns=labels), hide_index=True)
+        show_geometry_table(frame=frame[flagged] if flagged_only else frame,
+                            columns=RESIDUE_GEOMETRY_COLUMNS)
     geometry_download(frame=frame, report=report, target=target, key=key, kind="residue")
     if not defer_view:
         evidence = None

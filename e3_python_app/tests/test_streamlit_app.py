@@ -38,6 +38,26 @@ def _navigate(app: AppTest, *, stage: str, page: str) -> AppTest:
     return app
 
 
+def test_information_glossary_finds_whatres_surprise(
+    *, resource_db: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Open the glossary through the app, search the local scores and find the full export."""
+    monkeypatch.setenv("E3_RESOURCE_DUCKDB", str(resource_db))
+    path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"
+    app = AppTest.from_file(script_path=str(path), default_timeout=15).run()
+    _navigate(app=app, stage="🔵 1 · Information", page="Glossary")
+    app.selectbox(key="glossary_section").set_value("WhatRes residue and pocket geometry").run()
+    app.text_input(key="glossary_filter").set_value("SuRpRiSe").run()
+    assert not app.exception
+    rows = app.dataframe[0].value.set_index("Term")
+    assert {"WhatRes Geometry surprise", "WhatRes Median surprise", "WhatRes Peak surprise"} <= (
+        set(rows.index)
+    )
+    assert "WhatRes Rank" not in rows.index
+    assert rows.loc["WhatRes Geometry surprise", "Type / unit"] == "Raw score"
+    assert "Download complete glossary as TSV" in {btn.label for btn in app.get("download_button")}
+
+
 def test_streamlit_source_uses_current_width_and_widget_state_contracts() -> None:
     """Removed Streamlit APIs and duplicate selectbox defaults do not regress."""
     path = Path(__file__).resolve().parents[1] / "src" / "e3app" / "streamlit_app.py"

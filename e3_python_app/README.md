@@ -502,11 +502,45 @@ lists mapped and flagged sequence positions. With a different model file, inspec
 its native residue geometry. A pocket summary requires the original review checksum
 and an unambiguous amino-acid and Cα coordinate match.
 
-The local score sums the available geometric surprise measurements at a residue.
-It depends on residue type, environment and available atoms. The calibrated realism
-and apparent resolution measurements apply to the whole structure. See **❓ Residue
-geometry help** and **❓ Pocket geometry help** in the app. [WhatRes preprint by van
-der Kant et al. (2026)](https://doi.org/10.64898/2026.11.06.764824).
+#### What does “surprise” mean?
+
+WhatRes measures how unusual a residue's local geometry is compared with
+experimental structures. For a bond length, it compares the same amino acid
+at a similar degree of burial. The reference median contributes 0. A measurement
+at the 5th or 95th percentile contributes about 3.32. WhatRes adds the
+contributions from the available measurements to give **geometry surprise** for
+that residue. The number of measurements depends on the amino acid and the atoms
+present. Read the total as a raw score. There is no fixed pass/fail mark for the
+total.
+
+An **outlier** is one measurement that crosses its reference threshold. With the
+published settings, the ordinary measurements are flagged below the 1st or above
+the 99th percentile. The Ramachandran check (`rama2D`) flags rare combinations
+of the backbone torsion angles φ and ψ below the 2nd density percentile for that
+amino acid. Several moderately unusual measurements can raise a residue's
+surprise even when it has zero outliers. **Worst metric** identifies the
+measurement that contributed most to that residue's total.
+
+| Pocket table column | Meaning |
+| --- | --- |
+| Pocket / Rank | Pocket identifier and selection rank from the original review. Rank 1 is the first selected pocket. |
+| Mapped / Assessed | Distinct residues mapped to the pocket / those with a usable geometry score. |
+| Flagged residues / Flagged (%) | Assessed residues with at least one outlier, and that count as a percentage of assessed residues. |
+| Total outliers | Number of individual outlier measurements across the pocket. One residue can contribute several. |
+| Median surprise | Middle of the assessed residues' surprise totals. With an even count, average the middle two. |
+| Peak residue / Peak surprise | Sequence position of the pocket residue with the highest total, and that total. A tie uses the lowest position. |
+| Median pLDDT | Median local prediction confidence across pocket residues with a pLDDT value. Higher values on the 0–100 scale indicate greater confidence. |
+
+For example, if 4 of 12 assessed residues are flagged, the flagged percentage
+is 33.3%. If one of those four has two outliers and the other three have one
+each, the pocket has five outlier measurements. Use **Inspect peak** to examine
+the residue with the highest surprise. Realism and apparent resolution describe
+the whole model. [WhatRes preprint by van der Kant et al. (2026)](https://doi.org/10.64898/2026.11.06.764824)
+and [WhatRes v1.0.0 scoring implementation](https://github.com/Schymkowitz/WhatRes/blob/v1.0.0/whatres-features/pdb_quality_check_command.cpp).
+
+Point at a table header or open **❓ Residue geometry help** or **❓ Pocket
+geometry help** for the definitions. They are also searchable under **Glossary
+→ WhatRes residue and pocket geometry**.
 
 ### Confidence on downloaded AlphaFold models
 

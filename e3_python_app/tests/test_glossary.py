@@ -6,12 +6,26 @@ import pytest
 
 from e3app.glossary import (
     GLOSSARY_ENTRIES,
+    POCKET_GEOMETRY_COLUMNS,
+    RESIDUE_GEOMETRY_COLUMNS,
     SLIDER_HELP,
     column_definition_row,
     database_column_dictionary_rows,
     glossary_rows,
     glossary_sections,
 )
+
+
+def test_whatres_glossary_definitions_match_the_result_tables() -> None:
+    """Publish units and scoped definitions without redefining unrelated export headers."""
+    section = glossary_rows(section="WhatRes residue and pocket geometry")
+    rows = {row["Term"]: row for row in section}
+    fields = (*RESIDUE_GEOMETRY_COLUMNS.values(), *POCKET_GEOMETRY_COLUMNS.values())
+    assert set(rows) == {f"WhatRes {label}" for label, _, _ in fields}
+    for label, unit, definition in fields:
+        entry = rows[f"WhatRes {label}"]
+        assert entry["Type / unit"] == unit and entry["Plain-language definition"] == definition
+    assert "WhatRes" not in column_definition_row(column_name="Rank")["Definition source"]
 
 
 def test_glossary_covers_requested_terms_and_rules() -> None:

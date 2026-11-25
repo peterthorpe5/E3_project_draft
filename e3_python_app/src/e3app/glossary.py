@@ -363,6 +363,93 @@ def _load_resource_entries(
     return tuple(entries)
 
 
+GEOMETRY_SURPRISE_DEFINITION = (
+    "For bond lengths and angles, WhatRes compares the same amino acid at a similar degree of "
+    "burial in experimental structures. Unusual measurements contribute more. The residue's "
+    "surprise is the sum of its available contributions, expressed as a raw score."
+)
+
+RESIDUE_GEOMETRY_COLUMNS = {
+    "chain": ("Chain", "Identifier", "Chain identifier in the original coordinate file."),
+    "author_number": (
+        "Residue number", "Coordinate identifier",
+        "Number assigned to the residue in the coordinate file. Use it with the chain and "
+        "insertion code to identify the site.",
+    ),
+    "insertion_code": (
+        "Insertion", "Optional letter",
+        "A code that distinguishes residues sharing a number in one chain, such as 42 and 42A.",
+    ),
+    "residue": ("Amino acid", "One-letter code", "Amino acid at this position in the model."),
+    "residue_score": ("Geometry surprise", "Raw score", GEOMETRY_SURPRISE_DEFINITION),
+    "n_outliers": (
+        "Outliers", "Count",
+        "Number of individual measurements at this residue that cross a WhatRes outlier "
+        "threshold. A residue can have several outliers.",
+    ),
+    "worst_metric": (
+        "Worst metric", "Measurement name",
+        "Measurement with the largest individual contribution to this residue's surprise. "
+        "It can be the largest even when every measurement is within its outlier limits.",
+    ),
+    "status": (
+        "Status", "Category",
+        "Assessed means the residue has a usable WhatRes score. Other values explain missing "
+        "geometry, for example ambiguous residue numbering or too few reference observations.",
+    ),
+}
+
+POCKET_GEOMETRY_COLUMNS = {
+    "pocket": ("Pocket", "Identifier", "Identifier given to this pocket in the original review."),
+    "rank": (
+        "Rank", "Selection order",
+        "Pocket selection order in the original review. Rank 1 is the first selected pocket. "
+        "Calculating geometry preserves this order.",
+    ),
+    "assessed_residues": (
+        "Assessed", "Residue count",
+        "Number of mapped pocket residues with a usable WhatRes geometry score.",
+    ),
+    "mapped_residues": (
+        "Mapped", "Residue count",
+        "Number of distinct pocket residues matched to positions on this model, including "
+        "positions where geometry could not be assessed.",
+    ),
+    "flagged_residues": (
+        "Flagged residues", "Residue count",
+        "Assessed residues with at least one outlier measurement. Each residue counts once.",
+    ),
+    "flagged_percent_of_assessed": (
+        "Flagged (%)", "Percentage",
+        "100 × flagged residues divided by assessed residues. A blank means no pocket residue "
+        "could be assessed.",
+    ),
+    "outlier_count": (
+        "Total outliers", "Measurement count",
+        "Number of individual outlier measurements across the assessed pocket residues. "
+        "Two flagged measurements at one residue count twice here.",
+    ),
+    "median_residue_score": (
+        "Median surprise", "Raw score",
+        "Middle value after sorting the assessed residues' surprise totals. For an even "
+        "number of residues, it is the mean of the two middle totals.",
+    ),
+    "peak_position": (
+        "Peak residue", "Sequence position",
+        "Sequence position of the assessed pocket residue with the highest surprise. "
+        "Ties use the lowest sequence position.",
+    ),
+    "peak_residue_score": (
+        "Peak surprise", "Raw score",
+        "Largest residue surprise total in the pocket. Use Inspect peak to locate that residue.",
+    ),
+    "median_plddt": (
+        "Median pLDDT", "Confidence (0–100)",
+        "Median predicted local distance difference test score across pocket residues with a "
+        "confidence value. Higher pLDDT means greater confidence in the predicted local structure.",
+    ),
+}
+
 GLOSSARY_ENTRIES = (
     *_CORE_GLOSSARY_ENTRIES,
     *_load_resource_entries(
@@ -373,6 +460,12 @@ GLOSSARY_ENTRIES = (
         file_name="final_candidate_field_dictionary.tsv",
         source="Final candidate field dictionary v1.0",
     ),
+    *(GlossaryEntry(
+        section="WhatRes residue and pocket geometry", term=f"WhatRes {label}",
+        definition=definition, type_or_unit=unit, source="WhatRes v1.0.0 and E3 pocket review",
+    ) for label, unit, definition in (
+        *RESIDUE_GEOMETRY_COLUMNS.values(), *POCKET_GEOMETRY_COLUMNS.values(),
+    )),
 )
 
 _TYPE_OR_UNIT_PATTERNS = (

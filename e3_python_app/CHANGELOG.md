@@ -4,6 +4,12 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.20
+
+- Define WhatRes surprise, outliers and every residue and pocket table column in
+  the question-mark help, table headers and searchable glossary. Add a worked
+  example to the app and README.
+
 ## v0.23.19
 
 - Inspect WhatRes per-residue geometry on an interactive sequence strip and
