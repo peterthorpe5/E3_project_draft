@@ -58,6 +58,23 @@ args.out.write_text(
 """
 
 
+RESIDUE_CLI = r"""#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+assert sys.argv[1:] == ["-do", "pdb_quality_check", "-in", "model.list", "-opt", "Options.txt"]
+model = Path(Path("model.list").read_text().strip())
+assert model.parent == Path.cwd() and b" CB " in model.read_bytes()
+assert "<qc_reference_db>reference.bin;" in Path("Options.txt").read_text()
+assert Path("reference.bin").is_file()
+Path("local_quality_report.tsv").write_text(
+    "pdb\tchain\taa\tresnum\tref_count\tresidue_score\tn_outliers\tworst_metric\tworst_score\n"
+    "e3_model\tA\tG\t2\t200\t12.25\t0\tbond_N_CA\t2.50\n"
+    "e3_model\tA\tA\t1\t100\t30.25\t2\tclashscore\t6.64\n"
+)
+"""
+
+
 @pytest.fixture
 def local_whatres(*, tmp_path: Path) -> Path:
     """Install a test CLI with the file layout and TSV protocol of the real release."""
@@ -65,8 +82,9 @@ def local_whatres(*, tmp_path: Path) -> Path:
     files = {
         "whatres/__init__.py": '__version__ = "1.0.0"\n',
         "whatres/cli.py": CLI,
-        "whatres-features/whatres-features": "",
-        "data/Options_features.txt": "",
+        "whatres-features/whatres-features": RESIDUE_CLI,
+        "data/Options_features.txt": ("<qc_reference_db>original;\n<prefix>fx_;\n"
+                                      "<qc_min_ref_count>5;\n"),
         "data/native49_structure_reference.bin": "",
         "models/apparent_resolution_model.joblib": "",
         "models/over_regularisation_model.joblib": "",
@@ -166,7 +184,7 @@ def test_legacy_review_can_retrieve_a_full_model_by_uniprot_accession() -> None:
     )
     assert targets == (whatres.WhatResTarget(
         label="Q6NKN8 · Arabidopsis thaliana", alphafold_accession="Q6NKN8",
-        group_id="HOG1", species="Arabidopsis_thaliana",
+        group_id="HOG1", species="Arabidopsis_thaliana", review_accession="Q6NKN8",
     ),)
     assert not whatres.recorded_whatres_targets(
         inventory=inventory.iloc[:0], review_rank=1, group_id="HOG1",

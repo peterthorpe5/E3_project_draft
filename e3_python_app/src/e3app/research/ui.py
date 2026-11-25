@@ -27,6 +27,7 @@ from e3app.errors import AppError
 from e3app.navigation import CANDIDATE_STAGE, DEEPCLUST_STAGE
 from e3app.species_composition import member_species_counts, render_species_counts
 from e3app.whatres import MAX_COORDINATE_BYTES, WhatResTarget
+from e3app.whatres_residue_ui import show_geometry_view
 from e3app.whatres_ui import render_whatres
 
 from .catalogue import browse_clusters, open_catalogue
@@ -2134,9 +2135,9 @@ def render_models(
     model = artifact_path(workspace=config.workspace, job_id=selected, artifact=row["pdb_artifact"])
     model_bytes = model.read_bytes()
     st.download_button("Download predicted PDB", data=model_bytes, file_name=model.name)
-    render_whatres(
+    assessed = render_whatres(
         models=(WhatResTarget(label=str(identifier), content=model_bytes, filename="esmfold.pdb"),),
-        key="predicted_model",
+        key="predicted_model", defer_residue_view=True,
     )
     residues = read_table(
         path=artifact_path(
@@ -2154,7 +2155,7 @@ def render_models(
         key="predicted_model_annotation",
     )
     render_model_trace(payload=payload, stem=f"model_{selected[:12]}",
-                       identifier=str(identifier))
+                       identifier=str(identifier), assessed=assessed)
     st.caption(
         (
             "Reported ESMFold confidence is model evidence. This C-alpha view and "
@@ -2164,16 +2165,25 @@ def render_models(
     )
 
 
-def render_model_trace(*, payload: dict[str, object], stem: str, identifier: str) -> None:
+def render_model_trace(
+    *, payload: dict[str, object], stem: str, identifier: str,
+    assessed: WhatResTarget | None = None,
+) -> None:
     """Show a prediction with the same selection tools used in the feature browser.
 
     Args:
         payload: Validated exact sequence, coordinates and compatible annotation features.
         stem: Unique output filename stem.
         identifier: Display label for the exact model.
+        assessed: Full model selected in the scoring panel, with optional residue diagnostics.
     """
     from .expansion_ui import show_features
 
+    if assessed is not None and assessed.residue_report is not None:
+        payload = show_geometry_view(
+            target=assessed, key=stem, inline=True,
+            evidence={**payload, "model_sha256": hashlib.sha256(assessed.content).hexdigest()},
+        )
     show_features(payload={**payload, "model_label": identifier}, stem=stem)
 
 
@@ -2199,8 +2209,8 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
             models = (WhatResTarget(
                 label=uploaded.name, content=uploaded.getvalue(), filename=uploaded.name,
             ),)
-    render_whatres(
-        models=models, key="uploaded_protein_model",
+    assessed = render_whatres(
+        models=models, key="uploaded_protein_model", defer_residue_view=True,
         prompt="Upload a full-atom PDB above to enable scoring.",
     )
     fasta = upload_text(
@@ -2209,6 +2219,8 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
         "3D confidence viewer.",
     )
     if not models or not fasta:
+        if assessed is not None and assessed.residue_report is not None:
+            show_geometry_view(target=assessed, key="uploaded_protein_model")
         return
     try:
         pdb = models[0].content.decode("utf-8-sig")
@@ -2218,12 +2230,15 @@ def render_uploaded_model(*, config: ResearchConfig) -> None:
         residues = pdb_evidence(pdb=pdb, expected_sequence=sequence)
     except (UnicodeDecodeError, ResearchError) as exc:
         st.warning(f"Could not open the linked sequence viewer. {exc}")
+        if assessed is not None and assessed.residue_report is not None:
+            show_geometry_view(target=assessed, key="uploaded_protein_model")
         return
     payload = monomer_view_payload(
         residues=pd.DataFrame(residues),
         features=select_linked_annotations(config=config, sequence=sequence),
     )
-    render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier)
+    render_model_trace(payload=payload, stem="uploaded_protein_model", identifier=identifier,
+                       assessed=assessed)
 
 
 def render_annotations(*, config: ResearchConfig) -> None:

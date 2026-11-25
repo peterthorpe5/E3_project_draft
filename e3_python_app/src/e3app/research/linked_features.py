@@ -54,6 +54,10 @@ def monomer_view_payload(
     })
     numeric = ["position", "x", "y", "z", "plddt"]
     model[numeric] = model[numeric].apply(pd.to_numeric, errors="coerce")
+    if "pdb_residue_number" in residues:
+        numbers = pd.to_numeric(residues["pdb_residue_number"], errors="coerce")
+        if numbers.between(-999, 9999).all() and numbers.mod(1).eq(0).all():
+            model["coordinate_number"] = numbers.astype(int)
     model = model.sort_values("position")
     sequence = "".join(model["residue"].astype(str))
     if (
@@ -272,6 +276,42 @@ def _mapped_pockets(
     ]
 
 
+def review_member_evidence(
+    *, group: dict, accession: str, species: str, source: str, expected_sequence: str = "",
+) -> dict | None:
+    """Resolve one native member and its pocket memberships from a portable group page.
+
+    Args:
+        group: Parsed portable review group.
+        accession: Exact member accession from the inventory.
+        species: Exact species label from the inventory.
+        source: Display name of the portable review.
+        expected_sequence: Optional independently verified release sequence.
+
+    Returns:
+        Validated native trace and pocket membership, or None for an unmatched member.
+    """
+    proteins = [row for row in group["proteins"]
+                if (row["accession"], row["species"]) == (accession, species)]
+    records = [row for row in group["alignment"].get("records", [])
+               if (row["accession"], row["species"]) == (accession, species)]
+    if len(proteins) != 1 or len(records) != 1 or not proteins[0].get("atoms"):
+        return None
+    protein, record = proteins[0], records[0]
+    sequence = re.sub(r"[-.\s]", "", record["sequence"]).upper()
+    if expected_sequence and sequence != expected_sequence:
+        LOGGER.info("Review sequence differs from released member %s in %s", accession, source)
+        return None
+    if len(sequence) > MAX_LINKED_RESIDUES:
+        raise ResearchError("This sequence exceeds the linked view's 20,000-residue limit.")
+    residues = model_residues(atoms=protein["atoms"], sequence=normalise_protein(sequence=sequence))
+    return {
+        "sequence": sequence, "model": residues,
+        "pockets": _mapped_pockets(protein=protein, alignment=record, residues=residues),
+        "model_sha256": str(protein.get("model_sha256", "")), "model_source": source,
+    }
+
+
 def linked_review_evidence(
     *, config: AppConfig, accession: str, group_id: str, species: str, sequence: str,
 ) -> dict[str, object] | None:
@@ -307,34 +347,18 @@ def linked_review_evidence(
         if group is None:
             continue
         try:
-            proteins = [
-                row for row in group["proteins"]
-                if (row["accession"], row["species"]) == (accession, species)
-            ]
-            records = [
-                row for row in group["alignment"].get("records", [])
-                if (row["accession"], row["species"]) == (accession, species)
-            ]
-            if len(proteins) != 1 or len(records) != 1 or not proteins[0].get("atoms"):
-                continue
-            protein, record = proteins[0], records[0]
-            aligned_sequence = re.sub(r"[-.\s]", "", record["sequence"]).upper()
-            if aligned_sequence != sequence:
-                LOGGER.info("Review sequence differs from released member %s in %s", accession,
-                            group_id)
-                continue
-            residues = model_residues(atoms=protein["atoms"], sequence=sequence)
-            pockets = _mapped_pockets(protein=protein, alignment=record, residues=residues)
+            evidence = review_member_evidence(
+                group=group, accession=accession, species=species, source=review_dir.name,
+                expected_sequence=sequence,
+            )
         except (AttributeError, KeyError, TypeError, ValueError, OverflowError) as exc:
             problem = exc
             LOGGER.warning("Could not map %s in %s: %s", accession, review_dir, exc)
             continue
-        LOGGER.info("Linked %s in %s: %d model residues, %d pockets", accession, group_id,
-                    len(residues), len(pockets))
-        return {
-            "sequence": sequence, "model": residues, "pockets": pockets,
-            "model_sha256": str(protein.get("model_sha256", "")), "model_source": review_dir.name,
-        }
+        if evidence is not None:
+            LOGGER.info("Linked %s in %s: %d model residues, %d pockets", accession, group_id,
+                        len(evidence["model"]), len(evidence["pockets"]))
+            return evidence
     if problem is not None:
         raise AppError("The selected model and pocket records could not be mapped.") from problem
     return None

@@ -14,6 +14,7 @@ from e3app.pocket_review import add_terminal_trimming_controls
 from e3app.research.review_highlights import add_review_highlights
 from e3app.research.viewers import viewer_document
 from e3app.research.species_tree import species_display_tree
+from e3app.whatres_residues import pocket_geometry
 
 
 def write_review_fixtures(*, output: Path) -> None:
@@ -165,29 +166,42 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             "coordinate_scope": "Recorded annotation coordinates; amino-acid sequence not verified",
         }), encoding="utf-8",
     )
+    linked = {
+        **payload,
+        "coordinate_scope": "Verified sequence axis", "model_label": "Synthetic model",
+        "sequence": "ACDEFGHIKLMNPQRSTACD",
+        "features": [
+            {**payload["features"][0], "provenance": "sequence_verified"},
+            {
+                "accession": "RECORDED_DOMAIN", "description": "Historical fixture",
+                "provenance": "recorded_coordinates",
+                "locations": [{"fragments": [{"start": 4, "end": 7}]}] * 2,
+            },
+        ],
+        "pockets": [
+            {"number": 4, "rank": 1, "positions": [3, 5], "color": "#c24e00"},
+            {"number": 2, "rank": 2, "positions": [6, 8, 12], "color": "#007d7c"},
+        ],
+        "model": [
+            {"position": index, "residue": residue, "x": index * .8,
+             "y": (index % 4) * .7, "z": (index % 5) * .6,
+             "plddt": 64 + index if index != 10 else None}
+            for index, residue in enumerate("ACDEFGHIKLMNPQRSTACD", start=1)
+        ],
+    }
     (output / "nightingale-linked.html").write_text(
+        viewer_document(viewer="nightingale", payload=linked), encoding="utf-8",
+    )
+    geometry_model = [
+        {**point, "residue_score": None if point["position"] == 10 else 2.0 * point["position"],
+         "n_outliers": None if point["position"] == 10 else point["position"] % 4,
+         "worst_metric": "bond_N_CA", "status": "assessed" if point["position"] != 10
+         else "not_reported"} for point in linked["model"]
+    ]
+    (output / "nightingale-geometry.html").write_text(
         viewer_document(viewer="nightingale", payload={
-            **payload,
-            "coordinate_scope": "Verified sequence axis", "model_label": "Synthetic model",
-            "sequence": "ACDEFGHIKLMNPQRSTACD",
-            "features": [
-                {**payload["features"][0], "provenance": "sequence_verified"},
-                {
-                    "accession": "RECORDED_DOMAIN", "description": "Historical fixture",
-                    "provenance": "recorded_coordinates",
-                    "locations": [{"fragments": [{"start": 4, "end": 7}]}] * 2,
-                },
-            ],
-            "pockets": [
-                {"number": 4, "rank": 1, "positions": [3, 5], "color": "#c24e00"},
-                {"number": 2, "rank": 2, "positions": [6, 8, 12], "color": "#007d7c"},
-            ],
-            "model": [
-                {"position": index, "residue": residue, "x": index * .8,
-                 "y": (index % 4) * .7, "z": (index % 5) * .6,
-                 "plddt": 64 + index if index != 10 else None}
-                for index, residue in enumerate("ACDEFGHIKLMNPQRSTACD", start=1)
-            ],
+            **linked, "model": geometry_model, "geometry_limit": 38.0,
+            "pockets": pocket_geometry(pockets=linked["pockets"], model=geometry_model),
         }), encoding="utf-8",
     )
     species, _audit = species_display_tree(

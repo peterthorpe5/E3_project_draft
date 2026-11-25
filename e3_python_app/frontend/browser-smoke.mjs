@@ -46,7 +46,7 @@ const browser = await chromium.launch({ headless: true,
 try {
   for (const name of [
     "alignment", "jbrowse", "nightingale", "nightingale-recorded", "jbrowse-species",
-    "nightingale-linked",
+    "nightingale-linked", "nightingale-geometry",
   ].filter(requested)) {
     const nightingale = name.startsWith("nightingale");
     const page = await browser.newPage({ viewport: { width: 1300, height: 800 } });
@@ -62,8 +62,42 @@ try {
     assert.deepEqual(outbound, [], name + " must remain offline");
     const drawn = await page.locator(nightingale ? "svg" : "canvas").count();
     assert.ok(drawn > 0, name + " must draw the actual data");
-    if (name !== "nightingale-linked") assert.equal(await page.locator('input[type="color"]').count(), 0);
-    if (nightingale) {
+    if (!["nightingale-linked", "nightingale-geometry"].includes(name)) assert.equal(await page.locator('input[type="color"]').count(), 0);
+    if (name === "nightingale-geometry") {
+      const trace = page.locator("canvas.linked-trace");
+      const mode = page.getByLabel("Colour trace by");
+      const strip = page.getByRole("slider", { name: "Inspect residue geometry" });
+      const detail = page.locator(".feature-selection-detail");
+      assert.equal(await mode.inputValue(), "surprise");
+      await assertTraceColours(trace, "#551643", "#8d9aa7");
+      await mode.selectOption("outliers");
+      await assertTraceColours(trace, "#641746", "#84aaa7", "#8d9aa7");
+      await page.getByRole("button", { name: "Inspect peak 5", exact: true }).click();
+      assert.equal(await trace.getAttribute("data-pocket-count"), "2");
+      assert.match(await detail.innerText(), /F5.*Surprise 10.00 · 1 outlier · worst bond_N_CA/);
+      await assertTraceColours(trace, "#c24e00", "#e4ac49");
+      await assertViewPdf(page, page.getByRole("button", { name: "Download 3D view (PDF)" }),
+        "3+ outliers", "Pocket 4", "Geometry unavailable");
+      await mode.selectOption("plddt");
+      assert.equal(await trace.getAttribute("data-colour-mode"), "plddt");
+      await mode.selectOption("neutral");
+      assert.ok(await page.getByText("Uncoloured trace", { exact: true }).isVisible());
+      await mode.selectOption("surprise");
+      await strip.focus();
+      await strip.press("ArrowRight");
+      assert.match(await detail.innerText(), /G6.*Surprise 12.00/);
+      await page.locator("nightingale-navigation").evaluate(node => node.dispatchEvent(
+        new CustomEvent("change", { bubbles: true, detail: { "display-start": 8, "display-end": 12 } })));
+      await strip.click({ position: { x: (await strip.boundingBox()).width / 2, y: 10 } });
+      assert.match(await detail.innerText(), /L10.*Geometry unavailable/);
+      await page.getByText("❓ How to read residue geometry").click();
+      assert.equal(await page.getByRole("link", { name: /van der Kant/ }).getAttribute("href"),
+        "https://doi.org/10.64898/2026.11.06.764824");
+      await page.setViewportSize({ width: 430, height: 920 });
+      assert.ok(await strip.isVisible());
+      assert.ok(await trace.isVisible());
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    } else if (nightingale) {
       const expectedLength = name === "nightingale-recorded" ? "100" : "20";
       const track = page.locator("nightingale-track").first();
       assert.equal(await track.getAttribute("length"), expectedLength);

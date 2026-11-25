@@ -26,6 +26,8 @@ from e3app.whatres import (
     whatres_structure_id,
 )
 
+from e3app.whatres_residue_ui import render_residue_controls
+
 MAX_SESSION_SCORES = 64
 FULL_MODEL_BUTTON = "Retrieve full model from AlphaFold Database"
 WHATRES_SETUP = (
@@ -101,6 +103,7 @@ def _score_identity(*, target: WhatResTarget, directory: Path) -> tuple[Path, st
 
 def render_whatres(
     *, models: Sequence[WhatResTarget], key: str, recorded: bool = False, prompt: str = "",
+    defer_residue_view: bool = False, review_dir: Path | None = None,
 ) -> WhatResTarget | None:
     """Score an explicitly chosen model and show or export its geometry assessment.
 
@@ -109,6 +112,8 @@ def render_whatres(
         key: Widget namespace unique to this viewer.
         recorded: Describe how full native models are matched to portable review traces.
         prompt: How to supply a full model when the caller has no selection yet.
+        defer_residue_view: Attach geometry to the caller's linked sequence viewer.
+        review_dir: Native group evidence for the portable structure and pair pages.
 
     Returns:
         The selected full coordinates and their provenance, when available.
@@ -193,7 +198,7 @@ def render_whatres(
                     del scores[next(iter(scores))]
                 scores[identity] = result
         if directory is None or target is None:
-            return target if target is not None and target.content is not None else None
+            return render_residue_controls(target=target, directory=directory, key=key)
         shown = list(models)
         if target.label != selected.label:
             shown.append(target)
@@ -217,7 +222,8 @@ def render_whatres(
                 file_name="whatres_model_geometry.tsv", mime="text/tab-separated-values",
                 key=f"{key}_whatres_tsv", on_click="ignore",
             )
-        return target if target.content is not None else None
+        return render_residue_controls(target=target, directory=directory, key=key,
+                                       defer_view=defer_residue_view, review_dir=review_dir)
 
 
 def render_whatres_bundle(

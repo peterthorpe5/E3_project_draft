@@ -15,7 +15,7 @@ from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Mapping
+from typing import TYPE_CHECKING, Callable, Mapping
 
 import pandas as pd
 from Bio.PDB import MMCIFParser, PDBIO, PDBParser
@@ -25,6 +25,9 @@ from e3app.alphafold_hog_bundle import AlphaFoldHogBundle
 from e3app.errors import AppError
 from e3app.external_actions import normalise_uniprot_accession
 from e3app.external_hog import prepared_hog_model
+
+if TYPE_CHECKING:
+    from e3app.whatres_residues import ResidueReport
 
 LOGGER = logging.getLogger(__name__)
 WHATRES_VERSION = "1.0.0"
@@ -57,6 +60,8 @@ class WhatResTarget:
     group_id: str = ""
     species: str = ""
     from_alphafold_database: bool = False
+    residue_report: ResidueReport | None = None
+    review_accession: str = ""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -177,7 +182,7 @@ def recorded_whatres_targets(
             targets.append(WhatResTarget(
                 label=f"{prefix}{accession} · {species.replace('_', ' ')}",
                 model_sha256=digest, alphafold_accession=public_accession,
-                group_id=group_id, species=species,
+                group_id=group_id, species=species, review_accession=accession,
             ))
     return tuple(targets)
 
@@ -251,10 +256,27 @@ def _run_whatres(*, directory: Path, pdb_path: Path, scratch: Path) -> None:
     environment = dict(os.environ, TMPDIR=str(scratch))
     environment["WHATRES_FEATURES"] = str(directory / "whatres-features/whatres-features")
     environment["WHATRES_MODELS_DIR"] = str(directory / "models")
+    run_whatres_command(argv=argv, cwd=directory, scratch=scratch, environment=environment)
+
+
+def run_whatres_command(
+    *, argv: list[str], cwd: Path, scratch: Path, environment: dict[str, str] | None = None,
+) -> None:
+    """Run a WhatRes process group with a private log and bounded lifetime.
+
+    Args:
+        argv: Executable and its separate arguments.
+        cwd: Working directory required by the upstream command.
+        scratch: Isolated working files for this request.
+        environment: Optional process environment for the Python scorer.
+
+    Raises:
+        AppError: If the process fails, cannot start or exceeds the time limit.
+    """
     try:
         with (scratch / "whatres.log").open("w+b") as log:
             with subprocess.Popen(
-                argv, cwd=directory, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                argv, cwd=cwd, env=environment, stdout=log, stderr=subprocess.STDOUT,
                 start_new_session=True,
             ) as process:
                 try:
@@ -263,7 +285,7 @@ def _run_whatres(*, directory: Path, pdb_path: Path, scratch: Path) -> None:
                     with suppress(ProcessLookupError):
                         os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
-                    LOGGER.warning("WhatRes timed out for %s", pdb_path.name)
+                    LOGGER.warning("WhatRes timed out in %s", cwd)
                     raise AppError(f"WhatRes exceeded {SCORE_TIMEOUT_SECONDS} seconds.") from exc
             if status:
                 log.seek(max(0, log.tell() - 4_096))
@@ -271,7 +293,7 @@ def _run_whatres(*, directory: Path, pdb_path: Path, scratch: Path) -> None:
                                log.read().decode("utf-8", errors="replace").strip())
                 raise AppError("WhatRes could not score this model. Check the app host log.")
     except OSError as exc:
-        LOGGER.warning("Could not start WhatRes at %s: %s", directory, exc)
+        LOGGER.warning("Could not start WhatRes in %s: %s", cwd, exc)
         raise AppError("Could not run WhatRes on the app host.") from exc
 
 

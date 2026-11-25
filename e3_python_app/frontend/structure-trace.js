@@ -1,4 +1,6 @@
 /** An offline, residue-indexed C-alpha trace for the Nightingale view. */
+import { outlierColour, surpriseColour } from "./residue-geometry.js";
+
 export const HIGHLIGHT_COLOURS = { domain: "#182554", pocket: "#c24e00", residue: "#167d74" };
 export const NEUTRAL_TRACE_COLOUR = "#8d9aa7";
 export const CONFIDENCE_BANDS = [
@@ -14,7 +16,14 @@ export function confidenceColour({ value, enabled }) {
   return CONFIDENCE_BANDS.find(band => value >= band.minimum).colour;
 }
 
-export function mountStructureTrace(container, residues, onPick) {
+/** Resolve the active trace scale for both bonds and residue markers. */
+export function traceResidueColour({ residue, mode, limit }) {
+  if (mode === "surprise") return surpriseColour({ value: residue.residue_score, limit });
+  if (mode === "outliers") return outlierColour({ count: residue.n_outliers });
+  return confidenceColour({ value: residue.plddt, enabled: mode === "plddt" });
+}
+
+export function mountStructureTrace(container, residues, onPick, limit) {
   const canvas = document.createElement("canvas");
   canvas.className = "linked-trace";
   canvas.setAttribute("aria-label", "Rotatable C-alpha trace of the selected model");
@@ -31,7 +40,7 @@ export function mountStructureTrace(container, residues, onPick) {
   let domainColour = HIGHLIGHT_COLOURS.domain;
   let pocketColour = HIGHLIGHT_COLOURS.pocket;
   let matchColour;
-  let colourByConfidence = true;
+  let colourMode = "plddt";
   let drag = null;
   let moved = false;
 
@@ -68,17 +77,18 @@ export function mountStructureTrace(container, residues, onPick) {
     const hasHighlights = Boolean(domains.size || pockets.size || matches.size
       || selectedResidues.size);
     context.lineCap = "round";
+    const geometryMode = colourMode === "surprise" || colourMode === "outliers";
     const domainSegments = new Path2D();
     for (let index = 1; index < projection.length; index += 1) {
       const previous = projection[index - 1], next = projection[index];
-      if (next.residue.position !== previous.residue.position + 1) continue;
-      if (domains.has(previous.residue.position) && domains.has(next.residue.position)) {
+      if (next.residue.break_before || next.residue.position !== previous.residue.position + 1) continue;
+      if (!geometryMode && domains.has(previous.residue.position) && domains.has(next.residue.position)) {
         domainSegments.moveTo(previous.x, previous.y);
         domainSegments.lineTo(next.x, next.y);
         continue;
       }
       context.beginPath();
-      context.strokeStyle = confidenceColour({ value: next.residue.plddt, enabled: colourByConfidence });
+      context.strokeStyle = traceResidueColour({ residue: next.residue, mode: colourMode, limit });
       context.lineWidth = 1.65;
       context.globalAlpha = hasHighlights ? .42 : .78;
       context.moveTo(previous.x, previous.y);
@@ -89,9 +99,9 @@ export function mountStructureTrace(container, residues, onPick) {
     context.globalAlpha = hasHighlights ? .36 : 1;
     for (const point of depthOrder) {
       const position = point.residue.position;
-      if (domains.has(position) || pockets.has(position) || matches.has(position)) continue;
+      if (domains.has(position) || pockets.has(position) || (!geometryMode && matches.has(position))) continue;
       context.beginPath();
-      context.fillStyle = confidenceColour({ value: point.residue.plddt, enabled: colourByConfidence });
+      context.fillStyle = traceResidueColour({ residue: point.residue, mode: colourMode, limit });
       context.arc(point.x, point.y, 2, 0, 2 * Math.PI);
       context.fill();
     }
@@ -116,10 +126,11 @@ export function mountStructureTrace(container, residues, onPick) {
       if (inPocket || inDomain) {
         context.beginPath();
         context.arc(point.x, point.y, inPocket ? 4.5 : 2.8, 0, 2 * Math.PI);
-        context.fillStyle = inPocket ? pocketColour : domainColour;
+        context.fillStyle = geometryMode ? traceResidueColour({ residue: point.residue, mode: colourMode, limit })
+          : inPocket ? pocketColour : domainColour;
         context.fill();
-        context.lineWidth = inPocket ? 1.5 : 2.2;
-        context.strokeStyle = "#243246";
+        context.lineWidth = geometryMode ? 2 : inPocket ? 1.5 : 2.2;
+        context.strokeStyle = geometryMode ? (inPocket ? pocketColour : domainColour) : "#243246";
         context.stroke();
         if (!inPocket) {
           context.lineWidth = 0.8;
@@ -140,7 +151,7 @@ export function mountStructureTrace(container, residues, onPick) {
       if (inMatch) {
         context.beginPath();
         context.arc(point.x, point.y, inPocket ? 8.3 : 4.5, 0, 2 * Math.PI);
-        if (!inPocket && !inDomain) {
+        if (!geometryMode && !inPocket && !inDomain) {
           context.fillStyle = matchColour;
           context.fill();
         }
@@ -235,8 +246,9 @@ export function mountStructureTrace(container, residues, onPick) {
   draw();
   return {
     fit, magnify,
-    setConfidenceColouring({ enabled }) {
-      colourByConfidence = enabled;
+    setColourMode({ mode }) {
+      colourMode = mode;
+      canvas.dataset.colourMode = mode;
       draw();
     },
     snapshot() {

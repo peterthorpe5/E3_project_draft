@@ -4,6 +4,15 @@ This changelog consolidates the package's historical release notes. Entries are 
 
 <!-- generated-by: consolidate_release_notes.py -->
 
+## v0.23.19
+
+- Inspect WhatRes per-residue geometry on an interactive sequence strip and
+  colour the Cα trace by geometry surprise or the number of outliers.
+- Summarise each mapped pocket in its native structural context, jump to its
+  peak residue and export residue measurements and pocket summaries as TSV.
+- Show coverage, explicit missing values, model checksums and in-app help with
+  the WhatRes preprint citation. Retain the active colour key in offline HTML and PDF.
+
 ## v0.23.18
 
 - Show per-residue pLDDT, its mean and coverage after a full AlphaFold Database

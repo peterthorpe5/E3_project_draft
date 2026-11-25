@@ -31,6 +31,7 @@ from e3app.pocket_review import (
 )
 from e3app.species_composition import member_species_counts, render_species_counts
 from e3app.whatres import SHA256_PATTERN, WhatResTarget
+from e3app.whatres_residue_ui import show_geometry_view
 from e3app.whatres_ui import FULL_MODEL_BUTTON, render_whatres
 
 from .campaign import CampaignSelection, select_campaign, submit_campaign
@@ -1104,11 +1105,11 @@ def render_linked_features(
             )
             return
         full_model, model_url = downloaded
-        render_whatres(
+        full = render_whatres(
             models=(WhatResTarget(
                 label=model_label, content=full_model, filename="alphafold.cif",
             ),),
-            key="linked_protein",
+            key="linked_protein", defer_residue_view=True,
         )
         try:
             residues = mmcif_evidence(cif=full_model, expected_sequence=sequence or None)
@@ -1121,9 +1122,12 @@ def render_linked_features(
             st.info(
                 f"The model is available to download. The viewer could not map its sequence. {exc}"
             )
+            if full is not None and full.residue_report is not None:
+                show_geometry_view(target=full, key="linked_protein")
             return
         evidence.update(
             model_source="AlphaFold Database", confidence_source="AlphaFold Database", pockets=[],
+            model_sha256=sha256(full_model).hexdigest(),
         )
         st.link_button("Open source mmCIF", model_url)
         if retrieved_sequence:
@@ -1142,12 +1146,16 @@ def render_linked_features(
                 label=model_label, model_sha256=digest, alphafold_accession=public_accession,
                 group_id=group_id, species=species,
             ),)
-        full = render_whatres(models=targets, key="linked_protein", recorded=True)
+        full = render_whatres(models=targets, key="linked_protein", recorded=True,
+                              defer_residue_view=True)
         if full is not None and full.from_alphafold_database and full.content is not None:
             evidence = _linked_trace_with_alphafold(
                 review=evidence, content=full.content, sequence=sequence, scope=scope,
             )
 
+    if full is not None and full.residue_report is not None:
+        evidence = show_geometry_view(target=full, key="linked_protein", evidence=evidence,
+                                      inline=True)
     st.caption(f"Structure source · {evidence['model_source']}")
     if not evidence["pockets"]:
         st.caption("No mapped pocket residues were available on this model's sequence axis.")
@@ -1338,6 +1346,8 @@ def show_features(*, payload: dict[str, object], stem: str) -> None:
         min(950, max(780, 195 + 46 * (len(features) + len(payload.get("pockets", ())))))
         if payload.get("model") else min(620, max(160, base_height + 50 * len(features)))
     )
+    if "geometry_limit" in payload:
+        height = min(1200, height + 180)
     components.html(document, height=height, scrolling=True)
     st.download_button("Download Nightingale viewer (HTML)", data=document,
                        file_name=f"{stem}.html", key=f"nightingale_{stem}", mime="text/html")

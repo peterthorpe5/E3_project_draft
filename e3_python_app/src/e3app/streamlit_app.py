@@ -2843,7 +2843,7 @@ def _render_structural_superposition(
             inventory=bundle.models, review_rank=int(group_row["review_rank"]),
             group_id=str(group_row["primary_group_id"]), pair_members=pair_members,
         ),
-        key=key_prefix, recorded=True,
+        key=key_prefix, recorded=True, review_dir=bundle.path,
     )
     with st.expander("❓ Why was this structural reference selected?"):
         st.markdown(
@@ -4125,7 +4125,7 @@ def _render_selected_pocket_review(
                 inventory=bundle.models, review_rank=int(row["review_rank"]),
                 group_id=str(row["primary_group_id"]),
             ),
-            key=key_prefix, recorded=True,
+            key=key_prefix, recorded=True, review_dir=bundle.path,
         )
         model_members = selected_group_members(bundle, int(row["review_rank"]), "structure")
         sequence_members = selected_group_members(bundle, int(row["review_rank"]), "alignment")

@@ -43,7 +43,8 @@ TOP_LEVEL_TAB_HELP = {
         "(WhatRes) below it. Add the original FASTA for the linked viewer. To score an "
         "ESMFold prediction, select its PDB under Inspect completed models.",
         yields="Interactive structure and confidence plots, or downloadable prediction inputs "
-        "for a configured CPU or GPU worker. WhatRes can export both geometry scores as TSV.",
+        "for a configured CPU or GPU worker. WhatRes exports whole-model scores and individual "
+        "residue geometry measurements as TSV.",
     ),
     "Protein feature browser": TabHelpEntry(
         instruction="Choose a HOG and then one of its protein members, search by accession, "
@@ -51,7 +52,8 @@ TOP_LEVEL_TAB_HELP = {
         "can open the matching HOG alignment or its protein in the models page. Choose "
         "Linked structure and pockets to see Model geometry (WhatRes) above the viewer. "
         "Retrieve the full model from AlphaFold Database to see its pLDDT, or upload the "
-        "original review file to score its geometry.",
+        "original review file. Choose Calculate per-residue geometry for the surprise strip, "
+        "3D colouring and summaries of pockets mapped to that model.",
         yields="Clickable domain tracks, mapped pocket residues, model pLDDT and a linked "
         "C-alpha trace for exact sequence matches, with a standalone HTML download.",
     ),

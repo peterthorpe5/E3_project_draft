@@ -197,7 +197,7 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
     .protein-feature-viewer h3{font-size:14px;margin:14px 0 7px}
     .feature-layout.linked{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);
       align-items:start;gap:20px}
-    .feature-tracks{min-width:0}
+    .feature-tracks{min-width:0;overflow-x:clip}
     .feature-selection{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;
       background:#edf3fa;border:1px solid #dbe6f2;border-radius:6px;padding:6px 10px;
       margin:3px 0 10px}
@@ -224,6 +224,26 @@ def viewer_document(*, viewer: str, payload: Mapping[str, object]) -> str:
       font-size:12px}
     .confidence-colouring{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
     .feature-residue-input{width:60px}
+    .geometry-strip{display:block;width:calc(100% - 20px);height:28px;margin:0 10px;
+      cursor:crosshair;touch-action:manipulation}
+    .geometry-scale,.geometry-pocket{display:flex;align-items:center;gap:5px 9px;flex-wrap:wrap;
+      font-size:12px;color:#344a65;margin:4px 0 7px}
+    .geometry-gradient{height:8px;width:70px;border-radius:4px;
+      background:linear-gradient(90deg,#f9eac5,#efbe69,#d87a48,#a34352,#551643)}
+    .geometry-readout{min-height:1.2em;font-variant-numeric:tabular-nums}
+    .geometry-colouring select{padding:4px;border:1px solid #b4bfcb;border-radius:4px;
+      color:#18243b;background:white;font:inherit}
+    .geometry-pocket-bar{display:flex;width:80px;height:9px;border:1px solid #87939d;
+      overflow:hidden;border-radius:5px}
+    .geometry-pocket-key{display:flex;gap:10px;font-size:12px;margin:5px 0;color:#344a65}
+    .geometry-pocket-key i{display:inline-block;width:12px;height:8px;margin-right:4px;
+      border:1px solid #87939d;border-radius:2px}
+    :is(.geometry-pocket-key,.geometry-pocket-bar) .clear{background:#84aaa7}
+    :is(.geometry-pocket-key,.geometry-pocket-bar) .flagged{background:#641746}
+    :is(.geometry-pocket-key,.geometry-pocket-bar) .missing{
+      background:repeating-linear-gradient(135deg,
+      #f4f6f7 0 3px,#a8b3bd 3px 5px)}
+    .geometry-pocket .feature-track-label,.geometry-pocket button{font-size:11px;padding:2px 5px}
     .trace-colour-controls{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:8px 0}
     .trace-colour-picker{display:inline-flex;align-items:center;gap:6px;font-size:12px}
     .trace-colour-picker input{width:36px;height:27px;border:1px solid #c8d4e2;border-radius:4px;

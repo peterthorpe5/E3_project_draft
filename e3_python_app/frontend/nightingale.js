@@ -6,6 +6,7 @@ import Linegraph from "@nightingale-elements/nightingale-linegraph-track";
 import {
   CONFIDENCE_BANDS, HIGHLIGHT_COLOURS, NEUTRAL_TRACE_COLOUR, mountStructureTrace,
 } from "./structure-trace.js";
+import { geometryDetail, geometryLegend, mountGeometryStrip } from "./residue-geometry.js";
 import { mountSequenceSearch, rangePositions } from "./sequence-search.js";
 import "../src/e3app/resources/viewer_pdf.js";
 
@@ -25,6 +26,10 @@ if (!Number.isInteger(length) || length < 1) throw new Error("Missing protein co
 const model = new Map((data.model || []).map(residue => [residue.position, residue]));
 const confidenceValues = [...model.values()].map(residue => residue.plddt).filter(Number.isFinite);
 const hasConfidence = confidenceValues.length > 0;
+const hasGeometry = Number.isFinite(data.geometry_limit);
+const geometrySites = new Map(model);
+for (const row of data.untraced_geometry || []) geometrySites.set(row.position, row);
+let geometryStrip = null;
 const pockets = data.pockets || [];
 const trackElements = [];
 const active = new Map();
@@ -80,6 +85,7 @@ clear.disabled = true;
 function updateWindow(start, end) {
   displayStart = Math.max(1, Math.min(length, Math.floor(start)));
   displayEnd = Math.min(length, Math.max(displayStart, Math.ceil(end)));
+  geometryStrip?.setWindow(displayStart, displayEnd);
   for (const track of trackElements) {
     track.setAttribute("display-start", String(displayStart));
     track.setAttribute("display-end", String(displayEnd));
@@ -110,6 +116,7 @@ function updateSelection() {
     labels.push(`${label} · ${shown}` + (model.size ? ` · ${positions.length} model residues` : ""));
   }
   trace?.highlight(highlights);
+  geometryStrip?.select(active.get("residue")?.ranges[0].start ?? null);
   for (const [kind, { input, first }] of colourInputs) {
     const item = active.get(kind);
     const colour = (item ?? first).colour;
@@ -137,10 +144,12 @@ function toggleTrack(item) {
 
 function pickResidue(position, reveal = false) {
   if (!Number.isInteger(position) || position < 1 || position > length) return;
-  const residue = model.get(position);
+  const residue = geometrySites.get(position);
   const aminoAcid = data.sequence?.[position - 1];
   const label = (aminoAcid ? aminoAcid + position : "Residue " + position)
-    + (residue?.plddt == null ? "" : " · pLDDT " + residue.plddt.toFixed(1));
+    + (residue?.native_id ? " · native " + residue.native_id : "")
+    + (residue?.plddt == null ? "" : " · pLDDT " + residue.plddt.toFixed(1))
+    + (hasGeometry ? " · " + geometryDetail({ residue }) : "");
   active.set("residue", { ranges: [{ start: position, end: position }], label });
   updateSelection();
   if (reveal && (position < displayStart || position > displayEnd)) {
@@ -180,8 +189,29 @@ if (model.size) {
     element("p", help, "", "pLDDT is local prediction confidence on a 0–100 scale. "
       + "Select a residue to read its score. The mean uses residues with a confidence value. "
       + "WhatRes realism and apparent resolution describe the geometry of the whole model.");
-  } else {
+  } else if (!hasGeometry) {
     element("p", tracks, "", "Per-residue pLDDT is unavailable in this review.");
+  }
+  if (hasGeometry) {
+    const row = element("div", tracks, "protein-feature-row");
+    element("h3", row, "", "Residue geometry · surprise");
+    geometryStrip = mountGeometryStrip({ container: row, model: geometrySites, length, limit: data.geometry_limit,
+      onPick: position => pickResidue(position, true) });
+    const scale = element("div", row, "geometry-scale");
+    element("span", scale, "", "0");
+    element("span", scale, "geometry-gradient").setAttribute("aria-hidden", "true");
+    element("span", scale, "", data.geometry_limit > 0
+      ? "≥" + data.geometry_limit.toFixed(1) + " surprise" : "Positive surprise");
+    element("span", scale, "", "Dark tick · one or more outliers");
+    const help = element("details", row, "confidence-help");
+    element("summary", help, "", "❓ How to read residue geometry");
+    element("p", help, "", "Darker colours indicate greater geometry surprise. Grey marks "
+      + "unavailable measurements. The scale saturates at this full model’s 95th percentile. "
+      + "Zoom the sequence ruler to separate nearby residues. At low zoom each column shows "
+      + "its highest surprise and any outlier. Click the strip or use its arrow keys to inspect "
+      + "a position. Pocket rings preserve the geometry colour inside each residue.");
+    const citation = element("a", help, "", "van der Kant et al. (2026), bioRxiv preprint");
+    citation.href = "https://doi.org/10.64898/2026.11.06.764824";
   }
 }
 
@@ -208,6 +238,7 @@ function featureRow(parent, feature, label, kind) {
   item.track = addTrack("track", row, 20);
   item.track.selection = item;
   setTrackColour(item, defaultColour);
+  return item;
 }
 
 const domains = new Map();
@@ -245,26 +276,60 @@ if (shown) {
 
 if (pockets.length) {
   element("h3", tracks, "", "Mapped pocket residues");
+  if (hasGeometry) {
+    const key = element("div", tracks, "geometry-pocket-key");
+    for (const [kind, text] of [["clear", "No flags"], ["flagged", "Flagged"], ["missing", "Unassessed"]]) {
+      const part = element("span", key);
+      element("i", part, kind).setAttribute("aria-hidden", "true");
+      part.append(text);
+    }
+  }
   for (const pocket of pockets) {
     const label = "Pocket " + pocket.number + " · rank " + pocket.rank;
-    featureRow(tracks, {
+    const item = featureRow(tracks, {
       accession: "pocket-" + pocket.rank + "-" + pocket.number, color: pocket.color,
       rangeText: pocket.positions.length + " mapped residues",
       locations: pocket.positions.map(position => ({ fragments: [{ start: position, end: position }] })),
     }, label, "pocket");
+    const g = pocket.geometry;
+    if (g) {
+      const summary = element("div", item.track.parentNode, "geometry-pocket");
+      const bar = element("div", summary, "geometry-pocket-bar");
+      bar.setAttribute("aria-hidden", "true");
+      for (const [kind, count] of [["clear", g.assessed_residues - g.flagged_residues],
+        ["flagged", g.flagged_residues], ["missing", g.mapped_residues - g.assessed_residues]]) {
+        if (count) element("span", bar, kind).style.flexGrow = count;
+      }
+      element("span", summary, "", g.assessed_residues + "/" + g.mapped_residues + " assessed · "
+        + g.flagged_residues + " flagged" + (g.median_residue_score == null ? ""
+          : " · median surprise " + g.median_residue_score.toFixed(2)));
+      if (g.peak_position != null) button(summary, "Inspect peak " + g.peak_position, () => {
+        if (active.get("pocket") !== item) toggleTrack(item);
+        pickResidue(g.peak_position, true);
+      });
+    }
   }
 }
 
 if (model.size) {
   const structure = element("section", layout, "linked-structure");
   element("h3", structure, "", "Model · Cα trace");
-  trace = mountStructureTrace(structure, [...model.values()], position => pickResidue(position, true));
+  trace = mountStructureTrace(structure, [...model.values()], position => pickResidue(position, true),
+    data.geometry_limit);
   const controls = element("div", structure, "structure-controls");
   button(controls, "Fit model", trace.fit);
   button(controls, "Zoom in", () => trace.magnify(1.2));
   button(controls, "Zoom out", () => trace.magnify(1 / 1.2));
   let colourByConfidence = null;
-  if (hasConfidence) {
+  let modeSelect = null;
+  if (hasGeometry) {
+    const label = element("label", controls, "geometry-colouring", "Colour trace by ");
+    modeSelect = element("select", label);
+    const modes = [["surprise", "Residue geometry surprise"], ["outliers", "Geometry outlier count"]];
+    if (hasConfidence) modes.push(["plddt", "pLDDT confidence"]);
+    modes.push(["neutral", "Neutral trace"]);
+    for (const [value, text] of modes) element("option", modeSelect, "", text).value = value;
+  } else if (hasConfidence) {
     const label = element("label", controls, "confidence-colouring");
     colourByConfidence = element("input", label);
     colourByConfidence.type = "checkbox";
@@ -332,22 +397,23 @@ if (model.size) {
   const confidenceColours = [
     ...CONFIDENCE_BANDS, { colour: NEUTRAL_TRACE_COLOUR, label: "Unavailable" },
   ];
-  const bands = confidenceColours.map(({ colour, label }) => {
-    const item = element("span", legend, "", label);
-    item.style.setProperty("--trace-colour", colour);
-    item.hidden = !hasConfidence;
-    return item;
-  });
-  const neutralLabel = hasConfidence ? "Uncoloured trace" : "pLDDT unavailable";
-  const neutral = element("span", legend, "", neutralLabel);
-  neutral.style.setProperty("--trace-colour", NEUTRAL_TRACE_COLOUR);
-  neutral.hidden = hasConfidence;
-  colourByConfidence?.addEventListener("change", () => {
-    const enabled = colourByConfidence.checked;
-    trace.setConfidenceColouring({ enabled });
-    for (const item of bands) item.hidden = !enabled;
-    neutral.hidden = enabled;
-  });
+  const neutralLabel = hasConfidence || hasGeometry ? "Uncoloured trace" : "pLDDT unavailable";
+  let legendKey = [];
+  function updateColourMode() {
+    const mode = modeSelect?.value ?? (colourByConfidence?.checked ? "plddt" : "neutral");
+    trace.setColourMode({ mode });
+    legendKey = mode === "plddt" ? confidenceColours.map(({ colour, label }) =>
+      ({ colour, label, pdfLabel: "pLDDT " + label })) : mode === "neutral"
+      ? [{ colour: NEUTRAL_TRACE_COLOUR, label: neutralLabel }]
+      : geometryLegend({ mode, limit: data.geometry_limit });
+    legend.replaceChildren(picked);
+    for (const { colour, label } of legendKey) {
+      element("span", legend, "", label).style.setProperty("--trace-colour", colour);
+    }
+  }
+  modeSelect?.addEventListener("change", updateColourMode);
+  colourByConfidence?.addEventListener("change", updateColourMode);
+  updateColourMode();
   const exportRow = element("div", structure, "structure-controls");
   const exportStatus = element("span", exportRow, "", "");
   exportStatus.setAttribute("role", "status");
@@ -357,9 +423,8 @@ if (model.size) {
       label: kind === "sequence" ? `Matches: ${sequenceSearchLabel}` : item.label,
       colour: item.colour ?? HIGHLIGHT_COLOURS[kind],
     }));
-    const key = highlights.concat(colourByConfidence?.checked
-      ? confidenceColours.map(({ colour, label }) => ({ colour, label: `pLDDT ${label}` }))
-      : [{ colour: NEUTRAL_TRACE_COLOUR, label: neutralLabel }]);
+    const key = highlights.concat(legendKey.map(({ colour, label, pdfLabel }) =>
+      ({ colour, label: pdfLabel ?? label })));
     const title = data.model_label || "Protein structure";
     try {
       const canvas = structure.querySelector(".linked-trace");

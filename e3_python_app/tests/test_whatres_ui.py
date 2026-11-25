@@ -21,6 +21,7 @@ from e3app.research.common import atomic_json, file_sha256
 from e3app.research.jobs import claim_job, finish_job, job_directory, submit_job
 from e3app.research.providers import pdb_evidence
 from e3app.whatres import WhatResTarget
+from e3app.whatres_residue_ui import RESIDUE_ACTION
 from e3app.whatres_ui import FULL_MODEL_BUTTON, _score_identity
 from test_external_hog import make_model_bundle
 from test_pocket_review import make_pocket_review
@@ -158,6 +159,18 @@ def test_group_then_pair_ui_checks_original_files_and_reuses_the_exact_score(
         model_sha256=sha256(alternate).hexdigest(),
     )
     pd.concat([inventory, mobile]).to_csv(path, sep="\t", index=False)
+    site = {"chain": "A", "resi": 1, "resn": "ALA", "x": 2, "y": 2, "z": 3,
+            "pockets": [{"pocket_number": 4, "selection_rank": 1}]}
+    member = {"accession": "P1", "species": "Arabidopsis_thaliana"}
+    group = {"group_key": {"primary_group_id": "N0.HOG1"},
+             "proteins": [{**member, "atoms": [site]}],
+             "alignment": {"records": [{**member, "sequence": "AG", "pocket_annotations": [{
+                 "fasta_position": 1, "fasta_residue": "A", "structure_label_chain": "A",
+                 "structure_label_seq_id": 1, "pocket_number": 4, "selection_rank": 1,
+             }]}]}}
+    page = next((root / "groups").glob("*.html"))
+    data = '<script id="reviewData" type="application/json">' + json.dumps(group) + "</script>"
+    page.write_text(page.read_text().replace("</html>", data + "</html>"), encoding="utf-8")
     monkeypatch.setenv("E3_POCKET_REVIEW_DIR", str(root))
     uploads = {}
     original = st.file_uploader
@@ -187,14 +200,18 @@ def test_group_then_pair_ui_checks_original_files_and_reuses_the_exact_score(
     app.run()
     calculate(app=app)
     assert_result(app=app, label="P1 · Arabidopsis thaliana")
+    next(item for item in geometry_panel(app=app).button if item.label == RESIDUE_ACTION
+         ).click().run()
+    assert linked_payload(app=app)["pockets"][0]["geometry"]["median_residue_score"] == 30.25
 
     _navigate(app, stage=STRUCTURE, page="3D alignment")
     assert_result(app=app, label="Reference · P1 · Arabidopsis thaliana")
+    assert linked_payload(app=app)["pockets"][0]["geometry"]["flagged_positions"] == "1"
     panel = geometry_panel(app=app)
     assert panel.selectbox[0].options == [
         "Reference · P1 · Arabidopsis thaliana", "Mobile · P2 · Zea mays",
     ]
-    assert not panel.button
+    assert CONTROL not in [button.label for button in panel.button]
     uploads["structure"] = uploaded_file(content=alternate, name="native_mobile.pdb")
     panel.selectbox[0].set_value(1).run()
     calculate(app=app)
@@ -366,9 +383,14 @@ def test_uploaded_pdb_scores_without_fasta_and_does_not_reuse_changed_coordinate
     app.run()
     calculate(app=app)
     assert_result(app=app, label="uploaded.pdb")
+    next(item for item in geometry_panel(app=app).button if item.label == RESIDUE_ACTION
+         ).click().run()
+    assert linked_payload(app=app)["model"][0]["native_id"] == "A 1"
     uploads["viewer_model_fasta"] = uploaded_file(content=b">ag\nAG\n", name="model.fasta")
     app.run()
-    assert app.get("iframe")
+    assert len(app.get("iframe")) == 1
+    assert linked_payload(app=app)["model"][0]["residue_score"] == 30.25
+    assert linked_payload(app=app)["model"][0]["plddt"] == 80
     assert_result(app=app, label="uploaded.pdb")
     uploads["viewer_model_pdb"] = uploaded_file(content=PDB + b"\n", name="uploaded.pdb")
     app.run()

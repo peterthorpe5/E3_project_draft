@@ -471,6 +471,43 @@ geometry more typical of experimental structures at a similar apparent
 resolution. Apparent resolution is an estimate in Å from the coordinates.
 Read these diagnostics alongside pLDDT, pocket and alignment evidence.
 
+### Inspect residue and pocket geometry
+
+In **Protein feature browser → Linked structure and pockets**, retrieve the full
+AlphaFold Database model or supply the original review file. Open **Model geometry
+(WhatRes) → Calculate per-residue geometry**. This uses the same WhatRes v1.0.0
+installation as whole-model scoring. Individual models in the other pages listed
+above also have this control. A prepared HOG's bulk score table describes whole models.
+
+The sequence strip shows **geometry surprise** for each residue. Dark ticks mark
+residues with flagged measurements. Click the strip, use its arrow keys or pick a
+point on the Cα trace to see the numerical value, outlier count and worst metric.
+Under **Colour trace by**, choose surprise, outlier count, neutral, or pLDDT when
+available. Surprise colours saturate at the full model's 95th percentile. The raw
+numbers retain their full range. Zoom the sequence ruler to separate nearby marks.
+The downloadable viewer HTML works offline and the 3D PDF uses the active colour key.
+
+For a coordinate-matched review, **Pocket geometry** compares the number assessed,
+the number mapped, flagged residues, total outliers, median surprise and peak
+residue for each pocket. Median pLDDT is shown when available. Click a pocket
+track to outline its residues or **Inspect peak** to select its highest-surprise
+residue. The pocket bars show unflagged, flagged and unavailable residues. The
+flagged percentage uses assessed residues. Each overlapping pocket is summarised
+independently from the full-model measurements.
+
+The residue and pocket **TSV** downloads include both coordinate checksums and the
+WhatRes version. The residue TSV retains author numbering, insertion codes, mmCIF
+sequence labels and the status of every observed amino acid. The pocket TSV also
+lists mapped and flagged sequence positions. With a different model file, inspect
+its native residue geometry. A pocket summary requires the original review checksum
+and an unambiguous amino-acid and Cα coordinate match.
+
+The local score sums the available geometric surprise measurements at a residue.
+It depends on residue type, environment and available atoms. The calibrated realism
+and apparent resolution measurements apply to the whole structure. See **❓ Residue
+geometry help** and **❓ Pocket geometry help** in the app. [WhatRes preprint by van
+der Kant et al. (2026)](https://doi.org/10.64898/2026.11.06.764824).
+
 ### Confidence on downloaded AlphaFold models
 
 In **Protein feature browser → Linked structure and pockets**, retrieve the
